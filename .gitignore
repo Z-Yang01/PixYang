@@ -1,0 +1,9 @@
+
+.Python
+build/
+
+dist/
+
+
+node_modules/
+.claude/
