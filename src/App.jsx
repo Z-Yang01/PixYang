@@ -8,28 +8,52 @@ import InfoPanel from './components/Info/InfoPanel';
 import ImportDialog from './components/Explorer/ImportDialog';
 import TagManager from './components/Tags/TagManager';
 import AlbumsView from './components/Explorer/AlbumsView';
+import BatchBar from './components/Browser/BatchBar';
+import SettingsPage from './components/Settings/SettingsPage';
+import ConfirmDialog from './components/Layout/ConfirmDialog';
+import Toast from './components/Layout/Toast';
 
 export default function App() {
   const [images, setImages] = useState([]);
   const [totalImages, setTotalImages] = useState(0);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState('');
-  const [sortBy, setSortBy] = useState('created_at');
+  const [sortBy, setSortBy] = useState('import_date');
   const [sortOrder, setSortOrder] = useState('DESC');
-  const [selectedImage, setSelectedImage] = useState(null);
   const [viewerImage, setViewerImage] = useState(null);
   const [viewerIndex, setViewerIndex] = useState(-1);
   const [infoImage, setInfoImage] = useState(null);
   const [showImport, setShowImport] = useState(false);
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [stats, setStats] = useState({ totalImages: 0, totalTags: 0, totalAlbums: 0, favorites: 0 });
+
+  // 共享数据（从 Sidebar 提升）
+  const [tags, setTags] = useState([]);
+  const [albums, setAlbums] = useState([]);
+  const [importDates, setImportDates] = useState([]);
+
+  // 筛选状态
   const [filterTag, setFilterTag] = useState(null);
   const [filterAlbum, setFilterAlbum] = useState(null);
   const [filterFavorites, setFilterFavorites] = useState(false);
-  const [filterDir, setFilterDir] = useState('');
+  const [filterDate, setFilterDate] = useState('');
+  const [dateRange, setDateRange] = useState({ from: '', to: '' });
+  const [page, setPage] = useState(1);
+  const [gridSettings, setGridSettings] = useState({ rows: 3, columns: 5 });
+
+  // Toast 通知
+  const [toast, setToast] = useState({ message: '', type: 'info', visible: false });
+
+  // 批量操作确认
+  const [pendingBatchAction, setPendingBatchAction] = useState(null);
 
   const location = useLocation();
   const navigate = useNavigate();
+
+  const showToast = useCallback((message, type = 'info') => {
+    setToast({ message, type, visible: true });
+    setTimeout(() => setToast(t => ({ ...t, visible: false })), 3000);
+  }, []);
 
   const loadImages = useCallback(async (opts = {}) => {
     if (!window.pixyang) return;
@@ -42,18 +66,20 @@ export default function App() {
         tagId: opts.tagId ?? filterTag,
         albumId: opts.albumId ?? filterAlbum,
         favorite: opts.favorite ?? filterFavorites,
-        directory: opts.directory ?? filterDir,
-        limit: 200,
-        offset: 0,
+        importDate: opts.importDate ?? filterDate,
+        dateFrom: opts.dateFrom ?? dateRange.from,
+        dateTo: opts.dateTo ?? dateRange.to,
+        limit: opts.limit ?? gridSettings.rows * gridSettings.columns,
+        offset: opts.offset ?? (page - 1) * gridSettings.rows * gridSettings.columns,
       };
       const result = await window.pixyang.getImages(options);
       setImages(result.images);
       setTotalImages(result.total);
     } catch (err) {
-      console.error('Failed to load images:', err);
+      console.error('加载图片失败:', err);
     }
     setLoading(false);
-  }, [search, sortBy, sortOrder, filterTag, filterAlbum, filterFavorites, filterDir]);
+  }, [search, sortBy, sortOrder, filterTag, filterAlbum, filterFavorites, filterDate, dateRange, page, gridSettings]);
 
   const loadStats = useCallback(async () => {
     if (!window.pixyang) return;
@@ -61,29 +87,75 @@ export default function App() {
     setStats(s);
   }, []);
 
+  const loadAppData = useCallback(async () => {
+    if (!window.pixyang) return;
+    const [t, a, d] = await Promise.all([
+      window.pixyang.getTags(),
+      window.pixyang.getAlbums(),
+      window.pixyang.getImportDates(),
+    ]);
+    setTags(t);
+    setAlbums(a);
+    setImportDates(d);
+  }, []);
+
+  const loadGridSettings = useCallback(async () => {
+    if (!window.pixyang) return;
+    const settings = await window.pixyang.getSettings();
+    const rows = Math.max(1, Math.min(10, Number(settings.grid_rows || 3)));
+    const columns = Math.max(1, Math.min(10, Number(settings.grid_columns || 5)));
+    setGridSettings({ rows, columns });
+  }, []);
+
   useEffect(() => {
     loadImages();
     loadStats();
-  }, [filterTag, filterAlbum, filterFavorites, filterDir]);
+    loadAppData();
+  }, [filterTag, filterAlbum, filterFavorites, filterDate, dateRange, page, gridSettings]);
 
-  // Handle route-based filters
+  useEffect(() => {
+    loadGridSettings();
+  }, [loadGridSettings]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [search, filterTag, filterAlbum, filterFavorites, filterDate, dateRange, gridSettings]);
+
+  // 同步 viewerImage：当 images 刷新后，更新 viewerImage 保持数据一致
+  useEffect(() => {
+    if (viewerImage && images.length > 0) {
+      const updated = images.find(img => img.id === viewerImage.id);
+      if (updated) setViewerImage(updated);
+    }
+  }, [images]);
+
+  // 通过路由状态传递筛选参数（修复相册/标签点击导航 Bug）
+  useEffect(() => {
+    if (location.state?.albumId !== undefined) {
+      setFilterAlbum(location.state.albumId);
+      navigate('/', { replace: true, state: {} });
+    }
+    if (location.state?.tagId !== undefined) {
+      setFilterTag(location.state.tagId);
+      navigate('/', { replace: true, state: {} });
+    }
+  }, [location.state]);
+
+  // 路由默认筛选
   useEffect(() => {
     const path = location.pathname;
     if (path === '/favorites') {
       setFilterFavorites(true);
       setFilterTag(null);
       setFilterAlbum(null);
-      setFilterDir('');
-    } else if (path === '/') {
-      setFilterFavorites(false);
-      setFilterTag(null);
-      setFilterAlbum(null);
-      setFilterDir('');
+      setFilterDate('');
+      setDateRange({ from: '', to: '' });
     }
   }, [location.pathname]);
 
   const handleSearch = (value) => {
     setSearch(value);
+    setPage(1);
     loadImages({ search: value });
   };
 
@@ -91,18 +163,24 @@ export default function App() {
     if (by === sortBy) {
       const newOrder = sortOrder === 'ASC' ? 'DESC' : 'ASC';
       setSortOrder(newOrder);
-      loadImages({ sortOrder: newOrder });
     } else {
       setSortBy(by);
       setSortOrder('DESC');
-      loadImages({ sortBy: by, sortOrder: 'DESC' });
     }
+    setPage(1);
   };
 
-  const handleImportDone = () => {
+  const handleImportDone = async () => {
     setShowImport(false);
-    loadImages();
-    loadStats();
+    // 清除所有筛选，确保新导入的图片在「全部图片」中可见
+    clearFilters();
+    // 稍等一下让 clearFilters 的状态更新生效
+    setTimeout(async () => {
+      await loadImages();
+      loadStats();
+      loadAppData();
+      showToast('导入完成', 'success');
+    }, 50);
   };
 
   const openViewer = (image, index) => {
@@ -133,22 +211,106 @@ export default function App() {
 
   const handleImageUpdated = () => {
     loadImages();
+    loadStats();
+    loadAppData();
     if (infoImage) {
       setInfoImage({ ...infoImage, _refresh: Date.now() });
     }
   };
 
+  // 清除单个筛选
+  const clearSingleFilter = (type) => {
+    switch (type) {
+      case 'tag': setFilterTag(null); break;
+      case 'album': setFilterAlbum(null); break;
+      case 'date': setFilterDate(''); break;
+      case 'dateRange': setDateRange({ from: '', to: '' }); break;
+      case 'favorites': setFilterFavorites(false); navigate('/'); break;
+      default: break;
+    }
+  };
+
+  // 清除所有筛选
+  const clearFilters = () => {
+    setFilterTag(null);
+    setFilterAlbum(null);
+    setFilterFavorites(false);
+    setFilterDate('');
+    setDateRange({ from: '', to: '' });
+    setSearch('');
+    navigate('/');
+  };
+
+  // 批量操作
+  const handleBatchDelete = () => {
+    setPendingBatchAction({ type: 'delete' });
+  };
+
+  const executeBatchDelete = async () => {
+    if (!window.pixyang) return;
+    await window.pixyang.batchDeleteImages([...selectedIds]);
+    setSelectedIds(new Set());
+    setPendingBatchAction(null);
+    showToast(`已删除 ${selectedIds.size} 张图片`, 'success');
+    loadImages();
+    loadStats();
+    loadAppData();
+  };
+
+  const handleBatchAddTag = async (tagId) => {
+    if (!window.pixyang) return;
+    for (const id of selectedIds) {
+      await window.pixyang.addTagToImage(id, tagId);
+    }
+    setSelectedIds(new Set());
+    const tag = tags.find(t => t.id === tagId);
+    showToast(`已为 ${selectedIds.size} 张图片添加标签「${tag?.name || ''}」`, 'success');
+    loadImages();
+  };
+
+  const handleBatchAddToAlbum = async (albumId, newAlbumName) => {
+    if (!window.pixyang) return;
+    let targetId = albumId;
+    if (newAlbumName) {
+      const album = await window.pixyang.createAlbum(newAlbumName);
+      if (album) targetId = album.id;
+    }
+    if (targetId) {
+      await window.pixyang.addToAlbum(targetId, [...selectedIds]);
+      const album = albums.find(a => a.id === targetId);
+      showToast(`已添加 ${selectedIds.size} 张图片到「${album?.name || ''}」`, 'success');
+    }
+    setSelectedIds(new Set());
+    loadImages();
+    loadStats();
+    loadAppData();
+  };
+
+  // 判断标签/相册名
+  const getTagName = (id) => tags.find(t => t.id === id)?.name || '';
+  const getAlbumName = (id) => albums.find(a => a.id === id)?.name || '';
+
   return (
     <div className="app-layout">
       <Sidebar
         stats={stats}
+        tags={tags}
+        albums={albums}
+        importDates={importDates}
         currentPath={location.pathname}
         onNavigate={navigate}
         onImport={() => setShowImport(true)}
+        filterTag={filterTag}
         onFilterTag={setFilterTag}
+        filterAlbum={filterAlbum}
         onFilterAlbum={setFilterAlbum}
-        filterDir={filterDir}
-        onFilterDir={setFilterDir}
+        filterDate={filterDate}
+        onFilterDate={setFilterDate}
+        dateRange={dateRange}
+        onDateRange={setDateRange}
+        filterFavorites={filterFavorites}
+        onFilterFavorites={setFilterFavorites}
+        onClearFilters={clearFilters}
       />
       <div className="main-content">
         <TopBar
@@ -159,6 +321,20 @@ export default function App() {
           onSort={handleSort}
           selectedCount={selectedIds.size}
           onImport={() => setShowImport(true)}
+          totalImages={totalImages}
+          filterTag={filterTag}
+          filterAlbum={filterAlbum}
+          filterDate={filterDate}
+          dateRange={dateRange}
+          filterFavorites={filterFavorites}
+          getTagName={getTagName}
+          getAlbumName={getAlbumName}
+          onClearFilter={clearSingleFilter}
+          tags={tags}
+          onFilterTag={(id) => { setFilterTag(id); setPage(1); }}
+          dateFrom={dateRange.from}
+          dateTo={dateRange.to}
+          onDateRange={(range) => { setFilterDate(''); setDateRange(range); setPage(1); }}
         />
         <Routes>
           <Route path="/" element={
@@ -170,6 +346,11 @@ export default function App() {
               onView={openViewer}
               onInfo={setInfoImage}
               onImageUpdated={handleImageUpdated}
+              albums={albums}
+              gridSettings={gridSettings}
+              page={page}
+              totalImages={totalImages}
+              onPageChange={setPage}
             />
           } />
           <Route path="/favorites" element={
@@ -181,31 +362,38 @@ export default function App() {
               onView={openViewer}
               onInfo={setInfoImage}
               onImageUpdated={handleImageUpdated}
+              albums={albums}
+              gridSettings={gridSettings}
+              page={page}
+              totalImages={totalImages}
+              onPageChange={setPage}
             />
           } />
           <Route path="/albums" element={
             <AlbumsView
-              onSelectAlbum={(id) => { setFilterAlbum(id); navigate('/'); }}
-              onRefresh={loadStats}
-            />
-          } />
-          <Route path="/album/:id" element={
-            <ImageGrid
-              images={images}
-              loading={loading}
-              selectedIds={selectedIds}
-              onSelect={setSelectedIds}
-              onView={openViewer}
-              onInfo={setInfoImage}
-              onImageUpdated={handleImageUpdated}
+              onSelectAlbum={(id) => { navigate('/', { state: { albumId: id } }); }}
+              onRefresh={() => { loadStats(); loadAppData(); }}
             />
           } />
           <Route path="/tags" element={
             <TagManager
-              onSelectTag={(id) => { setFilterTag(id); navigate('/'); }}
+              onSelectTag={(id) => { navigate('/', { state: { tagId: id } }); }}
             />
           } />
+          <Route path="/settings" element={
+            <SettingsPage stats={stats} onSettingsChanged={loadGridSettings} onImagesChanged={handleImageUpdated} />
+          } />
         </Routes>
+
+        <BatchBar
+          selectedIds={selectedIds}
+          tags={tags}
+          albums={albums}
+          onClear={() => setSelectedIds(new Set())}
+          onBatchDelete={handleBatchDelete}
+          onBatchAddTag={handleBatchAddTag}
+          onBatchAddToAlbum={handleBatchAddToAlbum}
+        />
       </div>
 
       {viewerImage && (
@@ -234,6 +422,19 @@ export default function App() {
           onDone={handleImportDone}
         />
       )}
+
+      {pendingBatchAction?.type === 'delete' && (
+        <ConfirmDialog
+          title="批量删除图片"
+          message={`确定要删除 ${selectedIds.size} 张图片吗？此操作不可撤销，图片文件将被永久删除。`}
+          confirmLabel={`删除 ${selectedIds.size} 张`}
+          danger
+          onConfirm={executeBatchDelete}
+          onCancel={() => setPendingBatchAction(null)}
+        />
+      )}
+
+      <Toast message={toast.message} type={toast.type} visible={toast.visible} />
     </div>
   );
 }

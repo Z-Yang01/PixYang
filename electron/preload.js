@@ -1,24 +1,29 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('pixyang', {
-  // Dialog
+  // 对话框
   selectDirectory: () => ipcRenderer.invoke('dialog:select-directory'),
 
-  // File system
+  // 文件系统
   scanDirectory: (dirPath) => ipcRenderer.invoke('fs:scan-directory', dirPath),
-  getThumbnail: (filepath) => ipcRenderer.invoke('fs:get-thumbnail', filepath),
   getImageData: (filepath, maxWidth) => ipcRenderer.invoke('fs:get-image-data', filepath, maxWidth),
+  toFileUrl: (filepath) => ipcRenderer.invoke('fs:to-file-url', filepath),
   fileExists: (filepath) => ipcRenderer.invoke('fs:file-exists', filepath),
+  getImagesRoot: () => ipcRenderer.invoke('fs:get-images-root'),
+  setImagesRoot: (dirPath) => ipcRenderer.invoke('fs:set-images-root', dirPath),
+  openPath: (dirPath) => ipcRenderer.invoke('shell:open-path', dirPath),
 
-  // Database - Images
+  // 数据库 - 图片
   importImages: (imageFiles) => ipcRenderer.invoke('db:import-images', imageFiles),
   getImages: (options) => ipcRenderer.invoke('db:get-images', options),
   getImage: (id) => ipcRenderer.invoke('db:get-image', id),
   updateImage: (id, updates) => ipcRenderer.invoke('db:update-image', id, updates),
+  renameImage: (id, newFilename) => ipcRenderer.invoke('db:rename-image', id, newFilename),
   deleteImage: (id) => ipcRenderer.invoke('db:delete-image', id),
-  getDirectories: () => ipcRenderer.invoke('db:get-directories'),
+  batchDeleteImages: (ids) => ipcRenderer.invoke('db:batch-delete-images', ids),
+  getImportDates: () => ipcRenderer.invoke('db:get-import-dates'),
 
-  // Tags
+  // 标签
   getTags: () => ipcRenderer.invoke('db:get-tags'),
   createTag: (name, color) => ipcRenderer.invoke('db:create-tag', name, color),
   deleteTag: (id) => ipcRenderer.invoke('db:delete-tag', id),
@@ -26,13 +31,21 @@ contextBridge.exposeInMainWorld('pixyang', {
   removeTagFromImage: (imageId, tagId) => ipcRenderer.invoke('db:remove-tag-from-image', imageId, tagId),
   getImageTags: (imageId) => ipcRenderer.invoke('db:get-image-tags', imageId),
 
-  // Albums
+  // 相册
   getAlbums: () => ipcRenderer.invoke('db:get-albums'),
   createAlbum: (name, description) => ipcRenderer.invoke('db:create-album', name, description),
+  renameAlbum: (id, newName) => ipcRenderer.invoke('db:rename-album', id, newName),
   deleteAlbum: (id) => ipcRenderer.invoke('db:delete-album', id),
   addToAlbum: (albumId, imageIds) => ipcRenderer.invoke('db:add-to-album', albumId, imageIds),
   removeFromAlbum: (albumId, imageId) => ipcRenderer.invoke('db:remove-from-album', albumId, imageId),
+  selectExportDirectory: () => ipcRenderer.invoke('dialog:select-export-directory'),
+  exportAlbumImages: (albumId, destDir) => ipcRenderer.invoke('fs:export-album-images', albumId, destDir),
 
-  // Stats
+  // 统计
   getStats: () => ipcRenderer.invoke('db:get-stats'),
+
+  // 设置
+  getSettings: () => ipcRenderer.invoke('settings:get-all'),
+  getSetting: (key) => ipcRenderer.invoke('settings:get', key),
+  setSetting: (key, value) => ipcRenderer.invoke('settings:set', key, value),
 });

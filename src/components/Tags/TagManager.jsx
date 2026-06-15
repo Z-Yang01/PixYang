@@ -39,17 +39,20 @@ export default function TagManager({ onSelectTag }) {
     <div className="content-area">
       <div className="tag-page">
         <div className="tag-page-header">
-          <h1 className="tag-page-title">Tags</h1>
+          <h1 className="tag-page-title">管理标签</h1>
+          <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>
+            标签可以帮助你按主题、类型或任何维度组织和筛选图片
+          </span>
         </div>
 
-        <div style={{ display: 'flex', gap: 8, marginBottom: 24 }}>
+        <div style={{ display: 'flex', gap: 8, marginBottom: 24, alignItems: 'center', flexWrap: 'wrap' }}>
           <input
             className="form-input"
-            style={{ flex: 1 }}
+            style={{ flex: 1, minWidth: 150 }}
             value={newName}
             onChange={(e) => setNewName(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="New tag name..."
+            placeholder="输入新标签名称..."
           />
           <div style={{ display: 'flex', gap: 4 }}>
             {TAG_COLORS.map(c => (
@@ -61,11 +64,12 @@ export default function TagManager({ onSelectTag }) {
                   background: c, border: newColor === c ? '3px solid white' : '3px solid transparent',
                   cursor: 'pointer', transition: 'all 0.1s',
                 }}
+                title={c}
               />
             ))}
           </div>
           <button className="btn btn-primary" onClick={handleCreate} disabled={!newName.trim()}>
-            Create
+            创建标签
           </button>
         </div>
 
@@ -74,11 +78,11 @@ export default function TagManager({ onSelectTag }) {
             <div key={tag.id} className="tag-list-item">
               <span className="tag-dot" style={{ background: tag.color }} />
               <span style={{ flex: 1 }}>{tag.name}</span>
-              <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{tag.image_count} images</span>
+              <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{tag.image_count} 张图片</span>
               <button
                 className="btn btn-ghost btn-sm"
                 onClick={() => onSelectTag?.(tag.id)}
-                title="Filter by this tag"
+                title="按此标签筛选图片"
               >
                 🔍
               </button>
@@ -86,15 +90,19 @@ export default function TagManager({ onSelectTag }) {
                 className="btn btn-ghost btn-sm"
                 onClick={() => handleDelete(tag.id)}
                 style={{ color: 'var(--danger)' }}
-                title="Delete tag"
+                title="删除标签"
               >
                 🗑
               </button>
             </div>
           ))}
           {tags.length === 0 && (
-            <div style={{ color: 'var(--text-muted)', padding: 20, textAlign: 'center', width: '100%' }}>
-              No tags yet. Create one above.
+            <div style={{ color: 'var(--text-muted)', padding: 40, textAlign: 'center', width: '100%' }}>
+              <div style={{ fontSize: 32, marginBottom: 8 }}>🏷️</div>
+              <div>还没有标签，在上方创建一个吧</div>
+              <div style={{ fontSize: 12, marginTop: 4 }}>
+                例如：风景、人像、截图、工作、旅行...
+              </div>
             </div>
           )}
         </div>

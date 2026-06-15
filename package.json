@@ -10,17 +10,39 @@
     "electron:dev": "electron ."
   },
   "dependencies": {
-    "sql.js": "^1.11.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-router-dom": "^6.26.0",
-    "uuid": "^10.0.0"
+    "sql.js": "^1.11.0"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.3.1",
     "concurrently": "^9.0.1",
     "electron": "^32.1.0",
+    "electron-builder": "^26.15.3",
     "vite": "^5.4.8",
     "wait-on": "^8.0.0"
+  },
+  "build": {
+    "appId": "com.pixyang.app",
+    "productName": "PixYang",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": ["nsis"]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "PixYang"
+    }
   }
 }

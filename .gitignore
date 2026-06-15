@@ -1,9 +1,6 @@
-
-.Python
-build/
-
-dist/
-
-
 node_modules/
-.claude/
+dist/
+release/
+*.log
+.DS_Store
+Thumbs.db

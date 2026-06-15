@@ -26,7 +26,6 @@ export default function ImportDialog({ onClose, onDone }) {
     setImporting(true);
     setProgress(0);
 
-    // Import in batches for progress
     const batchSize = 20;
     const allImported = [];
 
@@ -54,44 +53,48 @@ export default function ImportDialog({ onClose, onDone }) {
   return (
     <div className="dialog-backdrop" onClick={onClose}>
       <div className="dialog" onClick={(e) => e.stopPropagation()}>
-        <div className="dialog-header">Import Images</div>
+        <div className="dialog-header">导入图片</div>
 
         <div className="dialog-body">
           <div className="form-group">
-            <label className="form-label">Select a folder to scan for images</label>
+            <label className="form-label">选择包含图片的文件夹</label>
+            <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 8 }}>
+              导入的图片会复制到 PixYang 管理目录，按日期自动整理（如：2026/06/15/图片.jpg）。
+              原始文件不受影响。
+            </div>
             <div style={{ display: 'flex', gap: 8 }}>
               <input
                 className="form-input"
                 value={selectedDir || ''}
                 readOnly
-                placeholder="No folder selected..."
+                placeholder="未选择文件夹..."
               />
               <button className="btn btn-secondary" onClick={handleSelectDir} disabled={importing}>
-                Browse
+                浏览
               </button>
             </div>
           </div>
 
           {scanning && (
             <div style={{ padding: '12px 0', color: 'var(--text-secondary)', fontSize: 14 }}>
-              Scanning folder...
+              🔍 正在扫描文件夹...
             </div>
           )}
 
           {!scanning && foundFiles.length > 0 && !result && (
             <div style={{ padding: '8px 0' }}>
               <div style={{ fontSize: 14, marginBottom: 8 }}>
-                Found <strong>{formatCount(foundFiles.length)}</strong> image files
+                找到 <strong>{formatCount(foundFiles.length)}</strong> 个图片文件
               </div>
               <div style={{ maxHeight: 200, overflowY: 'auto', background: 'var(--bg-primary)', borderRadius: 'var(--radius)', padding: 8 }}>
                 {foundFiles.slice(0, 50).map((f, i) => (
                   <div key={i} style={{ fontSize: 12, color: 'var(--text-secondary)', padding: '2px 0' }}>
-                    📄 {f.filename}
+                    📄 {f.filename} <span style={{ color: 'var(--text-muted)' }}>{(f.size / 1024).toFixed(0)}KB</span>
                   </div>
                 ))}
                 {foundFiles.length > 50 && (
                   <div style={{ fontSize: 12, color: 'var(--text-muted)', padding: '4px 0' }}>
-                    ... and {formatCount(foundFiles.length - 50)} more
+                    ... 还有 {formatCount(foundFiles.length - 50)} 个文件
                   </div>
                 )}
               </div>
@@ -101,7 +104,7 @@ export default function ImportDialog({ onClose, onDone }) {
           {importing && (
             <div style={{ padding: '12px 0' }}>
               <div style={{ fontSize: 14, color: 'var(--text-secondary)', marginBottom: 4 }}>
-                Importing images... {progress}%
+                正在导入图片... {progress}%
               </div>
               <div className="progress-bar">
                 <div className="progress-bar-fill" style={{ width: `${progress}%` }} />
@@ -117,9 +120,9 @@ export default function ImportDialog({ onClose, onDone }) {
               textAlign: 'center',
             }}>
               <div style={{ fontSize: 32, marginBottom: 8 }}>✅</div>
-              <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 4 }}>Import Complete</div>
+              <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 4 }}>导入完成</div>
               <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
-                {formatCount(result.imported)} imported, {formatCount(result.skipped)} skipped (already exists)
+                成功导入 {formatCount(result.imported)} 张，跳过 {formatCount(result.skipped)} 张（已存在）
               </div>
             </div>
           )}
@@ -127,16 +130,16 @@ export default function ImportDialog({ onClose, onDone }) {
 
         <div className="dialog-footer">
           {result ? (
-            <button className="btn btn-primary" onClick={handleDone}>Done</button>
+            <button className="btn btn-primary" onClick={handleDone}>完成</button>
           ) : (
             <>
-              <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
+              <button className="btn btn-ghost" onClick={onClose}>取消</button>
               <button
                 className="btn btn-primary"
                 disabled={foundFiles.length === 0 || importing}
                 onClick={handleImport}
               >
-                {importing ? `Importing ${progress}%...` : `Import ${formatCount(foundFiles.length)} Images`}
+                {importing ? `导入中 ${progress}%...` : `导入 ${formatCount(foundFiles.length)} 张图片`}
               </button>
             </>
           )}
