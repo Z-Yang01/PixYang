@@ -1,4 +1,6 @@
 import React, { useState, useEffect } from 'react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 
 const TAG_COLORS = ['#6366f1', '#ec4899', '#f59e0b', '#22c55e', '#ef4444', '#06b6d4', '#a855f7', '#f97316'];
 
@@ -46,9 +48,8 @@ export default function TagManager({ onSelectTag }) {
         </div>
 
         <div style={{ display: 'flex', gap: 8, marginBottom: 24, alignItems: 'center', flexWrap: 'wrap' }}>
-          <input
-            className="form-input"
-            style={{ flex: 1, minWidth: 150 }}
+          <Input
+            className="max-w-xs"
             value={newName}
             onChange={(e) => setNewName(e.target.value)}
             onKeyDown={handleKeyDown}
@@ -68,9 +69,9 @@ export default function TagManager({ onSelectTag }) {
               />
             ))}
           </div>
-          <button className="btn btn-primary" onClick={handleCreate} disabled={!newName.trim()}>
+          <Button onClick={handleCreate} disabled={!newName.trim()}>
             创建标签
-          </button>
+          </Button>
         </div>
 
         <div className="tag-list">
@@ -79,21 +80,23 @@ export default function TagManager({ onSelectTag }) {
               <span className="tag-dot" style={{ background: tag.color }} />
               <span style={{ flex: 1 }}>{tag.name}</span>
               <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{tag.image_count} 张图片</span>
-              <button
-                className="btn btn-ghost btn-sm"
+              <Button
+                variant="ghost"
+                size="xs"
                 onClick={() => onSelectTag?.(tag.id)}
                 title="按此标签筛选图片"
               >
                 🔍
-              </button>
-              <button
-                className="btn btn-ghost btn-sm"
+              </Button>
+              <Button
+                variant="ghost"
+                size="xs"
                 onClick={() => handleDelete(tag.id)}
-                style={{ color: 'var(--danger)' }}
+                className="text-destructive hover:text-destructive"
                 title="删除标签"
               >
                 🗑
-              </button>
+              </Button>
             </div>
           ))}
           {tags.length === 0 && (

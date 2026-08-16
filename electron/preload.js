@@ -15,8 +15,10 @@ contextBridge.exposeInMainWorld('pixyang', {
 
   // 数据库 - 图片
   importImages: (imageFiles) => ipcRenderer.invoke('db:import-images', imageFiles),
+  syncCameraFolder: () => ipcRenderer.invoke('db:sync-camera-folder'),
   getImages: (options) => ipcRenderer.invoke('db:get-images', options),
   getImage: (id) => ipcRenderer.invoke('db:get-image', id),
+  getAllImageIds: (options) => ipcRenderer.invoke('db:get-all-image-ids', options),
   updateImage: (id, updates) => ipcRenderer.invoke('db:update-image', id, updates),
   renameImage: (id, newFilename) => ipcRenderer.invoke('db:rename-image', id, newFilename),
   deleteImage: (id) => ipcRenderer.invoke('db:delete-image', id),
@@ -40,6 +42,7 @@ contextBridge.exposeInMainWorld('pixyang', {
   removeFromAlbum: (albumId, imageId) => ipcRenderer.invoke('db:remove-from-album', albumId, imageId),
   selectExportDirectory: () => ipcRenderer.invoke('dialog:select-export-directory'),
   exportAlbumImages: (albumId, destDir) => ipcRenderer.invoke('fs:export-album-images', albumId, destDir),
+  exportImages: (ids, destDir) => ipcRenderer.invoke('fs:export-images', ids, destDir),
 
   // 统计
   getStats: () => ipcRenderer.invoke('db:get-stats'),
@@ -48,4 +51,11 @@ contextBridge.exposeInMainWorld('pixyang', {
   getSettings: () => ipcRenderer.invoke('settings:get-all'),
   getSetting: (key) => ipcRenderer.invoke('settings:get', key),
   setSetting: (key, value) => ipcRenderer.invoke('settings:set', key, value),
+
+  // 方向回填完成通知
+  onOrientationBackfill: (callback) => {
+    const handler = () => callback();
+    ipcRenderer.on('orientation-backfill-done', handler);
+    return () => ipcRenderer.removeListener('orientation-backfill-done', handler);
+  },
 });

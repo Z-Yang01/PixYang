@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { Button } from '@/components/ui/button';
+import { RotateCw, RotateCcw, FlipHorizontal2, FlipVertical2 } from 'lucide-react';
 
-export default function ImageViewer({ image, onClose, onPrev, onNext, hasPrev, hasNext, onImageUpdated }) {
+export default function ImageViewer({ image, imageIndex = 0, totalCount = 0, onClose, onPrev, onNext, hasPrev, hasNext, onImageUpdated }) {
   const [imgData, setImgData] = useState(null);
   const [zoom, setZoom] = useState(1);
   const [pos, setPos] = useState({ x: 0, y: 0 });
@@ -8,6 +10,10 @@ export default function ImageViewer({ image, onClose, onPrev, onNext, hasPrev, h
   // 本地状态：评分和收藏突变，用于即时视觉反馈
   const [localRating, setLocalRating] = useState(image?.rating || 0);
   const [localFavorite, setLocalFavorite] = useState(image?.favorite || 0);
+  // 旋转与翻转（仅查看画面，不写盘）
+  const [rotation, setRotation] = useState(0);
+  const [flipH, setFlipH] = useState(false);
+  const [flipV, setFlipV] = useState(false);
   const dragging = useRef(false);
   const dragStart = useRef({ x: 0, y: 0 });
   const posStart = useRef({ x: 0, y: 0 });
@@ -19,6 +25,9 @@ export default function ImageViewer({ image, onClose, onPrev, onNext, hasPrev, h
     loadTags();
     setZoom(1);
     setPos({ x: 0, y: 0 });
+    setRotation(0);
+    setFlipH(false);
+    setFlipV(false);
     setLocalRating(image?.rating || 0);
     setLocalFavorite(image?.favorite || 0);
   }, [image?.id]);
@@ -41,7 +50,11 @@ export default function ImageViewer({ image, onClose, onPrev, onNext, hasPrev, h
         case '+':
         case '=': setZoom(z => Math.min(z + 0.25, 5)); break;
         case '-': setZoom(z => Math.max(z - 0.25, 0.25)); break;
-        case '0': setZoom(1); setPos({ x: 0, y: 0 }); break;
+        case '0': setZoom(1); setPos({ x: 0, y: 0 }); setRotation(0); setFlipH(false); setFlipV(false); break;
+        case 'r': setRotation(r => (r + 90) % 360); break;
+        case 'R': setRotation(r => (r + 270) % 360); break;
+        case 'h': setFlipH(f => !f); break;
+        case 'v': setFlipV(f => !f); break;
         case 'f':
           if (window.pixyang && image) {
             const newFav = localFavorite ? 0 : 1;
@@ -61,7 +74,10 @@ export default function ImageViewer({ image, onClose, onPrev, onNext, hasPrev, h
     if (!image || !window.pixyang) return;
     setImgData(null);
     const data = await window.pixyang.getImageData(image.filepath, 1920);
-    setImgData(data || image.thumbnail);
+    if (data) { setImgData(data); return; }
+    if (Number(image.orientation) === 1 && image.thumbnail) { setImgData(image.thumbnail); return; }
+    const url = await window.pixyang.toFileUrl(image.filepath);
+    setImgData(url);
   };
 
   const loadTags = async () => {
@@ -129,6 +145,9 @@ export default function ImageViewer({ image, onClose, onPrev, onNext, hasPrev, h
   const handleDoubleClick = () => {
     setZoom(1);
     setPos({ x: 0, y: 0 });
+    setRotation(0);
+    setFlipH(false);
+    setFlipV(false);
   };
 
   if (!image) return null;
@@ -137,13 +156,14 @@ export default function ImageViewer({ image, onClose, onPrev, onNext, hasPrev, h
     <div className="viewer-overlay" onClick={onClose}>
       {/* 顶部操作栏 */}
       <div className="viewer-actions" onClick={(e) => e.stopPropagation()}>
-        <button className="btn btn-ghost" onClick={handleFavToggle} style={{ color: 'white', fontSize: 20 }}>
+        <Button variant="ghost" size="icon" onClick={handleFavToggle} style={{ color: 'white', fontSize: 20 }}>
           {localFavorite ? '❤' : '🤍'}
-        </button>
+        </Button>
         {[1, 2, 3, 4, 5].map(n => (
-          <button
+          <Button
             key={n}
-            className="btn btn-ghost"
+            variant="ghost"
+            size="icon"
             onClick={(e) => handleRating(n, e)}
             style={{
               color: n <= localRating ? 'var(--star)' : 'rgba(255,255,255,0.4)',
@@ -151,8 +171,20 @@ export default function ImageViewer({ image, onClose, onPrev, onNext, hasPrev, h
             }}
           >
             ★
-          </button>
+          </Button>
         ))}
+        <Button variant="ghost" size="icon" onClick={() => setRotation(r => (r + 270) % 360)} style={{ color: 'rgba(255,255,255,0.7)' }} title="左旋 90° (Shift+R)">
+          <RotateCcw className="size-5" />
+        </Button>
+        <Button variant="ghost" size="icon" onClick={() => setRotation(r => (r + 90) % 360)} style={{ color: 'rgba(255,255,255,0.7)' }} title="右旋 90° (R)">
+          <RotateCw className="size-5" />
+        </Button>
+        <Button variant="ghost" size="icon" onClick={() => setFlipH(f => !f)} style={{ color: 'rgba(255,255,255,0.7)' }} title="水平翻转 (H)">
+          <FlipHorizontal2 className="size-5" />
+        </Button>
+        <Button variant="ghost" size="icon" onClick={() => setFlipV(f => !f)} style={{ color: 'rgba(255,255,255,0.7)' }} title="垂直翻转 (V)">
+          <FlipVertical2 className="size-5" />
+        </Button>
         <span style={{ color: 'rgba(255,255,255,0.5)', fontSize: 12, marginLeft: 8 }}>
           {Math.round(zoom * 100)}%
         </span>
@@ -181,12 +213,13 @@ export default function ImageViewer({ image, onClose, onPrev, onNext, hasPrev, h
       >
         {imgData ? (
           <img
+            key={image.id}
             className="viewer-image"
             src={imgData}
             alt={image.filename?.replace(/\.\w+$/, '') || image.filename}
             draggable={false}
             style={{
-              transform: `translate(${pos.x}px, ${pos.y}px) scale(${zoom})`,
+              transform: `translate(${pos.x}px, ${pos.y}px) rotate(${rotation}deg) scale(${zoom * (flipH ? -1 : 1)}, ${zoom * (flipV ? -1 : 1)})`,
               cursor: zoom > 1 ? (dragging.current ? 'grabbing' : 'grab') : 'default',
               transition: dragging.current ? 'none' : undefined,
             }}
@@ -198,9 +231,11 @@ export default function ImageViewer({ image, onClose, onPrev, onNext, hasPrev, h
 
       {/* 底部信息 */}
       <div className="viewer-info">
-        <span title={image.filepath}>{image.filename?.replace(/\.\w+$/, '') || image.filename}</span>
+        <span className="viewer-counter">{imageIndex + 1} / {totalCount}</span>
+        <span className="viewer-filename" title={image.filepath}>{image.filename?.replace(/\.\w+$/, '') || image.filename}</span>
         {image.width > 0 && <span>{image.width}×{image.height}</span>}
         {image.size > 0 && <span>{formatSize(image.size)}</span>}
+        {image.taken_at && <span>📷 {image.taken_at}</span>}
         {image.import_date && <span>📅 {image.import_date}</span>}
         {imgTags.length > 0 && (
           <span style={{ display: 'flex', gap: 3 }}>

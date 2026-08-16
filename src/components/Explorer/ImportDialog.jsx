@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { Button } from '@/components/ui/button';
 
 export default function ImportDialog({ onClose, onDone }) {
   const [selectedDir, setSelectedDir] = useState(null);
@@ -69,9 +70,9 @@ export default function ImportDialog({ onClose, onDone }) {
                 readOnly
                 placeholder="未选择文件夹..."
               />
-              <button className="btn btn-secondary" onClick={handleSelectDir} disabled={importing}>
+              <Button variant="secondary" onClick={handleSelectDir} disabled={importing}>
                 浏览
-              </button>
+              </Button>
             </div>
           </div>
 
@@ -130,17 +131,16 @@ export default function ImportDialog({ onClose, onDone }) {
 
         <div className="dialog-footer">
           {result ? (
-            <button className="btn btn-primary" onClick={handleDone}>完成</button>
+            <Button onClick={handleDone}>完成</Button>
           ) : (
             <>
-              <button className="btn btn-ghost" onClick={onClose}>取消</button>
-              <button
-                className="btn btn-primary"
+              <Button variant="ghost" onClick={onClose}>取消</Button>
+              <Button
                 disabled={foundFiles.length === 0 || importing}
                 onClick={handleImport}
               >
                 {importing ? `导入中 ${progress}%...` : `导入 ${formatCount(foundFiles.length)} 张图片`}
-              </button>
+              </Button>
             </>
           )}
         </div>

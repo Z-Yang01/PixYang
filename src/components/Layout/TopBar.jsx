@@ -1,4 +1,7 @@
 import React from 'react';
+import { Button } from '@/components/ui/button';
+import { Search } from 'lucide-react';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
 function FilterChip({ label, onRemove }) {
   return (
@@ -6,6 +9,24 @@ function FilterChip({ label, onRemove }) {
       {label}
       <button className="filter-chip-remove" onClick={onRemove}>x</button>
     </span>
+  );
+}
+
+function SortButton({ active, title, onClick, children }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button
+          variant="ghost"
+          size="xs"
+          className={active ? 'bg-accent text-accent-foreground' : ''}
+          onClick={onClick}
+        >
+          {children}
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent>{title}</TooltipContent>
+    </Tooltip>
   );
 }
 
@@ -22,25 +43,34 @@ export default function TopBar({
 
   return (
     <div className="topbar">
-      <input
-        type="text"
-        className="search-input"
-        placeholder="搜索图片名称"
-        value={search}
-        onChange={(e) => onSearch(e.target.value)}
-      />
+      <div className="search-wrap">
+        <Search className="search-icon" />
+        <input
+          type="text"
+          className="search-input"
+          placeholder="搜索图片名称"
+          value={search}
+          onChange={(e) => onSearch(e.target.value)}
+        />
+      </div>
 
       <div className="topbar-actions">
+        <span className="total-count">共 {totalImages} 张</span>
         {selectedCount > 0 && <span className="selection-count">已选 {selectedCount} 张</span>}
 
-        <span className="total-count">共 {totalImages} 张</span>
+        <div className="topbar-divider" />
 
-        <button
-          className={`btn btn-ghost btn-sm ${sortBy === 'import_date' ? 'active' : ''}`}
-          onClick={() => onSort('import_date')}
-        >
+        <SortButton active={sortBy === 'import_date'} title="按日期排序，点击切换升序/降序" onClick={() => onSort('import_date')}>
           日期 {sortArrow('import_date')}
-        </button>
+        </SortButton>
+        <SortButton active={sortBy === 'size'} title="按文件大小排序，点击切换升序/降序" onClick={() => onSort('size')}>
+          大小 {sortArrow('size')}
+        </SortButton>
+        <SortButton active={sortBy === 'rating'} title="按评分排序，点击切换升序/降序" onClick={() => onSort('rating')}>
+          评分 {sortArrow('rating')}
+        </SortButton>
+
+        <div className="topbar-divider" />
 
         <div className="date-range-filter">
           <input
@@ -60,20 +90,6 @@ export default function TopBar({
           />
         </div>
 
-        <button
-          className={`btn btn-ghost btn-sm ${sortBy === 'size' ? 'active' : ''}`}
-          onClick={() => onSort('size')}
-        >
-          大小 {sortArrow('size')}
-        </button>
-
-        <button
-          className={`btn btn-ghost btn-sm ${sortBy === 'rating' ? 'active' : ''}`}
-          onClick={() => onSort('rating')}
-        >
-          评分 {sortArrow('rating')}
-        </button>
-
         <select
           className="filter-select"
           value={filterTag || ''}
@@ -88,7 +104,9 @@ export default function TopBar({
           ))}
         </select>
 
-        <button className="btn btn-primary btn-sm" onClick={onImport}>导入</button>
+        <div className="topbar-divider" />
+
+        <Button size="sm" onClick={onImport}>导入</Button>
       </div>
 
       {hasFilters && (

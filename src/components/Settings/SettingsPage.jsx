@@ -1,45 +1,94 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
+import { Button } from '@/components/ui/button';
+import ConfirmDialog from '../Layout/ConfirmDialog';
 
-export default function SettingsPage({ stats, onSettingsChanged, onImagesChanged }) {
-  const [theme, setTheme] = useState('dark');
+const DEFAULT_SETTINGS = { theme: 'dark', rows: 3, columns: 5, gap: 12, padding: 16 };
+
+const clamp = (v, min, max, fallback) => {
+  const n = Number(v);
+  return Number.isNaN(n) ? fallback : Math.max(min, Math.min(max, n));
+};
+
+export default function SettingsPage({ stats, onSettingsChanged, onImagesChanged, onGridSettingsChange }) {
+  const [draft, setDraft] = useState(DEFAULT_SETTINGS);
+  const savedRef = useRef(DEFAULT_SETTINGS);
   const [storagePath, setStoragePath] = useState('');
-  const [rows, setRows] = useState(3);
-  const [columns, setColumns] = useState(5);
+  const [cameraFolder, setCameraFolder] = useState('');
   const [message, setMessage] = useState('');
   const [moving, setMoving] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+  const [resetConfirm, setResetConfirm] = useState(false);
 
   useEffect(() => {
     loadSettings();
   }, []);
+
+  const hasChanges = JSON.stringify(draft) !== JSON.stringify(savedRef.current);
 
   const showSaved = (text = '已保存') => {
     setMessage(text);
     setTimeout(() => setMessage(''), 2500);
   };
 
+  const applyPreview = (d) => {
+    document.documentElement.setAttribute('data-theme', d.theme);
+    onGridSettingsChange?.({ rows: d.rows, columns: d.columns, gap: d.gap, padding: d.padding });
+  };
+
   const loadSettings = async () => {
     if (!window.pixyang) return;
     const settings = await window.pixyang.getSettings();
-    setTheme(settings.theme || 'dark');
-    setRows(Math.max(1, Math.min(10, Number(settings.grid_rows || 3))));
-    setColumns(Math.max(1, Math.min(10, Number(settings.grid_columns || 5))));
+    const next = {
+      theme: settings.theme === 'light' ? 'light' : 'dark',
+      rows: clamp(settings.grid_rows, 1, 10, 3),
+      columns: clamp(settings.grid_columns, 1, 10, 5),
+      gap: clamp(settings.grid_gap, 0, 48, 12),
+      padding: clamp(settings.content_padding, 0, 64, 16),
+    };
+    savedRef.current = next;
+    setDraft(next);
+    applyPreview(next);
     setStoragePath(await window.pixyang.getImagesRoot());
+    setCameraFolder(settings.camera_folder || '');
   };
 
-  const handleThemeChange = async (newTheme) => {
-    setTheme(newTheme);
-    await window.pixyang.setSetting('theme', newTheme);
-    document.documentElement.setAttribute('data-theme', newTheme);
-    showSaved();
+  const updateDraft = (patch) => {
+    setDraft(prev => {
+      const next = { ...prev, ...patch };
+      applyPreview(next);
+      return next;
+    });
   };
 
-  const handleGridChange = async (key, value) => {
-    const next = Math.max(1, Math.min(10, Number(value || 1)));
-    if (key === 'grid_rows') setRows(next);
-    if (key === 'grid_columns') setColumns(next);
-    await window.pixyang.setSetting(key, String(next));
+  const handleSave = async () => {
+    if (!window.pixyang) return;
+    const d = {
+      theme: draft.theme,
+      rows: clamp(draft.rows, 1, 10, 3),
+      columns: clamp(draft.columns, 1, 10, 5),
+      gap: clamp(draft.gap, 0, 48, 12),
+      padding: clamp(draft.padding, 0, 64, 16),
+    };
+    await window.pixyang.setSetting('theme', d.theme);
+    await window.pixyang.setSetting('grid_rows', String(d.rows));
+    await window.pixyang.setSetting('grid_columns', String(d.columns));
+    await window.pixyang.setSetting('grid_gap', String(d.gap));
+    await window.pixyang.setSetting('content_padding', String(d.padding));
+    savedRef.current = d;
+    setDraft(d);
     onSettingsChanged?.();
-    showSaved();
+    showSaved('设置已保存');
+  };
+
+  const handleRevert = async () => {
+    await loadSettings();
+    showSaved('已撤回未保存的修改');
+  };
+
+  const handleResetDefaults = () => {
+    setResetConfirm(false);
+    updateDraft(DEFAULT_SETTINGS);
+    showSaved('已恢复默认值，点击「保存」生效或「撤回」取消');
   };
 
   const handleOpenFolder = async () => {
@@ -70,28 +119,67 @@ export default function SettingsPage({ stats, onSettingsChanged, onImagesChanged
     showSaved(`已移动 ${result.moved || 0} 张图片`);
   };
 
+  const handleChooseCamera = async () => {
+    if (!window.pixyang) return;
+    const dir = await window.pixyang.selectDirectory();
+    if (!dir || dir === cameraFolder) return;
+    await window.pixyang.setSetting('camera_folder', dir);
+    setCameraFolder(dir);
+    showSaved('已设置相机文件夹');
+  };
+
+  const handleSyncCamera = async () => {
+    if (!window.pixyang || syncing) return;
+    setSyncing(true);
+    setMessage('正在同步相机文件夹...');
+    const result = await window.pixyang.syncCameraFolder();
+    setSyncing(false);
+
+    if (result?.error) {
+      setMessage(result.error);
+      return;
+    }
+
+    const parts = [];
+    if (result.imported > 0) parts.push(`新导入 ${result.imported} 张（JPG ${result.jpgImported}、NEF ${result.nefImported}）`);
+    if (result.attached > 0) parts.push(`补充 NEF ${result.attached} 张`);
+    if (result.skipped > 0) parts.push(`已存在跳过 ${result.skipped} 张`);
+    onImagesChanged?.();
+    showSaved(parts.length > 0 ? parts.join('，') : `扫描 ${result.scanned} 个文件，无新增`);
+  };
+
   return (
     <div className="content-area">
       <div className="settings-page">
         <h1 className="settings-title">设置</h1>
+
+        {hasChanges && (
+          <div className="settings-actions">
+            <span className="settings-actions-hint">有未保存的修改</span>
+            <Button size="sm" onClick={handleSave}>保存</Button>
+            <Button variant="secondary" size="sm" onClick={handleRevert}>撤回</Button>
+          </div>
+        )}
 
         <section className="settings-section">
           <h2>外观</h2>
           <div className="info-row">
             <span className="info-label">主题模式</span>
             <div className="button-row">
-              <button
-                className={`btn ${theme === 'dark' ? 'btn-primary' : 'btn-secondary'} btn-sm`}
-                onClick={() => handleThemeChange('dark')}
+              <Button
+                variant={draft.theme === 'dark' ? 'default' : 'secondary'}
+                size="sm"
+                onClick={() => updateDraft({ theme: 'dark' })}
               >
                 深色
-              </button>
-              <button
-                className={`btn ${theme === 'light' ? 'btn-primary' : 'btn-secondary'} btn-sm`}
-                onClick={() => handleThemeChange('light')}
+              </Button>
+              <Button
+                variant={draft.theme === 'light' ? 'default' : 'secondary'}
+                size="sm"
+                onClick={() => updateDraft({ theme: 'light' })}
               >
                 浅色
-              </button>
+              </Button>
             </div>
           </div>
         </section>
@@ -106,8 +194,8 @@ export default function SettingsPage({ stats, onSettingsChanged, onImagesChanged
                 className="form-input"
                 min="1"
                 max="10"
-                value={rows}
-                onChange={(e) => handleGridChange('grid_rows', e.target.value)}
+                value={draft.rows}
+                onChange={(e) => updateDraft({ rows: e.target.value })}
               />
             </label>
             <label>
@@ -117,11 +205,39 @@ export default function SettingsPage({ stats, onSettingsChanged, onImagesChanged
                 className="form-input"
                 min="1"
                 max="10"
-                value={columns}
-                onChange={(e) => handleGridChange('grid_columns', e.target.value)}
+                value={draft.columns}
+                onChange={(e) => updateDraft({ columns: e.target.value })}
+              />
+            </label>
+            <label>
+              卡片间距
+              <input
+                type="number"
+                className="form-input"
+                min="0"
+                max="48"
+                value={draft.gap}
+                onChange={(e) => updateDraft({ gap: e.target.value })}
+              />
+            </label>
+            <label>
+              四周留白
+              <input
+                type="number"
+                className="form-input"
+                min="0"
+                max="64"
+                value={draft.padding}
+                onChange={(e) => updateDraft({ padding: e.target.value })}
               />
             </label>
           </div>
+          <div className="button-row" style={{ marginTop: 12 }}>
+            <Button variant="secondary" size="sm" onClick={() => setResetConfirm(true)}>
+              恢复默认设置
+            </Button>
+          </div>
+          <p className="settings-help">界面设置（主题、网格、间距）修改后需点击「保存」生效；「撤回」可撤销未保存的修改。恢复默认不会改变保存图片地址。</p>
         </section>
 
         <section className="settings-section">
@@ -148,14 +264,28 @@ export default function SettingsPage({ stats, onSettingsChanged, onImagesChanged
           <h2>存储</h2>
           <div className="storage-path">{storagePath || '加载中...'}</div>
           <div className="button-row">
-            <button className="btn btn-secondary btn-sm" onClick={handleOpenFolder} disabled={!storagePath}>
+            <Button variant="secondary" size="sm" onClick={handleOpenFolder} disabled={!storagePath}>
               打开目录
-            </button>
-            <button className="btn btn-primary btn-sm" onClick={handleChooseStorage} disabled={moving}>
+            </Button>
+            <Button size="sm" onClick={handleChooseStorage} disabled={moving}>
               {moving ? '移动中...' : '选择保存路径'}
-            </button>
+            </Button>
           </div>
           <p className="settings-help">修改保存路径时，当前图库中的图片会整体移动到新路径，并同步更新数据库路径。</p>
+        </section>
+
+        <section className="settings-section">
+          <h2>相机同步</h2>
+          <div className="storage-path">{cameraFolder || '未设置相机文件夹'}</div>
+          <div className="button-row">
+            <Button variant="secondary" size="sm" onClick={handleChooseCamera}>
+              选择相机文件夹
+            </Button>
+            <Button size="sm" onClick={handleSyncCamera} disabled={!cameraFolder || syncing}>
+              {syncing ? '同步中...' : '立即同步'}
+            </Button>
+          </div>
+          <p className="settings-help">从相机文件夹同步导入图库中缺失的图片（JPG + NEF）。NEF 原图会一并存储管理但不显示；删除图片时会同步删除配对的 NEF。</p>
         </section>
 
         <section className="settings-section">
@@ -172,6 +302,16 @@ export default function SettingsPage({ stats, onSettingsChanged, onImagesChanged
 
         {message && <div className="settings-message">{message}</div>}
       </div>
+
+      {resetConfirm && (
+        <ConfirmDialog
+          title="恢复默认设置"
+          message="将把界面设置（主题、网格、间距）恢复为默认值，可随后点击「保存」或「撤回」。保存图片地址不会改变，需要时请手动设置。"
+          confirmLabel="恢复默认"
+          onConfirm={handleResetDefaults}
+          onCancel={() => setResetConfirm(false)}
+        />
+      )}
     </div>
   );
 }

@@ -1,23 +1,33 @@
 import React from 'react';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 
 export default function ConfirmDialog({ title, message, confirmLabel = '确认', danger = false, onConfirm, onCancel }) {
   return (
-    <div className="dialog-backdrop" onClick={onCancel}>
-      <div className="dialog" onClick={(e) => e.stopPropagation()} style={{ width: 400 }}>
-        <div className="dialog-header">{title}</div>
-        <div className="dialog-body">
-          <p style={{ color: 'var(--text-secondary)', fontSize: 14, lineHeight: 1.6 }}>{message}</p>
-        </div>
-        <div className="dialog-footer">
-          <button className="btn btn-ghost" onClick={onCancel}>取消</button>
-          <button
-            className={`btn ${danger ? 'btn-danger' : 'btn-primary'}`}
+    <AlertDialog open onOpenChange={(open) => { if (!open) onCancel(); }}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>{title}</AlertDialogTitle>
+          <AlertDialogDescription>{message}</AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel onClick={onCancel}>取消</AlertDialogCancel>
+          <AlertDialogAction
+            className={danger ? 'bg-destructive text-white hover:bg-destructive/90' : ''}
             onClick={onConfirm}
           >
             {confirmLabel}
-          </button>
-        </div>
-      </div>
-    </div>
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   );
 }

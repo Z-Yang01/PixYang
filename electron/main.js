@@ -5,9 +5,15 @@ const {
   initDatabase,
   getImagesRoot,
   setImagesRoot,
+  scanImageFiles,
+  prepareCameraSync,
+  attachRawToImage,
   importImages,
   getImages,
   getImageById,
+  getAllVisibleIds,
+  getAllImagePaths,
+  updateImageOrientation,
   updateImage,
   renameImage,
   deleteImage,
@@ -103,9 +109,85 @@ function extractImageDate(filepath) {
   }
 }
 
-function generateThumbnail(filepath, maxSize = 300) {
+// 提取 EXIF 拍摄时间（精确到分钟），无 EXIF 时间返回空
+function extractTakenAt(filepath) {
+  try {
+    const fd = fs.openSync(filepath, 'r');
+    const buf = Buffer.alloc(65536);
+    fs.readSync(fd, buf, 0, 65536, 0);
+    fs.closeSync(fd);
+
+    const str = buf.toString('latin1', 0, 65536);
+    const match = str.match(/DateTimeOriginal\x00.\x00(\d{4}):(\d{2}):(\d{2})\s(\d{2}):(\d{2})/);
+    if (match) {
+      return `${match[1]}-${match[2]}-${match[3]} ${match[4]}:${match[5]}`;
+    }
+    const loose = str.match(/Exif.{0,200}(\d{4}):(\d{2}):(\d{2})\s(\d{2}):(\d{2})/);
+    if (loose) {
+      return `${loose[1]}-${loose[2]}-${loose[3]} ${loose[4]}:${loose[5]}`;
+    }
+    return '';
+  } catch (e) {
+    return '';
+  }
+}
+
+// 解析 JPEG EXIF Orientation（0x0112），非 JPEG 或无 EXIF 返回 1
+function getExifOrientation(filepath) {
+  try {
+    const fd = fs.openSync(filepath, 'r');
+    const buf = Buffer.alloc(65536);
+    fs.readSync(fd, buf, 0, 65536, 0);
+    fs.closeSync(fd);
+
+    if (buf[0] !== 0xFF || buf[1] !== 0xD8) return 1; // 非 JPEG
+    let offset = 2;
+    while (offset + 4 <= buf.length) {
+      if (buf[offset] !== 0xFF) break;
+      const marker = buf[offset + 1];
+      if (marker === 0xE1) {
+        const segLen = buf.readUInt16BE(offset + 2);
+        if (segLen >= 8 && buf.toString('latin1', offset + 4, offset + 10) === 'Exif\0\0') {
+          return parseTiffOrientation(buf, offset + 10, segLen - 2);
+        }
+        offset += 2 + segLen;
+      } else if (marker === 0xDA) {
+        break; // SOS，EXIF 在前
+      } else if (marker === 0xD8 || (marker >= 0xD0 && marker <= 0xD7) || marker === 0x01) {
+        offset += 2;
+      } else {
+        offset += 2 + buf.readUInt16BE(offset + 2);
+      }
+    }
+    return 1;
+  } catch (e) {
+    return 1;
+  }
+}
+
+function parseTiffOrientation(buf, tiffStart, tiffLen) {
+  const endian = buf.toString('latin1', tiffStart, tiffStart + 2);
+  const le = endian === 'II';
+  const u16 = (off) => (le ? buf.readUInt16LE(tiffStart + off) : buf.readUInt16BE(tiffStart + off));
+  const u32 = (off) => (le ? buf.readUInt32LE(tiffStart + off) : buf.readUInt32BE(tiffStart + off));
+  if (tiffLen < 14 || u16(2) !== 42) return 1;
+  const ifd0 = u32(4);
+  const count = u16(ifd0);
+  for (let i = 0; i < count; i++) {
+    const entry = ifd0 + 2 + i * 12;
+    if (entry + 12 > tiffLen) break;
+    if (u16(entry) === 0x0112) {
+      return u16(entry + 8);
+    }
+  }
+  return 1;
+}
+
+function generateThumbnail(filepath, maxSize = 512) {
   try {
     if (!fs.existsSync(filepath)) return null;
+    // 带 EXIF Orientation 的竖图不生成缩略图，由前端直接显示原图（img 自动转正）
+    if (getExifOrientation(filepath) !== 1) return null;
 
     // 先用 buffer 方式加载（比 createFromPath 更可靠）
     const buf = fs.readFileSync(filepath);
@@ -138,6 +220,8 @@ function generateThumbnail(filepath, maxSize = 300) {
 function getImageData(filepath, maxWidth = 1920) {
   try {
     if (!fs.existsSync(filepath)) return null;
+    // 带 EXIF Orientation 的竖图由前端直接显示原图（img 自动转正）
+    if (getExifOrientation(filepath) !== 1) return null;
     const image = nativeImage.createFromPath(filepath);
     if (image.isEmpty()) return null;
 
@@ -181,38 +265,44 @@ function setupIPC() {
 
   // 扫描目录中的图片文件
   ipcMain.handle('fs:scan-directory', async (_event, dirPath) => {
-    const supportedFormats = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.svg', '.tiff'];
-    const imageFiles = [];
+    return scanImageFiles(dirPath, false);
+  });
 
-    function scanDir(dir) {
-      try {
-        const entries = fs.readdirSync(dir, { withFileTypes: true });
-        for (const entry of entries) {
-          const fullPath = path.join(dir, entry.name);
-          if (entry.isDirectory()) {
-            scanDir(fullPath);
-          } else if (entry.isFile()) {
-            const ext = path.extname(entry.name).toLowerCase();
-            if (supportedFormats.includes(ext)) {
-              const stat = fs.statSync(fullPath);
-              imageFiles.push({
-                filename: entry.name,
-                filepath: fullPath,
-                size: stat.size,
-                format: ext,
-                width: 0,
-                height: 0,
-              });
-            }
-          }
+  // 相机文件夹同步：导入图库中缺失的图片（JPG + NEF）
+  ipcMain.handle('db:sync-camera-folder', async () => {
+    const cameraDir = getSetting('camera_folder');
+    if (!cameraDir) return { error: '未设置相机文件夹' };
+    if (!fs.existsSync(cameraDir)) return { error: '相机文件夹不存在' };
+
+    const files = scanImageFiles(cameraDir, true);
+    const { toImport, attachPairs, skipped } = prepareCameraSync(files);
+
+    for (const f of toImport) {
+      f.importDate = extractImageDate(f.filepath);
+      f.takenAt = extractTakenAt(f.filepath);
+      f.orientation = getExifOrientation(f.filepath);
+      if (f.format !== '.nef') {
+        const thumb = generateThumbnail(f.filepath);
+        if (thumb) {
+          f.thumbnail = thumb;
         }
-      } catch (err) {
-        console.error('[扫描] 错误:', dir, err.message);
       }
     }
 
-    scanDir(dirPath);
-    return imageFiles;
+    const imported = importImages(toImport);
+    let attached = 0;
+    for (const p of attachPairs) {
+      if (attachRawToImage(p.jpgId, p.nefSource, p.nefFilename)) attached++;
+    }
+
+    return {
+      scanned: files.length,
+      imported: imported.length,
+      jpgImported: imported.filter(i => !i.hidden).length,
+      nefImported: imported.filter(i => !!i.hidden).length,
+      attached,
+      skipped,
+    };
   });
 
   // 导入图片：提取日期 + 生成缩略图后写入数据库
@@ -220,6 +310,10 @@ function setupIPC() {
     for (const img of imageFiles) {
       // 从图片 EXIF 或文件时间提取日期
       img.importDate = extractImageDate(img.filepath);
+      // 提取拍摄时间（精确到分钟），无则空
+      img.takenAt = extractTakenAt(img.filepath);
+      // 记录 EXIF 方向
+      img.orientation = getExifOrientation(img.filepath);
       // 生成缩略图
       const thumb = generateThumbnail(img.filepath);
       if (thumb) {
@@ -238,6 +332,11 @@ function setupIPC() {
   // 获取单张图片
   ipcMain.handle('db:get-image', async (_event, id) => {
     return getImageById(id);
+  });
+
+  // 获取当前筛选下所有可见图片 id（跨页全选）
+  ipcMain.handle('db:get-all-image-ids', async (_event, options) => {
+    return getAllVisibleIds(options || {});
   });
 
   // 更新图片字段
@@ -300,7 +399,7 @@ function setupIPC() {
   ipcMain.handle('db:remove-from-album', async (_event, albumId, imageId) => removeFromAlbum(albumId, imageId));
   ipcMain.handle('db:rename-album', async (_event, id, newName) => renameAlbum(id, newName));
 
-  // ── 导出相册图片 ──
+  // ── 导出 ──
   ipcMain.handle('dialog:select-export-directory', async () => {
     const result = await dialog.showOpenDialog(mainWindow, {
       properties: ['openDirectory', 'createDirectory'],
@@ -310,13 +409,13 @@ function setupIPC() {
     return result.filePaths[0];
   });
 
-  ipcMain.handle('fs:export-album-images', async (_event, albumId, destDir) => {
-    const images = getAlbumImages(albumId);
-    let count = 0;
+  // 导出文件（JPG + 配对 NEF），处理重名
+  function exportFiles(images, destDir) {
+    let copied = 0;
+    let nefCount = 0;
     for (const img of images) {
       if (fs.existsSync(img.filepath)) {
         const dest = path.join(destDir, img.filename);
-        // 处理重名
         let finalDest = dest;
         let n = 1;
         while (fs.existsSync(finalDest)) {
@@ -326,10 +425,40 @@ function setupIPC() {
           n++;
         }
         fs.copyFileSync(img.filepath, finalDest);
-        count++;
+        copied++;
+      }
+
+      if (img.raw_path && fs.existsSync(img.raw_path)) {
+        const rawExt = path.extname(img.raw_path);
+        const destBase = path.basename(img.filename, path.extname(img.filename));
+        let rawDest = path.join(destDir, `${destBase}${rawExt}`);
+        let m = 1;
+        while (fs.existsSync(rawDest)) {
+          rawDest = path.join(destDir, `${destBase}_${m}${rawExt}`);
+          m++;
+        }
+        fs.copyFileSync(img.raw_path, rawDest);
+        nefCount++;
       }
     }
-    return { total: images.length, copied: count };
+    return { copied, nefCount };
+  }
+
+  ipcMain.handle('fs:export-album-images', async (_event, albumId, destDir) => {
+    const images = getAlbumImages(albumId);
+    const r = exportFiles(images, destDir);
+    return { total: images.length, copied: r.copied, nefCopied: r.nefCount };
+  });
+
+  // 导出勾选图片（含配对 NEF）
+  ipcMain.handle('fs:export-images', async (_event, ids, destDir) => {
+    const images = [];
+    for (const id of ids) {
+      const img = getImageById(id);
+      if (img) images.push(img);
+    }
+    const r = exportFiles(images, destDir);
+    return { total: images.length, copied: r.copied, nefCopied: r.nefCount };
   });
 
   // ── 统计 ──
@@ -361,6 +490,26 @@ function setupIPC() {
   });
 }
 
+// 回填历史图片的 EXIF 方向标记
+function backfillOrientations() {
+  try {
+    const rows = getAllImagePaths();
+    let count = 0;
+    for (const r of rows) {
+      const ori = getExifOrientation(r.filepath);
+      if (ori && ori !== 1) {
+        updateImageOrientation(r.id, ori);
+        count++;
+      }
+    }
+    console.log(`[方向回填] 完成，更新 ${count} 张`);
+    return count;
+  } catch (e) {
+    console.error('[方向回填] 失败:', e.message);
+    return 0;
+  }
+}
+
 // ── 应用生命周期 ──
 
 app.whenReady().then(async () => {
@@ -369,6 +518,14 @@ app.whenReady().then(async () => {
   await initDatabase();
   setupIPC();
   createWindow();
+
+  // 后台回填历史图片方向标记，完成后通知渲染进程刷新
+  setTimeout(() => {
+    backfillOrientations();
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('orientation-backfill-done');
+    }
+  }, 800);
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {

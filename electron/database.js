@@ -80,7 +80,12 @@ async function initDatabase() {
       filename TEXT NOT NULL,
       filepath TEXT NOT NULL UNIQUE,
       original_path TEXT DEFAULT '',
+      raw_path TEXT DEFAULT '',
+      original_raw_path TEXT DEFAULT '',
+      hidden INTEGER DEFAULT 0,
+      orientation INTEGER DEFAULT 1,
       import_date TEXT NOT NULL DEFAULT '',
+      taken_at TEXT DEFAULT '',
       size INTEGER DEFAULT 0,
       width INTEGER DEFAULT 0,
       height INTEGER DEFAULT 0,
@@ -145,9 +150,12 @@ async function initDatabase() {
   const defaults = {
     theme: 'dark',
     images_root: '',
+    camera_folder: '',
     db_path: '',
     grid_rows: '3',
     grid_columns: '5',
+    grid_gap: '12',
+    content_padding: '16',
   };
   for (const [k, v] of Object.entries(defaults)) {
     db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)').run([k, v]);
@@ -177,8 +185,23 @@ function migrateSchema() {
       if (!colNames.includes('import_date')) {
         db.run('ALTER TABLE images ADD COLUMN import_date TEXT DEFAULT ""');
       }
+      if (!colNames.includes('taken_at')) {
+        db.run('ALTER TABLE images ADD COLUMN taken_at TEXT DEFAULT ""');
+      }
       if (!colNames.includes('original_path')) {
         db.run('ALTER TABLE images ADD COLUMN original_path TEXT DEFAULT ""');
+      }
+      if (!colNames.includes('raw_path')) {
+        db.run('ALTER TABLE images ADD COLUMN raw_path TEXT DEFAULT ""');
+      }
+      if (!colNames.includes('original_raw_path')) {
+        db.run('ALTER TABLE images ADD COLUMN original_raw_path TEXT DEFAULT ""');
+      }
+      if (!colNames.includes('hidden')) {
+        db.run('ALTER TABLE images ADD COLUMN hidden INTEGER DEFAULT 0');
+      }
+      if (!colNames.includes('orientation')) {
+        db.run('ALTER TABLE images ADD COLUMN orientation INTEGER DEFAULT 1');
       }
       if (!colNames.includes('updated_at')) {
         db.run('ALTER TABLE images ADD COLUMN updated_at DATETIME DEFAULT CURRENT_TIMESTAMP');
@@ -236,75 +259,116 @@ function generateUniqueFilename(targetDir, originalName) {
 function importImages(imageFiles) {
   // imageFiles: 从扫描结果传入，每项含 { filename, filepath(原始), size, format, ... }
   // 此函数负责：1.复制文件到管理目录 2.写入数据库
+  // 同目录同主名的 jpg + nef 视为一对：jpg 作为可见记录，nef 复制到同目录并记入 raw_path
   const root = getImagesRoot();
 
   const insertStmt = db.prepare(`
-    INSERT OR IGNORE INTO images (filename, filepath, original_path, import_date, size, width, height, format, thumbnail)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT OR IGNORE INTO images (filename, filepath, original_path, raw_path, original_raw_path, hidden, orientation, import_date, taken_at, size, width, height, format, thumbnail)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   const imported = [];
 
+  // 按「源目录 + 主名」分组，找出 jpg/nef 配对
+  const groups = new Map();
   for (const img of imageFiles) {
-    // 使用图片 EXIF 日期或文件修改时间，降级为今天
-    const dateStr = img.importDate || (() => {
-      const today = new Date();
-      return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
-    })();
-
-    // 目标子目录: images/YYYY/MM/DD/
-    const subDir = path.join(root, ...dateStr.split('-'));
-    ensureDir(subDir);
-
-    // 处理重名
-    const uniqueName = generateUniqueFilename(subDir, img.filename);
-    const destPath = path.join(subDir, uniqueName);
-
-    // 复制文件
-    try {
-      if (img.filepath !== destPath) {
-        fs.copyFileSync(img.filepath, destPath);
+    const ext = path.extname(img.filename).toLowerCase();
+    const base = path.basename(img.filename, ext).toLowerCase();
+    const key = `${path.dirname(img.filepath)}::${base}`;
+    if (!groups.has(key)) groups.set(key, { jpg: null, nef: null });
+    const group = groups.get(key);
+    if (ext === '.nef') {
+      group.nef = img;
+    } else {
+      group.jpg = img;
+      if (img.raw_source && !group.nef) {
+        group.nef = { filename: img.raw_filename, filepath: img.raw_source, size: 0, format: '.nef' };
       }
-    } catch (err) {
-      console.error('[导入] 复制失败:', img.filepath, err.message);
-      continue;
     }
+  }
 
-    // 写入数据库
-    insertStmt.run([
-      uniqueName,
-      destPath,
-      img.filepath,           // original_path
-      dateStr,                // import_date = 今天
-      img.size || 0,
-      img.width || 0,
-      img.height || 0,
-      img.format || '',
-      img.thumbnail || '',    // base64 缩略图
-    ]);
-
-    // 验证插入
-    const row = db.prepare('SELECT * FROM images WHERE filepath = ?').get([destPath]);
-    if (row) {
-      const obj = {};
-      const cols = db.prepare('SELECT * FROM images WHERE filepath = ?').getAsObject([destPath]);
-      // sql.js getAsObject might need columns
-      imported.push({
-        id: row[0],
-        filename: uniqueName,
-        filepath: destPath,
-        original_path: img.filepath,
-        import_date: dateStr,
-        size: img.size,
-        format: img.format,
-        thumbnail: img.thumbnail,
-      });
+  for (const group of groups.values()) {
+    if (group.jpg) {
+      const existing = getObject('SELECT * FROM images WHERE original_path = ?', [group.jpg.filepath]);
+      if (existing) {
+        if (!existing.raw_path && group.nef) {
+          attachRawToImage(existing.id, group.nef.filepath, group.nef.filename);
+        }
+        continue;
+      }
+      const row = importOne(insertStmt, root, group.jpg, { pair: group.nef || null, hidden: false });
+      if (row) imported.push(row);
+    } else if (group.nef) {
+      const asHidden = getObject('SELECT id FROM images WHERE original_path = ?', [group.nef.filepath]);
+      const asPair = getObject('SELECT id FROM images WHERE original_raw_path = ?', [group.nef.filepath]);
+      if (asHidden || asPair) continue;
+      const row = importOne(insertStmt, root, group.nef, { pair: null, hidden: true });
+      if (row) imported.push(row);
     }
   }
 
   insertStmt.free();
   saveDatabase();
   return imported;
+}
+
+function importOne(insertStmt, root, img, { pair, hidden }) {
+  const dateStr = img.importDate || (() => {
+    const today = new Date();
+    return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+  })();
+
+  const subDir = path.join(root, ...dateStr.split('-'));
+  ensureDir(subDir);
+
+  const ext = path.extname(img.filename);
+  const uniqueName = generateUniqueFilename(subDir, img.filename);
+  const destPath = path.join(subDir, uniqueName);
+
+  try {
+    if (img.filepath !== destPath) {
+      fs.copyFileSync(img.filepath, destPath);
+    }
+  } catch (err) {
+    console.error('[导入] 复制失败:', img.filepath, err.message);
+    return null;
+  }
+
+  let rawDestPath = '';
+  let rawSourcePath = '';
+  if (pair) {
+    const rawName = `${path.basename(uniqueName, ext)}${path.extname(pair.filename)}`;
+    rawDestPath = path.join(subDir, rawName);
+    try {
+      if (pair.filepath !== rawDestPath) {
+        fs.copyFileSync(pair.filepath, rawDestPath);
+      }
+    } catch (err) {
+      console.error('[导入] NEF 复制失败:', pair.filepath, err.message);
+      rawDestPath = '';
+      rawSourcePath = '';
+    }
+    rawSourcePath = pair.filepath;
+  }
+
+  insertStmt.run([
+    uniqueName,
+    destPath,
+    img.filepath,
+    rawDestPath,
+    rawSourcePath,
+    hidden ? 1 : 0,
+    Number(img.orientation) || 1,
+    dateStr,
+    img.takenAt || '',
+    img.size || 0,
+    img.width || 0,
+    img.height || 0,
+    img.format || '',
+    hidden ? '' : (img.thumbnail || ''),
+  ]);
+
+  return db.prepare('SELECT * FROM images WHERE filepath = ?').getAsObject([destPath]);
 }
 
 function getImages(options = {}) {
@@ -326,6 +390,8 @@ function getImages(options = {}) {
   const params = [];
   const conditions = [];
   const joins = [];
+
+  conditions.push('i.hidden = 0');
 
   if (tagId) {
     joins.push('JOIN image_tags it ON i.id = it.image_id');
@@ -376,7 +442,13 @@ function getImages(options = {}) {
   const safeSort = allowedSorts.includes(sortBy) ? sortBy : 'import_date';
   const safeOrder = sortOrder === 'ASC' ? 'ASC' : 'DESC';
 
-  query += ` ORDER BY i.${safeSort} ${safeOrder}`;
+  // 日期排序优先用拍摄时间（taken_at，精确到分钟），无则回退导入日期；次级按 id 保证顺序稳定
+  if (safeSort === 'import_date') {
+    const tie = safeOrder === 'ASC' ? 'ASC' : 'DESC';
+    query += ` ORDER BY CASE WHEN i.taken_at != '' THEN i.taken_at ELSE i.import_date END ${safeOrder}, i.id ${tie}`;
+  } else {
+    query += ` ORDER BY i.${safeSort} ${safeOrder}`;
+  }
   query += ' LIMIT ? OFFSET ?';
   params.push(limit, offset);
 
@@ -395,7 +467,109 @@ function getImageById(id) {
   return getObject('SELECT * FROM images WHERE id = ?', [id]);
 }
 
+// 返回所有图片的 id 与 filepath（用于方向回填）
+function getAllImagePaths() {
+  const stmt = db.prepare('SELECT id, filepath FROM images');
+  const rows = [];
+  while (stmt.step()) rows.push(stmt.getAsObject());
+  stmt.free();
+  return rows;
+}
+
+// 更新单张图片的方向标记
+function updateImageOrientation(id, orientation) {
+  db.prepare('UPDATE images SET orientation = ? WHERE id = ?').run([orientation, id]);
+  saveDatabase();
+}
+
+// 返回所有可见图片的 id（用于跨页全选）
+function getAllVisibleIds(options = {}) {
+  const { tagId, albumId, dateFrom, dateTo, importDate, favorite, search } = options;
+  let query = 'SELECT DISTINCT i.id FROM images i';
+  const params = [];
+  const conditions = ['i.hidden = 0'];
+  const joins = [];
+
+  if (tagId) {
+    joins.push('JOIN image_tags it ON i.id = it.image_id');
+    conditions.push('it.tag_id = ?');
+    params.push(tagId);
+  }
+  if (albumId) {
+    joins.push('JOIN album_images ai ON i.id = ai.image_id');
+    conditions.push('ai.album_id = ?');
+    params.push(albumId);
+  }
+  if (importDate) {
+    conditions.push('i.import_date = ?');
+    params.push(importDate);
+  } else {
+    if (dateFrom) {
+      conditions.push('i.import_date >= ?');
+      params.push(dateFrom);
+    }
+    if (dateTo) {
+      conditions.push('i.import_date <= ?');
+      params.push(dateTo);
+    }
+  }
+  if (favorite) {
+    conditions.push('i.favorite = 1');
+  }
+  if (search) {
+    conditions.push('i.filename LIKE ?');
+    params.push(`%${search}%`);
+  }
+
+  query += ` ${joins.join(' ')} WHERE ${conditions.join(' AND ')}`;
+
+  const stmt = db.prepare(query);
+  stmt.bind(params);
+  const ids = [];
+  while (stmt.step()) {
+    ids.push(stmt.getAsObject().id);
+  }
+  stmt.free();
+  return ids;
+}
+
 function updateImage(id, updates) {
+  // 修改导入日期时，将文件移动到新日期目录（JPG 与配对 NEF 一起移动）
+  if (updates.import_date) {
+    const newDate = String(updates.import_date).trim();
+    if (newDate && /^\d{4}-\d{2}-\d{2}$/.test(newDate)) {
+      const img = getImageById(id);
+      if (img && img.import_date !== newDate) {
+        const root = getImagesRoot();
+        const subDir = path.join(root, ...newDate.split('-'));
+        ensureDir(subDir);
+        const newName = generateUniqueFilename(subDir, img.filename);
+        const newPath = path.join(subDir, newName);
+        let newRawPath = img.raw_path || '';
+
+        try {
+          if (fs.existsSync(img.filepath) && img.filepath !== newPath) {
+            moveFileSafe(img.filepath, newPath);
+          }
+          if (img.raw_path) {
+            const targetBase = path.basename(newPath, path.extname(newPath));
+            const rawExt = path.extname(img.raw_path);
+            newRawPath = path.join(subDir, `${targetBase}${rawExt}`);
+            if (fs.existsSync(img.raw_path) && img.raw_path !== newRawPath) {
+              moveFileSafe(img.raw_path, newRawPath);
+            }
+          }
+        } catch (err) {
+          console.error('[日期] 移动文件失败:', err.message);
+          return { error: `移动文件失败：${err.message}` };
+        }
+
+        db.prepare('UPDATE images SET filename = ?, filepath = ?, raw_path = ? WHERE id = ?')
+          .run([path.basename(newPath), newPath, newRawPath, id]);
+      }
+    }
+  }
+
   const allowed = ['filename', 'rating', 'favorite', 'notes', 'width', 'height', 'thumbnail', 'import_date'];
   const sets = [];
   const params = [];
@@ -407,7 +581,7 @@ function updateImage(id, updates) {
     }
   }
 
-  if (sets.length === 0) return false;
+  if (sets.length === 0) return true;
 
   params.push(id);
   db.prepare(`UPDATE images SET ${sets.join(', ')} WHERE id = ?`).run(params);
@@ -427,16 +601,32 @@ function renameImage(id, newFilename) {
     return { error: '同名文件已存在' };
   }
 
+  // 配对 NEF 跟随重命名，保持相同主名
+  let newRawPath = img.raw_path || '';
+  if (img.raw_path) {
+    const oldExt = path.extname(img.filename);
+    const rawExt = path.extname(img.raw_path);
+    const newRawName = `${path.basename(newFilename, oldExt)}${rawExt}`;
+    const candidateRaw = path.join(path.dirname(img.raw_path), newRawName);
+    if (fs.existsSync(candidateRaw) && candidateRaw !== img.raw_path) {
+      return { error: '同名文件已存在' };
+    }
+    newRawPath = candidateRaw;
+  }
+
   try {
     if (oldPath !== newPath) {
       fs.renameSync(oldPath, newPath);
+    }
+    if (img.raw_path && newRawPath !== img.raw_path) {
+      fs.renameSync(img.raw_path, newRawPath);
     }
   } catch (err) {
     return { error: '重命名失败: ' + err.message };
   }
 
-  db.prepare('UPDATE images SET filename = ?, filepath = ? WHERE id = ?')
-    .run([newFilename, newPath, id]);
+  db.prepare('UPDATE images SET filename = ?, filepath = ?, raw_path = ? WHERE id = ?')
+    .run([newFilename, newPath, newRawPath, id]);
   saveDatabase();
   return { success: true, newFilename, newPath };
 }
@@ -467,7 +657,7 @@ function setImagesRoot(newRoot) {
     return { success: true, path: resolvedNewRoot, moved: 0 };
   }
 
-  const stmt = db.prepare('SELECT id, filename, filepath, import_date FROM images');
+  const stmt = db.prepare('SELECT id, filename, filepath, raw_path, import_date FROM images');
   const images = [];
   while (stmt.step()) images.push(stmt.getAsObject());
   stmt.free();
@@ -494,8 +684,22 @@ function setImagesRoot(newRoot) {
         moveFileSafe(img.filepath, targetPath);
         moved++;
       }
-      db.prepare('UPDATE images SET filename = ?, filepath = ? WHERE id = ?')
-        .run([path.basename(targetPath), targetPath, img.id]);
+
+      // 配对 NEF 跟随移动，保持与 JPG 相同主名
+      let newRawPath = '';
+      if (img.raw_path) {
+        const targetBase = path.basename(targetPath, path.extname(targetPath));
+        const rawExt = path.extname(img.raw_path);
+        newRawPath = path.join(targetDir, `${targetBase}${rawExt}`);
+        if (fs.existsSync(img.raw_path)) {
+          moveFileSafe(img.raw_path, newRawPath);
+        } else {
+          newRawPath = '';
+        }
+      }
+
+      db.prepare('UPDATE images SET filename = ?, filepath = ?, raw_path = ? WHERE id = ?')
+        .run([path.basename(targetPath), targetPath, newRawPath, img.id]);
     } catch (err) {
       return { error: `移动失败：${img.filename} - ${err.message}` };
     }
@@ -507,17 +711,148 @@ function setImagesRoot(newRoot) {
   return { success: true, path: resolvedNewRoot, moved };
 }
 
+// ── 相机同步 ──
+
+const VISIBLE_FORMATS = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.svg', '.tiff'];
+
+function scanImageFiles(dirPath, includeRaw = false) {
+  const supported = includeRaw ? [...VISIBLE_FORMATS, '.nef'] : VISIBLE_FORMATS;
+  const files = [];
+
+  (function scan(dir) {
+    try {
+      const entries = fs.readdirSync(dir, { withFileTypes: true });
+      for (const entry of entries) {
+        const fullPath = path.join(dir, entry.name);
+        if (entry.isDirectory()) {
+          scan(fullPath);
+        } else if (entry.isFile()) {
+          const ext = path.extname(entry.name).toLowerCase();
+          if (supported.includes(ext)) {
+            const stat = fs.statSync(fullPath);
+            files.push({
+              filename: entry.name,
+              filepath: fullPath,
+              size: stat.size,
+              format: ext,
+              width: 0,
+              height: 0,
+            });
+          }
+        }
+      }
+    } catch (err) {
+      console.error('[扫描] 错误:', dir, err.message);
+    }
+  })(dirPath);
+
+  // 普通导入（不包含 .nef）时，为 JPG 检测同目录同名 NEF，便于导入时配对
+  if (!includeRaw) {
+    for (const f of files) {
+      if (f.format === '.jpg' || f.format === '.jpeg') {
+        const dir = path.dirname(f.filepath);
+        const base = path.basename(f.filename, path.extname(f.filename)).toLowerCase();
+        try {
+          const match = fs.readdirSync(dir).find(n => {
+            const ext = path.extname(n);
+            return ext.toLowerCase() === '.nef' && path.basename(n, ext).toLowerCase() === base;
+          });
+          if (match) {
+            const rawPath = path.join(dir, match);
+            f.raw_source = rawPath;
+            f.raw_filename = match;
+          }
+        } catch (err) {
+          console.error('[扫描] 检测 NEF 失败:', dir, err.message);
+        }
+      }
+    }
+  }
+
+  return files;
+}
+
+// 过滤相机文件夹中图库不存在的文件，返回待导入列表与需附加的 NEF
+function prepareCameraSync(imageFiles) {
+  const groups = new Map();
+  for (const f of imageFiles) {
+    const ext = path.extname(f.filename).toLowerCase();
+    const base = path.basename(f.filename, ext).toLowerCase();
+    const key = `${path.dirname(f.filepath)}::${base}`;
+    if (!groups.has(key)) groups.set(key, { jpg: null, nef: null });
+    const group = groups.get(key);
+    if (ext === '.nef') group.nef = f;
+    else group.jpg = f;
+  }
+
+  const toImport = [];
+  const attachPairs = [];
+  let skipped = 0;
+
+  for (const group of groups.values()) {
+    if (group.jpg) {
+      const existing = getObject('SELECT * FROM images WHERE original_path = ?', [group.jpg.filepath]);
+      if (existing) {
+        if (!existing.raw_path && group.nef) {
+          attachPairs.push({ jpgId: existing.id, nefSource: group.nef.filepath, nefFilename: group.nef.filename });
+        }
+        skipped++;
+      } else {
+        toImport.push(group.jpg);
+        if (group.nef) toImport.push(group.nef);
+      }
+    } else if (group.nef) {
+      const asHidden = getObject('SELECT id FROM images WHERE original_path = ?', [group.nef.filepath]);
+      const asPair = getObject('SELECT id FROM images WHERE original_raw_path = ?', [group.nef.filepath]);
+      if (asHidden || asPair) {
+        skipped++;
+      } else {
+        toImport.push(group.nef);
+      }
+    }
+  }
+
+  return { toImport, attachPairs, skipped };
+}
+
+// 将已导入 JPG 的配对 NEF 复制到同目录并记录 raw_path
+function attachRawToImage(imageId, nefSource, nefFilename) {
+  const img = getImageById(imageId);
+  if (!img || img.raw_path) return false;
+
+  const ext = path.extname(nefFilename);
+  const rawName = `${path.basename(img.filename, path.extname(img.filename))}${ext}`;
+  const rawDest = path.join(path.dirname(img.filepath), rawName);
+  ensureDir(path.dirname(rawDest));
+  if (fs.existsSync(rawDest)) return false;
+
+  try {
+    fs.copyFileSync(nefSource, rawDest);
+  } catch (err) {
+    console.error('[相机同步] NEF 复制失败:', nefSource, err.message);
+    return false;
+  }
+
+  db.prepare('UPDATE images SET raw_path = ?, original_raw_path = ? WHERE id = ?')
+    .run([rawDest, nefSource, imageId]);
+  saveDatabase();
+  return true;
+}
+
 function deleteImage(id) {
   const img = getImageById(id);
   if (!img) return false;
 
-  // 删除本地文件
-  try {
-    if (fs.existsSync(img.filepath)) {
-      fs.unlinkSync(img.filepath);
+  // 删除本地文件（含配对 NEF）
+  const targets = [img.filepath, img.raw_path].filter(Boolean);
+  for (const p of targets) {
+    try {
+      if (fs.existsSync(p)) {
+        fs.unlinkSync(p);
+      }
+    } catch (e) {
+      console.error('[删除] 删除文件失败:', e.message);
     }
-  } catch (e) {
-    console.error('[删除] 删除文件失败:', e.message);
   }
 
   // 清除关联
@@ -535,7 +870,7 @@ function getImportDates() {
   const rows = db.exec(`
     SELECT import_date, COUNT(*) as count
     FROM images
-    WHERE import_date != ''
+    WHERE hidden = 0 AND import_date != ''
     GROUP BY import_date
     ORDER BY import_date DESC
   `);
@@ -638,7 +973,7 @@ function renameAlbum(id, newName) {
 }
 
 function getAlbumImages(albumId) {
-  const stmt = db.prepare('SELECT i.* FROM images i JOIN album_images ai ON i.id = ai.image_id WHERE ai.album_id = ?');
+  const stmt = db.prepare('SELECT i.* FROM images i JOIN album_images ai ON i.id = ai.image_id WHERE ai.album_id = ? AND i.hidden = 0');
   stmt.bind([albumId]);
   const images = [];
   while (stmt.step()) images.push(stmt.getAsObject());
@@ -703,10 +1038,10 @@ function batchDeleteImages(ids) {
 // ── Stats ──
 
 function getStats() {
-  const totalImages = getObject('SELECT COUNT(*) as count FROM images')?.count || 0;
+  const totalImages = getObject('SELECT COUNT(*) as count FROM images WHERE hidden = 0')?.count || 0;
   const totalTags = getObject('SELECT COUNT(*) as count FROM tags')?.count || 0;
   const totalAlbums = getObject('SELECT COUNT(*) as count FROM albums')?.count || 0;
-  const favorites = getObject('SELECT COUNT(*) as count FROM images WHERE favorite = 1')?.count || 0;
+  const favorites = getObject('SELECT COUNT(*) as count FROM images WHERE favorite = 1 AND hidden = 0')?.count || 0;
   return { totalImages, totalTags, totalAlbums, favorites };
 }
 
@@ -715,12 +1050,18 @@ module.exports = {
   saveDatabase,
   getImagesRoot,
   setImagesRoot,
+  scanImageFiles,
+  prepareCameraSync,
+  attachRawToImage,
   getImageSubDir,
   ensureDir,
   generateUniqueFilename,
   importImages,
   getImages,
   getImageById,
+  getAllVisibleIds,
+  getAllImagePaths,
+  updateImageOrientation,
   updateImage,
   renameImage,
   deleteImage,
