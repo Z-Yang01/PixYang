@@ -11,6 +11,8 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   Upload,
+  ChevronDown,
+  ChevronRight,
 } from 'lucide-react';
 
 export default function Sidebar({
@@ -101,7 +103,7 @@ export default function Sidebar({
               <div className="nav-section-title" style={{ cursor: 'pointer', display: 'flex', justifyContent: 'space-between' }}
                 onClick={() => setDateExpand(!dateExpand)}>
                 <span>按日期筛选</span>
-                <span style={{ fontSize: 10 }}>{dateExpand ? '▼' : '▶'}</span>
+                {dateExpand ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}
               </div>
             )}
             {!collapsed && dateExpand && (

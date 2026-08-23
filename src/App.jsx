@@ -136,11 +136,12 @@ export default function App() {
     setPage(1);
   }, [search, filterTag, filterAlbum, filterFavorites, filterDate, dateRange, gridSettings]);
 
-  // 同步 viewerImage：当 images 刷新后，更新 viewerImage 保持数据一致
+  // 同步 viewerImage：当 images 刷新后，更新 viewerImage 保持数据一致；若已删除则关闭
   useEffect(() => {
     if (viewerImage && images.length > 0) {
       const updated = images.find(img => img.id === viewerImage.id);
       if (updated) setViewerImage(updated);
+      else closeViewer();
     }
   }, [images]);
 
@@ -320,6 +321,28 @@ export default function App() {
   // 判断标签/相册名
   const getTagName = (id) => tags.find(t => t.id === id)?.name || '';
   const getAlbumName = (id) => albums.find(a => a.id === id)?.name || '';
+
+  // 全局快捷键（置于各 handler 定义之后）
+  useEffect(() => {
+    const handleKey = (e) => {
+      const t = e.target;
+      const isTyping = t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable);
+      if (isTyping || viewerImage) return;
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'a') {
+        e.preventDefault();
+        handleSelectAllAll();
+      } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'e') {
+        e.preventDefault();
+        handleExportSelected();
+      } else if (e.key === 'Delete') {
+        if (selectedIds.size > 0) handleBatchDelete();
+      } else if (e.key === 'Escape') {
+        if (selectedIds.size > 0) setSelectedIds(new Set());
+      }
+    };
+    window.addEventListener('keydown', handleKey);
+    return () => window.removeEventListener('keydown', handleKey);
+  }, [viewerImage, selectedIds.size, handleSelectAllAll, handleExportSelected, handleBatchDelete]);
 
   return (
     <TooltipProvider>

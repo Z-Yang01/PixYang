@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Search, Trash2, Tag } from 'lucide-react';
 
 const TAG_COLORS = ['#6366f1', '#ec4899', '#f59e0b', '#22c55e', '#ef4444', '#06b6d4', '#a855f7', '#f97316'];
 
@@ -86,7 +87,7 @@ export default function TagManager({ onSelectTag }) {
                 onClick={() => onSelectTag?.(tag.id)}
                 title="按此标签筛选图片"
               >
-                🔍
+                <Search className="size-3.5" />
               </Button>
               <Button
                 variant="ghost"
@@ -95,17 +96,15 @@ export default function TagManager({ onSelectTag }) {
                 className="text-destructive hover:text-destructive"
                 title="删除标签"
               >
-                🗑
+                <Trash2 className="size-3.5" />
               </Button>
             </div>
           ))}
           {tags.length === 0 && (
-            <div style={{ color: 'var(--text-muted)', padding: 40, textAlign: 'center', width: '100%' }}>
-              <div style={{ fontSize: 32, marginBottom: 8 }}>🏷️</div>
-              <div>还没有标签，在上方创建一个吧</div>
-              <div style={{ fontSize: 12, marginTop: 4 }}>
-                例如：风景、人像、截图、工作、旅行...
-              </div>
+            <div className="empty-state" style={{ width: '100%' }}>
+              <div className="empty-state-icon"><Tag /></div>
+              <div className="empty-state-title">还没有标签</div>
+              <div className="empty-state-desc">在上方创建一个吧，例如：风景、人像、截图、工作、旅行...</div>
             </div>
           )}
         </div>

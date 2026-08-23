@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Button } from '@/components/ui/button';
-import { RotateCw, RotateCcw, FlipHorizontal2, FlipVertical2 } from 'lucide-react';
+import { RotateCw, RotateCcw, FlipHorizontal2, FlipVertical2, Save, Heart, HeartOff, Star, X, ChevronLeft, ChevronRight, Camera, Calendar } from 'lucide-react';
 
 export default function ImageViewer({ image, imageIndex = 0, totalCount = 0, onClose, onPrev, onNext, hasPrev, hasNext, onImageUpdated }) {
   const [imgData, setImgData] = useState(null);
@@ -25,9 +25,9 @@ export default function ImageViewer({ image, imageIndex = 0, totalCount = 0, onC
     loadTags();
     setZoom(1);
     setPos({ x: 0, y: 0 });
-    setRotation(0);
-    setFlipH(false);
-    setFlipV(false);
+    setRotation(image?.rotation || 0);
+    setFlipH(!!image?.flip_h);
+    setFlipV(!!image?.flip_v);
     setLocalRating(image?.rating || 0);
     setLocalFavorite(image?.favorite || 0);
   }, [image?.id]);
@@ -131,6 +131,18 @@ export default function ImageViewer({ image, imageIndex = 0, totalCount = 0, onC
     onImageUpdated?.();
   };
 
+  // 保存旋转/翻转
+  const handleSaveRotation = async (e) => {
+    e.stopPropagation();
+    if (!window.pixyang || !image) return;
+    await window.pixyang.updateImage(image.id, {
+      rotation,
+      flipH: flipH ? 1 : 0,
+      flipV: flipV ? 1 : 0,
+    });
+    onImageUpdated?.();
+  };
+
   // 评分
   const handleRating = async (r, e) => {
     e.stopPropagation();
@@ -156,8 +168,8 @@ export default function ImageViewer({ image, imageIndex = 0, totalCount = 0, onC
     <div className="viewer-overlay" onClick={onClose}>
       {/* 顶部操作栏 */}
       <div className="viewer-actions" onClick={(e) => e.stopPropagation()}>
-        <Button variant="ghost" size="icon" onClick={handleFavToggle} style={{ color: 'white', fontSize: 20 }}>
-          {localFavorite ? '❤' : '🤍'}
+        <Button variant="ghost" size="icon" onClick={handleFavToggle} style={{ color: 'white' }} title="收藏 (F)">
+          {localFavorite ? <Heart className="size-5" fill="currentColor" /> : <HeartOff className="size-5" />}
         </Button>
         {[1, 2, 3, 4, 5].map(n => (
           <Button
@@ -165,12 +177,9 @@ export default function ImageViewer({ image, imageIndex = 0, totalCount = 0, onC
             variant="ghost"
             size="icon"
             onClick={(e) => handleRating(n, e)}
-            style={{
-              color: n <= localRating ? 'var(--star)' : 'rgba(255,255,255,0.4)',
-              fontSize: 20,
-            }}
+            style={{ color: n <= localRating ? 'var(--star)' : 'rgba(255,255,255,0.4)' }}
           >
-            ★
+            <Star className="size-5" fill={n <= localRating ? 'currentColor' : 'none'} />
           </Button>
         ))}
         <Button variant="ghost" size="icon" onClick={() => setRotation(r => (r + 270) % 360)} style={{ color: 'rgba(255,255,255,0.7)' }} title="左旋 90° (Shift+R)">
@@ -185,21 +194,24 @@ export default function ImageViewer({ image, imageIndex = 0, totalCount = 0, onC
         <Button variant="ghost" size="icon" onClick={() => setFlipV(f => !f)} style={{ color: 'rgba(255,255,255,0.7)' }} title="垂直翻转 (V)">
           <FlipVertical2 className="size-5" />
         </Button>
+        <Button variant="ghost" size="icon" onClick={handleSaveRotation} style={{ color: 'rgba(255,255,255,0.7)' }} title="保存旋转/翻转">
+          <Save className="size-5" />
+        </Button>
         <span style={{ color: 'rgba(255,255,255,0.5)', fontSize: 12, marginLeft: 8 }}>
           {Math.round(zoom * 100)}%
         </span>
       </div>
 
-      <button className="viewer-close" onClick={onClose}>✕</button>
+      <button className="viewer-close" onClick={onClose}><X className="size-5" /></button>
 
       {hasPrev && (
         <button className="viewer-nav" style={{ left: 20 }} onClick={(e) => { e.stopPropagation(); onPrev(); }}>
-          ‹
+          <ChevronLeft className="size-6" />
         </button>
       )}
       {hasNext && (
         <button className="viewer-nav" style={{ right: 20 }} onClick={(e) => { e.stopPropagation(); onNext(); }}>
-          ›
+          <ChevronRight className="size-6" />
         </button>
       )}
 
@@ -235,15 +247,12 @@ export default function ImageViewer({ image, imageIndex = 0, totalCount = 0, onC
         <span className="viewer-filename" title={image.filepath}>{image.filename?.replace(/\.\w+$/, '') || image.filename}</span>
         {image.width > 0 && <span>{image.width}×{image.height}</span>}
         {image.size > 0 && <span>{formatSize(image.size)}</span>}
-        {image.taken_at && <span>📷 {image.taken_at}</span>}
-        {image.import_date && <span>📅 {image.import_date}</span>}
+        {image.taken_at && <span><Camera className="size-3.5" /> {image.taken_at}</span>}
+        {image.import_date && <span><Calendar className="size-3.5" /> {image.import_date}</span>}
         {imgTags.length > 0 && (
           <span style={{ display: 'flex', gap: 3 }}>
             {imgTags.map(t => (
-              <span key={t.id} style={{
-                background: t.color, color: 'white', padding: '1px 6px',
-                borderRadius: 10, fontSize: 11,
-              }}>{t.name}</span>
+              <span key={t.id} className="viewer-tag" style={{ background: t.color }}>{t.name}</span>
             ))}
           </span>
         )}

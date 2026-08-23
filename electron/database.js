@@ -17,6 +17,10 @@ function getImagesRoot() {
   return IMAGES_ROOT;
 }
 
+function getDatabasePath() {
+  return DB_PATH;
+}
+
 function getObject(sql, params = []) {
   const stmt = db.prepare(sql);
   stmt.bind(params);
@@ -84,6 +88,9 @@ async function initDatabase() {
       original_raw_path TEXT DEFAULT '',
       hidden INTEGER DEFAULT 0,
       orientation INTEGER DEFAULT 1,
+      rotation INTEGER DEFAULT 0,
+      flip_h INTEGER DEFAULT 0,
+      flip_v INTEGER DEFAULT 0,
       import_date TEXT NOT NULL DEFAULT '',
       taken_at TEXT DEFAULT '',
       size INTEGER DEFAULT 0,
@@ -156,6 +163,7 @@ async function initDatabase() {
     grid_columns: '5',
     grid_gap: '12',
     content_padding: '16',
+    orientation_backfilled: 'false',
   };
   for (const [k, v] of Object.entries(defaults)) {
     db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)').run([k, v]);
@@ -202,6 +210,15 @@ function migrateSchema() {
       }
       if (!colNames.includes('orientation')) {
         db.run('ALTER TABLE images ADD COLUMN orientation INTEGER DEFAULT 1');
+      }
+      if (!colNames.includes('rotation')) {
+        db.run('ALTER TABLE images ADD COLUMN rotation INTEGER DEFAULT 0');
+      }
+      if (!colNames.includes('flip_h')) {
+        db.run('ALTER TABLE images ADD COLUMN flip_h INTEGER DEFAULT 0');
+      }
+      if (!colNames.includes('flip_v')) {
+        db.run('ALTER TABLE images ADD COLUMN flip_v INTEGER DEFAULT 0');
       }
       if (!colNames.includes('updated_at')) {
         db.run('ALTER TABLE images ADD COLUMN updated_at DATETIME DEFAULT CURRENT_TIMESTAMP');
@@ -263,8 +280,8 @@ function importImages(imageFiles) {
   const root = getImagesRoot();
 
   const insertStmt = db.prepare(`
-    INSERT OR IGNORE INTO images (filename, filepath, original_path, raw_path, original_raw_path, hidden, orientation, import_date, taken_at, size, width, height, format, thumbnail)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT OR IGNORE INTO images (filename, filepath, original_path, raw_path, original_raw_path, hidden, orientation, rotation, flip_h, flip_v, import_date, taken_at, size, width, height, format, thumbnail)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   const imported = [];
@@ -359,6 +376,9 @@ function importOne(insertStmt, root, img, { pair, hidden }) {
     rawSourcePath,
     hidden ? 1 : 0,
     Number(img.orientation) || 1,
+    0,
+    0,
+    0,
     dateStr,
     img.takenAt || '',
     img.size || 0,
@@ -476,6 +496,15 @@ function getAllImagePaths() {
   return rows;
 }
 
+// 返回所有可见图片的 id 与 filepath（用于重建缩略图）
+function getImagesForRebuild() {
+  const stmt = db.prepare('SELECT id, filepath, filename FROM images WHERE hidden = 0');
+  const rows = [];
+  while (stmt.step()) rows.push(stmt.getAsObject());
+  stmt.free();
+  return rows;
+}
+
 // 更新单张图片的方向标记
 function updateImageOrientation(id, orientation) {
   db.prepare('UPDATE images SET orientation = ? WHERE id = ?').run([orientation, id]);
@@ -570,7 +599,7 @@ function updateImage(id, updates) {
     }
   }
 
-  const allowed = ['filename', 'rating', 'favorite', 'notes', 'width', 'height', 'thumbnail', 'import_date'];
+  const allowed = ['filename', 'rating', 'favorite', 'notes', 'width', 'height', 'thumbnail', 'import_date', 'rotation', 'flipH', 'flipV'];
   const sets = [];
   const params = [];
 
@@ -839,11 +868,11 @@ function attachRawToImage(imageId, nefSource, nefFilename) {
   return true;
 }
 
+// 删除图片：硬删除（删除本地文件含配对 NEF + 清理 DB 关联）
 function deleteImage(id) {
   const img = getImageById(id);
   if (!img) return false;
 
-  // 删除本地文件（含配对 NEF）
   const targets = [img.filepath, img.raw_path].filter(Boolean);
   for (const p of targets) {
     try {
@@ -855,7 +884,6 @@ function deleteImage(id) {
     }
   }
 
-  // 清除关联
   db.prepare('DELETE FROM image_tags WHERE image_id = ?').run([id]);
   db.prepare('DELETE FROM album_images WHERE image_id = ?').run([id]);
   db.prepare('DELETE FROM images WHERE id = ?').run([id]);
@@ -1049,6 +1077,7 @@ module.exports = {
   initDatabase,
   saveDatabase,
   getImagesRoot,
+  getDatabasePath,
   setImagesRoot,
   scanImageFiles,
   prepareCameraSync,
@@ -1061,6 +1090,7 @@ module.exports = {
   getImageById,
   getAllVisibleIds,
   getAllImagePaths,
+  getImagesForRebuild,
   updateImageOrientation,
   updateImage,
   renameImage,

@@ -1,13 +1,13 @@
 import React from 'react';
 import { Button } from '@/components/ui/button';
-import { Search } from 'lucide-react';
+import { Search, X } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
 function FilterChip({ label, onRemove }) {
   return (
     <span className="filter-chip">
       {label}
-      <button className="filter-chip-remove" onClick={onRemove}>x</button>
+      <button className="filter-chip-remove" onClick={onRemove}><X className="size-3" /></button>
     </span>
   );
 }

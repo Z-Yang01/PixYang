@@ -23,6 +23,7 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Star, Heart, Check, ImageOff } from 'lucide-react';
 
 function StarRating({ rating, onChange }) {
   return (
@@ -34,7 +35,7 @@ function StarRating({ rating, onChange }) {
           onClick={() => onChange?.(n === rating ? 0 : n)}
           style={{ cursor: 'pointer' }}
         >
-          ★
+          <Star className="size-3.5" fill={n <= rating ? 'currentColor' : 'none'} />
         </span>
       ))}
     </div>
@@ -288,8 +289,8 @@ export default function ImageGrid({
   if (!loading && images.length === 0) {
     return (
       <div className="content-area" style={{ padding: gridSettings.padding }}>
-        <div className="empty-state">
-          <div className="empty-state-icon">🖼️</div>
+          <div className="empty-state">
+          <div className="empty-state-icon"><ImageOff /></div>
           <div className="empty-state-title">没有找到图片</div>
           <div className="empty-state-desc">导入图片后会按页显示在这里。</div>
           <Button className="mt-2" onClick={onImport}>导入图片</Button>
@@ -306,6 +307,9 @@ export default function ImageGrid({
           const thumbBroken = brokenThumbnails.has(image.id);
           const fileUrl = fileUrls[image.id];
           const useThumb = Number(image.orientation) === 1;
+          const cardTransform = (image.rotation || image.flip_h || image.flip_v)
+            ? `rotate(${image.rotation || 0}deg) scaleX(${image.flip_h ? -1 : 1}) scaleY(${image.flip_v ? -1 : 1})`
+            : undefined;
           return (
             <ContextMenu key={image.id}>
               <ContextMenuTrigger asChild>
@@ -314,7 +318,7 @@ export default function ImageGrid({
                   className={`image-card ${selectedIds.has(image.id) ? 'selected' : ''}`}
                   onClick={(e) => handleClick(image, index, e)}
                 >
-                  {image.favorite ? <span className="favorite-heart">♥</span> : null}
+                  {image.favorite ? <Heart className="favorite-heart" /> : null}
                   <span
                     className={`card-checkbox ${selectedIds.has(image.id) ? 'checked' : ''}`}
                     onClick={(e) => {
@@ -325,7 +329,7 @@ export default function ImageGrid({
                       lastSelectedRef.current = image.id;
                     }}
                   >
-                    {selectedIds.has(image.id) && '✓'}
+                    {selectedIds.has(image.id) && <Check className="size-3" />}
                   </span>
 
                   {useThumb && image.thumbnail && !thumbBroken ? (
@@ -335,6 +339,7 @@ export default function ImageGrid({
                       alt={image.filename}
                       loading="lazy"
                       decoding="async"
+                      style={{ transform: cardTransform }}
                       onError={() => setBrokenThumbnails(prev => new Set([...prev, image.id]))}
                     />
                   ) : fileUrl ? (
@@ -344,6 +349,7 @@ export default function ImageGrid({
                       alt={image.filename}
                       loading="lazy"
                       decoding="async"
+                      style={{ transform: cardTransform }}
                       onError={() => setFileUrls(prev => { const n = { ...prev }; delete n[image.id]; return n; })}
                     />
                   ) : (

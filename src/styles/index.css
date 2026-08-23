@@ -46,11 +46,26 @@
   --success: #22c55e;
   --warning: #f59e0b;
   --star: #f59e0b;
-  --radius: 8px;
-  --radius-lg: 12px;
   --shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
   --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.5);
   --transition: 150ms ease;
+
+  /* 图片覆盖层（叠加在图片上，两主题通用） */
+  --overlay-gradient: linear-gradient(transparent, rgba(0, 0, 0, 0.85));
+  --card-stars-bg: rgba(0, 0, 0, 0.55);
+  --card-checkbox-bg: rgba(0, 0, 0, 0.35);
+  --card-checkbox-border: rgba(255, 255, 255, 0.75);
+  --card-checkbox-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+  --star-empty: rgba(255, 255, 255, 0.3);
+  --card-date: rgba(255, 255, 255, 0.55);
+  --card-tag-bg: rgba(255, 255, 255, 0.08);
+  --card-tag-add-border: rgba(255, 255, 255, 0.3);
+  --viewer-overlay: rgba(0, 0, 0, 0.95);
+  --viewer-control-bg: rgba(255, 255, 255, 0.1);
+  --viewer-control-bg-hover: rgba(255, 255, 255, 0.25);
+  --viewer-info-bg: rgba(0, 0, 0, 0.8);
+  --dialog-backdrop: rgba(0, 0, 0, 0.6);
+  --filter-chip-bg: var(--bg-hover);
 
   /* shadcn/ui tokens (dark, default) */
   --background: #0f0f13;
@@ -176,8 +191,7 @@ body {
 }
 .app-layout.sidebar-collapsed .nav-section-title,
 .app-layout.sidebar-collapsed .nav-item span,
-.app-layout.sidebar-collapsed .nav-badge,
-.app-layout.sidebar-collapsed .sidebar-footer .btn span {
+.app-layout.sidebar-collapsed .nav-badge {
   display: none;
 }
 .app-layout.sidebar-collapsed .nav-item {
@@ -189,13 +203,9 @@ body {
   width: 20px;
   height: 20px;
 }
-.app-layout.sidebar-collapsed .sidebar-footer .btn {
+.app-layout.sidebar-collapsed .sidebar-footer [data-slot="button"] {
   width: 100%;
   padding: 8px;
-}
-.app-layout.sidebar-collapsed .sidebar-footer .btn svg {
-  width: 18px;
-  height: 18px;
 }
 
 .sidebar-nav {
@@ -367,6 +377,7 @@ body {
   color: var(--text-primary);
   font-size: 12px;
   outline: none;
+  transition: border-color var(--transition), background-color var(--transition);
 }
 
 .filter-date-input:focus,
@@ -441,7 +452,7 @@ body {
   left: 0;
   right: 0;
   padding: 8px 10px 2px;
-  background: linear-gradient(transparent, rgba(0,0,0,0.85));
+  background: var(--overlay-gradient);
   opacity: 0;
   transition: opacity var(--transition);
 }
@@ -474,7 +485,7 @@ body {
   align-items: center;
   gap: 2px;
   padding: 3px 8px;
-  background: rgba(0,0,0,0.55);
+  background: var(--card-stars-bg);
   border-radius: 12px;
   opacity: 0;
   transition: opacity var(--transition);
@@ -497,12 +508,12 @@ body {
 }
 
 .star-empty {
-  color: rgba(255,255,255,0.3);
+  color: var(--star-empty);
   font-size: 12px;
 }
 
 .favorite-heart {
-  color: #ef4444;
+  color: var(--danger);
   font-size: 12px;
   position: absolute;
   top: 8px;
@@ -518,8 +529,8 @@ body {
   width: 20px;
   height: 20px;
   border-radius: 50%;
-  border: 2px solid rgba(255,255,255,0.75);
-  background: rgba(0,0,0,0.35);
+  border: 2px solid var(--card-checkbox-border);
+  background: var(--card-checkbox-bg);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -529,7 +540,7 @@ body {
   cursor: pointer;
   opacity: 0;
   transition: opacity var(--transition), background var(--transition), border-color var(--transition);
-  box-shadow: 0 1px 4px rgba(0,0,0,0.4);
+  box-shadow: var(--card-checkbox-shadow);
   animation: popIn 0.15s ease;
 }
 
@@ -569,7 +580,7 @@ body {
 
 .card-date {
   font-size: 10px;
-  color: rgba(255,255,255,0.55);
+  color: var(--card-date);
   margin-left: auto;
   max-width: 110px;
   overflow: hidden;
@@ -683,7 +694,7 @@ body {
   width: 40px;
   height: 40px;
   border-radius: 50%;
-  background: rgba(255,255,255,0.1);
+  background: var(--viewer-control-bg);
   color: white;
   border: none;
   cursor: pointer;
@@ -696,7 +707,7 @@ body {
 }
 
 .viewer-close:hover {
-  background: rgba(255,255,255,0.2);
+  background: var(--viewer-control-bg-hover);
 }
 
 .viewer-nav {
@@ -706,7 +717,7 @@ body {
   width: 48px;
   height: 48px;
   border-radius: 50%;
-  background: rgba(255,255,255,0.1);
+  background: var(--viewer-control-bg);
   color: white;
   border: none;
   cursor: pointer;
@@ -719,7 +730,7 @@ body {
 }
 
 .viewer-nav:hover {
-  background: rgba(255,255,255,0.25);
+  background: var(--viewer-control-bg-hover);
 }
 
 .viewer-nav:first-of-type { left: 20px; }
@@ -732,7 +743,7 @@ body {
   transform: translateX(-50%);
   max-width: calc(100vw - 40px);
   overflow: hidden;
-  background: rgba(0,0,0,0.8);
+  background: var(--viewer-info-bg);
   color: white;
   padding: 8px 16px;
   border-radius: 20px;
@@ -892,7 +903,7 @@ body {
 .dialog-backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(0,0,0,0.6);
+  background: var(--dialog-backdrop);
   z-index: 1100;
   display: flex;
   align-items: center;
@@ -953,6 +964,11 @@ body {
   color: var(--text-primary);
   font-size: 14px;
   outline: none;
+  transition: border-color var(--transition), background-color var(--transition);
+}
+
+.form-input:hover {
+  border-color: var(--border-light);
 }
 
 .form-input:focus {
@@ -1086,7 +1102,7 @@ body {
   font-size: 10px;
   font-weight: 500;
   color: var(--text-primary);
-  background: rgba(255,255,255,0.08);
+  background: var(--card-tag-bg);
   white-space: nowrap;
 }
 
@@ -1099,7 +1115,7 @@ body {
 
 .card-tag-add {
   background: rgba(255,255,255,0.15);
-  border: 1px dashed rgba(255,255,255,0.3);
+  border: 1px dashed var(--card-tag-add-border);
   cursor: pointer;
   color: rgba(255,255,255,0.7);
   transition: all var(--transition);
@@ -1107,7 +1123,7 @@ body {
   padding: 1px 5px;
 }
 .card-tag-add:hover {
-  background: rgba(255,255,255,0.25);
+  background: var(--viewer-control-bg-hover);
   color: white;
 }
 
@@ -1200,7 +1216,7 @@ body {
   width: 1px;
   height: 20px;
   background: var(--border);
-  margin: 0 2px;
+  margin: 0 4px;
 }
 
 .menu-hint {
@@ -1357,6 +1373,12 @@ body {
   --accent-color-glow: rgba(76, 110, 245, 0.1);
   --shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
   --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.12);
+  --danger: #e03131;
+  --danger-hover: #f87171;
+  --success: #2f9e44;
+  --warning: #f59e0b;
+  --star: #f59e0b;
+  --transition: 150ms ease;
 
   /* shadcn/ui tokens (light) */
   --background: #f4f5f7;

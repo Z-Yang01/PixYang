@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
+import { Loader2, FileImage, CheckCircle2 } from 'lucide-react';
 
 export default function ImportDialog({ onClose, onDone }) {
   const [selectedDir, setSelectedDir] = useState(null);
@@ -77,8 +78,8 @@ export default function ImportDialog({ onClose, onDone }) {
           </div>
 
           {scanning && (
-            <div style={{ padding: '12px 0', color: 'var(--text-secondary)', fontSize: 14 }}>
-              🔍 正在扫描文件夹...
+            <div style={{ padding: '12px 0', color: 'var(--text-secondary)', fontSize: 14, display: 'flex', alignItems: 'center', gap: 8 }}>
+              <Loader2 className="size-4 animate-spin" /> 正在扫描文件夹...
             </div>
           )}
 
@@ -89,8 +90,8 @@ export default function ImportDialog({ onClose, onDone }) {
               </div>
               <div style={{ maxHeight: 200, overflowY: 'auto', background: 'var(--bg-primary)', borderRadius: 'var(--radius)', padding: 8 }}>
                 {foundFiles.slice(0, 50).map((f, i) => (
-                  <div key={i} style={{ fontSize: 12, color: 'var(--text-secondary)', padding: '2px 0' }}>
-                    📄 {f.filename} <span style={{ color: 'var(--text-muted)' }}>{(f.size / 1024).toFixed(0)}KB</span>
+                  <div key={i} style={{ fontSize: 12, color: 'var(--text-secondary)', padding: '2px 0', display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <FileImage className="size-3.5 flex-shrink-0" /> {f.filename} <span style={{ color: 'var(--text-muted)' }}>{(f.size / 1024).toFixed(0)}KB</span>
                   </div>
                 ))}
                 {foundFiles.length > 50 && (
@@ -120,7 +121,7 @@ export default function ImportDialog({ onClose, onDone }) {
               borderRadius: 'var(--radius)',
               textAlign: 'center',
             }}>
-              <div style={{ fontSize: 32, marginBottom: 8 }}>✅</div>
+              <div style={{ marginBottom: 8 }}><CheckCircle2 className="size-8" style={{ color: 'var(--success)' }} /></div>
               <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 4 }}>导入完成</div>
               <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
                 成功导入 {formatCount(result.imported)} 张，跳过 {formatCount(result.skipped)} 张（已存在）

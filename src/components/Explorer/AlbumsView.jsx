@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import ConfirmDialog from '../Layout/ConfirmDialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { FolderOpen } from 'lucide-react';
 import {
   ContextMenu,
   ContextMenuContent,
@@ -116,7 +117,7 @@ export default function AlbumsView({ onSelectAlbum, onRefresh }) {
 
         {albums.length === 0 && !showCreate ? (
           <div className="empty-state" style={{ height: 300 }}>
-            <div className="empty-state-icon">📁</div>
+            <div className="empty-state-icon"><FolderOpen /></div>
             <div className="empty-state-title">还没有相册</div>
             <div className="empty-state-desc">创建相册来分类整理你的图片集合。</div>
           </div>

@@ -4,6 +4,7 @@ const fs = require('fs');
 const {
   initDatabase,
   getImagesRoot,
+  getDatabasePath,
   setImagesRoot,
   scanImageFiles,
   prepareCameraSync,
@@ -13,6 +14,7 @@ const {
   getImageById,
   getAllVisibleIds,
   getAllImagePaths,
+  getImagesForRebuild,
   updateImageOrientation,
   updateImage,
   renameImage,
@@ -354,6 +356,43 @@ function setupIPC() {
     return deleteImage(id);
   });
 
+  // ── 重建缩略图 ──
+  ipcMain.handle('db:rebuild-thumbnails', async () => {
+    const rows = getImagesForRebuild();
+    let rebuilt = 0;
+    let failed = 0;
+    for (const r of rows) {
+      const thumb = generateThumbnail(r.filepath, 512);
+      if (thumb) {
+        updateImage(r.id, { thumbnail: thumb });
+        rebuilt++;
+      } else {
+        failed++;
+      }
+    }
+    return { total: rows.length, rebuilt, failed };
+  });
+
+  // ── 数据库备份 ──
+  ipcMain.handle('fs:get-database-path', async () => {
+    return getDatabasePath();
+  });
+
+  ipcMain.handle('fs:backup-database', async () => {
+    const result = await dialog.showSaveDialog(mainWindow, {
+      title: '备份数据库',
+      defaultPath: `pixyang-backup-${Date.now()}.db`,
+      filters: [{ name: 'SQLite 数据库', extensions: ['db'] }],
+    });
+    if (result.canceled || !result.filePath) return { success: false };
+    try {
+      fs.copyFileSync(getDatabasePath(), result.filePath);
+      return { success: true, path: result.filePath };
+    } catch (e) {
+      return { success: false, error: e.message };
+    }
+  });
+
   // 获取所有导入日期列表
   ipcMain.handle('db:get-import-dates', async () => {
     return getImportDates();
@@ -490,9 +529,10 @@ function setupIPC() {
   });
 }
 
-// 回填历史图片的 EXIF 方向标记
+// 回填历史图片的 EXIF 方向标记（只执行一次，完成后写标记）
 function backfillOrientations() {
   try {
+    if (getSetting('orientation_backfilled') === 'true') return 0;
     const rows = getAllImagePaths();
     let count = 0;
     for (const r of rows) {
@@ -502,6 +542,7 @@ function backfillOrientations() {
         count++;
       }
     }
+    setSetting('orientation_backfilled', 'true');
     console.log(`[方向回填] 完成，更新 ${count} 张`);
     return count;
   } catch (e) {

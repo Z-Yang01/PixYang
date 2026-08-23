@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { FolderOpen, Trash2 } from 'lucide-react';
+import { FolderOpen, Trash2, X, Heart, HeartOff, Star } from 'lucide-react';
 import ConfirmDialog from '../Layout/ConfirmDialog';
 
 function formatSize(bytes) {
@@ -117,7 +117,7 @@ export default function InfoPanel({ image, onClose, onImageUpdated }) {
           <Button variant="ghost" size="icon-xs" className="text-destructive hover:text-destructive" onClick={() => setDeleteConfirm(true)} title="删除图片">
             <Trash2 className="size-4" />
           </Button>
-          <Button variant="ghost" size="xs" onClick={onClose}>✕</Button>
+          <Button variant="ghost" size="icon-xs" onClick={onClose} title="关闭"><X className="size-4" /></Button>
         </div>
       </div>
 
@@ -198,12 +198,14 @@ export default function InfoPanel({ image, onClose, onImageUpdated }) {
                 {[1,2,3,4,5].map(n => (
                   <span
                     key={n}
-                    style={{ color: n <= (image.rating || 0) ? 'var(--star)' : 'var(--text-muted)', cursor: 'pointer' }}
+                    style={{ color: n <= (image.rating || 0) ? 'var(--star)' : 'var(--text-muted)', cursor: 'pointer', display: 'inline-flex' }}
                     onClick={async () => {
                       await window.pixyang.updateImage(image.id, { rating: n === image.rating ? 0 : n });
                       onImageUpdated?.();
                     }}
-                  >★</span>
+                  >
+                    <Star className="size-4" fill={n <= (image.rating || 0) ? 'currentColor' : 'none'} />
+                  </span>
                 ))}
               </span>
             </div>
@@ -217,7 +219,8 @@ export default function InfoPanel({ image, onClose, onImageUpdated }) {
                   onImageUpdated?.();
                 }}
               >
-                {image.favorite ? '❤ 已收藏' : '🤍 收藏'}
+                {image.favorite ? <Heart className="size-4" fill="currentColor" /> : <HeartOff className="size-4" />}
+                {image.favorite ? ' 已收藏' : ' 收藏'}
               </Button>
             </div>
           </div>
@@ -258,7 +261,7 @@ export default function InfoPanel({ image, onClose, onImageUpdated }) {
               {imgTags.map(tag => (
                 <span key={tag.id} className="tag" style={{ background: tag.color }}>
                   {tag.name}
-                  <span className="tag-remove" onClick={() => handleRemoveTag(tag.id)}>×</span>
+                  <span className="tag-remove" onClick={() => handleRemoveTag(tag.id)}><X className="size-3" /></span>
                 </span>
               ))}
               {imgTags.length === 0 && (
@@ -288,7 +291,7 @@ export default function InfoPanel({ image, onClose, onImageUpdated }) {
       {deleteConfirm && (
         <ConfirmDialog
           title="删除图片"
-          message={`确定要删除「${image.filename}」吗？此操作不可撤销，图片文件将被永久删除。`}
+          message={`确定要删除「${image.filename}」吗？此操作不可撤销，图片文件（含配对的 NEF）将被永久删除。`}
           confirmLabel="删除"
           danger
           onConfirm={handleDelete}

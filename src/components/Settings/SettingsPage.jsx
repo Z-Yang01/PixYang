@@ -17,6 +17,8 @@ export default function SettingsPage({ stats, onSettingsChanged, onImagesChanged
   const [message, setMessage] = useState('');
   const [moving, setMoving] = useState(false);
   const [syncing, setSyncing] = useState(false);
+  const [rebuilding, setRebuilding] = useState(false);
+  const [dbPath, setDbPath] = useState('');
   const [resetConfirm, setResetConfirm] = useState(false);
 
   useEffect(() => {
@@ -147,6 +149,35 @@ export default function SettingsPage({ stats, onSettingsChanged, onImagesChanged
     onImagesChanged?.();
     showSaved(parts.length > 0 ? parts.join('，') : `扫描 ${result.scanned} 个文件，无新增`);
   };
+
+  const handleRebuildThumbnails = async () => {
+    if (!window.pixyang || rebuilding) return;
+    setRebuilding(true);
+    setMessage('正在重建缩略图...');
+    const result = await window.pixyang.rebuildThumbnails();
+    setRebuilding(false);
+    onImagesChanged?.();
+    showSaved(`缩略图重建完成：${result.rebuilt} 成功，${result.failed} 失败（共 ${result.total} 张）`);
+  };
+
+  const handleBackup = async () => {
+    if (!window.pixyang) return;
+    const result = await window.pixyang.backupDatabase();
+    if (result.success) {
+      showSaved(`数据库已备份到 ${result.path}`);
+    } else {
+      setMessage(result.error || '备份已取消');
+    }
+  };
+
+  const loadDbPath = async () => {
+    if (!window.pixyang) return;
+    setDbPath(await window.pixyang.getDatabasePath());
+  };
+
+  useEffect(() => {
+    loadDbPath();
+  }, []);
 
   return (
     <div className="content-area">
@@ -286,6 +317,24 @@ export default function SettingsPage({ stats, onSettingsChanged, onImagesChanged
             </Button>
           </div>
           <p className="settings-help">从相机文件夹同步导入图库中缺失的图片（JPG + NEF）。NEF 原图会一并存储管理但不显示；删除图片时会同步删除配对的 NEF。</p>
+        </section>
+
+        <section className="settings-section">
+          <h2>维护</h2>
+          <div className="info-row">
+            <span className="info-label">重建缩略图</span>
+            <Button variant="secondary" size="sm" onClick={handleRebuildThumbnails} disabled={rebuilding}>
+              {rebuilding ? '重建中...' : '重建缩略图'}
+            </Button>
+          </div>
+          <p className="settings-help">为所有图片重新生成高清缩略图（修复失效或低清的缩略图）。</p>
+
+          <div className="info-row" style={{ marginTop: 12 }}>
+            <span className="info-label">数据库备份</span>
+            <Button variant="secondary" size="sm" onClick={handleBackup}>备份数据库</Button>
+          </div>
+          <div className="storage-path" style={{ marginTop: 8 }} title={dbPath}>{dbPath || '加载中...'}</div>
+          <p className="settings-help">备份数据库（pixyang.db）到指定位置，含全部图片元数据与设置。图片文件需另行备份。</p>
         </section>
 
         <section className="settings-section">

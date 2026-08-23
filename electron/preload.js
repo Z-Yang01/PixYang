@@ -25,6 +25,13 @@ contextBridge.exposeInMainWorld('pixyang', {
   batchDeleteImages: (ids) => ipcRenderer.invoke('db:batch-delete-images', ids),
   getImportDates: () => ipcRenderer.invoke('db:get-import-dates'),
 
+  // 重建缩略图
+  rebuildThumbnails: () => ipcRenderer.invoke('db:rebuild-thumbnails'),
+
+  // 数据库备份
+  getDatabasePath: () => ipcRenderer.invoke('fs:get-database-path'),
+  backupDatabase: () => ipcRenderer.invoke('fs:backup-database'),
+
   // 标签
   getTags: () => ipcRenderer.invoke('db:get-tags'),
   createTag: (name, color) => ipcRenderer.invoke('db:create-tag', name, color),
