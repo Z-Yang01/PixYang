@@ -27,6 +27,7 @@ const {
   addTagToImage,
   removeTagFromImage,
   getImageTags,
+  getBatchImageTags,
   getAlbums,
   createAlbum,
   renameAlbum,
@@ -132,6 +133,71 @@ function extractTakenAt(filepath) {
   } catch (e) {
     return '';
   }
+}
+
+// 一次性读取文件头并解析日期/拍摄时间/方向，避免重复读盘
+function readExifInfo(filepath) {
+  let buf;
+  try {
+    const fd = fs.openSync(filepath, 'r');
+    buf = Buffer.alloc(65536);
+    fs.readSync(fd, buf, 0, 65536, 0);
+    fs.closeSync(fd);
+  } catch (e) {
+    return { date: '', takenAt: '', orientation: 1 };
+  }
+  const str = buf.toString('latin1', 0, 65536);
+
+  // 日期（YYYY-MM-DD）
+  let date = '';
+  const dm = str.match(/DateTimeOriginal\x00.\x00(\d{4}):(\d{2}):(\d{2})/);
+  if (dm) date = `${dm[1]}-${dm[2]}-${dm[3]}`;
+  else {
+    const loose = str.match(/Exif.{0,200}(\d{4}):(\d{2}):(\d{2})\s/);
+    if (loose) date = `${loose[1]}-${loose[2]}-${loose[3]}`;
+    else {
+      try {
+        const st = fs.statSync(filepath);
+        const m = st.mtime;
+        date = `${m.getFullYear()}-${String(m.getMonth() + 1).padStart(2, '0')}-${String(m.getDate()).padStart(2, '0')}`;
+      } catch { /* 忽略 */ }
+    }
+  }
+
+  // 拍摄时间（YYYY-MM-DD HH:MM）
+  let takenAt = '';
+  const tm = str.match(/DateTimeOriginal\x00.\x00(\d{4}):(\d{2}):(\d{2})\s(\d{2}):(\d{2})/);
+  if (tm) takenAt = `${tm[1]}-${tm[2]}-${tm[3]} ${tm[4]}:${tm[5]}`;
+  else {
+    const tloose = str.match(/Exif.{0,200}(\d{4}):(\d{2}):(\d{2})\s(\d{2}):(\d{2})/);
+    if (tloose) takenAt = `${tloose[1]}-${tloose[2]}-${tloose[3]} ${tloose[4]}:${tloose[5]}`;
+  }
+
+  // 方向（Orientation）
+  let orientation = 1;
+  if (buf[0] === 0xFF && buf[1] === 0xD8) {
+    let offset = 2;
+    while (offset + 4 <= buf.length) {
+      if (buf[offset] !== 0xFF) break;
+      const marker = buf[offset + 1];
+      if (marker === 0xE1) {
+        const segLen = buf.readUInt16BE(offset + 2);
+        if (segLen >= 8 && buf.toString('latin1', offset + 4, offset + 10) === 'Exif\0\0') {
+          orientation = parseTiffOrientation(buf, offset + 10, segLen - 2);
+          break;
+        }
+        offset += 2 + segLen;
+      } else if (marker === 0xDA) {
+        break;
+      } else if (marker === 0xD8 || (marker >= 0xD0 && marker <= 0xD7) || marker === 0x01) {
+        offset += 2;
+      } else {
+        offset += 2 + buf.readUInt16BE(offset + 2);
+      }
+    }
+  }
+
+  return { date, takenAt, orientation };
 }
 
 // 解析 JPEG EXIF Orientation（0x0112），非 JPEG 或无 EXIF 返回 1
@@ -254,6 +320,29 @@ function getImageData(filepath, maxWidth = 1920) {
 
 // ── IPC 处理 ──
 
+let thumbRebuildTimer = null;
+// 后台为缺失缩略图的图片补生成（防抖，分批让出事件循环避免阻塞主进程）
+function scheduleThumbnailRebuild() {
+  if (thumbRebuildTimer) clearTimeout(thumbRebuildTimer);
+  thumbRebuildTimer = setTimeout(async () => {
+    thumbRebuildTimer = null;
+    try {
+      const rows = getImagesForRebuild();
+      for (let i = 0; i < rows.length; i++) {
+        const r = rows[i];
+        const thumb = generateThumbnail(r.filepath, 256);
+        if (thumb) updateImage(r.id, { thumbnail: thumb });
+        if (i % 3 === 0) await new Promise(res => setImmediate(res));
+      }
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('thumbnails-ready');
+      }
+    } catch (e) {
+      console.error('[缩略图] 后台生成失败:', e.message);
+    }
+  }, 800);
+}
+
 function setupIPC() {
   // 选择导入目录
   ipcMain.handle('dialog:select-directory', async () => {
@@ -280,16 +369,12 @@ function setupIPC() {
     const { toImport, attachPairs, skipped } = prepareCameraSync(files);
 
     for (const f of toImport) {
-      f.importDate = extractImageDate(f.filepath);
-      f.takenAt = extractTakenAt(f.filepath);
-      f.orientation = getExifOrientation(f.filepath);
-      if (f.format !== '.nef') {
-        const thumb = generateThumbnail(f.filepath);
-        if (thumb) {
-          f.thumbnail = thumb;
-        }
-      }
+      const info = readExifInfo(f.filepath);
+      f.importDate = info.date;
+      f.takenAt = info.takenAt;
+      f.orientation = info.orientation;
     }
+    scheduleThumbnailRebuild();
 
     const imported = importImages(toImport);
     let attached = 0;
@@ -308,21 +393,16 @@ function setupIPC() {
   });
 
   // 导入图片：提取日期 + 生成缩略图后写入数据库
-  ipcMain.handle('db:import-images', async (_event, imageFiles) => {
+  ipcMain.handle('db:import-images', async (_event, imageFiles, dateOverride) => {
     for (const img of imageFiles) {
-      // 从图片 EXIF 或文件时间提取日期
-      img.importDate = extractImageDate(img.filepath);
-      // 提取拍摄时间（精确到分钟），无则空
-      img.takenAt = extractTakenAt(img.filepath);
-      // 记录 EXIF 方向
-      img.orientation = getExifOrientation(img.filepath);
-      // 生成缩略图
-      const thumb = generateThumbnail(img.filepath);
-      if (thumb) {
-        img.thumbnail = thumb;
-      }
+      // 一次性读取 EXIF：日期 + 拍摄时间 + 方向（缩略图稍后后台补生成）
+      const info = readExifInfo(img.filepath);
+      img.importDate = dateOverride || info.date;
+      img.takenAt = info.takenAt;
+      img.orientation = info.orientation;
     }
     const result = importImages(imageFiles);
+    scheduleThumbnailRebuild();
     return result;
   });
 
@@ -358,7 +438,7 @@ function setupIPC() {
 
   // ── 重建缩略图 ──
   ipcMain.handle('db:rebuild-thumbnails', async () => {
-    const rows = getImagesForRebuild();
+    const rows = getImagesForRebuild(true);
     let rebuilt = 0;
     let failed = 0;
     for (const r of rows) {
@@ -429,6 +509,7 @@ function setupIPC() {
   ipcMain.handle('db:add-tag-to-image', async (_event, imageId, tagId) => addTagToImage(imageId, tagId));
   ipcMain.handle('db:remove-tag-from-image', async (_event, imageId, tagId) => removeTagFromImage(imageId, tagId));
   ipcMain.handle('db:get-image-tags', async (_event, imageId) => getImageTags(imageId));
+  ipcMain.handle('db:get-batch-image-tags', async (_event, imageIds) => getBatchImageTags(imageIds || []));
 
   // ── 相册 ──
   ipcMain.handle('db:get-albums', async () => getAlbums());

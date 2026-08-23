@@ -120,11 +120,9 @@ export default function ImageGrid({
 
   const loadImageTags = async (imgs) => {
     if (!window.pixyang) return;
-    const tagMap = {};
-    await Promise.all(imgs.map(async (img) => {
-      tagMap[img.id] = await window.pixyang.getImageTags(img.id);
-    }));
-    setImageTags(tagMap);
+    const ids = imgs.map(img => img.id);
+    const tagMap = await window.pixyang.getBatchImageTags(ids);
+    setImageTags(tagMap || {});
   };
 
   const handleClick = (image, index, e) => {

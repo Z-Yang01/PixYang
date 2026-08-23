@@ -14,7 +14,7 @@ contextBridge.exposeInMainWorld('pixyang', {
   openPath: (dirPath) => ipcRenderer.invoke('shell:open-path', dirPath),
 
   // 数据库 - 图片
-  importImages: (imageFiles) => ipcRenderer.invoke('db:import-images', imageFiles),
+  importImages: (imageFiles, dateOverride) => ipcRenderer.invoke('db:import-images', imageFiles, dateOverride),
   syncCameraFolder: () => ipcRenderer.invoke('db:sync-camera-folder'),
   getImages: (options) => ipcRenderer.invoke('db:get-images', options),
   getImage: (id) => ipcRenderer.invoke('db:get-image', id),
@@ -39,6 +39,7 @@ contextBridge.exposeInMainWorld('pixyang', {
   addTagToImage: (imageId, tagId) => ipcRenderer.invoke('db:add-tag-to-image', imageId, tagId),
   removeTagFromImage: (imageId, tagId) => ipcRenderer.invoke('db:remove-tag-from-image', imageId, tagId),
   getImageTags: (imageId) => ipcRenderer.invoke('db:get-image-tags', imageId),
+  getBatchImageTags: (imageIds) => ipcRenderer.invoke('db:get-batch-image-tags', imageIds),
 
   // 相册
   getAlbums: () => ipcRenderer.invoke('db:get-albums'),
@@ -64,5 +65,12 @@ contextBridge.exposeInMainWorld('pixyang', {
     const handler = () => callback();
     ipcRenderer.on('orientation-backfill-done', handler);
     return () => ipcRenderer.removeListener('orientation-backfill-done', handler);
+  },
+
+  // 后台缩略图生成完成通知
+  onThumbnailsReady: (callback) => {
+    const handler = () => callback();
+    ipcRenderer.on('thumbnails-ready', handler);
+    return () => ipcRenderer.removeListener('thumbnails-ready', handler);
   },
 });

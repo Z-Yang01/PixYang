@@ -1,151 +1,242 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
-import { Loader2, FileImage, CheckCircle2 } from 'lucide-react';
+import { Input } from '@/components/ui/input';
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { Loader2, FileImage, CheckCircle2, Check, FolderOpen } from 'lucide-react';
+
+const PREVIEWABLE = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp'];
+
+function todayStr() {
+  const t = new Date();
+  return `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, '0')}-${String(t.getDate()).padStart(2, '0')}`;
+}
 
 export default function ImportDialog({ onClose, onDone }) {
   const [selectedDir, setSelectedDir] = useState(null);
   const [scanning, setScanning] = useState(false);
   const [importing, setImporting] = useState(false);
   const [foundFiles, setFoundFiles] = useState([]);
+  const [checkedIds, setCheckedIds] = useState(new Set());
+  const [fileUrls, setFileUrls] = useState({});
+  const [dateMode, setDateMode] = useState('today'); // today | exif | custom
+  const [customDate, setCustomDate] = useState(todayStr());
   const [progress, setProgress] = useState(0);
+  const [currentFile, setCurrentFile] = useState('');
   const [result, setResult] = useState(null);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    if (foundFiles.length > 0) {
+      setCheckedIds(new Set(foundFiles.map(f => f.filepath)));
+      loadPreviews(foundFiles);
+    }
+  }, [foundFiles]);
+
+  const loadPreviews = async (files) => {
+    if (!window.pixyang) return;
+    const entries = await Promise.all(files.map(async (f) => {
+      if (!PREVIEWABLE.includes(f.format)) return null;
+      const url = await window.pixyang.toFileUrl(f.filepath);
+      return url ? [f.filepath, url] : null;
+    }));
+    setFileUrls(prev => {
+      const next = { ...prev };
+      entries.forEach(e => { if (e) next[e[0]] = e[1]; });
+      return next;
+    });
+  };
 
   const handleSelectDir = async () => {
-    if (!window.pixyang) return;
+    if (!window.pixyang || importing) return;
     const dir = await window.pixyang.selectDirectory();
     if (dir) {
       setSelectedDir(dir);
       setScanning(true);
       setResult(null);
+      setError('');
       const files = await window.pixyang.scanDirectory(dir);
-      setFoundFiles(files);
+      setFoundFiles(files || []);
       setScanning(false);
     }
   };
 
-  const handleImport = async () => {
-    if (!window.pixyang || foundFiles.length === 0) return;
-    setImporting(true);
-    setProgress(0);
-
-    const batchSize = 20;
-    const allImported = [];
-
-    for (let i = 0; i < foundFiles.length; i += batchSize) {
-      const batch = foundFiles.slice(i, i + batchSize);
-      const imported = await window.pixyang.importImages(batch);
-      allImported.push(...imported);
-      setProgress(Math.round(((i + batch.length) / foundFiles.length) * 100));
-    }
-
-    setImporting(false);
-    setResult({
-      total: foundFiles.length,
-      imported: allImported.length,
-      skipped: foundFiles.length - allImported.length,
+  const toggleFile = (fp) => {
+    setCheckedIds(prev => {
+      const next = new Set(prev);
+      next.has(fp) ? next.delete(fp) : next.add(fp);
+      return next;
     });
   };
 
-  const handleDone = () => {
-    onDone();
+  const checkedCount = checkedIds.size;
+
+  const handleImport = async () => {
+    if (!window.pixyang || importing) return;
+    const files = foundFiles.filter(f => checkedIds.has(f.filepath));
+    if (files.length === 0) return;
+    setImporting(true);
+    setProgress(0);
+    setError('');
+    setResult(null);
+
+    const override = dateMode === 'today' ? todayStr() : (dateMode === 'custom' ? customDate : null);
+    const allImported = [];
+    const batchSize = 20;
+
+    try {
+      for (let i = 0; i < files.length; i += batchSize) {
+        const batch = files.slice(i, i + batchSize);
+        setCurrentFile(batch[0].filename);
+        const imported = await window.pixyang.importImages(batch, override);
+        allImported.push(...(imported || []));
+        setProgress(Math.round(((i + batch.length) / files.length) * 100));
+      }
+      setResult({
+        total: files.length,
+        imported: allImported.length,
+        skipped: files.length - allImported.length,
+      });
+    } catch (e) {
+      setError(e?.message || '导入过程中出现错误');
+    } finally {
+      setImporting(false);
+      setCurrentFile('');
+    }
   };
 
+  const handleDone = () => onDone();
   const formatCount = (n) => n.toLocaleString();
 
   return (
-    <div className="dialog-backdrop" onClick={onClose}>
-      <div className="dialog" onClick={(e) => e.stopPropagation()}>
-        <div className="dialog-header">导入图片</div>
+    <Dialog open onOpenChange={(o) => { if (!o && !importing) onClose(); }}>
+      <DialogContent className="sm:max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>导入图片</DialogTitle>
+        </DialogHeader>
 
-        <div className="dialog-body">
+        <div className="space-y-4">
+          {/* 目录选择 */}
           <div className="form-group">
             <label className="form-label">选择包含图片的文件夹</label>
-            <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 8 }}>
-              导入的图片会复制到 PixYang 管理目录，按日期自动整理（如：2026/06/15/图片.jpg）。
-              原始文件不受影响。
-            </div>
+            <p className="import-hint">
+              导入的图片会复制到 PixYang 管理目录，按日期自动整理（如：2026/06/15/图片.jpg）。原始文件不受影响。
+            </p>
             <div style={{ display: 'flex', gap: 8 }}>
-              <input
-                className="form-input"
-                value={selectedDir || ''}
-                readOnly
-                placeholder="未选择文件夹..."
-              />
+              <Input value={selectedDir || ''} readOnly placeholder="未选择文件夹..." />
               <Button variant="secondary" onClick={handleSelectDir} disabled={importing}>
-                浏览
+                <FolderOpen className="size-4" /> 浏览
               </Button>
             </div>
           </div>
 
           {scanning && (
-            <div style={{ padding: '12px 0', color: 'var(--text-secondary)', fontSize: 14, display: 'flex', alignItems: 'center', gap: 8 }}>
+            <div className="import-scanning">
               <Loader2 className="size-4 animate-spin" /> 正在扫描文件夹...
             </div>
           )}
 
           {!scanning && foundFiles.length > 0 && !result && (
-            <div style={{ padding: '8px 0' }}>
-              <div style={{ fontSize: 14, marginBottom: 8 }}>
-                找到 <strong>{formatCount(foundFiles.length)}</strong> 个图片文件
+            <>
+              {/* 日期选择 */}
+              <div className="form-group">
+                <label className="form-label">导入日期</label>
+                <div className="import-date-row">
+                  <Button size="xs" variant={dateMode === 'today' ? 'default' : 'secondary'} onClick={() => setDateMode('today')}>今天</Button>
+                  <Button size="xs" variant={dateMode === 'exif' ? 'default' : 'secondary'} onClick={() => setDateMode('exif')}>使用拍摄日期</Button>
+                  <Button size="xs" variant={dateMode === 'custom' ? 'default' : 'secondary'} onClick={() => setDateMode('custom')}>自定义</Button>
+                  {dateMode === 'custom' && (
+                    <Input type="date" className="h-7 w-40 text-xs" value={customDate} onChange={(e) => setCustomDate(e.target.value)} />
+                  )}
+                </div>
               </div>
-              <div style={{ maxHeight: 200, overflowY: 'auto', background: 'var(--bg-primary)', borderRadius: 'var(--radius)', padding: 8 }}>
-                {foundFiles.slice(0, 50).map((f, i) => (
-                  <div key={i} style={{ fontSize: 12, color: 'var(--text-secondary)', padding: '2px 0', display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <FileImage className="size-3.5 flex-shrink-0" /> {f.filename} <span style={{ color: 'var(--text-muted)' }}>{(f.size / 1024).toFixed(0)}KB</span>
+
+              {/* 文件选择 */}
+              <div className="form-group">
+                <div className="import-file-toolbar">
+                  <span>找到 <strong>{formatCount(foundFiles.length)}</strong> 个图片文件，已选 <strong>{checkedCount}</strong> 个</span>
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    <Button size="xs" variant="secondary" onClick={() => setCheckedIds(new Set(foundFiles.map(f => f.filepath)))}>全选</Button>
+                    <Button size="xs" variant="ghost" onClick={() => setCheckedIds(new Set())}>取消全选</Button>
                   </div>
-                ))}
-                {foundFiles.length > 50 && (
-                  <div style={{ fontSize: 12, color: 'var(--text-muted)', padding: '4px 0' }}>
-                    ... 还有 {formatCount(foundFiles.length - 50)} 个文件
-                  </div>
-                )}
+                </div>
+                <div className="import-file-grid">
+                  {foundFiles.map(f => {
+                    const checked = checkedIds.has(f.filepath);
+                    const url = fileUrls[f.filepath];
+                    return (
+                      <div
+                        key={f.filepath}
+                        className={`import-file-card ${checked ? '' : 'unchecked'}`}
+                        onClick={() => toggleFile(f.filepath)}
+                      >
+                        <div className="import-file-thumb">
+                          {url ? (
+                            <img src={url} alt={f.filename} loading="lazy" />
+                          ) : (
+                            <FileImage className="size-6" />
+                          )}
+                        </div>
+                        <div className="import-file-name" title={f.filename}>{f.filename}</div>
+                        <div className="import-file-meta">{(f.size / 1024).toFixed(0)}KB</div>
+                        <span className={`import-check ${checked ? 'checked' : ''}`}>
+                          {checked && <Check className="size-3" />}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
-            </div>
+            </>
           )}
 
           {importing && (
-            <div style={{ padding: '12px 0' }}>
-              <div style={{ fontSize: 14, color: 'var(--text-secondary)', marginBottom: 4 }}>
-                正在导入图片... {progress}%
+            <div className="form-group">
+              <div className="import-scanning">
+                <Loader2 className="size-4 animate-spin" />
+                {currentFile ? `正在导入 ${currentFile}...` : `正在导入图片... ${progress}%`}
               </div>
-              <div className="progress-bar">
+              <div className="progress-bar" style={{ marginTop: 8 }}>
                 <div className="progress-bar-fill" style={{ width: `${progress}%` }} />
               </div>
             </div>
           )}
 
+          {error && <div className="form-error">{error}</div>}
+
           {result && (
-            <div style={{
-              padding: 16,
-              background: 'var(--bg-primary)',
-              borderRadius: 'var(--radius)',
-              textAlign: 'center',
-            }}>
-              <div style={{ marginBottom: 8 }}><CheckCircle2 className="size-8" style={{ color: 'var(--success)' }} /></div>
-              <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 4 }}>导入完成</div>
-              <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
-                成功导入 {formatCount(result.imported)} 张，跳过 {formatCount(result.skipped)} 张（已存在）
+            <div className="import-result">
+              <CheckCircle2 className="size-8" style={{ color: 'var(--success)' }} />
+              <div className="import-result-title">导入完成</div>
+              <div className="import-result-desc">
+                成功导入 {formatCount(result.imported)} 张
+                {result.skipped > 0 && `，跳过 ${formatCount(result.skipped)} 张（已存在或失败）`}
               </div>
             </div>
           )}
         </div>
 
-        <div className="dialog-footer">
+        <DialogFooter>
           {result ? (
             <Button onClick={handleDone}>完成</Button>
           ) : (
             <>
-              <Button variant="ghost" onClick={onClose}>取消</Button>
+              <Button variant="ghost" onClick={onClose} disabled={importing}>取消</Button>
               <Button
-                disabled={foundFiles.length === 0 || importing}
+                disabled={checkedCount === 0 || importing || scanning}
                 onClick={handleImport}
               >
-                {importing ? `导入中 ${progress}%...` : `导入 ${formatCount(foundFiles.length)} 张图片`}
+                {importing ? `导入中 ${progress}%...` : `导入 ${formatCount(checkedCount)} 张图片`}
               </Button>
             </>
           )}
-        </div>
-      </div>
-    </div>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

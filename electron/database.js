@@ -172,6 +172,12 @@ async function initDatabase() {
   // 迁移旧表：如果不存在 import_date 列则添加
   migrateSchema();
 
+  // 常用查询索引（hidden/import_date/favorite/taken_at）
+  db.run('CREATE INDEX IF NOT EXISTS idx_images_hidden ON images(hidden)');
+  db.run('CREATE INDEX IF NOT EXISTS idx_images_import_date ON images(import_date)');
+  db.run('CREATE INDEX IF NOT EXISTS idx_images_favorite ON images(favorite)');
+  db.run('CREATE INDEX IF NOT EXISTS idx_images_taken_at ON images(taken_at)');
+
   // 从设置中读取自定义路径（如果有的话）
   const customImagesRoot = getSetting('images_root');
   if (customImagesRoot) {
@@ -229,11 +235,21 @@ function migrateSchema() {
   }
 }
 
+let saveTimer = null;
+// 防抖批量写入：大量连续操作（批量删除/回填/导入）只最终写盘一次，避免重复序列化整个数据库
 function saveDatabase() {
   if (!db) return;
-  const data = db.export();
-  const buffer = Buffer.from(data);
-  fs.writeFileSync(DB_PATH, buffer);
+  if (saveTimer) clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => {
+    saveTimer = null;
+    try {
+      const data = db.export();
+      const buffer = Buffer.from(data);
+      fs.writeFileSync(DB_PATH, buffer);
+    } catch (e) {
+      console.error('[数据库] 写入失败:', e.message);
+    }
+  }, 500);
 }
 
 // ── 图片存储路径生成 ──
@@ -496,9 +512,10 @@ function getAllImagePaths() {
   return rows;
 }
 
-// 返回所有可见图片的 id 与 filepath（用于重建缩略图）
-function getImagesForRebuild() {
-  const stmt = db.prepare('SELECT id, filepath, filename FROM images WHERE hidden = 0');
+// 返回可见图片的 id 与 filepath；all=true 重建全部，否则只取缺失缩略图的
+function getImagesForRebuild(all = false) {
+  const where = all ? 'hidden = 0' : 'hidden = 0 AND thumbnail = ""';
+  const stmt = db.prepare(`SELECT id, filepath, filename FROM images WHERE ${where}`);
   const rows = [];
   while (stmt.step()) rows.push(stmt.getAsObject());
   stmt.free();
@@ -970,6 +987,26 @@ function getImageTags(imageId) {
   return tags;
 }
 
+// 批量查询多张图片的标签，返回 { [imageId]: [tag, ...] }（单次 SQL）
+function getBatchImageTags(imageIds) {
+  const result = {};
+  if (!imageIds || imageIds.length === 0) return result;
+  const placeholders = imageIds.map(() => '?').join(',');
+  const stmt = db.prepare(`
+    SELECT it.image_id, t.* FROM tags t
+    JOIN image_tags it ON t.id = it.tag_id
+    WHERE it.image_id IN (${placeholders})
+  `);
+  stmt.bind(imageIds);
+  while (stmt.step()) {
+    const row = stmt.getAsObject();
+    if (!result[row.image_id]) result[row.image_id] = [];
+    result[row.image_id].push(row);
+  }
+  stmt.free();
+  return result;
+}
+
 // ── Album Operations ──
 
 function getAlbums() {
@@ -1103,6 +1140,7 @@ module.exports = {
   addTagToImage,
   removeTagFromImage,
   getImageTags,
+  getBatchImageTags,
   getAlbums,
   createAlbum,
   renameAlbum,

@@ -18,6 +18,10 @@ export default function ImageViewer({ image, imageIndex = 0, totalCount = 0, onC
   const dragStart = useRef({ x: 0, y: 0 });
   const posStart = useRef({ x: 0, y: 0 });
   const imgRef = useRef(null);
+  const posRef = useRef(pos);
+  posRef.current = pos;
+  const zoomRef = useRef(zoom);
+  zoomRef.current = zoom;
 
   // 同步图片切换
   useEffect(() => {
@@ -88,11 +92,11 @@ export default function ImageViewer({ image, imageIndex = 0, totalCount = 0, onC
 
   // 鼠标拖拽平移
   const handleMouseDown = (e) => {
-    if (zoom <= 1) return;
+    if (zoomRef.current <= 1) return;
     e.preventDefault();
     dragging.current = true;
     dragStart.current = { x: e.clientX, y: e.clientY };
-    posStart.current = { x: pos.x, y: pos.y };
+    posStart.current = { x: posRef.current.x, y: posRef.current.y };
   };
 
   useEffect(() => {
@@ -109,7 +113,7 @@ export default function ImageViewer({ image, imageIndex = 0, totalCount = 0, onC
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
     };
-  }, [zoom, pos]);
+  }, []);
 
   // 滚轮缩放（以鼠标位置为中心）
   const handleWheel = useCallback((e) => {

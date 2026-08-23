@@ -1,6 +1,6 @@
 import React from 'react';
 import { Button } from '@/components/ui/button';
-import { Search, X } from 'lucide-react';
+import { Search, X, Upload } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
 function FilterChip({ label, onRemove }) {
@@ -106,7 +106,7 @@ export default function TopBar({
 
         <div className="topbar-divider" />
 
-        <Button size="sm" onClick={onImport}>导入</Button>
+        <Button size="sm" onClick={onImport}><Upload className="size-4" /> 导入</Button>
       </div>
 
       {hasFilters && (

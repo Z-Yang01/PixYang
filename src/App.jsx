@@ -112,11 +112,15 @@ export default function App() {
     document.documentElement.setAttribute('data-theme', settings.theme === 'light' ? 'light' : 'dark');
   }, []);
 
+  // 加载图片（150ms 防抖，合并快速变化如连续输入搜索）
   useEffect(() => {
-    loadImages();
-    loadStats();
-    loadAppData();
-  }, [filterTag, filterAlbum, filterFavorites, filterDate, dateRange, page, gridSettings, sortBy, sortOrder]);
+    const t = setTimeout(() => {
+      loadImages();
+      loadStats();
+      loadAppData();
+    }, 150);
+    return () => clearTimeout(t);
+  }, [filterTag, filterAlbum, filterFavorites, filterDate, dateRange, page, gridSettings, sortBy, sortOrder, search]);
 
   useEffect(() => {
     loadGridSettings();
@@ -131,6 +135,15 @@ export default function App() {
     });
     return off;
   }, [loadImages, loadStats]);
+
+  // 后台缩略图生成完成后刷新，让新缩略图显示
+  useEffect(() => {
+    if (!window.pixyang?.onThumbnailsReady) return;
+    const off = window.pixyang.onThumbnailsReady(() => {
+      loadImages();
+    });
+    return off;
+  }, [loadImages]);
 
   useEffect(() => {
     setPage(1);
@@ -171,8 +184,7 @@ export default function App() {
 
   const handleSearch = (value) => {
     setSearch(value);
-    setPage(1);
-    loadImages({ search: value });
+    if (page !== 1) setPage(1);
   };
 
   const handleSort = (by) => {
