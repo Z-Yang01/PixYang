@@ -5,6 +5,7 @@ import {
   LayoutGrid,
   Heart,
   Folder,
+  Images,
   Tags,
   Settings,
   Calendar,
@@ -32,7 +33,7 @@ export default function Sidebar({
   return (
     <aside className="sidebar">
       <div className="sidebar-header">
-        <div className="sidebar-logo">🖼</div>
+        <div className="sidebar-logo"><Images /></div>
         {!collapsed && <span className="sidebar-title">PixYang</span>}
         <Button
           variant="ghost"
@@ -121,7 +122,42 @@ export default function Sidebar({
                     <span className="nav-badge">{count}</span>
                   </button>
                 ))}
+                {importDates.length > 30 && (
+                  <div className="menu-hint">共 {importDates.length} 天，仅显示前 30 个</div>
+                )}
               </>
+            )}
+          </div>
+        )}
+
+        {/* 标签筛选 */}
+        {tags.length > 0 && (
+          <div className="nav-section">
+            {!collapsed && (
+              <div className="nav-section-title">
+                按标签筛选
+                {filterTag && (
+                  <Button variant="ghost" size="xs" onClick={() => onFilterTag(null)}
+                    className="ml-1.5 text-[10px] h-5 px-1.5">
+                    清除
+                  </Button>
+                )}
+              </div>
+            )}
+            {tags.slice(0, 15).map(tag => (
+              <button
+                key={tag.id}
+                className={`nav-item ${filterTag === tag.id ? 'active' : ''}`}
+                onClick={() => onFilterTag(filterTag === tag.id ? null : tag.id)}
+                title={tag.name}
+              >
+                <span className="tag-dot" style={{ background: tag.color, margin: '0 4px 0 3px' }} />
+                {!collapsed && <span>{tag.name}</span>}
+                {!collapsed && <span className="nav-badge">{tag.image_count}</span>}
+              </button>
+            ))}
+            {tags.length > 15 && !collapsed && (
+              <div className="menu-hint">共 {tags.length} 个，仅显示前 15 个</div>
             )}
           </div>
         )}

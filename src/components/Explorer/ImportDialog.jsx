@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -17,7 +17,13 @@ function todayStr() {
   return `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, '0')}-${String(t.getDate()).padStart(2, '0')}`;
 }
 
-export default function ImportDialog({ onClose, onDone }) {
+function formatFileSize(bytes) {
+  if (!bytes || bytes <= 0) return '0KB';
+  if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))}KB`;
+  return `${(bytes / 1024 / 1024).toFixed(1)}MB`;
+}
+
+export default function ImportDialog({ onClose, onDone, initialFiles = null }) {
   const [selectedDir, setSelectedDir] = useState(null);
   const [scanning, setScanning] = useState(false);
   const [importing, setImporting] = useState(false);
@@ -30,6 +36,14 @@ export default function ImportDialog({ onClose, onDone }) {
   const [currentFile, setCurrentFile] = useState('');
   const [result, setResult] = useState(null);
   const [error, setError] = useState('');
+  const cancelImportRef = useRef(false);
+
+  useEffect(() => {
+    if (initialFiles && initialFiles.length > 0) {
+      setSelectedDir(`拖入的 ${initialFiles.length} 个文件`);
+      setFoundFiles(initialFiles);
+    }
+  }, []);
 
   useEffect(() => {
     if (foundFiles.length > 0) {
@@ -40,16 +54,14 @@ export default function ImportDialog({ onClose, onDone }) {
 
   const loadPreviews = async (files) => {
     if (!window.pixyang) return;
-    const entries = await Promise.all(files.map(async (f) => {
-      if (!PREVIEWABLE.includes(f.format)) return null;
-      const url = await window.pixyang.toFileUrl(f.filepath);
-      return url ? [f.filepath, url] : null;
-    }));
-    setFileUrls(prev => {
-      const next = { ...prev };
-      entries.forEach(e => { if (e) next[e[0]] = e[1]; });
-      return next;
-    });
+    const paths = files.filter(f => PREVIEWABLE.includes(f.format)).map(f => f.filepath);
+    if (paths.length === 0) return;
+    const urlMap = (await window.pixyang.toFileUrls(paths)) || {};
+    const next = {};
+    for (const [p, url] of Object.entries(urlMap)) {
+      if (url) next[p] = url;
+    }
+    if (Object.keys(next).length > 0) setFileUrls(prev => ({ ...prev, ...next }));
   };
 
   const handleSelectDir = async () => {
@@ -84,13 +96,19 @@ export default function ImportDialog({ onClose, onDone }) {
     setProgress(0);
     setError('');
     setResult(null);
+    cancelImportRef.current = false;
 
     const override = dateMode === 'today' ? todayStr() : (dateMode === 'custom' ? customDate : null);
     const allImported = [];
     const batchSize = 20;
+    let canceled = false;
 
     try {
       for (let i = 0; i < files.length; i += batchSize) {
+        if (cancelImportRef.current) {
+          canceled = true;
+          break;
+        }
         const batch = files.slice(i, i + batchSize);
         setCurrentFile(batch[0].filename);
         const imported = await window.pixyang.importImages(batch, override);
@@ -101,6 +119,7 @@ export default function ImportDialog({ onClose, onDone }) {
         total: files.length,
         imported: allImported.length,
         skipped: files.length - allImported.length,
+        canceled,
       });
     } catch (e) {
       setError(e?.message || '导入过程中出现错误');
@@ -108,6 +127,10 @@ export default function ImportDialog({ onClose, onDone }) {
       setImporting(false);
       setCurrentFile('');
     }
+  };
+
+  const handleCancelImport = () => {
+    cancelImportRef.current = true;
   };
 
   const handleDone = () => onDone();
@@ -183,7 +206,7 @@ export default function ImportDialog({ onClose, onDone }) {
                           )}
                         </div>
                         <div className="import-file-name" title={f.filename}>{f.filename}</div>
-                        <div className="import-file-meta">{(f.size / 1024).toFixed(0)}KB</div>
+                        <div className="import-file-meta">{formatFileSize(f.size)}</div>
                         <span className={`import-check ${checked ? 'checked' : ''}`}>
                           {checked && <Check className="size-3" />}
                         </span>
@@ -212,10 +235,11 @@ export default function ImportDialog({ onClose, onDone }) {
           {result && (
             <div className="import-result">
               <CheckCircle2 className="size-8" style={{ color: 'var(--success)' }} />
-              <div className="import-result-title">导入完成</div>
+              <div className="import-result-title">{result.canceled ? '已停止导入' : '导入完成'}</div>
               <div className="import-result-desc">
                 成功导入 {formatCount(result.imported)} 张
                 {result.skipped > 0 && `，跳过 ${formatCount(result.skipped)} 张（已存在或失败）`}
+                {result.canceled && `，剩余 ${formatCount(result.total - result.imported - result.skipped)} 张未导入`}
               </div>
             </div>
           )}
@@ -227,12 +251,16 @@ export default function ImportDialog({ onClose, onDone }) {
           ) : (
             <>
               <Button variant="ghost" onClick={onClose} disabled={importing}>取消</Button>
-              <Button
-                disabled={checkedCount === 0 || importing || scanning}
-                onClick={handleImport}
-              >
-                {importing ? `导入中 ${progress}%...` : `导入 ${formatCount(checkedCount)} 张图片`}
-              </Button>
+              {importing ? (
+                <Button variant="secondary" onClick={handleCancelImport}>停止导入</Button>
+              ) : (
+                <Button
+                  disabled={checkedCount === 0 || scanning}
+                  onClick={handleImport}
+                >
+                  导入 {formatCount(checkedCount)} 张图片
+                </Button>
+              )}
             </>
           )}
         </DialogFooter>

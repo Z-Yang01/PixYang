@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
+import { toast } from 'sonner';
 import ConfirmDialog from '../Layout/ConfirmDialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { FolderOpen } from 'lucide-react';
+import { FolderOpen, Plus } from 'lucide-react';
 import {
   ContextMenu,
   ContextMenuContent,
@@ -13,6 +14,7 @@ import {
 
 export default function AlbumsView({ onSelectAlbum, onRefresh }) {
   const [albums, setAlbums] = useState([]);
+  const [coverUrls, setCoverUrls] = useState({});
   const [showCreate, setShowCreate] = useState(false);
   const [newName, setNewName] = useState('');
   const [newDesc, setNewDesc] = useState('');
@@ -21,6 +23,22 @@ export default function AlbumsView({ onSelectAlbum, onRefresh }) {
   const [renameVal, setRenameVal] = useState('');
 
   useEffect(() => { loadAlbums(); }, []);
+
+  // 批量解析相册封面 URL
+  useEffect(() => {
+    const paths = [...new Set(albums.map(a => a.cover_path).filter(Boolean))];
+    if (paths.length === 0 || !window.pixyang) return;
+    let alive = true;
+    window.pixyang.toFileUrls(paths).then(map => {
+      if (!alive || !map) return;
+      const next = {};
+      for (const a of albums) {
+        if (a.cover_path && map[a.cover_path]) next[a.id] = map[a.cover_path];
+      }
+      setCoverUrls(prev => ({ ...prev, ...next }));
+    });
+    return () => { alive = false; };
+  }, [albums]);
 
   const loadAlbums = async () => {
     if (!window.pixyang) return;
@@ -65,7 +83,7 @@ export default function AlbumsView({ onSelectAlbum, onRefresh }) {
     if (!destDir) return;
     const result = await window.pixyang.exportAlbumImages(album.id, destDir);
     const nefText = result.nefCopied > 0 ? `，含配对 NEF ${result.nefCopied} 个` : '';
-    alert(`导出完成：${result.copied} / ${result.total} 张图片${nefText}`);
+    toast.success(`已导出 ${result.copied} / ${result.total} 张图片${nefText}`);
   };
 
   return (
@@ -79,7 +97,7 @@ export default function AlbumsView({ onSelectAlbum, onRefresh }) {
             </p>
           </div>
           <Button onClick={() => setShowCreate(true)}>
-            + 新建相册
+            <Plus className="size-4" /> 新建相册
           </Button>
         </div>
 
@@ -130,6 +148,19 @@ export default function AlbumsView({ onSelectAlbum, onRefresh }) {
                     className="album-card"
                     onClick={() => onSelectAlbum?.(album.id)}
                   >
+                    {coverUrls[album.id] ? (
+                      <img
+                        className="album-card-cover"
+                        src={coverUrls[album.id]}
+                        alt=""
+                        loading="lazy"
+                        decoding="async"
+                      />
+                    ) : (
+                      <div className="album-card-icon" aria-hidden="true">
+                        <FolderOpen />
+                      </div>
+                    )}
                     {renameTarget?.id === album.id ? (
                       <div onClick={(e) => e.stopPropagation()} style={{ marginBottom: 8 }}>
                         <Input
@@ -148,13 +179,11 @@ export default function AlbumsView({ onSelectAlbum, onRefresh }) {
                       <div className="album-card-name">{album.name}</div>
                     )}
                     {album.description && (
-                      <div style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 8 }}>
-                        {album.description}
-                      </div>
+                      <div className="album-card-desc">{album.description}</div>
                     )}
-                    <div className="album-card-count">{album.image_count || 0} 张图片</div>
-                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 8 }}>
-                      右键操作
+                    <div className="album-card-meta">
+                      <span className="album-card-count">{album.image_count || 0} 张图片</span>
+                      <span className="album-card-hint">右键更多操作</span>
                     </div>
                   </div>
                 </ContextMenuTrigger>

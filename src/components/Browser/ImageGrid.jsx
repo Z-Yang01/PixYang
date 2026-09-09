@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState, useCallback, memo } from 'react';
 import {
   ContextMenu,
   ContextMenuContent,
@@ -23,7 +23,8 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Star, Heart, Check, ImageOff } from 'lucide-react';
+import { Star, Heart, Check, ImageOff, ChevronLeft, ChevronRight } from 'lucide-react';
+import ConfirmDialog from '../Layout/ConfirmDialog';
 
 function StarRating({ rating, onChange }) {
   return (
@@ -42,29 +43,157 @@ function StarRating({ rating, onChange }) {
   );
 }
 
+const ImageCard = memo(function ImageCard({
+  image, index, selected, highlighted, imageTags, allTags, thumbSrc, originalSrc, thumbBroken,
+  onClick, onCheckboxClick, onRate, onToggleFavorite, onQuickTag, onView, onInfo,
+  onRename, onDelete, onAddToAlbum, onThumbError, onOriginalError,
+}) {
+  const tags = imageTags[image.id] || [];
+  const useThumb = Number(image.orientation) === 1;
+  const cardTransform = (image.rotation || image.flip_h || image.flip_v)
+    ? `rotate(${image.rotation || 0}deg) scaleX(${image.flip_h ? -1 : 1}) scaleY(${image.flip_v ? -1 : 1})`
+    : undefined;
+
+  return (
+    <ContextMenu>
+      <ContextMenuTrigger asChild>
+        <div
+          data-id={image.id}
+          className={`image-card ${selected ? 'selected' : ''} ${highlighted ? 'keyboard-active' : ''}`}
+          onClick={(e) => onClick(image, index, e)}
+        >
+          {image.favorite ? <Heart className="favorite-heart" /> : null}
+          <span
+            className={`card-checkbox ${selected ? 'checked' : ''}`}
+            onClick={(e) => {
+              e.stopPropagation();
+              onCheckboxClick(image, e);
+            }}
+          >
+            {selected && <Check className="size-3" />}
+          </span>
+
+          {useThumb && thumbSrc && !thumbBroken ? (
+            <img
+              className="image-card-thumb"
+              src={thumbSrc}
+              alt={image.filename}
+              loading="lazy"
+              decoding="async"
+              style={{ transform: cardTransform }}
+              onError={() => onThumbError(image.id)}
+            />
+          ) : originalSrc ? (
+            <img
+              className="image-card-thumb"
+              src={originalSrc}
+              alt={image.filename}
+              loading="lazy"
+              decoding="async"
+              style={{ transform: cardTransform }}
+              onError={() => onOriginalError(image.id)}
+            />
+          ) : (
+            <div className="image-card-placeholder">
+              <span>{image.format?.toUpperCase() || 'IMAGE'}</span>
+            </div>
+          )}
+
+          <div className="image-card-info">
+            <div className="image-card-name" title={image.filename}>{image.filename.replace(/\.\w+$/, '')}</div>
+            <div className="card-tag-row">
+              {tags.slice(0, 3).map(tag => (
+                <span key={tag.id} className="card-tag" title={tag.name}>
+                  <span className="card-tag-dot" style={{ background: tag.color }} />
+                  {tag.name}
+                </span>
+              ))}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button
+                    className="card-tag card-tag-add"
+                    title="添加或移除标签"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    +标签
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start">
+                  <DropdownMenuLabel>点击添加/移除标签</DropdownMenuLabel>
+                  <DropdownMenuSeparator />
+                  {allTags.length === 0 && (
+                    <DropdownMenuItem disabled>请先在「管理标签」中创建标签</DropdownMenuItem>
+                  )}
+                  {allTags.map(tag => {
+                    const active = (imageTags[image.id] || []).find(t => t.id === tag.id);
+                    return (
+                      <DropdownMenuItem key={tag.id} onClick={(e) => onQuickTag(image.id, tag.id, e)}>
+                        <span style={{ width: 8, height: 8, borderRadius: '50%', background: tag.color }} />
+                        {tag.name}
+                        {active && <span style={{ marginLeft: 'auto', fontSize: 10 }}>✓</span>}
+                      </DropdownMenuItem>
+                    );
+                  })}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+            <div className="image-card-meta">
+              {image.taken_at && <span className="card-date">{image.taken_at}</span>}
+              {!image.taken_at && image.import_date && <span className="card-date">{image.import_date}</span>}
+            </div>
+          </div>
+          <div className="card-stars">
+            <StarRating rating={image.rating || 0} onChange={(r) => onRate(image, r)} />
+          </div>
+        </div>
+      </ContextMenuTrigger>
+      <ContextMenuContent>
+        <ContextMenuItem onClick={() => onView(image, index)}>查看大图</ContextMenuItem>
+        <ContextMenuItem onClick={() => onInfo(image)}>查看详情</ContextMenuItem>
+        <ContextMenuItem onClick={() => onRename(image)}>编辑名称</ContextMenuItem>
+        <ContextMenuSeparator />
+        <ContextMenuItem onClick={() => onToggleFavorite(image)}>
+          {image.favorite ? '取消收藏' : '收藏'}
+        </ContextMenuItem>
+        <ContextMenuItem onClick={() => onAddToAlbum(image)}>添加到相册...</ContextMenuItem>
+        <ContextMenuSeparator />
+        <ContextMenuItem className="text-destructive" onClick={() => onDelete(image)}>删除</ContextMenuItem>
+      </ContextMenuContent>
+    </ContextMenu>
+  );
+});
+
 export default function ImageGrid({
   images, loading, selectedIds, onSelect, onView, onInfo, onImageUpdated, albums,
   gridSettings = { rows: 3, columns: 5 }, page = 1, totalImages = 0, onPageChange, onImport,
+  thumbVersion = 0, hasActiveFilters = false, onClearFilters,
+  onColumnsChange, viewerActive = false,
 }) {
   const [allTags, setAllTags] = useState([]);
   const [imageTags, setImageTags] = useState({});
   const [brokenThumbnails, setBrokenThumbnails] = useState(new Set());
+  const [thumbUrls, setThumbUrls] = useState({});
   const [fileUrls, setFileUrls] = useState({});
   const [addToAlbumImage, setAddToAlbumImage] = useState(null);
   const [newAlbumName, setNewAlbumName] = useState('');
   const [renameImage, setRenameImage] = useState(null);
   const [renameValue, setRenameValue] = useState('');
   const [renameError, setRenameError] = useState('');
+  const [deleteTarget, setDeleteTarget] = useState(null);
   const [pageInput, setPageInput] = useState(String(page));
-  const [selBox, setSelBox] = useState(null);
+  const [activeIndex, setActiveIndex] = useState(-1);
   const selectStartRef = useRef(null);
   const selectAppendRef = useRef(false);
   const selBoxRef = useRef(null);
+  const selBoxElRef = useRef(null);
+  const gridElRef = useRef(null);
   const lastSelectedRef = useRef(null);
   const selectedIdsRef = useRef(selectedIds);
   selectedIdsRef.current = selectedIds;
   const imagesRef = useRef(images);
   imagesRef.current = images;
+  const imageTagsRef = useRef(imageTags);
+  imageTagsRef.current = imageTags;
 
   const pageSize = Math.max(1, gridSettings.rows * gridSettings.columns);
   const totalPages = Math.max(1, Math.ceil(totalImages / pageSize));
@@ -72,6 +201,21 @@ export default function ImageGrid({
     gridTemplateColumns: `repeat(${gridSettings.columns}, minmax(120px, 1fr))`,
     gap: gridSettings.gap,
   }), [gridSettings.columns, gridSettings.gap]);
+
+  // 时间线分组：排序键为 taken_at||import_date，同页内按日期插入吸顶表头
+  const groupedItems = useMemo(() => {
+    const items = [];
+    let lastDate = '';
+    images.forEach((image, index) => {
+      const date = String(image.taken_at || image.import_date || '').slice(0, 10);
+      if (date && date !== lastDate) {
+        items.push({ type: 'header', date });
+        lastDate = date;
+      }
+      items.push({ type: 'card', image, index });
+    });
+    return items;
+  }, [images]);
 
   useEffect(() => { loadAllTags(); }, []);
 
@@ -88,14 +232,125 @@ export default function ImageGrid({
     }
   };
 
+  // 页内图片 id 列表不变时不重复拉取标签
+  const pageIdsKey = useMemo(() => images.map(img => img.id).join(','), [images]);
+
   useEffect(() => {
     if (images.length === 0) {
       setImageTags({});
       return;
     }
     loadImageTags(images);
-    loadFileUrls(images);
+  }, [pageIdsKey]);
+
+  useEffect(() => {
+    loadUrls(images);
   }, [images]);
+
+  // 缩略图版本变化（重新生成/后台补生成）后清除损坏标记，让新图重新尝试
+  useEffect(() => {
+    setBrokenThumbnails(new Set());
+  }, [thumbVersion]);
+
+  // 翻页后把 URL/状态缓存裁剪到当前页，避免长期浏览内存增长
+  useEffect(() => {
+    const ids = new Set(images.map(img => img.id));
+    setThumbUrls(prev => {
+      if (Object.keys(prev).every(k => ids.has(Number(k)))) return prev;
+      const next = {};
+      for (const img of images) {
+        if (prev[img.id] !== undefined) next[img.id] = prev[img.id];
+      }
+      return next;
+    });
+    setFileUrls(prev => {
+      if (Object.keys(prev).every(k => ids.has(Number(k)))) return prev;
+      const next = {};
+      for (const img of images) {
+        if (prev[img.id] !== undefined) next[img.id] = prev[img.id];
+      }
+      return next;
+    });
+    setBrokenThumbnails(prev => {
+      const next = new Set([...prev].filter(id => ids.has(id)));
+      return next.size === prev.size ? prev : next;
+    });
+    setActiveIndex(-1);
+  }, [pageIdsKey]);
+
+  // 图片路径变更（重命名/改导入日期）后清除该图的原图 URL 缓存，避免指向旧文件
+  const pathMapRef = useRef({});
+  useEffect(() => {
+    const changed = [];
+    const nextMap = {};
+    for (const img of images) {
+      nextMap[img.id] = img.filepath;
+      if (pathMapRef.current[img.id] && pathMapRef.current[img.id] !== img.filepath) {
+        changed.push(img.id);
+      }
+    }
+    pathMapRef.current = nextMap;
+    if (changed.length > 0) {
+      setFileUrls(prev => {
+        const next = { ...prev };
+        changed.forEach(id => delete next[id]);
+        return next;
+      });
+    }
+  }, [images]);
+
+  // Ctrl+滚轮调整列数（需要非 passive 监听才能拦截浏览器缩放）
+  useEffect(() => {
+    const el = gridElRef.current;
+    if (!el || !onColumnsChange) return;
+    const onWheel = (e) => {
+      if (!e.ctrlKey) return;
+      e.preventDefault();
+      onColumnsChange(e.deltaY < 0 ? 1 : -1);
+    };
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => el.removeEventListener('wheel', onWheel);
+  }, [onColumnsChange]);
+
+  // 方向键在卡片间移动高亮，Enter 打开查看器
+  const activeIndexRef = useRef(-1);
+  activeIndexRef.current = activeIndex;
+  const dialogsOpen = !!addToAlbumImage || !!renameImage || !!deleteTarget;
+
+  useEffect(() => {
+    if (viewerActive || dialogsOpen) return;
+    const columns = gridSettings.columns;
+    const arrows = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -columns, ArrowDown: columns };
+    const onKey = (e) => {
+      const t = e.target;
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+      if (e.key in arrows) {
+        e.preventDefault();
+        const count = imagesRef.current.length;
+        if (count === 0) return;
+        if (activeIndexRef.current < 0) {
+          setActiveIndex(0);
+          return;
+        }
+        setActiveIndex(idx => Math.max(0, Math.min(count - 1, idx + arrows[e.key])));
+        return;
+      }
+      if (e.key === 'Enter' && activeIndexRef.current >= 0 && activeIndexRef.current < imagesRef.current.length) {
+        e.preventDefault();
+        const idx = activeIndexRef.current;
+        onView(imagesRef.current[idx], idx);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [viewerActive, dialogsOpen, gridSettings.columns, onView]);
+
+  // 高亮卡片跟随滚动
+  useEffect(() => {
+    if (activeIndex < 0) return;
+    const el = document.querySelector('.image-card.keyboard-active');
+    if (el) el.scrollIntoView({ block: 'nearest' });
+  }, [activeIndex]);
 
   const loadAllTags = async () => {
     if (!window.pixyang) return;
@@ -103,19 +358,37 @@ export default function ImageGrid({
     setAllTags(tags);
   };
 
-  const loadFileUrls = async (imgs) => {
+  // 批量解析本页 URL：缩略图文件 + 原图兜底（缩略图缺失/损坏时回退显示原图）
+  const loadUrls = async (imgs) => {
     if (!window.pixyang) return;
-    const missing = imgs.filter(img => (Number(img.orientation) !== 1 || !img.thumbnail) && !fileUrls[img.id]);
-    if (missing.length === 0) return;
-    const entries = await Promise.all(missing.map(async (img) => {
-      const url = await window.pixyang.toFileUrl(img.filepath);
-      return [img.id, url];
-    }));
-    setFileUrls(prev => {
-      const next = { ...prev };
-      entries.forEach(([id, url]) => { if (url) next[id] = url; });
-      return next;
-    });
+    const needThumbPaths = [];
+    const needOrigPaths = [];
+    for (const img of imgs) {
+      const oriented = Number(img.orientation) === 1;
+      if (oriented && img.thumbnail_path && thumbUrls[img.id] === undefined) {
+        needThumbPaths.push(img.thumbnail_path);
+      }
+      if (fileUrls[img.id] === undefined) {
+        needOrigPaths.push(img.filepath);
+      }
+    }
+    const thumbSet = new Set(needThumbPaths);
+    const origSet = new Set(needOrigPaths);
+    const paths = [...new Set([...needThumbPaths, ...needOrigPaths])];
+    if (paths.length === 0) return;
+    const urlMap = (await window.pixyang.toFileUrls(paths)) || {};
+    const thumbById = {};
+    const origById = {};
+    for (const img of imgs) {
+      if (img.thumbnail_path && thumbSet.has(img.thumbnail_path) && urlMap[img.thumbnail_path]) {
+        thumbById[img.id] = urlMap[img.thumbnail_path];
+      }
+      if (origSet.has(img.filepath) && urlMap[img.filepath]) {
+        origById[img.id] = urlMap[img.filepath];
+      }
+    }
+    if (Object.keys(thumbById).length > 0) setThumbUrls(prev => ({ ...prev, ...thumbById }));
+    if (Object.keys(origById).length > 0) setFileUrls(prev => ({ ...prev, ...origById }));
   };
 
   const loadImageTags = async (imgs) => {
@@ -125,19 +398,19 @@ export default function ImageGrid({
     setImageTags(tagMap || {});
   };
 
-  const handleClick = (image, index, e) => {
+  const handleCardClick = useCallback((image, index, e) => {
     if (e.shiftKey && lastSelectedRef.current !== null) {
-      const start = images.findIndex(img => img.id === lastSelectedRef.current);
+      const start = imagesRef.current.findIndex(img => img.id === lastSelectedRef.current);
       const end = index;
       const [lo, hi] = start <= end ? [start, end] : [end, start];
-      const next = new Set(selectedIds);
-      for (let i = lo; i <= hi; i++) next.add(images[i].id);
+      const next = new Set(selectedIdsRef.current);
+      for (let i = lo; i <= hi; i++) next.add(imagesRef.current[i].id);
       onSelect(next);
       lastSelectedRef.current = image.id;
       return;
     }
     if (e.ctrlKey || e.metaKey) {
-      const next = new Set(selectedIds);
+      const next = new Set(selectedIdsRef.current);
       next.has(image.id) ? next.delete(image.id) : next.add(image.id);
       onSelect(next);
       lastSelectedRef.current = image.id;
@@ -145,7 +418,14 @@ export default function ImageGrid({
       onView(image, index);
       lastSelectedRef.current = image.id;
     }
-  };
+  }, [onSelect, onView]);
+
+  const handleCheckboxClick = useCallback((image) => {
+    const next = new Set(selectedIdsRef.current);
+    next.has(image.id) ? next.delete(image.id) : next.add(image.id);
+    onSelect(next);
+    lastSelectedRef.current = image.id;
+  }, [onSelect]);
 
   // 空白区拖拽框选
   const handleGridMouseDown = (e) => {
@@ -162,15 +442,26 @@ export default function ImageGrid({
       const w = e.clientX - x;
       const h = e.clientY - y;
       if (Math.abs(w) < 4 && Math.abs(h) < 4) return;
-      selBoxRef.current = { left: Math.min(x, e.clientX), top: Math.min(y, e.clientY), width: Math.abs(w), height: Math.abs(h) };
-      setSelBox(selBoxRef.current);
+      const left = Math.min(x, e.clientX);
+      const top = Math.min(y, e.clientY);
+      const box = { left, top, width: Math.abs(w), height: Math.abs(h) };
+      selBoxRef.current = box;
+      const el = selBoxElRef.current;
+      if (el) {
+        el.style.display = 'block';
+        el.style.left = `${left}px`;
+        el.style.top = `${top}px`;
+        el.style.width = `${box.width}px`;
+        el.style.height = `${box.height}px`;
+      }
     };
     const onUp = () => {
       if (!selectStartRef.current) return;
       selectStartRef.current = null;
+      const el = selBoxElRef.current;
+      if (el) el.style.display = 'none';
       const box = selBoxRef.current;
       selBoxRef.current = null;
-      setSelBox(null);
       if (!box) return;
       const next = selectAppendRef.current ? new Set(selectedIdsRef.current) : new Set();
       const hit = [];
@@ -194,29 +485,36 @@ export default function ImageGrid({
     };
   }, [onSelect]);
 
-  const handleRatingChange = async (image, rating) => {
+  const handleRatingChange = useCallback(async (image, rating) => {
     if (!window.pixyang) return;
     await window.pixyang.updateImage(image.id, { rating });
-    onImageUpdated?.();
-  };
+    onImageUpdated?.(image.id, { rating });
+  }, [onImageUpdated]);
 
-  const handleDelete = async (image) => {
-    if (!window.pixyang) return;
+  const handleDelete = useCallback((image) => {
+    setDeleteTarget(image);
+  }, []);
+
+  const confirmDelete = async () => {
+    const image = deleteTarget;
+    setDeleteTarget(null);
+    if (!image || !window.pixyang) return;
     await window.pixyang.deleteImage(image.id);
     onImageUpdated?.();
   };
 
-  const handleToggleFavorite = async (image) => {
+  const handleToggleFavorite = useCallback(async (image) => {
     if (!window.pixyang) return;
-    await window.pixyang.updateImage(image.id, { favorite: image.favorite ? 0 : 1 });
-    onImageUpdated?.();
-  };
+    const favorite = image.favorite ? 0 : 1;
+    await window.pixyang.updateImage(image.id, { favorite });
+    onImageUpdated?.(image.id, { favorite });
+  }, [onImageUpdated]);
 
-  const openRename = (image) => {
+  const openRename = useCallback((image) => {
     setRenameImage(image);
     setRenameValue(image.filename || '');
     setRenameError('');
-  };
+  }, []);
 
   const submitRename = async () => {
     if (!window.pixyang || !renameImage || !renameValue.trim()) return;
@@ -227,13 +525,18 @@ export default function ImageGrid({
     }
     setRenameImage(null);
     setRenameValue('');
-    onImageUpdated?.();
+    setFileUrls(prev => {
+      const next = { ...prev };
+      delete next[renameImage.id];
+      return next;
+    });
+    onImageUpdated?.(renameImage.id, { filename: result.newFilename, filepath: result.newPath });
   };
 
-  const handleQuickTag = async (imageId, tagId, e) => {
+  const handleQuickTag = useCallback(async (imageId, tagId, e) => {
     e.stopPropagation();
     if (!window.pixyang) return;
-    const tags = imageTags[imageId] || [];
+    const tags = imageTagsRef.current[imageId] || [];
     const hasTag = tags.find(t => t.id === tagId);
     if (hasTag) {
       await window.pixyang.removeTagFromImage(imageId, tagId);
@@ -252,7 +555,7 @@ export default function ImageGrid({
       }
     }
     onImageUpdated?.();
-  };
+  }, [allTags, onImageUpdated]);
 
   const handleAddToAlbum = async (imageId, albumId) => {
     if (!window.pixyang) return;
@@ -269,6 +572,14 @@ export default function ImageGrid({
     setAddToAlbumImage(null);
     onImageUpdated?.();
   };
+
+  const handleThumbError = useCallback((id) => {
+    setBrokenThumbnails(prev => new Set([...prev, id]));
+  }, []);
+
+  const handleOriginalError = useCallback((id) => {
+    setFileUrls(prev => { const n = { ...prev }; delete n[id]; return n; });
+  }, []);
 
   if (loading && images.length === 0) {
     return (
@@ -289,9 +600,15 @@ export default function ImageGrid({
       <div className="content-area" style={{ padding: gridSettings.padding }}>
           <div className="empty-state">
           <div className="empty-state-icon"><ImageOff /></div>
-          <div className="empty-state-title">没有找到图片</div>
-          <div className="empty-state-desc">导入图片后会按页显示在这里。</div>
-          <Button className="mt-2" onClick={onImport}>导入图片</Button>
+          <div className="empty-state-title">{hasActiveFilters ? '没有符合条件的图片' : '没有找到图片'}</div>
+          <div className="empty-state-desc">
+            {hasActiveFilters ? '当前筛选条件下没有图片，试试调整或清除筛选。' : '导入图片后会按页显示在这里。'}
+          </div>
+          {hasActiveFilters ? (
+            <Button className="mt-2" onClick={onClearFilters}>清除筛选</Button>
+          ) : (
+            <Button className="mt-2" onClick={onImport}>导入图片</Button>
+          )}
         </div>
       </div>
     );
@@ -299,149 +616,73 @@ export default function ImageGrid({
 
   return (
     <div className="content-area" style={{ padding: gridSettings.padding }}>
-      <div className="image-grid" style={gridStyle} onMouseDown={handleGridMouseDown}>
-        {images.map((image, index) => {
-          const tags = imageTags[image.id] || [];
-          const thumbBroken = brokenThumbnails.has(image.id);
-          const fileUrl = fileUrls[image.id];
-          const useThumb = Number(image.orientation) === 1;
-          const cardTransform = (image.rotation || image.flip_h || image.flip_v)
-            ? `rotate(${image.rotation || 0}deg) scaleX(${image.flip_h ? -1 : 1}) scaleY(${image.flip_v ? -1 : 1})`
-            : undefined;
+      <div
+        className={`image-grid${loading && images.length > 0 ? ' is-loading' : ''}`}
+        ref={gridElRef}
+        style={gridStyle}
+        onMouseDown={handleGridMouseDown}
+      >
+        {groupedItems.map(item => {
+          if (item.type === 'header') {
+            return (
+              <div key={`h-${item.date}`} className="grid-date-header" style={{ gridColumn: '1 / -1' }}>
+                <span className="grid-date-text">{item.date}</span>
+                <span className="grid-date-count">{images.filter(img => String(img.taken_at || img.import_date || '').slice(0, 10) === item.date).length} 张</span>
+              </div>
+            );
+          }
+          const { image, index } = item;
+          const thumbUrl = thumbUrls[image.id];
           return (
-            <ContextMenu key={image.id}>
-              <ContextMenuTrigger asChild>
-                <div
-                  data-id={image.id}
-                  className={`image-card ${selectedIds.has(image.id) ? 'selected' : ''}`}
-                  onClick={(e) => handleClick(image, index, e)}
-                >
-                  {image.favorite ? <Heart className="favorite-heart" /> : null}
-                  <span
-                    className={`card-checkbox ${selectedIds.has(image.id) ? 'checked' : ''}`}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      const next = new Set(selectedIds);
-                      next.has(image.id) ? next.delete(image.id) : next.add(image.id);
-                      onSelect(next);
-                      lastSelectedRef.current = image.id;
-                    }}
-                  >
-                    {selectedIds.has(image.id) && <Check className="size-3" />}
-                  </span>
-
-                  {useThumb && image.thumbnail && !thumbBroken ? (
-                    <img
-                      className="image-card-thumb"
-                      src={image.thumbnail}
-                      alt={image.filename}
-                      loading="lazy"
-                      decoding="async"
-                      style={{ transform: cardTransform }}
-                      onError={() => setBrokenThumbnails(prev => new Set([...prev, image.id]))}
-                    />
-                  ) : fileUrl ? (
-                    <img
-                      className="image-card-thumb"
-                      src={fileUrl}
-                      alt={image.filename}
-                      loading="lazy"
-                      decoding="async"
-                      style={{ transform: cardTransform }}
-                      onError={() => setFileUrls(prev => { const n = { ...prev }; delete n[image.id]; return n; })}
-                    />
-                  ) : (
-                    <div className="image-card-placeholder">
-                      <span>{image.format?.toUpperCase() || 'IMAGE'}</span>
-                    </div>
-                  )}
-
-                  <div className="image-card-info">
-                    <div className="image-card-name" title={image.filename}>{image.filename.replace(/\.\w+$/, '')}</div>
-                    <div className="card-tag-row">
-                      {tags.slice(0, 3).map(tag => (
-                        <span key={tag.id} className="card-tag" title={tag.name}>
-                          <span className="card-tag-dot" style={{ background: tag.color }} />
-                          {tag.name}
-                        </span>
-                      ))}
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <button
-                            className="card-tag card-tag-add"
-                            title="添加或移除标签"
-                            onClick={(e) => e.stopPropagation()}
-                          >
-                            +标签
-                          </button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="start">
-                          <DropdownMenuLabel>点击添加/移除标签</DropdownMenuLabel>
-                          <DropdownMenuSeparator />
-                          {allTags.length === 0 && (
-                            <DropdownMenuItem disabled>请先在「管理标签」中创建标签</DropdownMenuItem>
-                          )}
-                          {allTags.map(tag => {
-                            const active = (imageTags[image.id] || []).find(t => t.id === tag.id);
-                            return (
-                              <DropdownMenuItem key={tag.id} onClick={(e) => handleQuickTag(image.id, tag.id, e)}>
-                                <span style={{ width: 8, height: 8, borderRadius: '50%', background: tag.color }} />
-                                {tag.name}
-                                {active && <span style={{ marginLeft: 'auto', fontSize: 10 }}>✓</span>}
-                              </DropdownMenuItem>
-                            );
-                          })}
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </div>
-                    <div className="image-card-meta">
-                      {image.taken_at && <span className="card-date">{image.taken_at}</span>}
-                      {!image.taken_at && image.import_date && <span className="card-date">{image.import_date}</span>}
-                    </div>
-                  </div>
-                  <div className="card-stars">
-                    <StarRating rating={image.rating || 0} onChange={(r) => handleRatingChange(image, r)} />
-                  </div>
-                </div>
-              </ContextMenuTrigger>
-              <ContextMenuContent>
-                <ContextMenuItem onClick={() => onView(image, index)}>查看大图</ContextMenuItem>
-                <ContextMenuItem onClick={() => { onInfo(image); }}>查看详情</ContextMenuItem>
-                <ContextMenuItem onClick={() => openRename(image)}>编辑名称</ContextMenuItem>
-                <ContextMenuSeparator />
-                <ContextMenuItem onClick={() => handleToggleFavorite(image)}>
-                  {image.favorite ? '取消收藏' : '收藏'}
-                </ContextMenuItem>
-                <ContextMenuItem onClick={() => { setAddToAlbumImage(image); }}>添加到相册...</ContextMenuItem>
-                <ContextMenuSeparator />
-                <ContextMenuItem className="text-destructive" onClick={() => handleDelete(image)}>删除</ContextMenuItem>
-              </ContextMenuContent>
-            </ContextMenu>
+            <ImageCard
+              key={image.id}
+              image={image}
+              index={index}
+              selected={selectedIds.has(image.id)}
+              highlighted={index === activeIndex}
+              imageTags={imageTags}
+              allTags={allTags}
+              thumbSrc={thumbUrl ? `${thumbUrl}?v=${thumbVersion}` : undefined}
+              originalSrc={fileUrls[image.id]}
+              thumbBroken={brokenThumbnails.has(image.id)}
+              onClick={handleCardClick}
+              onCheckboxClick={handleCheckboxClick}
+              onRate={handleRatingChange}
+              onToggleFavorite={handleToggleFavorite}
+              onQuickTag={handleQuickTag}
+              onView={onView}
+              onInfo={onInfo}
+              onRename={openRename}
+              onDelete={handleDelete}
+              onAddToAlbum={setAddToAlbumImage}
+              onThumbError={handleThumbError}
+              onOriginalError={handleOriginalError}
+            />
           );
         })}
-        {selBox && (
-          <div className="selection-box" style={selBox} />
-        )}
+        <div ref={selBoxElRef} className="selection-box" style={{ display: 'none' }} />
       </div>
 
       <div className="pagination-bar">
         <Button variant="secondary" size="sm" disabled={page <= 1} onClick={() => onPageChange?.(page - 1)}>
-          上一页
+          <ChevronLeft className="size-4" /> 上一页
         </Button>
-        <span className="pagination-current">第</span>
-        <Input
-          type="number"
-          className="pagination-input h-7 w-14 text-center text-xs"
-          min={1}
-          max={totalPages}
-          value={pageInput}
-          onChange={(e) => setPageInput(e.target.value)}
-          onKeyDown={(e) => { if (e.key === 'Enter') handlePageInputJump(); }}
-          onBlur={handlePageInputJump}
-        />
-        <span className="pagination-current">/ {totalPages} 页</span>
+        <div className="pagination-info">
+          <span>第</span>
+          <Input
+            type="number"
+            className="pagination-input"
+            min={1}
+            max={totalPages}
+            value={pageInput}
+            onChange={(e) => setPageInput(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') handlePageInputJump(); }}
+            onBlur={handlePageInputJump}
+          />
+          <span>/ {totalPages} 页</span>
+        </div>
         <Button variant="secondary" size="sm" disabled={page >= totalPages} onClick={() => onPageChange?.(page + 1)}>
-          下一页
+          下一页 <ChevronRight className="size-4" />
         </Button>
       </div>
 
@@ -509,6 +750,17 @@ export default function ImageGrid({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {deleteTarget && (
+        <ConfirmDialog
+          title="删除图片"
+          message={`确定要删除「${deleteTarget.filename}」吗？此操作不可撤销，图片文件（含配对的 NEF）将被永久删除。`}
+          confirmLabel="删除"
+          danger
+          onConfirm={confirmDelete}
+          onCancel={() => setDeleteTarget(null)}
+        />
+      )}
     </div>
   );
 }

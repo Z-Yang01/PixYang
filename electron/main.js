@@ -5,8 +5,10 @@ const {
   initDatabase,
   getImagesRoot,
   getDatabasePath,
+  getThumbnailFilePath,
   setImagesRoot,
   scanImageFiles,
+  collectImportFiles,
   prepareCameraSync,
   attachRawToImage,
   importImages,
@@ -17,14 +19,19 @@ const {
   getImagesForRebuild,
   updateImageOrientation,
   updateImage,
+  updateImages,
   renameImage,
   deleteImage,
   batchDeleteImages,
+  findBrokenRecords,
+  deleteBrokenRecords,
+  findDuplicates,
   getImportDates,
   getTags,
   createTag,
   deleteTag,
   addTagToImage,
+  addTagToImages,
   removeTagFromImage,
   getImageTags,
   getBatchImageTags,
@@ -44,13 +51,48 @@ const {
 let mainWindow;
 const isDev = !app.isPackaged;
 
+// ── 窗口状态持久化：记住大小/位置/最大化，重启恢复 ──
+const WINDOW_STATE_PATH = () => path.join(app.getPath('userData'), 'window-state.json');
+
+function loadWindowState() {
+  try {
+    const data = JSON.parse(fs.readFileSync(WINDOW_STATE_PATH(), 'utf8'));
+    if (data && Number.isFinite(data.x) && Number.isFinite(data.y) &&
+        Number.isFinite(data.width) && Number.isFinite(data.height)) {
+      return data;
+    }
+  } catch { /* 首次启动或文件损坏，使用默认 */ }
+  return { x: undefined, y: undefined, width: 1400, height: 900, maximized: false };
+}
+
+function saveWindowState() {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  try {
+    const bounds = mainWindow.getNormalBounds();
+    fs.writeFileSync(WINDOW_STATE_PATH(), JSON.stringify({
+      x: bounds.x,
+      y: bounds.y,
+      width: bounds.width,
+      height: bounds.height,
+      maximized: mainWindow.isMaximized(),
+    }));
+  } catch (e) {
+    console.error('[窗口] 保存状态失败:', e.message);
+  }
+}
+
 function createWindow() {
+  const windowState = loadWindowState();
+
   mainWindow = new BrowserWindow({
-    width: 1400,
-    height: 900,
+    width: windowState.width,
+    height: windowState.height,
+    x: windowState.x,
+    y: windowState.y,
     minWidth: 900,
     minHeight: 600,
     title: 'PixYang - 图片管理器',
+    icon: path.join(__dirname, '../build/icon.png'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -58,8 +100,14 @@ function createWindow() {
       webSecurity: isDev ? false : true,
     },
     frame: true,
-    backgroundColor: '#0f0f13',
+    backgroundColor: '#0f0f12',
+    show: false,
   });
+
+  if (windowState.maximized) {
+    mainWindow.maximize();
+  }
+  mainWindow.show();
 
   if (isDev) {
     mainWindow.loadURL('http://localhost:5173');
@@ -71,69 +119,12 @@ function createWindow() {
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
+
+  // 关闭/最大化状态变化时保存窗口位置尺寸
+  mainWindow.on('close', saveWindowState);
 }
 
 // ── 图片处理 ──
-
-// 从图片文件中提取 EXIF 日期，降级使用文件修改时间
-function extractImageDate(filepath) {
-  try {
-    // 先尝试从文件头读取 EXIF DateTimeOriginal
-    const fd = fs.openSync(filepath, 'r');
-    const buf = Buffer.alloc(65536);
-    fs.readSync(fd, buf, 0, 65536, 0);
-    fs.closeSync(fd);
-
-    // 在文件前64KB中搜索 EXIF DateTimeOriginal 标签 (0x9003)
-    // 格式: "DateTimeOriginal" + null + 长度 + null + "YYYY:MM:DD HH:MM:SS"
-    const str = buf.toString('latin1', 0, 65536);
-    const match = str.match(/DateTimeOriginal\x00.\x00(\d{4}):(\d{2}):(\d{2})/);
-    if (match) {
-      return `${match[1]}-${match[2]}-${match[3]}`;
-    }
-    // 尝试更宽松的匹配：在 Exif 段中找日期
-    const dateMatch = str.match(/Exif.{0,200}(\d{4}):(\d{2}):(\d{2})\s/);
-    if (dateMatch) {
-      return `${dateMatch[1]}-${dateMatch[2]}-${dateMatch[3]}`;
-    }
-    // 降级：使用文件修改日期
-    const stat = fs.statSync(filepath);
-    const mtime = stat.mtime;
-    return `${mtime.getFullYear()}-${String(mtime.getMonth() + 1).padStart(2, '0')}-${String(mtime.getDate()).padStart(2, '0')}`;
-  } catch (e) {
-    // 最终降级：文件系统日期
-    try {
-      const stat = fs.statSync(filepath);
-      const mtime = stat.mtime;
-      return `${mtime.getFullYear()}-${String(mtime.getMonth() + 1).padStart(2, '0')}-${String(mtime.getDate()).padStart(2, '0')}`;
-    } catch {
-      return '';
-    }
-  }
-}
-
-// 提取 EXIF 拍摄时间（精确到分钟），无 EXIF 时间返回空
-function extractTakenAt(filepath) {
-  try {
-    const fd = fs.openSync(filepath, 'r');
-    const buf = Buffer.alloc(65536);
-    fs.readSync(fd, buf, 0, 65536, 0);
-    fs.closeSync(fd);
-
-    const str = buf.toString('latin1', 0, 65536);
-    const match = str.match(/DateTimeOriginal\x00.\x00(\d{4}):(\d{2}):(\d{2})\s(\d{2}):(\d{2})/);
-    if (match) {
-      return `${match[1]}-${match[2]}-${match[3]} ${match[4]}:${match[5]}`;
-    }
-    const loose = str.match(/Exif.{0,200}(\d{4}):(\d{2}):(\d{2})\s(\d{2}):(\d{2})/);
-    if (loose) {
-      return `${loose[1]}-${loose[2]}-${loose[3]} ${loose[4]}:${loose[5]}`;
-    }
-    return '';
-  } catch (e) {
-    return '';
-  }
-}
 
 // 一次性读取文件头并解析日期/拍摄时间/方向，避免重复读盘
 function readExifInfo(filepath) {
@@ -251,6 +242,140 @@ function parseTiffOrientation(buf, tiffStart, tiffLen) {
   return 1;
 }
 
+// 解析 JPEG 完整 EXIF（相机/镜头/ISO/光圈/快门/焦距/拍摄时间），供详情面板按需读取
+function parseFullExif(filepath) {
+  const empty = { camera: '', lens: '', iso: '', fNumber: '', exposure: '', focalLength: '', dateTime: '' };
+  try {
+    const stat = fs.statSync(filepath);
+    const headLen = Math.min(262144, stat.size);
+    const fd = fs.openSync(filepath, 'r');
+    const buf = Buffer.alloc(headLen);
+    fs.readSync(fd, buf, 0, headLen, 0);
+    fs.closeSync(fd);
+
+    if (buf[0] !== 0xFF || buf[1] !== 0xD8) return empty;
+    let offset = 2;
+    let tiffStart = -1;
+    while (offset + 4 <= buf.length) {
+      if (buf[offset] !== 0xFF) break;
+      const marker = buf[offset + 1];
+      if (marker === 0xE1) {
+        const segLen = buf.readUInt16BE(offset + 2);
+        if (segLen >= 8 && buf.toString('latin1', offset + 4, offset + 10) === 'Exif\0\0') {
+          tiffStart = offset + 10;
+          break;
+        }
+        offset += 2 + segLen;
+      } else if (marker === 0xDA) {
+        break;
+      } else if (marker === 0xD8 || (marker >= 0xD0 && marker <= 0xD7) || marker === 0x01) {
+        offset += 2;
+      } else {
+        offset += 2 + buf.readUInt16BE(offset + 2);
+      }
+    }
+    if (tiffStart < 0) return empty;
+
+    const le = buf.toString('latin1', tiffStart, tiffStart + 2) === 'II';
+    const u16 = (off) => (le ? buf.readUInt16LE(tiffStart + off) : buf.readUInt16BE(tiffStart + off));
+    const u32 = (off) => (le ? buf.readUInt32LE(tiffStart + off) : buf.readUInt32BE(tiffStart + off));
+
+    // TIFF 段可能被 64KB 头截断，所有越界访问按缺失处理
+    const inBounds = (off, len) => off >= 0 && off + len <= buf.length - tiffStart;
+
+    // type: 2=ASCII 3=SHORT 4=LONG 5=RATIONAL；返回 { value, count, offset } 或 null
+    const readEntry = (entry) => {
+      const type = u16(entry + 2);
+      const count = u32(entry + 4);
+      if (!inBounds(entry, 12)) return null;
+      let dataOff = entry + 8;
+      const typeSize = { 2: 1, 3: 2, 4: 4, 5: 8 }[type];
+      if (!typeSize) return null;
+      if (typeSize * count > 4) {
+        dataOff = u32(entry + 8);
+      }
+      if (!inBounds(dataOff, typeSize * count)) return null;
+      return { type, count, dataOff };
+    };
+    const readAscii = (entry) => {
+      const e = readEntry(entry);
+      if (!e || e.type !== 2) return '';
+      let s = buf.toString('latin1', tiffStart + e.dataOff, tiffStart + e.dataOff + e.count);
+      s = s.replace(/\0.*$/s, '').trim();
+      return s;
+    };
+    const readRational = (entry, idx = 0) => {
+      const e = readEntry(entry);
+      if (!e || e.type !== 5 || idx >= e.count) return null;
+      const off = tiffStart + e.dataOff + idx * 8;
+      const num = le ? buf.readUInt32LE(off) : buf.readUInt32BE(off);
+      const den = le ? buf.readUInt32LE(off + 4) : buf.readUInt32BE(off + 4);
+      if (!den) return null;
+      return num / den;
+    };
+
+    // 遍历一个 IFD，用回调收集目标 tag
+    const walkIfd = (ifdOff, onTag) => {
+      if (!inBounds(ifdOff, 2)) return -1;
+      const count = u16(ifdOff);
+      for (let i = 0; i < count; i++) {
+        const entry = ifdOff + 2 + i * 12;
+        if (!inBounds(entry, 12)) break;
+        onTag(u16(entry), entry);
+      }
+      return inBounds(ifdOff + 2 + count * 12, 4) ? u32(ifdOff + 2 + count * 12) : -1;
+    };
+
+    const result = { ...empty };
+    let exifIfd = -1;
+
+    walkIfd(u32(4), (tag, entry) => {
+      if (tag === 0x010F) result.camera = readAscii(entry);
+      else if (tag === 0x0110) result.model = readAscii(entry);
+      else if (tag === 0x8769) exifIfd = u32(entry + 8);
+    });
+    if (result.camera && result.model && result.model.startsWith(result.camera)) {
+      result.camera = result.model;
+    } else {
+      result.camera = [result.camera, result.model].filter(Boolean).join(' ');
+    }
+    delete result.model;
+
+    if (exifIfd > 0) {
+      let lensModel = '';
+      walkIfd(exifIfd, (tag, entry) => {
+        if (tag === 0x8827) {
+          const e = readEntry(entry);
+          if (e && e.type === 3 && e.count > 0) result.iso = String(u16(e.dataOff));
+        } else if (tag === 0x829D) {
+          const f = readRational(entry);
+          if (f) result.fNumber = `f/${f.toFixed(1)}`;
+        } else if (tag === 0x829A) {
+          const t = readRational(entry);
+          if (t) result.exposure = t >= 1 ? `${t.toFixed(1)}s` : `1/${Math.round(1 / t)}s`;
+        } else if (tag === 0x920A) {
+          const f = readRational(entry);
+          if (f) result.focalLength = `${Math.round(f)}mm`;
+        } else if (tag === 0xA434) {
+          lensModel = readAscii(entry);
+        } else if (tag === 0x9003) {
+          const e = readEntry(entry);
+          if (e && e.type === 2) {
+            const s = buf.toString('latin1', tiffStart + e.dataOff, tiffStart + e.dataOff + Math.min(e.count, 19));
+            result.dateTime = s.replace(/\0.*$/s, '').trim();
+          }
+        }
+      });
+      result.lens = lensModel;
+    }
+
+    return result;
+  } catch (e) {
+    console.error('[EXIF] 解析失败:', filepath, e.message);
+    return empty;
+  }
+}
+
 function generateThumbnail(filepath, maxSize = 512) {
   try {
     if (!fs.existsSync(filepath)) return null;
@@ -267,7 +392,10 @@ function generateThumbnail(filepath, maxSize = 512) {
     }
     if (image.isEmpty()) return null;
 
+    // 记录原图尺寸（导入的图尺寸信息缺失，借生成缩略图一并写入）
     const size = image.getSize();
+    const originalWidth = size.width;
+    const originalHeight = size.height;
     let { width, height } = size;
 
     if (width > maxSize || height > maxSize) {
@@ -277,12 +405,18 @@ function generateThumbnail(filepath, maxSize = 512) {
     }
 
     const resized = image.resize({ width, height, quality: 'good' });
-    const jpgBuf = resized.toJPEG(80);
-    return `data:image/jpeg;base64,${jpgBuf.toString('base64')}`;
+    return { buf: resized.toJPEG(80), width: originalWidth, height: originalHeight };
   } catch (err) {
     console.error('[缩略图] 生成失败:', err.message);
     return null;
   }
+}
+
+// 将缩略图 JPEG Buffer 写入缩略图目录并更新记录，返回文件路径
+function saveThumbnailFile(id, jpgBuf) {
+  const thumbPath = getThumbnailFilePath(id);
+  fs.writeFileSync(thumbPath, jpgBuf);
+  return thumbPath;
 }
 
 function getImageData(filepath, maxWidth = 1920) {
@@ -328,14 +462,23 @@ function scheduleThumbnailRebuild() {
     thumbRebuildTimer = null;
     try {
       const rows = getImagesForRebuild();
+      const readyIds = [];
       for (let i = 0; i < rows.length; i++) {
         const r = rows[i];
         const thumb = generateThumbnail(r.filepath, 256);
-        if (thumb) updateImage(r.id, { thumbnail: thumb });
+        if (thumb) {
+          try {
+            const thumbPath = saveThumbnailFile(r.id, thumb.buf);
+            await updateImage(r.id, { thumbnail_path: thumbPath, width: thumb.width, height: thumb.height });
+            readyIds.push(r.id);
+          } catch (e) {
+            console.error('[缩略图] 写入失败:', e.message);
+          }
+        }
         if (i % 3 === 0) await new Promise(res => setImmediate(res));
       }
-      if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.webContents.send('thumbnails-ready');
+      if (readyIds.length > 0 && mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('thumbnails-ready', readyIds);
       }
     } catch (e) {
       console.error('[缩略图] 后台生成失败:', e.message);
@@ -365,7 +508,7 @@ function setupIPC() {
     if (!cameraDir) return { error: '未设置相机文件夹' };
     if (!fs.existsSync(cameraDir)) return { error: '相机文件夹不存在' };
 
-    const files = scanImageFiles(cameraDir, true);
+    const files = await scanImageFiles(cameraDir, true);
     const { toImport, attachPairs, skipped } = prepareCameraSync(files);
 
     for (const f of toImport) {
@@ -376,10 +519,10 @@ function setupIPC() {
     }
     scheduleThumbnailRebuild();
 
-    const imported = importImages(toImport);
+    const imported = await importImages(toImport);
     let attached = 0;
     for (const p of attachPairs) {
-      if (attachRawToImage(p.jpgId, p.nefSource, p.nefFilename)) attached++;
+      if (await attachRawToImage(p.jpgId, p.nefSource, p.nefFilename)) attached++;
     }
 
     return {
@@ -401,7 +544,7 @@ function setupIPC() {
       img.takenAt = info.takenAt;
       img.orientation = info.orientation;
     }
-    const result = importImages(imageFiles);
+    const result = await importImages(imageFiles);
     scheduleThumbnailRebuild();
     return result;
   });
@@ -419,6 +562,35 @@ function setupIPC() {
   // 获取当前筛选下所有可见图片 id（跨页全选）
   ipcMain.handle('db:get-all-image-ids', async (_event, options) => {
     return getAllVisibleIds(options || {});
+  });
+
+  // 拖拽导入：收集拖入的文件/目录为可导入的图片列表
+  ipcMain.handle('fs:collect-import-files', async (_event, paths) => {
+    return collectImportFiles(paths || []);
+  });
+
+  // 批量为多张图片添加同一标签
+  ipcMain.handle('db:add-tag-to-images', async (_event, imageIds, tagId) => {
+    return addTagToImages(imageIds || [], tagId);
+  });
+
+  // 批量更新字段（评分/收藏）
+  ipcMain.handle('db:update-images', async (_event, imageIds, updates) => {
+    return updateImages(imageIds || [], updates || {});
+  });
+
+  // ── 失效记录维护 ──
+  ipcMain.handle('db:scan-broken-records', async () => {
+    return findBrokenRecords();
+  });
+
+  ipcMain.handle('db:delete-broken-records', async (_event, ids) => {
+    return deleteBrokenRecords(ids || []);
+  });
+
+  // 重复图片检测（元数据粗分组 + 快速哈希验证）
+  ipcMain.handle('db:find-duplicates', async () => {
+    return findDuplicates();
   });
 
   // 更新图片字段
@@ -441,14 +613,30 @@ function setupIPC() {
     const rows = getImagesForRebuild(true);
     let rebuilt = 0;
     let failed = 0;
-    for (const r of rows) {
+    for (let i = 0; i < rows.length; i++) {
+      const r = rows[i];
       const thumb = generateThumbnail(r.filepath, 512);
       if (thumb) {
-        updateImage(r.id, { thumbnail: thumb });
-        rebuilt++;
+        try {
+          const thumbPath = saveThumbnailFile(r.id, thumb.buf);
+          await updateImage(r.id, { thumbnail_path: thumbPath, width: thumb.width, height: thumb.height });
+          rebuilt++;
+        } catch (e) {
+          failed++;
+        }
       } else {
         failed++;
       }
+      if (i % 3 === 0) {
+        await new Promise(res => setImmediate(res));
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('rebuild-progress', { done: i + 1, total: rows.length });
+        }
+      }
+    }
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('rebuild-progress', { done: rows.length, total: rows.length });
+      mainWindow.webContents.send('thumbnails-ready');
     }
     return { total: rows.length, rebuilt, failed };
   });
@@ -487,14 +675,21 @@ function setupIPC() {
     return setImagesRoot(dirPath);
   });
 
-  // 获取缩略图（按需生成）
+  // 获取缩略图（按需生成，保持返回 data URL 的兼容格式）
   ipcMain.handle('fs:get-thumbnail', async (_event, filepath) => {
-    return generateThumbnail(filepath);
+    const thumb = generateThumbnail(filepath);
+    if (!thumb) return null;
+    return `data:image/jpeg;base64,${thumb.buf.toString('base64')}`;
   });
 
   // 获取完整图片数据
   ipcMain.handle('fs:get-image-data', async (_event, filepath, maxWidth) => {
     return getImageData(filepath, maxWidth);
+  });
+
+  // 获取完整 EXIF（详情面板按需读取）
+  ipcMain.handle('fs:get-exif', async (_event, filepath) => {
+    return parseFullExif(filepath);
   });
 
   // 检查文件是否存在
@@ -530,7 +725,7 @@ function setupIPC() {
   });
 
   // 导出文件（JPG + 配对 NEF），处理重名
-  function exportFiles(images, destDir) {
+  async function exportFiles(images, destDir) {
     let copied = 0;
     let nefCount = 0;
     for (const img of images) {
@@ -544,7 +739,7 @@ function setupIPC() {
           finalDest = path.join(destDir, `${base}_${n}${ext}`);
           n++;
         }
-        fs.copyFileSync(img.filepath, finalDest);
+        await fs.promises.copyFile(img.filepath, finalDest);
         copied++;
       }
 
@@ -557,7 +752,7 @@ function setupIPC() {
           rawDest = path.join(destDir, `${destBase}_${m}${rawExt}`);
           m++;
         }
-        fs.copyFileSync(img.raw_path, rawDest);
+        await fs.promises.copyFile(img.raw_path, rawDest);
         nefCount++;
       }
     }
@@ -566,7 +761,7 @@ function setupIPC() {
 
   ipcMain.handle('fs:export-album-images', async (_event, albumId, destDir) => {
     const images = getAlbumImages(albumId);
-    const r = exportFiles(images, destDir);
+    const r = await exportFiles(images, destDir);
     return { total: images.length, copied: r.copied, nefCopied: r.nefCount };
   });
 
@@ -577,7 +772,7 @@ function setupIPC() {
       const img = getImageById(id);
       if (img) images.push(img);
     }
-    const r = exportFiles(images, destDir);
+    const r = await exportFiles(images, destDir);
     return { total: images.length, copied: r.copied, nefCopied: r.nefCount };
   });
 
@@ -596,11 +791,25 @@ function setupIPC() {
   });
 
   // ── 路径转 file:// URL ──
+  function pathToFileUrl(filepath) {
+    const normalized = filepath.replace(/\\/g, '/');
+    return `file:///${normalized}`;
+  }
+
   ipcMain.handle('fs:to-file-url', async (_event, filepath) => {
     if (!fs.existsSync(filepath)) return null;
-    // Windows: C:\xxx -> file:///C:/xxx
-    const normalized = filepath.replace(/\\/g, '/');
-    return `file:///${normalized.replace(/^([A-Za-z]):/, '$1:')}`;
+    return pathToFileUrl(filepath);
+  });
+
+  // 批量路径转 file:// URL，返回 { path: url|null }
+  ipcMain.handle('fs:to-file-urls', async (_event, paths) => {
+    const result = {};
+    if (!Array.isArray(paths)) return result;
+    for (const p of paths) {
+      if (typeof p !== 'string' || !p || p in result) continue;
+      result[p] = fs.existsSync(p) ? pathToFileUrl(p) : null;
+    }
+    return result;
   });
 
   // ── 打开文件夹 ──
@@ -611,17 +820,18 @@ function setupIPC() {
 }
 
 // 回填历史图片的 EXIF 方向标记（只执行一次，完成后写标记）
-function backfillOrientations() {
+async function backfillOrientations() {
   try {
     if (getSetting('orientation_backfilled') === 'true') return 0;
     const rows = getAllImagePaths();
     let count = 0;
-    for (const r of rows) {
-      const ori = getExifOrientation(r.filepath);
+    for (let i = 0; i < rows.length; i++) {
+      const ori = getExifOrientation(rows[i].filepath);
       if (ori && ori !== 1) {
-        updateImageOrientation(r.id, ori);
+        updateImageOrientation(rows[i].id, ori);
         count++;
       }
+      if (i % 20 === 0) await new Promise(res => setImmediate(res));
     }
     setSetting('orientation_backfilled', 'true');
     console.log(`[方向回填] 完成，更新 ${count} 张`);
@@ -642,8 +852,8 @@ app.whenReady().then(async () => {
   createWindow();
 
   // 后台回填历史图片方向标记，完成后通知渲染进程刷新
-  setTimeout(() => {
-    backfillOrientations();
+  setTimeout(async () => {
+    await backfillOrientations();
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send('orientation-backfill-done');
     }

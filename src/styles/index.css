@@ -28,30 +28,48 @@
 
 /* ── CSS Variables ── */
 :root {
-  --bg-primary: #0f0f13;
-  --bg-secondary: #1a1a24;
-  --bg-card: #22223a;
-  --bg-hover: #2a2a44;
-  --bg-input: #15151f;
-  --border: #2a2a40;
-  --border-light: #3a3a55;
-  --text-primary: #e8e8f0;
-  --text-secondary: #9999b0;
-  --text-muted: #666680;
+  color-scheme: dark;
+  /* 中性石墨色系：低饱和深色避免干扰照片色彩感知，层次靠明度递进 */
+  --bg-primary: #0f0f12;
+  --bg-secondary: #16161b;
+  --bg-card: #1c1c22;
+  --bg-hover: #24242b;
+  --bg-input: #101014;
+  --border: #272730;
+  --border-light: #373741;
+  --text-primary: #f3f3f6;
+  --text-secondary: #a2a2ad;
+  --text-muted: #6d6d79;
   --accent-color: #6366f1;
   --accent-color-hover: #818cf8;
-  --accent-color-glow: rgba(99, 102, 241, 0.15);
+  --accent-color-glow: rgba(99, 102, 241, 0.16);
   --danger: #ef4444;
   --danger-hover: #f87171;
   --success: #22c55e;
   --warning: #f59e0b;
   --star: #f59e0b;
-  --shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
-  --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.5);
+  --shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+  --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.55);
   --transition: 150ms ease;
 
+  /* 按钮体系（主要=柔和靛蓝、危险=红色轮廓） */
+  --btn-primary-bg: rgba(99, 102, 241, 0.16);
+  --btn-primary-bg-hover: rgba(99, 102, 241, 0.28);
+  --btn-primary-border: rgba(99, 102, 241, 0.38);
+  --btn-primary-border-hover: rgba(129, 140, 248, 0.6);
+  --btn-primary-text: #a6aefb;
+  --btn-primary-text-hover: #ccd1ff;
+  --btn-danger-bg: rgba(239, 68, 68, 0.1);
+  --btn-danger-bg-hover: rgba(239, 68, 68, 0.9);
+  --btn-danger-border: rgba(239, 68, 68, 0.38);
+  --btn-danger-border-hover: #ef4444;
+  --btn-danger-text: #f87171;
+  --btn-danger-text-hover: #ffffff;
+  --btn-secondary-bg: #202027;
+  --btn-secondary-bg-hover: #2a2a33;
+
   /* 图片覆盖层（叠加在图片上，两主题通用） */
-  --overlay-gradient: linear-gradient(transparent, rgba(0, 0, 0, 0.85));
+  --overlay-gradient: linear-gradient(to top, rgba(0, 0, 0, 0.85) 0%, rgba(0, 0, 0, 0.45) 45%, transparent 100%);
   --card-stars-bg: rgba(0, 0, 0, 0.55);
   --card-checkbox-bg: rgba(0, 0, 0, 0.35);
   --card-checkbox-border: rgba(255, 255, 255, 0.75);
@@ -68,24 +86,24 @@
   --filter-chip-bg: var(--bg-hover);
 
   /* shadcn/ui tokens (dark, default) */
-  --background: #0f0f13;
-  --foreground: #e8e8f0;
-  --card: #1a1a24;
-  --card-foreground: #e8e8f0;
-  --popover: #1a1a24;
-  --popover-foreground: #e8e8f0;
+  --background: #0f0f12;
+  --foreground: #f3f3f6;
+  --card: #1c1c22;
+  --card-foreground: #f3f3f6;
+  --popover: #212129;
+  --popover-foreground: #f3f3f6;
   --primary: #6366f1;
   --primary-foreground: #ffffff;
-  --secondary: #2a2a44;
-  --secondary-foreground: #e8e8f0;
-  --muted: #22223a;
-  --muted-foreground: #9999b0;
-  --accent: #2a2a44;
-  --accent-foreground: #e8e8f0;
+  --secondary: #24242b;
+  --secondary-foreground: #f3f3f6;
+  --muted: #1c1c22;
+  --muted-foreground: #a2a2ad;
+  --accent: #24242b;
+  --accent-foreground: #f3f3f6;
   --destructive: #ef4444;
   --destructive-foreground: #ffffff;
-  --border: #2a2a40;
-  --input: #15151f;
+  --border: #272730;
+  --input: #101014;
   --ring: #6366f1;
   --radius: 0.5rem;
 }
@@ -100,6 +118,60 @@
 html, body, #root {
   height: 100%;
   overflow: hidden;
+}
+
+/* 统一焦点态：鼠标点击不显示描边，键盘导航用主题色描边 */
+:focus {
+  outline: none;
+}
+:focus-visible {
+  outline: 2px solid var(--accent-color);
+  outline-offset: 1px;
+}
+
+/* ── 统一按钮体系：主要=柔和靛蓝、次级=描边表面、危险=红色轮廓（悬停填充） ── */
+[data-slot="button"] {
+  border-radius: 8px;
+  font-weight: 500;
+}
+
+[data-slot="button"][data-variant="default"] {
+  background: var(--btn-primary-bg);
+  border: 1px solid var(--btn-primary-border);
+  color: var(--btn-primary-text);
+}
+
+[data-slot="button"][data-variant="default"]:hover {
+  background: var(--btn-primary-bg-hover);
+  border-color: var(--btn-primary-border-hover);
+  color: var(--btn-primary-text-hover);
+}
+
+[data-slot="button"][data-variant="secondary"] {
+  background: var(--btn-secondary-bg);
+  border: 1px solid var(--border);
+  color: var(--text-primary);
+}
+
+[data-slot="button"][data-variant="secondary"]:hover {
+  background: var(--btn-secondary-bg-hover);
+  border-color: var(--border-light);
+}
+
+[data-slot="button"][data-variant="destructive"] {
+  background: var(--btn-danger-bg);
+  border: 1px solid var(--btn-danger-border);
+  color: var(--btn-danger-text);
+}
+
+[data-slot="button"][data-variant="destructive"]:hover {
+  background: var(--btn-danger-bg-hover);
+  border-color: var(--btn-danger-border-hover);
+  color: var(--btn-danger-text-hover);
+}
+
+[data-slot="button"][data-variant="ghost"]:hover {
+  background: var(--bg-hover);
 }
 
 body {
@@ -166,8 +238,14 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 18px;
   flex-shrink: 0;
+  box-shadow: 0 2px 8px rgba(99, 102, 241, 0.35);
+}
+
+.sidebar-logo svg {
+  width: 17px;
+  height: 17px;
+  color: #fff;
 }
 
 .sidebar-title {
@@ -255,6 +333,11 @@ body {
   font-weight: 500;
 }
 
+.nav-item.active .nav-badge {
+  background: var(--accent-color);
+  color: #fff;
+}
+
 .nav-item svg {
   width: 18px;
   height: 18px;
@@ -326,10 +409,33 @@ body {
 
 .search-input:focus {
   border-color: var(--accent-color);
+  box-shadow: 0 0 0 3px var(--accent-color-glow);
 }
 
 .search-input::placeholder {
   color: var(--text-muted);
+}
+
+.search-clear {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.search-clear:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
 }
 
 .topbar-actions {
@@ -380,9 +486,51 @@ body {
   transition: border-color var(--transition), background-color var(--transition);
 }
 
+.filter-date-input:hover,
+.filter-select:hover {
+  border-color: var(--border-light);
+}
+
 .filter-date-input:focus,
 .filter-select:focus {
   border-color: var(--accent-color);
+  box-shadow: 0 0 0 3px var(--accent-color-glow);
+}
+
+/* 排序分段控件 */
+.sort-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.sort-group button {
+  height: 24px;
+  padding: 0 10px;
+  font-size: 12px;
+  font-weight: 500;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-secondary);
+}
+
+.sort-group button:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.sort-group button.is-active {
+  background: var(--accent-color);
+  color: #fff;
+}
+
+.sort-group button.is-active:hover {
+  background: var(--accent-color-hover);
+  color: #fff;
 }
 
 /* ── Image Grid ── */
@@ -399,6 +547,41 @@ body {
   grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
   gap: 12px;
   flex-shrink: 0;
+}
+
+.image-grid.is-loading {
+  opacity: 0.45;
+  pointer-events: none;
+  transition: opacity 120ms ease;
+}
+
+/* 时间线日期表头（吸顶） */
+.grid-date-header {
+  position: sticky;
+  top: -8px;
+  z-index: 5;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 10px 4px 8px;
+  background: color-mix(in srgb, var(--bg-primary) 82%, transparent);
+  backdrop-filter: blur(8px);
+  border-bottom: 1px solid var(--border);
+  user-select: none;
+}
+
+.grid-date-text {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+  padding-left: 8px;
+  border-left: 3px solid var(--accent-color);
+  line-height: 1.2;
+}
+
+.grid-date-count {
+  font-size: 12px;
+  color: var(--text-muted);
 }
 
 .image-card {
@@ -419,6 +602,11 @@ body {
 }
 
 .image-card.selected {
+  border-color: var(--accent-color);
+  box-shadow: 0 0 0 2px var(--accent-color-glow);
+}
+
+.image-card.keyboard-active {
   border-color: var(--accent-color);
   box-shadow: 0 0 0 2px var(--accent-color-glow);
 }
@@ -448,10 +636,10 @@ body {
 
 .image-card-info {
   position: absolute;
-  bottom: 30px;
+  bottom: 0;
   left: 0;
   right: 0;
-  padding: 8px 10px 2px;
+  padding: 24px 10px 32px;
   background: var(--overlay-gradient);
   opacity: 0;
   transition: opacity var(--transition);
@@ -464,7 +652,9 @@ body {
 
 .image-card-name {
   font-size: 12px;
+  font-weight: 500;
   color: white;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -480,12 +670,13 @@ body {
 .card-stars {
   position: absolute;
   left: 8px;
-  bottom: 6px;
+  bottom: 8px;
   display: flex;
   align-items: center;
   gap: 2px;
   padding: 3px 8px;
   background: var(--card-stars-bg);
+  backdrop-filter: blur(4px);
   border-radius: 12px;
   opacity: 0;
   transition: opacity var(--transition);
@@ -592,13 +783,47 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 12px;
-  padding: 12px 0 4px;
+  gap: 6px;
+  padding: 14px 0 6px;
   margin-top: auto;
   color: var(--text-secondary);
   font-size: 12px;
   background: var(--bg-primary);
   flex-shrink: 0;
+}
+
+.pagination-bar [data-slot="button"] {
+  font-size: 12px;
+}
+
+.pagination-info {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 8px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.pagination-info .pagination-input {
+  width: 48px;
+  height: 26px;
+  text-align: center;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-primary);
+  font-size: 12px;
+  outline: none;
+  transition: border-color var(--transition);
+}
+
+.pagination-info .pagination-input:focus {
+  border-color: var(--accent-color);
+}
+
+.pagination-total {
+  color: var(--text-muted);
 }
 
 .pagination-input::-webkit-outer-spin-button,
@@ -624,9 +849,15 @@ body {
 }
 
 .empty-state-icon {
-  font-size: 64px;
+  color: var(--text-muted);
   margin-bottom: 16px;
-  opacity: 0.5;
+  opacity: 0.55;
+}
+
+.empty-state-icon svg {
+  width: 56px;
+  height: 56px;
+  stroke-width: 1.2;
 }
 
 .empty-state-title {
@@ -694,20 +925,21 @@ body {
   width: 40px;
   height: 40px;
   border-radius: 50%;
-  background: var(--viewer-control-bg);
+  background: rgba(15, 15, 19, 0.55);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
   color: white;
-  border: none;
   cursor: pointer;
-  font-size: 20px;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: background var(--transition);
+  transition: background var(--transition), transform var(--transition);
   z-index: 1001;
 }
 
 .viewer-close:hover {
-  background: var(--viewer-control-bg-hover);
+  background: rgba(255, 255, 255, 0.15);
+  transform: scale(1.05);
 }
 
 .viewer-nav {
@@ -717,20 +949,20 @@ body {
   width: 48px;
   height: 48px;
   border-radius: 50%;
-  background: var(--viewer-control-bg);
+  background: rgba(15, 15, 19, 0.55);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
   color: white;
-  border: none;
   cursor: pointer;
-  font-size: 24px;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: background var(--transition);
+  transition: background var(--transition), transform var(--transition);
   z-index: 1001;
 }
 
 .viewer-nav:hover {
-  background: var(--viewer-control-bg-hover);
+  background: rgba(255, 255, 255, 0.15);
 }
 
 .viewer-nav:first-of-type { left: 20px; }
@@ -742,14 +974,36 @@ body {
   left: 50%;
   transform: translateX(-50%);
   max-width: calc(100vw - 40px);
-  overflow: hidden;
-  background: var(--viewer-info-bg);
+  background: rgba(15, 15, 19, 0.65);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
   color: white;
   padding: 8px 16px;
   border-radius: 20px;
-  font-size: 13px;
+  font-size: 12px;
   display: flex;
-  gap: 16px;
+  align-items: center;
+  gap: 14px;
+  white-space: nowrap;
+}
+
+.viewer-info > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.viewer-counter {
+  font-weight: 600;
+  color: var(--accent-color-hover);
+  white-space: nowrap;
+}
+
+.viewer-info-sep {
+  width: 1px;
+  height: 12px;
+  background: rgba(255, 255, 255, 0.15);
 }
 
 .viewer-filename {
@@ -764,8 +1018,31 @@ body {
   top: 20px;
   left: 20px;
   display: flex;
-  gap: 8px;
+  align-items: center;
+  gap: 2px;
+  padding: 4px;
+  background: rgba(15, 15, 19, 0.55);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
   z-index: 1001;
+}
+
+.viewer-actions [data-slot="button"] {
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.viewer-actions [data-slot="button"]:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+}
+
+.viewer-zoom-label {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.6);
+  padding: 0 10px 0 6px;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
 
 /* ── Info Panel ── */
@@ -1026,32 +1303,92 @@ body {
 /* ── Albums ── */
 .album-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-  gap: 12px;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 14px;
 }
 
 .album-card {
+  display: flex;
+  flex-direction: column;
   background: var(--bg-card);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   padding: 16px;
   cursor: pointer;
-  transition: all var(--transition);
+  transition: border-color var(--transition), background var(--transition), transform var(--transition), box-shadow var(--transition);
 }
 
 .album-card:hover {
   border-color: var(--accent-color);
   background: var(--bg-hover);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-lg);
+}
+
+.album-card-icon {
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  background: var(--accent-color-glow);
+  color: var(--accent-color);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 12px;
+}
+
+.album-card-icon svg {
+  width: 19px;
+  height: 19px;
+}
+
+.album-card-cover {
+  display: block;
+  width: calc(100% + 32px);
+  margin: -16px -16px 12px;
+  aspect-ratio: 16 / 10;
+  object-fit: cover;
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  background: var(--bg-input);
 }
 
 .album-card-name {
   font-weight: 600;
   font-size: 15px;
   margin-bottom: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.album-card-desc {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.album-card-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: auto;
 }
 
 .album-card-count {
-  font-size: 13px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--accent-color);
+  background: var(--accent-color-glow);
+  padding: 2px 8px;
+  border-radius: 10px;
+}
+
+.album-card-hint {
+  font-size: 11px;
   color: var(--text-muted);
 }
 
@@ -1358,6 +1695,7 @@ body {
 
 /* ── Light Theme ── */
 [data-theme="light"] {
+  color-scheme: light;
   --bg-primary: #f4f5f7;
   --bg-secondary: #ffffff;
   --bg-card: #ffffff;
@@ -1379,6 +1717,22 @@ body {
   --warning: #f59e0b;
   --star: #f59e0b;
   --transition: 150ms ease;
+
+  /* 按钮体系（浅色主题适配） */
+  --btn-primary-bg: rgba(76, 110, 245, 0.09);
+  --btn-primary-bg-hover: rgba(76, 110, 245, 0.17);
+  --btn-primary-border: rgba(76, 110, 245, 0.32);
+  --btn-primary-border-hover: rgba(76, 110, 245, 0.55);
+  --btn-primary-text: #4263eb;
+  --btn-primary-text-hover: #364fc7;
+  --btn-danger-bg: rgba(224, 49, 49, 0.07);
+  --btn-danger-bg-hover: #e03131;
+  --btn-danger-border: rgba(224, 49, 49, 0.32);
+  --btn-danger-border-hover: #e03131;
+  --btn-danger-text: #e03131;
+  --btn-danger-text-hover: #ffffff;
+  --btn-secondary-bg: #ffffff;
+  --btn-secondary-bg-hover: #eef1f4;
 
   /* shadcn/ui tokens (light) */
   --background: #f4f5f7;
@@ -1527,4 +1881,128 @@ body {
 .import-result-desc {
   font-size: 13px;
   color: var(--text-secondary);
+}
+
+/* ── 拖拽导入遮罩 ── */
+.drag-import-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1500;
+  background: var(--dialog-backdrop);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.drag-import-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 28px 48px;
+  border: 2px dashed var(--accent-color);
+  border-radius: 14px;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font-size: 15px;
+  font-weight: 600;
+  box-shadow: var(--shadow-lg);
+}
+
+.drag-import-box svg {
+  color: var(--accent-color);
+}
+
+.drag-import-hint {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--text-muted);
+}
+
+/* ── 重复图片弹窗 ── */
+.dupe-dialog {
+  width: 720px;
+  max-width: calc(100vw - 48px);
+}
+
+.dupe-group {
+  margin-bottom: 16px;
+}
+
+.dupe-group-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin-bottom: 8px;
+}
+
+.dupe-group-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 10px;
+}
+
+.dupe-item {
+  position: relative;
+  border: 2px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-input);
+  cursor: pointer;
+  padding: 0 0 6px;
+  overflow: hidden;
+  transition: border-color var(--transition);
+}
+
+.dupe-item:hover {
+  border-color: var(--border-light);
+}
+
+.dupe-item.keep {
+  border-color: var(--accent-color);
+  box-shadow: 0 0 0 2px var(--accent-color-glow);
+}
+
+.dupe-item img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 1;
+  object-fit: cover;
+}
+
+.dupe-item-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  aspect-ratio: 1;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.dupe-item-name {
+  display: block;
+  padding: 4px 6px 0;
+  font-size: 11px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: left;
+}
+
+.dupe-item-badge {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  padding: 1px 8px;
+  border-radius: 10px;
+  font-size: 11px;
+  background: rgba(0, 0, 0, 0.6);
+  color: rgba(255, 255, 255, 0.75);
+}
+
+.dupe-item-badge.keep {
+  background: var(--accent-color);
+  color: #fff;
 }

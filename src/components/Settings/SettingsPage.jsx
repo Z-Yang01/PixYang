@@ -18,12 +18,33 @@ export default function SettingsPage({ stats, onSettingsChanged, onImagesChanged
   const [moving, setMoving] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [rebuilding, setRebuilding] = useState(false);
+  const [rebuildProgress, setRebuildProgress] = useState(null);
+  const [scanningBroken, setScanningBroken] = useState(false);
+  const [brokenRecords, setBrokenRecords] = useState(null);
+  const [findingDupes, setFindingDupes] = useState(false);
+  const [dupGroups, setDupGroups] = useState(null);
+  const [dupeKeep, setDupeKeep] = useState({});
+  const [dupeUrls, setDupeUrls] = useState({});
   const [dbPath, setDbPath] = useState('');
   const [resetConfirm, setResetConfirm] = useState(false);
 
   useEffect(() => {
     loadSettings();
   }, []);
+
+  useEffect(() => {
+    if (!window.pixyang?.onRebuildProgress) return;
+    return window.pixyang.onRebuildProgress((p) => setRebuildProgress(p || null));
+  }, []);
+
+  useEffect(() => {
+    if (!rebuilding) return;
+    setMessage(
+      rebuildProgress?.total > 0
+        ? `正在重建缩略图 ${rebuildProgress.done}/${rebuildProgress.total}...`
+        : '正在重建缩略图...'
+    );
+  }, [rebuilding, rebuildProgress]);
 
   const hasChanges = JSON.stringify(draft) !== JSON.stringify(savedRef.current);
 
@@ -153,12 +174,81 @@ export default function SettingsPage({ stats, onSettingsChanged, onImagesChanged
   const handleRebuildThumbnails = async () => {
     if (!window.pixyang || rebuilding) return;
     setRebuilding(true);
+    setRebuildProgress({ done: 0, total: 0 });
     setMessage('正在重建缩略图...');
     const result = await window.pixyang.rebuildThumbnails();
     setRebuilding(false);
+    setRebuildProgress(null);
     onImagesChanged?.();
     showSaved(`缩略图重建完成：${result.rebuilt} 成功，${result.failed} 失败（共 ${result.total} 张）`);
   };
+
+  const handleScanBroken = async () => {
+    if (!window.pixyang || scanningBroken) return;
+    setScanningBroken(true);
+    const list = await window.pixyang.scanBrokenRecords();
+    setScanningBroken(false);
+    setBrokenRecords(list || []);
+    if (!list || list.length === 0) showSaved('未发现失效记录');
+  };
+
+  const handleCleanBroken = async () => {
+    if (!window.pixyang || !brokenRecords) return;
+    const ids = brokenRecords.map(r => r.id);
+    setBrokenRecords(null);
+    const removed = await window.pixyang.deleteBrokenRecords(ids);
+    onImagesChanged?.();
+    showSaved(`已清理 ${removed} 条失效记录`);
+  };
+
+  const handleFindDuplicates = async () => {
+    if (!window.pixyang || findingDupes) return;
+    setFindingDupes(true);
+    const groups = await window.pixyang.findDuplicates();
+    setFindingDupes(false);
+    if (!groups || groups.length === 0) {
+      showSaved('未发现重复图片');
+      return;
+    }
+    // 每组默认保留第一张，其余预选删除
+    const keep = {};
+    groups.forEach((g, gi) => { keep[gi] = g.items[0].id; });
+    setDupeKeep(keep);
+    setDupGroups(groups);
+    // 批量取缩略图 URL
+    const paths = [...new Set(groups.flatMap(g => g.items.map(i => i.thumbnail_path).filter(Boolean)))];
+    if (paths.length > 0) {
+      const map = await window.pixyang.toFileUrls(paths);
+      if (map) setDupeUrls(map);
+    }
+  };
+
+  const dupeDeleteIds = () => {
+    if (!dupGroups) return [];
+    const ids = [];
+    dupGroups.forEach((g, gi) => {
+      g.items.forEach(item => {
+        if (item.id !== dupeKeep[gi]) ids.push(item.id);
+      });
+    });
+    return ids;
+  };
+
+  const handleDeleteDuplicates = async () => {
+    if (!window.pixyang) return;
+    const ids = dupeDeleteIds();
+    if (ids.length === 0) return;
+    const wasted = dupGroups.reduce((sum, g, gi) => {
+      return sum + g.items.filter(item => item.id !== dupeKeep[gi]).reduce((s, i) => s + (i.size || 0), 0);
+    }, 0);
+    setDupGroups(null);
+    await window.pixyang.batchDeleteImages(ids);
+    onImagesChanged?.();
+    const mb = (wasted / 1048576).toFixed(1);
+    showSaved(`已删除 ${ids.length} 张重复图片，释放 ${mb} MB`);
+  };
+
+  const formatMb = (bytes) => `${(bytes / 1048576).toFixed(1)} MB`;
 
   const handleBackup = async () => {
     if (!window.pixyang) return;
@@ -324,10 +414,30 @@ export default function SettingsPage({ stats, onSettingsChanged, onImagesChanged
           <div className="info-row">
             <span className="info-label">重建缩略图</span>
             <Button variant="secondary" size="sm" onClick={handleRebuildThumbnails} disabled={rebuilding}>
-              {rebuilding ? '重建中...' : '重建缩略图'}
+              {rebuilding
+                ? (rebuildProgress?.total > 0
+                    ? `重建中 ${Math.round((rebuildProgress.done / rebuildProgress.total) * 100)}%...`
+                    : '重建中...')
+                : '重建缩略图'}
             </Button>
           </div>
           <p className="settings-help">为所有图片重新生成高清缩略图（修复失效或低清的缩略图）。</p>
+
+          <div className="info-row" style={{ marginTop: 12 }}>
+            <span className="info-label">失效记录</span>
+            <Button variant="secondary" size="sm" onClick={handleScanBroken} disabled={scanningBroken}>
+              {scanningBroken ? '扫描中...' : '扫描失效记录'}
+            </Button>
+          </div>
+          <p className="settings-help">扫描文件已不存在的图库条目（如图片在外部被移动或删除），扫描后可一键清理，磁盘上仍存在的文件不会被删除。</p>
+
+          <div className="info-row" style={{ marginTop: 12 }}>
+            <span className="info-label">重复图片</span>
+            <Button variant="secondary" size="sm" onClick={handleFindDuplicates} disabled={findingDupes}>
+              {findingDupes ? '查找中...' : '查找重复图片'}
+            </Button>
+          </div>
+          <p className="settings-help">按文件特征查找内容相同的图片，确认后可删除多余副本释放空间。</p>
 
           <div className="info-row" style={{ marginTop: 12 }}>
             <span className="info-label">数据库备份</span>
@@ -360,6 +470,68 @@ export default function SettingsPage({ stats, onSettingsChanged, onImagesChanged
           onConfirm={handleResetDefaults}
           onCancel={() => setResetConfirm(false)}
         />
+      )}
+
+      {brokenRecords && brokenRecords.length > 0 && (
+        <ConfirmDialog
+          title="清理失效记录"
+          message={`发现 ${brokenRecords.length} 条记录对应的文件已不存在（例如「${brokenRecords[0].filename}」${brokenRecords.length > 1 ? ' 等' : ''}）。清理后图库将不再显示这些条目，磁盘上仍存在的文件不会被删除。`}
+          confirmLabel={`清理 ${brokenRecords.length} 条`}
+          onConfirm={handleCleanBroken}
+          onCancel={() => setBrokenRecords(null)}
+        />
+      )}
+
+      {dupGroups && dupGroups.length > 0 && (
+        <div className="dialog-backdrop" onClick={() => setDupGroups(null)}>
+          <div className="dialog dupe-dialog" onClick={(e) => e.stopPropagation()}>
+            <div className="dialog-header">发现 {dupGroups.length} 组重复图片</div>
+            <div className="dialog-body">
+              <p className="settings-help" style={{ marginBottom: 12 }}>
+                每组内容完全相同，点击选择要保留的一张，其余将被删除（含配对 NEF）。
+              </p>
+              {dupGroups.map((group, gi) => (
+                <div key={group.key} className="dupe-group">
+                  <div className="dupe-group-title">
+                    第 {gi + 1} 组 · {group.items.length} 张 · 可释放 {formatMb(group.wasted)}
+                  </div>
+                  <div className="dupe-group-grid">
+                    {group.items.map(item => {
+                      const keep = dupeKeep[gi] === item.id;
+                      const url = item.thumbnail_path ? dupeUrls[item.thumbnail_path] : null;
+                      return (
+                        <button
+                          key={item.id}
+                          className={`dupe-item${keep ? ' keep' : ''}`}
+                          onClick={() => setDupeKeep(prev => ({ ...prev, [gi]: item.id }))}
+                          title={keep ? '保留这张' : '点击改为保留这张'}
+                        >
+                          {url ? (
+                            <img src={url} alt={item.filename} loading="lazy" />
+                          ) : (
+                            <span className="dupe-item-placeholder">{item.format?.toUpperCase() || 'IMG'}</span>
+                          )}
+                          <span className="dupe-item-name" title={item.filepath}>{item.filename}</span>
+                          <span className={`dupe-item-badge${keep ? ' keep' : ''}`}>{keep ? '保留' : '删除'}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="dialog-footer">
+              <Button variant="ghost" onClick={() => setDupGroups(null)}>取消</Button>
+              <Button
+                variant="destructive"
+                onClick={handleDeleteDuplicates}
+                disabled={dupeDeleteIds().length === 0}
+              >
+                删除选中的 {dupeDeleteIds().length} 张
+              </Button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

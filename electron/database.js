@@ -1,3 +1,4 @@
+const crypto = require('crypto');
 const path = require('path');
 const { app } = require('electron');
 const fs = require('fs');
@@ -19,6 +20,27 @@ function getImagesRoot() {
 
 function getDatabasePath() {
   return DB_PATH;
+}
+
+function getThumbnailsDir() {
+  const dir = path.join(app.getPath('userData'), 'thumbnails');
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
+  return dir;
+}
+
+function getThumbnailFilePath(id) {
+  return path.join(getThumbnailsDir(), `${id}.jpg`);
+}
+
+function deleteThumbnailFile(id) {
+  try {
+    const p = getThumbnailFilePath(id);
+    if (fs.existsSync(p)) fs.unlinkSync(p);
+  } catch (e) {
+    console.error('[缩略图] 删除文件失败:', e.message);
+  }
 }
 
 function getObject(sql, params = []) {
@@ -164,6 +186,8 @@ async function initDatabase() {
     grid_gap: '12',
     content_padding: '16',
     orientation_backfilled: 'false',
+    sort_by: 'import_date',
+    sort_order: 'DESC',
   };
   for (const [k, v] of Object.entries(defaults)) {
     db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)').run([k, v]);
@@ -172,11 +196,16 @@ async function initDatabase() {
   // 迁移旧表：如果不存在 import_date 列则添加
   migrateSchema();
 
+  // 旧库一次性迁移：base64 缩略图落盘为文件，避免数据库膨胀与查询携带大字段
+  migrateThumbnailsToFiles();
+
   // 常用查询索引（hidden/import_date/favorite/taken_at）
   db.run('CREATE INDEX IF NOT EXISTS idx_images_hidden ON images(hidden)');
   db.run('CREATE INDEX IF NOT EXISTS idx_images_import_date ON images(import_date)');
   db.run('CREATE INDEX IF NOT EXISTS idx_images_favorite ON images(favorite)');
   db.run('CREATE INDEX IF NOT EXISTS idx_images_taken_at ON images(taken_at)');
+  db.run('CREATE INDEX IF NOT EXISTS idx_images_original_path ON images(original_path)');
+  db.run('CREATE INDEX IF NOT EXISTS idx_images_original_raw_path ON images(original_raw_path)');
 
   // 从设置中读取自定义路径（如果有的话）
   const customImagesRoot = getSetting('images_root');
@@ -229,9 +258,45 @@ function migrateSchema() {
       if (!colNames.includes('updated_at')) {
         db.run('ALTER TABLE images ADD COLUMN updated_at DATETIME DEFAULT CURRENT_TIMESTAMP');
       }
+      if (!colNames.includes('thumbnail_path')) {
+        db.run('ALTER TABLE images ADD COLUMN thumbnail_path TEXT DEFAULT ""');
+      }
     }
   } catch (e) {
     console.log('[迁移] 可能是旧版数据库，尝试添加列:', e.message);
+  }
+}
+
+// 一次性迁移：把 thumbnail 列中的 base64 缩略图写入文件并清空该列
+function migrateThumbnailsToFiles() {
+  try {
+    const rows = [];
+    const stmt = db.prepare("SELECT id, thumbnail FROM images WHERE thumbnail != ''");
+    while (stmt.step()) rows.push(stmt.getAsObject());
+    stmt.free();
+    if (rows.length === 0) return;
+
+    const dir = getThumbnailsDir();
+    for (const r of rows) {
+      try {
+        const raw = String(r.thumbnail || '');
+        const base64 = raw.includes(',') ? raw.slice(raw.indexOf(',') + 1) : raw;
+        const buf = Buffer.from(base64, 'base64');
+        if (buf.length === 0) {
+          db.prepare('UPDATE images SET thumbnail = "" WHERE id = ?').run([r.id]);
+          continue;
+        }
+        const thumbPath = path.join(dir, `${r.id}.jpg`);
+        fs.writeFileSync(thumbPath, buf);
+        db.prepare('UPDATE images SET thumbnail_path = ?, thumbnail = "" WHERE id = ?').run([thumbPath, r.id]);
+      } catch (e) {
+        console.error('[迁移] 缩略图写文件失败:', r.id, e.message);
+      }
+    }
+    saveDatabase();
+    console.log(`[迁移] 已将 ${rows.length} 张缩略图迁移为文件存储`);
+  } catch (e) {
+    console.error('[迁移] 缩略图迁移失败:', e.message);
   }
 }
 
@@ -289,7 +354,7 @@ function generateUniqueFilename(targetDir, originalName) {
 
 // ── Image Operations ──
 
-function importImages(imageFiles) {
+async function importImages(imageFiles) {
   // imageFiles: 从扫描结果传入，每项含 { filename, filepath(原始), size, format, ... }
   // 此函数负责：1.复制文件到管理目录 2.写入数据库
   // 同目录同主名的 jpg + nef 视为一对：jpg 作为可见记录，nef 复制到同目录并记入 raw_path
@@ -325,17 +390,17 @@ function importImages(imageFiles) {
       const existing = getObject('SELECT * FROM images WHERE original_path = ?', [group.jpg.filepath]);
       if (existing) {
         if (!existing.raw_path && group.nef) {
-          attachRawToImage(existing.id, group.nef.filepath, group.nef.filename);
+          await attachRawToImage(existing.id, group.nef.filepath, group.nef.filename);
         }
         continue;
       }
-      const row = importOne(insertStmt, root, group.jpg, { pair: group.nef || null, hidden: false });
+      const row = await importOne(insertStmt, root, group.jpg, { pair: group.nef || null, hidden: false });
       if (row) imported.push(row);
     } else if (group.nef) {
       const asHidden = getObject('SELECT id FROM images WHERE original_path = ?', [group.nef.filepath]);
       const asPair = getObject('SELECT id FROM images WHERE original_raw_path = ?', [group.nef.filepath]);
       if (asHidden || asPair) continue;
-      const row = importOne(insertStmt, root, group.nef, { pair: null, hidden: true });
+      const row = await importOne(insertStmt, root, group.nef, { pair: null, hidden: true });
       if (row) imported.push(row);
     }
   }
@@ -345,7 +410,7 @@ function importImages(imageFiles) {
   return imported;
 }
 
-function importOne(insertStmt, root, img, { pair, hidden }) {
+async function importOne(insertStmt, root, img, { pair, hidden }) {
   const dateStr = img.importDate || (() => {
     const today = new Date();
     return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
@@ -360,7 +425,7 @@ function importOne(insertStmt, root, img, { pair, hidden }) {
 
   try {
     if (img.filepath !== destPath) {
-      fs.copyFileSync(img.filepath, destPath);
+      await fs.promises.copyFile(img.filepath, destPath);
     }
   } catch (err) {
     console.error('[导入] 复制失败:', img.filepath, err.message);
@@ -374,7 +439,7 @@ function importOne(insertStmt, root, img, { pair, hidden }) {
     rawDestPath = path.join(subDir, rawName);
     try {
       if (pair.filepath !== rawDestPath) {
-        fs.copyFileSync(pair.filepath, rawDestPath);
+        await fs.promises.copyFile(pair.filepath, rawDestPath);
       }
     } catch (err) {
       console.error('[导入] NEF 复制失败:', pair.filepath, err.message);
@@ -460,8 +525,8 @@ function getImages(options = {}) {
   }
 
   if (search) {
-    conditions.push('i.filename LIKE ?');
-    params.push(`%${search}%`);
+    conditions.push('(i.filename LIKE ? OR i.notes LIKE ? OR i.id IN (SELECT it.image_id FROM image_tags it JOIN tags t ON t.id = it.tag_id WHERE t.name LIKE ?))');
+    params.push(`%${search}%`, `%${search}%`, `%${search}%`);
   }
 
   const joinClause = joins.join(' ');
@@ -513,8 +578,9 @@ function getAllImagePaths() {
 }
 
 // 返回可见图片的 id 与 filepath；all=true 重建全部，否则只取缺失缩略图的
+// （orientation != 1 的竖图不生成缩略图，由前端直接显示原图，避免每次都被重捞）
 function getImagesForRebuild(all = false) {
-  const where = all ? 'hidden = 0' : 'hidden = 0 AND thumbnail = ""';
+  const where = all ? 'hidden = 0' : 'hidden = 0 AND thumbnail_path = "" AND orientation = 1';
   const stmt = db.prepare(`SELECT id, filepath, filename FROM images WHERE ${where}`);
   const rows = [];
   while (stmt.step()) rows.push(stmt.getAsObject());
@@ -563,8 +629,8 @@ function getAllVisibleIds(options = {}) {
     conditions.push('i.favorite = 1');
   }
   if (search) {
-    conditions.push('i.filename LIKE ?');
-    params.push(`%${search}%`);
+    conditions.push('(i.filename LIKE ? OR i.notes LIKE ? OR i.id IN (SELECT it.image_id FROM image_tags it JOIN tags t ON t.id = it.tag_id WHERE t.name LIKE ?))');
+    params.push(`%${search}%`, `%${search}%`, `%${search}%`);
   }
 
   query += ` ${joins.join(' ')} WHERE ${conditions.join(' AND ')}`;
@@ -579,7 +645,7 @@ function getAllVisibleIds(options = {}) {
   return ids;
 }
 
-function updateImage(id, updates) {
+async function updateImage(id, updates) {
   // 修改导入日期时，将文件移动到新日期目录（JPG 与配对 NEF 一起移动）
   if (updates.import_date) {
     const newDate = String(updates.import_date).trim();
@@ -595,14 +661,14 @@ function updateImage(id, updates) {
 
         try {
           if (fs.existsSync(img.filepath) && img.filepath !== newPath) {
-            moveFileSafe(img.filepath, newPath);
+            await moveFileSafe(img.filepath, newPath);
           }
           if (img.raw_path) {
             const targetBase = path.basename(newPath, path.extname(newPath));
             const rawExt = path.extname(img.raw_path);
             newRawPath = path.join(subDir, `${targetBase}${rawExt}`);
             if (fs.existsSync(img.raw_path) && img.raw_path !== newRawPath) {
-              moveFileSafe(img.raw_path, newRawPath);
+              await moveFileSafe(img.raw_path, newRawPath);
             }
           }
         } catch (err) {
@@ -616,13 +682,15 @@ function updateImage(id, updates) {
     }
   }
 
-  const allowed = ['filename', 'rating', 'favorite', 'notes', 'width', 'height', 'thumbnail', 'import_date', 'rotation', 'flipH', 'flipV'];
+  const allowed = ['filename', 'rating', 'favorite', 'notes', 'width', 'height', 'thumbnail', 'thumbnail_path', 'import_date', 'rotation', 'flip_h', 'flip_v'];
+  const aliases = { flipH: 'flip_h', flipV: 'flip_v' };
   const sets = [];
   const params = [];
 
   for (const [key, value] of Object.entries(updates)) {
-    if (allowed.includes(key)) {
-      sets.push(`${key} = ?`);
+    const column = aliases[key] || key;
+    if (allowed.includes(column)) {
+      sets.push(`${column} = ?`);
       params.push(value);
     }
   }
@@ -677,18 +745,18 @@ function renameImage(id, newFilename) {
   return { success: true, newFilename, newPath };
 }
 
-function moveFileSafe(oldPath, newPath) {
+async function moveFileSafe(oldPath, newPath) {
   ensureDir(path.dirname(newPath));
   try {
-    fs.renameSync(oldPath, newPath);
+    await fs.promises.rename(oldPath, newPath);
   } catch (err) {
     if (err.code !== 'EXDEV') throw err;
-    fs.copyFileSync(oldPath, newPath);
-    fs.unlinkSync(oldPath);
+    await fs.promises.copyFile(oldPath, newPath);
+    await fs.promises.unlink(oldPath);
   }
 }
 
-function setImagesRoot(newRoot) {
+async function setImagesRoot(newRoot) {
   if (!newRoot || typeof newRoot !== 'string') {
     return { error: '保存路径无效' };
   }
@@ -727,7 +795,7 @@ function setImagesRoot(newRoot) {
 
     try {
       if (fs.existsSync(img.filepath)) {
-        moveFileSafe(img.filepath, targetPath);
+        await moveFileSafe(img.filepath, targetPath);
         moved++;
       }
 
@@ -738,7 +806,7 @@ function setImagesRoot(newRoot) {
         const rawExt = path.extname(img.raw_path);
         newRawPath = path.join(targetDir, `${targetBase}${rawExt}`);
         if (fs.existsSync(img.raw_path)) {
-          moveFileSafe(img.raw_path, newRawPath);
+          await moveFileSafe(img.raw_path, newRawPath);
         } else {
           newRawPath = '';
         }
@@ -761,21 +829,21 @@ function setImagesRoot(newRoot) {
 
 const VISIBLE_FORMATS = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.svg', '.tiff'];
 
-function scanImageFiles(dirPath, includeRaw = false) {
+async function scanImageFiles(dirPath, includeRaw = false) {
   const supported = includeRaw ? [...VISIBLE_FORMATS, '.nef'] : VISIBLE_FORMATS;
   const files = [];
 
-  (function scan(dir) {
+  async function scan(dir) {
     try {
-      const entries = fs.readdirSync(dir, { withFileTypes: true });
+      const entries = await fs.promises.readdir(dir, { withFileTypes: true });
       for (const entry of entries) {
         const fullPath = path.join(dir, entry.name);
         if (entry.isDirectory()) {
-          scan(fullPath);
+          await scan(fullPath);
         } else if (entry.isFile()) {
           const ext = path.extname(entry.name).toLowerCase();
           if (supported.includes(ext)) {
-            const stat = fs.statSync(fullPath);
+            const stat = await fs.promises.stat(fullPath);
             files.push({
               filename: entry.name,
               filepath: fullPath,
@@ -790,31 +858,63 @@ function scanImageFiles(dirPath, includeRaw = false) {
     } catch (err) {
       console.error('[扫描] 错误:', dir, err.message);
     }
-  })(dirPath);
+  }
+
+  await scan(dirPath);
 
   // 普通导入（不包含 .nef）时，为 JPG 检测同目录同名 NEF，便于导入时配对
   if (!includeRaw) {
+    const dirEntries = new Map();
     for (const f of files) {
       if (f.format === '.jpg' || f.format === '.jpeg') {
         const dir = path.dirname(f.filepath);
-        const base = path.basename(f.filename, path.extname(f.filename)).toLowerCase();
+        let names;
         try {
-          const match = fs.readdirSync(dir).find(n => {
-            const ext = path.extname(n);
-            return ext.toLowerCase() === '.nef' && path.basename(n, ext).toLowerCase() === base;
-          });
-          if (match) {
-            const rawPath = path.join(dir, match);
-            f.raw_source = rawPath;
-            f.raw_filename = match;
-          }
+          if (!dirEntries.has(dir)) dirEntries.set(dir, await fs.promises.readdir(dir));
+          names = dirEntries.get(dir);
         } catch (err) {
           console.error('[扫描] 检测 NEF 失败:', dir, err.message);
+          continue;
+        }
+        const base = path.basename(f.filename, path.extname(f.filename)).toLowerCase();
+        const match = names.find(n => {
+          const ext = path.extname(n);
+          return ext.toLowerCase() === '.nef' && path.basename(n, ext).toLowerCase() === base;
+        });
+        if (match) {
+          f.raw_source = path.join(dir, match);
+          f.raw_filename = match;
         }
       }
     }
   }
 
+  return files;
+}
+
+// 收集拖拽导入的文件/目录：目录递归扫描，文件按扩展名过滤（含同目录 NEF 配对检测）
+function collectImportFiles(paths) {
+  const files = [];
+  const dirs = [];
+  for (const p of paths || []) {
+    if (!p || typeof p !== 'string') continue;
+    try {
+      const stat = fs.statSync(p);
+      if (stat.isDirectory()) {
+        dirs.push(p);
+      } else {
+        const ext = path.extname(p).toLowerCase();
+        if (VISIBLE_FORMATS.includes(ext)) {
+          files.push({ filename: path.basename(p), filepath: p, size: stat.size, format: ext, width: 0, height: 0 });
+        }
+      }
+    } catch (e) {
+      console.error('[拖拽导入] 路径无效:', p, e.message);
+    }
+  }
+  for (const d of dirs) {
+    files.push(...scanImageFiles(d, false));
+  }
   return files;
 }
 
@@ -862,7 +962,7 @@ function prepareCameraSync(imageFiles) {
 }
 
 // 将已导入 JPG 的配对 NEF 复制到同目录并记录 raw_path
-function attachRawToImage(imageId, nefSource, nefFilename) {
+async function attachRawToImage(imageId, nefSource, nefFilename) {
   const img = getImageById(imageId);
   if (!img || img.raw_path) return false;
 
@@ -873,7 +973,7 @@ function attachRawToImage(imageId, nefSource, nefFilename) {
   if (fs.existsSync(rawDest)) return false;
 
   try {
-    fs.copyFileSync(nefSource, rawDest);
+    await fs.promises.copyFile(nefSource, rawDest);
   } catch (err) {
     console.error('[相机同步] NEF 复制失败:', nefSource, err.message);
     return false;
@@ -904,6 +1004,7 @@ function deleteImage(id) {
   db.prepare('DELETE FROM image_tags WHERE image_id = ?').run([id]);
   db.prepare('DELETE FROM album_images WHERE image_id = ?').run([id]);
   db.prepare('DELETE FROM images WHERE id = ?').run([id]);
+  deleteThumbnailFile(id);
   saveDatabase();
   return img;
 }
@@ -972,6 +1073,24 @@ function removeTagFromImage(imageId, tagId) {
   saveDatabase();
 }
 
+// 批量为多张图片添加同一标签
+function addTagToImages(imageIds, tagId) {
+  if (!Array.isArray(imageIds) || imageIds.length === 0) return 0;
+  const stmt = db.prepare('INSERT OR IGNORE INTO image_tags (image_id, tag_id) VALUES (?, ?)');
+  let added = 0;
+  for (const id of imageIds) {
+    try {
+      stmt.run([id, tagId]);
+      added++;
+    } catch (e) {
+      console.error('[标签] 批量添加失败:', id, e.message);
+    }
+  }
+  stmt.free();
+  saveDatabase();
+  return added;
+}
+
 function getImageTags(imageId) {
   const stmt = db.prepare(`
     SELECT t.* FROM tags t
@@ -1011,9 +1130,15 @@ function getBatchImageTags(imageIds) {
 
 function getAlbums() {
   const stmt = db.prepare(`
-    SELECT a.*, COUNT(ai.image_id) as image_count
+    SELECT a.*,
+      (SELECT i.thumbnail_path
+         FROM images i
+         JOIN album_images ai ON ai.image_id = i.id
+        WHERE ai.album_id = a.id AND i.hidden = 0 AND i.thumbnail_path != ''
+        ORDER BY ai.image_id DESC LIMIT 1) AS cover_path,
+      COUNT(ai.image_id) as image_count
     FROM albums a
-    LEFT JOIN album_images ai ON a.id = ai.album_id
+    LEFT JOIN album_images ai ON ai.album_id = a.id
     GROUP BY a.id
     ORDER BY a.created_at DESC
   `);
@@ -1100,6 +1225,123 @@ function batchDeleteImages(ids) {
   return results;
 }
 
+// 批量更新字段（仅限评分/收藏）
+function updateImages(imageIds, updates) {
+  const allowed = ['rating', 'favorite'];
+  const sets = [];
+  const params = [];
+  for (const [key, value] of Object.entries(updates || {})) {
+    if (allowed.includes(key)) {
+      sets.push(`${key} = ?`);
+      params.push(value);
+    }
+  }
+  if (sets.length === 0 || !Array.isArray(imageIds) || imageIds.length === 0) return 0;
+  const placeholders = imageIds.map(() => '?').join(',');
+  db.prepare(`UPDATE images SET ${sets.join(', ')} WHERE id IN (${placeholders})`).run([...params, ...imageIds]);
+  saveDatabase();
+  return imageIds.length;
+}
+
+// ── 失效记录维护 ──
+
+// 找出文件已不存在的图片记录（主文件或配对 NEF 丢失都算）
+function findBrokenRecords() {
+  const rows = [];
+  const stmt = db.prepare('SELECT id, filename, filepath, raw_path FROM images');
+  while (stmt.step()) rows.push(stmt.getAsObject());
+  stmt.free();
+  return rows.filter(r => !fs.existsSync(r.filepath) || (r.raw_path && !fs.existsSync(r.raw_path)));
+}
+
+// 清理失效记录：删除数据库条目与缩略图残留，不碰磁盘上仍存在的文件
+function deleteBrokenRecords(ids) {
+  if (!Array.isArray(ids)) return 0;
+  let removed = 0;
+  for (const id of ids) {
+    const img = getImageById(id);
+    if (!img) continue;
+    db.prepare('DELETE FROM image_tags WHERE image_id = ?').run([id]);
+    db.prepare('DELETE FROM album_images WHERE image_id = ?').run([id]);
+    db.prepare('DELETE FROM images WHERE id = ?').run([id]);
+    deleteThumbnailFile(id);
+    removed++;
+  }
+  saveDatabase();
+  return removed;
+}
+
+// 重复图片检测：按 (大小, 尺寸) 粗分组，组内用首尾 64KB 快速哈希精确验证
+function findDuplicates() {
+  const rows = [];
+  const stmt = db.prepare('SELECT id, filename, filepath, size, width, height, format, thumbnail_path FROM images WHERE hidden = 0');
+  while (stmt.step()) rows.push(stmt.getAsObject());
+  stmt.free();
+
+  // 第一步：元数据粗分组
+  const coarse = new Map();
+  for (const r of rows) {
+    if (!r.size) continue;
+    const key = `${r.size}|${r.width}|${r.height}`;
+    if (!coarse.has(key)) coarse.set(key, []);
+    coarse.get(key).push(r);
+  }
+
+  // 第二步：组内快速哈希精确分组（跳过单文件组）
+  const groups = [];
+  for (const candidates of coarse.values()) {
+    if (candidates.length < 2) continue;
+    const byHash = new Map();
+    for (const r of candidates) {
+      const hash = quickHash(r.filepath, r.size);
+      if (!hash) continue;
+      if (!byHash.has(hash)) byHash.set(hash, []);
+      byHash.get(hash).push(r);
+    }
+    for (const items of byHash.values()) {
+      if (items.length >= 2) {
+        groups.push({
+          key: `g${groups.length + 1}`,
+          items: items.map(i => ({
+            id: i.id,
+            filename: i.filename,
+            filepath: i.filepath,
+            size: i.size,
+            width: i.width,
+            height: i.height,
+            thumbnail_path: i.thumbnail_path,
+          })),
+          wasted: (items.length - 1) * items[0].size,
+        });
+      }
+    }
+  }
+  return groups;
+
+  function quickHash(filepath, size) {
+    try {
+      const fd = fs.openSync(filepath, 'r');
+      try {
+        const head = Buffer.alloc(Math.min(65536, size));
+        fs.readSync(fd, head, 0, head.length, 0);
+        const hash = crypto.createHash('md5');
+        hash.update(head);
+        if (size > 65536) {
+          const tail = Buffer.alloc(65536);
+          fs.readSync(fd, tail, 0, 65536, size - 65536);
+          hash.update(tail);
+        }
+        return hash.digest('hex');
+      } finally {
+        fs.closeSync(fd);
+      }
+    } catch (e) {
+      console.error('[重复检测] 读取失败:', filepath, e.message);
+      return null;
+    }
+  }
+}
+
 // ── Stats ──
 
 function getStats() {
@@ -1115,8 +1357,11 @@ module.exports = {
   saveDatabase,
   getImagesRoot,
   getDatabasePath,
+  getThumbnailFilePath,
+  deleteThumbnailFile,
   setImagesRoot,
   scanImageFiles,
+  collectImportFiles,
   prepareCameraSync,
   attachRawToImage,
   getImageSubDir,
@@ -1133,6 +1378,9 @@ module.exports = {
   renameImage,
   deleteImage,
   batchDeleteImages,
+  findBrokenRecords,
+  deleteBrokenRecords,
+  findDuplicates,
   getImportDates,
   getTags,
   createTag,
@@ -1141,6 +1389,8 @@ module.exports = {
   removeTagFromImage,
   getImageTags,
   getBatchImageTags,
+  addTagToImages,
+  updateImages,
   getAlbums,
   createAlbum,
   renameAlbum,

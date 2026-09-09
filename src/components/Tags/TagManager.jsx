@@ -2,13 +2,15 @@ import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Search, Trash2, Tag } from 'lucide-react';
+import ConfirmDialog from '../Layout/ConfirmDialog';
 
 const TAG_COLORS = ['#6366f1', '#ec4899', '#f59e0b', '#22c55e', '#ef4444', '#06b6d4', '#a855f7', '#f97316'];
 
-export default function TagManager({ onSelectTag }) {
+export default function TagManager({ onSelectTag, onRefresh }) {
   const [tags, setTags] = useState([]);
   const [newName, setNewName] = useState('');
   const [newColor, setNewColor] = useState(TAG_COLORS[0]);
+  const [deleteTarget, setDeleteTarget] = useState(null);
 
   useEffect(() => { loadTags(); }, []);
 
@@ -25,13 +27,17 @@ export default function TagManager({ onSelectTag }) {
       setNewName('');
       setNewColor(TAG_COLORS[Math.floor(Math.random() * TAG_COLORS.length)]);
       await loadTags();
+      onRefresh?.();
     }
   };
 
-  const handleDelete = async (id) => {
-    if (!window.pixyang) return;
+  const confirmDelete = async () => {
+    const id = deleteTarget;
+    setDeleteTarget(null);
+    if (!id || !window.pixyang) return;
     await window.pixyang.deleteTag(id);
     await loadTags();
+    onRefresh?.();
   };
 
   const handleKeyDown = (e) => {
@@ -92,7 +98,7 @@ export default function TagManager({ onSelectTag }) {
               <Button
                 variant="ghost"
                 size="xs"
-                onClick={() => handleDelete(tag.id)}
+                onClick={() => setDeleteTarget(tag.id)}
                 className="text-destructive hover:text-destructive"
                 title="删除标签"
               >
@@ -108,6 +114,17 @@ export default function TagManager({ onSelectTag }) {
             </div>
           )}
         </div>
+
+        {deleteTarget && (
+          <ConfirmDialog
+            title="删除标签"
+            message={`确定要删除标签「${deleteTarget.name}」吗？图片不会被删除，只是移除该标签。`}
+            confirmLabel="删除"
+            danger
+            onConfirm={confirmDelete}
+            onCancel={() => setDeleteTarget(null)}
+          />
+        )}
       </div>
     </div>
   );

@@ -1,10 +1,20 @@
 import React from 'react';
 import { Button } from '@/components/ui/button';
-import { CheckSquare, Download, Trash2 } from 'lucide-react';
+import {
+  CheckSquare, Download, Trash2, Tag as TagIcon, Star, Heart,
+} from 'lucide-react';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 
 export default function BatchBar({
   selectedIds, onClear, onBatchDelete,
   onSelectAllPage, onSelectAllAll, totalCount = 0, onExport,
+  tags = [], onBatchTag, onBatchUpdate,
 }) {
   if (selectedIds.size === 0) return null;
 
@@ -14,6 +24,49 @@ export default function BatchBar({
 
       <Button variant="secondary" size="sm" onClick={onSelectAllPage}><CheckSquare className="size-4" /> 全选本页</Button>
       <Button variant="secondary" size="sm" onClick={onSelectAllAll}>全选全部（{totalCount}）</Button>
+
+      <div className="batch-bar-divider" />
+
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button variant="secondary" size="sm"><TagIcon className="size-4" /> 打标签</Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="start">
+          {tags.length === 0 && <DropdownMenuItem disabled>请先在「管理标签」中创建标签</DropdownMenuItem>}
+          {tags.map(tag => (
+            <DropdownMenuItem key={tag.id} onClick={() => onBatchTag?.(tag.id)}>
+              <span style={{ width: 8, height: 8, borderRadius: '50%', background: tag.color }} />
+              {tag.name}
+            </DropdownMenuItem>
+          ))}
+        </DropdownMenuContent>
+      </DropdownMenu>
+
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button variant="secondary" size="sm"><Star className="size-4" /> 评分</Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="start">
+          {[5, 4, 3, 2, 1].map(n => (
+            <DropdownMenuItem key={n} onClick={() => onBatchUpdate?.({ rating: n })}>
+              <span style={{ color: 'var(--star)', letterSpacing: 1 }}>{'★'.repeat(n)}</span>
+              {n} 星
+            </DropdownMenuItem>
+          ))}
+          <DropdownMenuSeparator />
+          <DropdownMenuItem onClick={() => onBatchUpdate?.({ rating: 0 })}>清除评分</DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button variant="secondary" size="sm"><Heart className="size-4" /> 收藏</Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="start">
+          <DropdownMenuItem onClick={() => onBatchUpdate?.({ favorite: 1 })}>设为收藏</DropdownMenuItem>
+          <DropdownMenuItem onClick={() => onBatchUpdate?.({ favorite: 0 })}>取消收藏</DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
 
       <div className="batch-bar-divider" />
 

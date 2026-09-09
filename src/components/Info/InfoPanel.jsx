@@ -26,6 +26,8 @@ export default function InfoPanel({ image, onClose, onImageUpdated }) {
   const [renameErr, setRenameErr] = useState('');
   const [showAddTag, setShowAddTag] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState(false);
+  const [thumbUrl, setThumbUrl] = useState(null);
+  const [exif, setExif] = useState(null);
   const renameRef = useRef(null);
 
   useEffect(() => {
@@ -36,6 +38,29 @@ export default function InfoPanel({ image, onClose, onImageUpdated }) {
     setEditName(image.filename || '');
     setRenameErr('');
   }, [image?.id, image?._refresh]);
+
+  useEffect(() => {
+    let alive = true;
+    if (!window.pixyang || !image?.thumbnail_path) {
+      setThumbUrl(null);
+      return;
+    }
+    window.pixyang.toFileUrl(image.thumbnail_path).then(url => {
+      if (alive) setThumbUrl(url);
+    });
+    return () => { alive = false; };
+  }, [image?.id, image?.thumbnail_path]);
+
+  // 按需读取完整 EXIF（不存库，打开面板时解析一次）
+  useEffect(() => {
+    let alive = true;
+    setExif(null);
+    if (!window.pixyang || !image?.filepath) return;
+    window.pixyang.getExif(image.filepath).then(data => {
+      if (alive) setExif(data || {});
+    });
+    return () => { alive = false; };
+  }, [image?.id, image?.filepath]);
 
   const loadTags = async () => {
     if (!window.pixyang || !image) return;
@@ -65,7 +90,7 @@ export default function InfoPanel({ image, onClose, onImageUpdated }) {
   const handleNotesSave = async () => {
     if (!window.pixyang) return;
     await window.pixyang.updateImage(image.id, { notes });
-    onImageUpdated?.();
+    onImageUpdated?.(image.id, { notes });
   };
 
   const handleDateSave = async () => {
@@ -122,8 +147,8 @@ export default function InfoPanel({ image, onClose, onImageUpdated }) {
       </div>
 
       <div className="info-panel-body">
-        {image.thumbnail && (
-          <img src={image.thumbnail} alt={image.filename} className="info-thumb" />
+        {thumbUrl && (
+          <img src={thumbUrl} alt={image.filename} className="info-thumb" />
         )}
 
         {/* 基本信息 */}
@@ -188,6 +213,62 @@ export default function InfoPanel({ image, onClose, onImageUpdated }) {
           </div>
         </details>
 
+        {/* EXIF 信息 */}
+        <details className="info-section">
+          <summary className="info-section-title">EXIF</summary>
+          <div className="info-group">
+            {exif === null ? (
+              <div className="info-row"><span className="info-value">加载中...</span></div>
+            ) : (
+              <>
+                <div className="info-row">
+                  <span className="info-label">相机</span>
+                  <span className="info-value">{exif.camera || '未知'}</span>
+                </div>
+                {exif.lens && (
+                  <div className="info-row">
+                    <span className="info-label">镜头</span>
+                    <span className="info-value">{exif.lens}</span>
+                  </div>
+                )}
+                {exif.iso && (
+                  <div className="info-row">
+                    <span className="info-label">ISO</span>
+                    <span className="info-value">{exif.iso}</span>
+                  </div>
+                )}
+                {exif.fNumber && (
+                  <div className="info-row">
+                    <span className="info-label">光圈</span>
+                    <span className="info-value">{exif.fNumber}</span>
+                  </div>
+                )}
+                {exif.exposure && (
+                  <div className="info-row">
+                    <span className="info-label">快门</span>
+                    <span className="info-value">{exif.exposure}</span>
+                  </div>
+                )}
+                {exif.focalLength && (
+                  <div className="info-row">
+                    <span className="info-label">焦距</span>
+                    <span className="info-value">{exif.focalLength}</span>
+                  </div>
+                )}
+                {exif.dateTime && (
+                  <div className="info-row">
+                    <span className="info-label">原始时间</span>
+                    <span className="info-value">{exif.dateTime}</span>
+                  </div>
+                )}
+                {!exif.camera && !exif.iso && !exif.fNumber && !exif.exposure && (
+                  <div className="info-row"><span className="info-value">无 EXIF 信息</span></div>
+                )}
+              </>
+            )}
+          </div>
+        </details>
+
         {/* 评分 */}
         <details open className="info-section">
           <summary className="info-section-title">评分与收藏</summary>
@@ -200,8 +281,9 @@ export default function InfoPanel({ image, onClose, onImageUpdated }) {
                     key={n}
                     style={{ color: n <= (image.rating || 0) ? 'var(--star)' : 'var(--text-muted)', cursor: 'pointer', display: 'inline-flex' }}
                     onClick={async () => {
-                      await window.pixyang.updateImage(image.id, { rating: n === image.rating ? 0 : n });
-                      onImageUpdated?.();
+                      const rating = n === image.rating ? 0 : n;
+                      await window.pixyang.updateImage(image.id, { rating });
+                      onImageUpdated?.(image.id, { rating });
                     }}
                   >
                     <Star className="size-4" fill={n <= (image.rating || 0) ? 'currentColor' : 'none'} />
@@ -215,8 +297,9 @@ export default function InfoPanel({ image, onClose, onImageUpdated }) {
                 variant="ghost"
                 size="xs"
                 onClick={async () => {
-                  await window.pixyang.updateImage(image.id, { favorite: image.favorite ? 0 : 1 });
-                  onImageUpdated?.();
+                  const favorite = image.favorite ? 0 : 1;
+                  await window.pixyang.updateImage(image.id, { favorite });
+                  onImageUpdated?.(image.id, { favorite });
                 }}
               >
                 {image.favorite ? <Heart className="size-4" fill="currentColor" /> : <HeartOff className="size-4" />}

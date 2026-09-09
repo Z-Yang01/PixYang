@@ -3,7 +3,9 @@ import { Button } from '@/components/ui/button';
 import { RotateCw, RotateCcw, FlipHorizontal2, FlipVertical2, Save, Heart, HeartOff, Star, X, ChevronLeft, ChevronRight, Camera, Calendar } from 'lucide-react';
 
 export default function ImageViewer({ image, imageIndex = 0, totalCount = 0, onClose, onPrev, onNext, hasPrev, hasNext, onImageUpdated }) {
-  const [imgData, setImgData] = useState(null);
+  const [thumbSrc, setThumbSrc] = useState(null);
+  const [fullSrc, setFullSrc] = useState(null);
+  const [fullLoaded, setFullLoaded] = useState(false);
   const [zoom, setZoom] = useState(1);
   const [pos, setPos] = useState({ x: 0, y: 0 });
   const [imgTags, setImgTags] = useState([]);
@@ -64,7 +66,7 @@ export default function ImageViewer({ image, imageIndex = 0, totalCount = 0, onC
             const newFav = localFavorite ? 0 : 1;
             setLocalFavorite(newFav);
             window.pixyang.updateImage(image.id, { favorite: newFav });
-            onImageUpdated?.();
+            onImageUpdated?.(image.id, { favorite: newFav });
           }
           break;
         default: break;
@@ -74,15 +76,27 @@ export default function ImageViewer({ image, imageIndex = 0, totalCount = 0, onC
     return () => window.removeEventListener('keydown', handleKey);
   }, [hasPrev, hasNext, image, onClose, onPrev, onNext, onImageUpdated, localFavorite, localRating]);
 
+  // 加载策略：缩略图立即显示占位，原图 file URL 由浏览器异步解码后替换，避免主进程同步解码大图
   const loadImage = async () => {
     if (!image || !window.pixyang) return;
-    setImgData(null);
-    const data = await window.pixyang.getImageData(image.filepath, 1920);
-    if (data) { setImgData(data); return; }
-    if (Number(image.orientation) === 1 && image.thumbnail) { setImgData(image.thumbnail); return; }
+    setThumbSrc(null);
+    setFullSrc(null);
+    setFullLoaded(false);
+    if (Number(image.orientation) === 1 && image.thumbnail_path) {
+      const thumb = await window.pixyang.toFileUrl(image.thumbnail_path);
+      if (thumb) setThumbSrc(thumb);
+    }
     const url = await window.pixyang.toFileUrl(image.filepath);
-    setImgData(url);
+    setFullSrc(url || null);
   };
+
+  // 预加载原图，完成后切换显示
+  useEffect(() => {
+    if (!fullSrc || fullLoaded) return;
+    const im = new Image();
+    im.onload = () => setFullLoaded(true);
+    im.src = fullSrc;
+  }, [fullSrc, fullLoaded]);
 
   const loadTags = async () => {
     if (!image || !window.pixyang) return;
@@ -132,7 +146,7 @@ export default function ImageViewer({ image, imageIndex = 0, totalCount = 0, onC
     const newFav = localFavorite ? 0 : 1;
     setLocalFavorite(newFav);
     await window.pixyang.updateImage(image.id, { favorite: newFav });
-    onImageUpdated?.();
+    onImageUpdated?.(image.id, { favorite: newFav });
   };
 
   // 保存旋转/翻转
@@ -144,7 +158,7 @@ export default function ImageViewer({ image, imageIndex = 0, totalCount = 0, onC
       flipH: flipH ? 1 : 0,
       flipV: flipV ? 1 : 0,
     });
-    onImageUpdated?.();
+    onImageUpdated?.(image.id, { rotation, flip_h: flipH ? 1 : 0, flip_v: flipV ? 1 : 0 });
   };
 
   // 评分
@@ -154,7 +168,7 @@ export default function ImageViewer({ image, imageIndex = 0, totalCount = 0, onC
     const newRating = r === localRating ? 0 : r;
     setLocalRating(newRating);
     await window.pixyang.updateImage(image.id, { rating: newRating });
-    onImageUpdated?.();
+    onImageUpdated?.(image.id, { rating: newRating });
   };
 
   // 双击重置
@@ -166,13 +180,15 @@ export default function ImageViewer({ image, imageIndex = 0, totalCount = 0, onC
     setFlipV(false);
   };
 
+  const displaySrc = fullLoaded && fullSrc ? fullSrc : (thumbSrc || fullSrc);
+
   if (!image) return null;
 
   return (
     <div className="viewer-overlay" onClick={onClose}>
       {/* 顶部操作栏 */}
       <div className="viewer-actions" onClick={(e) => e.stopPropagation()}>
-        <Button variant="ghost" size="icon" onClick={handleFavToggle} style={{ color: 'white' }} title="收藏 (F)">
+        <Button variant="ghost" size="icon" onClick={handleFavToggle} title="收藏 (F)">
           {localFavorite ? <Heart className="size-5" fill="currentColor" /> : <HeartOff className="size-5" />}
         </Button>
         {[1, 2, 3, 4, 5].map(n => (
@@ -181,29 +197,28 @@ export default function ImageViewer({ image, imageIndex = 0, totalCount = 0, onC
             variant="ghost"
             size="icon"
             onClick={(e) => handleRating(n, e)}
-            style={{ color: n <= localRating ? 'var(--star)' : 'rgba(255,255,255,0.4)' }}
+            style={{ color: n <= localRating ? 'var(--star)' : undefined }}
+            title={`${n} 星`}
           >
             <Star className="size-5" fill={n <= localRating ? 'currentColor' : 'none'} />
           </Button>
         ))}
-        <Button variant="ghost" size="icon" onClick={() => setRotation(r => (r + 270) % 360)} style={{ color: 'rgba(255,255,255,0.7)' }} title="左旋 90° (Shift+R)">
+        <Button variant="ghost" size="icon" onClick={() => setRotation(r => (r + 270) % 360)} title="左旋 90° (Shift+R)">
           <RotateCcw className="size-5" />
         </Button>
-        <Button variant="ghost" size="icon" onClick={() => setRotation(r => (r + 90) % 360)} style={{ color: 'rgba(255,255,255,0.7)' }} title="右旋 90° (R)">
+        <Button variant="ghost" size="icon" onClick={() => setRotation(r => (r + 90) % 360)} title="右旋 90° (R)">
           <RotateCw className="size-5" />
         </Button>
-        <Button variant="ghost" size="icon" onClick={() => setFlipH(f => !f)} style={{ color: 'rgba(255,255,255,0.7)' }} title="水平翻转 (H)">
+        <Button variant="ghost" size="icon" onClick={() => setFlipH(f => !f)} title="水平翻转 (H)">
           <FlipHorizontal2 className="size-5" />
         </Button>
-        <Button variant="ghost" size="icon" onClick={() => setFlipV(f => !f)} style={{ color: 'rgba(255,255,255,0.7)' }} title="垂直翻转 (V)">
+        <Button variant="ghost" size="icon" onClick={() => setFlipV(f => !f)} title="垂直翻转 (V)">
           <FlipVertical2 className="size-5" />
         </Button>
-        <Button variant="ghost" size="icon" onClick={handleSaveRotation} style={{ color: 'rgba(255,255,255,0.7)' }} title="保存旋转/翻转">
+        <Button variant="ghost" size="icon" onClick={handleSaveRotation} title="保存旋转/翻转">
           <Save className="size-5" />
         </Button>
-        <span style={{ color: 'rgba(255,255,255,0.5)', fontSize: 12, marginLeft: 8 }}>
-          {Math.round(zoom * 100)}%
-        </span>
+        <span className="viewer-zoom-label">{Math.round(zoom * 100)}%</span>
       </div>
 
       <button className="viewer-close" onClick={onClose}><X className="size-5" /></button>
@@ -227,11 +242,11 @@ export default function ImageViewer({ image, imageIndex = 0, totalCount = 0, onC
         onWheel={handleWheel}
         onMouseDown={handleMouseDown}
       >
-        {imgData ? (
+        {(displaySrc ? (
           <img
             key={image.id}
             className="viewer-image"
-            src={imgData}
+            src={displaySrc}
             alt={image.filename?.replace(/\.\w+$/, '') || image.filename}
             draggable={false}
             style={{
@@ -242,23 +257,47 @@ export default function ImageViewer({ image, imageIndex = 0, totalCount = 0, onC
           />
         ) : (
           <div style={{ color: 'white', fontSize: 18 }}>加载中...</div>
-        )}
+        ))}
       </div>
 
       {/* 底部信息 */}
       <div className="viewer-info">
         <span className="viewer-counter">{imageIndex + 1} / {totalCount}</span>
+        <span className="viewer-info-sep" />
         <span className="viewer-filename" title={image.filepath}>{image.filename?.replace(/\.\w+$/, '') || image.filename}</span>
-        {image.width > 0 && <span>{image.width}×{image.height}</span>}
-        {image.size > 0 && <span>{formatSize(image.size)}</span>}
-        {image.taken_at && <span><Camera className="size-3.5" /> {image.taken_at}</span>}
-        {image.import_date && <span><Calendar className="size-3.5" /> {image.import_date}</span>}
+        {image.width > 0 && (
+          <>
+            <span className="viewer-info-sep" />
+            <span>{image.width}×{image.height}</span>
+          </>
+        )}
+        {image.size > 0 && (
+          <>
+            <span className="viewer-info-sep" />
+            <span>{formatSize(image.size)}</span>
+          </>
+        )}
+        {image.taken_at && (
+          <>
+            <span className="viewer-info-sep" />
+            <span><Camera className="size-3.5" /> {image.taken_at}</span>
+          </>
+        )}
+        {image.import_date && (
+          <>
+            <span className="viewer-info-sep" />
+            <span><Calendar className="size-3.5" /> {image.import_date}</span>
+          </>
+        )}
         {imgTags.length > 0 && (
-          <span style={{ display: 'flex', gap: 3 }}>
-            {imgTags.map(t => (
-              <span key={t.id} className="viewer-tag" style={{ background: t.color }}>{t.name}</span>
-            ))}
-          </span>
+          <>
+            <span className="viewer-info-sep" />
+            <span style={{ display: 'flex', gap: 3 }}>
+              {imgTags.map(t => (
+                <span key={t.id} className="viewer-tag" style={{ background: t.color }}>{t.name}</span>
+              ))}
+            </span>
+          </>
         )}
       </div>
     </div>

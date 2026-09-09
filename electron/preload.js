@@ -1,4 +1,4 @@
-const { contextBridge, ipcRenderer } = require('electron');
+const { contextBridge, ipcRenderer, webUtils } = require('electron');
 
 contextBridge.exposeInMainWorld('pixyang', {
   // 对话框
@@ -6,8 +6,12 @@ contextBridge.exposeInMainWorld('pixyang', {
 
   // 文件系统
   scanDirectory: (dirPath) => ipcRenderer.invoke('fs:scan-directory', dirPath),
+  collectImportFiles: (paths) => ipcRenderer.invoke('fs:collect-import-files', paths),
+  getPathForFile: (file) => webUtils.getPathForFile(file),
   getImageData: (filepath, maxWidth) => ipcRenderer.invoke('fs:get-image-data', filepath, maxWidth),
+  getExif: (filepath) => ipcRenderer.invoke('fs:get-exif', filepath),
   toFileUrl: (filepath) => ipcRenderer.invoke('fs:to-file-url', filepath),
+  toFileUrls: (paths) => ipcRenderer.invoke('fs:to-file-urls', paths),
   fileExists: (filepath) => ipcRenderer.invoke('fs:file-exists', filepath),
   getImagesRoot: () => ipcRenderer.invoke('fs:get-images-root'),
   setImagesRoot: (dirPath) => ipcRenderer.invoke('fs:set-images-root', dirPath),
@@ -27,6 +31,18 @@ contextBridge.exposeInMainWorld('pixyang', {
 
   // 重建缩略图
   rebuildThumbnails: () => ipcRenderer.invoke('db:rebuild-thumbnails'),
+  onRebuildProgress: (callback) => {
+    const handler = (_event, progress) => callback(progress);
+    ipcRenderer.on('rebuild-progress', handler);
+    return () => ipcRenderer.removeListener('rebuild-progress', handler);
+  },
+
+  // 失效记录维护
+  scanBrokenRecords: () => ipcRenderer.invoke('db:scan-broken-records'),
+  deleteBrokenRecords: (ids) => ipcRenderer.invoke('db:delete-broken-records', ids),
+
+  // 重复图片检测
+  findDuplicates: () => ipcRenderer.invoke('db:find-duplicates'),
 
   // 数据库备份
   getDatabasePath: () => ipcRenderer.invoke('fs:get-database-path'),
@@ -40,6 +56,8 @@ contextBridge.exposeInMainWorld('pixyang', {
   removeTagFromImage: (imageId, tagId) => ipcRenderer.invoke('db:remove-tag-from-image', imageId, tagId),
   getImageTags: (imageId) => ipcRenderer.invoke('db:get-image-tags', imageId),
   getBatchImageTags: (imageIds) => ipcRenderer.invoke('db:get-batch-image-tags', imageIds),
+  addTagToImages: (imageIds, tagId) => ipcRenderer.invoke('db:add-tag-to-images', imageIds, tagId),
+  updateImages: (imageIds, updates) => ipcRenderer.invoke('db:update-images', imageIds, updates),
 
   // 相册
   getAlbums: () => ipcRenderer.invoke('db:get-albums'),
@@ -67,9 +85,9 @@ contextBridge.exposeInMainWorld('pixyang', {
     return () => ipcRenderer.removeListener('orientation-backfill-done', handler);
   },
 
-  // 后台缩略图生成完成通知
+  // 后台缩略图生成完成通知（携带本次生成的图片 id 列表）
   onThumbnailsReady: (callback) => {
-    const handler = () => callback();
+    const handler = (_event, ids) => callback(ids);
     ipcRenderer.on('thumbnails-ready', handler);
     return () => ipcRenderer.removeListener('thumbnails-ready', handler);
   },
