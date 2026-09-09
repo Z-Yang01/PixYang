@@ -6,6 +6,8 @@
   "scripts": {
     "dev": "concurrently \"vite\" \"wait-on http://localhost:5173 && electron .\"",
     "build": "vite build && electron-builder",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
     "vite:dev": "vite",
     "electron:dev": "electron ."
   },
@@ -23,13 +25,18 @@
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.3",
+    "@testing-library/jest-dom": "^7.0.1",
+    "@testing-library/react": "^16.3.3",
     "@vitejs/plugin-react": "^4.3.1",
+    "@vitest/coverage-v8": "^3.2.7",
     "concurrently": "^9.0.1",
     "electron": "^32.1.0",
     "electron-builder": "^26.15.3",
+    "happy-dom": "^20.14.0",
     "png-to-ico": "^3.0.2",
     "tailwindcss": "^4.3.3",
     "vite": "^5.4.8",
+    "vitest": "^3.2.7",
     "wait-on": "^8.0.0"
   },
   "build": {

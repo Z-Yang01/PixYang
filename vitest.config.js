@@ -1,0 +1,30 @@
+import { defineConfig } from 'vitest/config';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+// 独立于 vite.config.js，避免加载 tailwind 插件
+export default defineConfig({
+  resolve: {
+    alias: {
+      '@': path.resolve(__dirname, 'src'),
+    },
+  },
+  test: {
+    globals: true,
+    environment: 'node',
+    setupFiles: ['tests/setup.js'],
+    include: ['tests/**/*.test.{js,jsx,ts,tsx}'],
+    coverage: {
+      provider: 'v8',
+      reporter: ['text', 'text-summary'],
+      include: [
+        'electron/database.js',
+        'electron/main.js',
+        'src/lib/**',
+        'src/hooks/**',
+      ],
+    },
+  },
+});
