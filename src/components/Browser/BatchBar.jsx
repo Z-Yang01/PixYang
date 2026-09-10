@@ -1,7 +1,7 @@
 import React from 'react';
 import { Button } from '@/components/ui/button';
 import {
-  CheckSquare, Download, Trash2, Tag as TagIcon, Star, Heart,
+  ListChecks, Download, Trash2, Tag, Star, Heart, X,
 } from 'lucide-react';
 import {
   DropdownMenu,
@@ -22,14 +22,14 @@ export default function BatchBar({
     <div className="batch-bar">
       <span className="batch-bar-count">已选 {selectedIds.size} 张</span>
 
-      <Button variant="secondary" size="sm" onClick={onSelectAllPage}><CheckSquare className="size-4" /> 全选本页</Button>
+      <Button variant="secondary" size="sm" onClick={onSelectAllPage}><ListChecks className="size-4" /> 全选本页</Button>
       <Button variant="secondary" size="sm" onClick={onSelectAllAll}>全选全部（{totalCount}）</Button>
 
       <div className="batch-bar-divider" />
 
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Button variant="secondary" size="sm"><TagIcon className="size-4" /> 打标签</Button>
+          <Button variant="secondary" size="sm"><Tag className="size-4" /> 打标签</Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start">
           {tags.length === 0 && <DropdownMenuItem disabled>请先在「管理标签」中创建标签</DropdownMenuItem>}
@@ -75,7 +75,7 @@ export default function BatchBar({
       <div className="batch-bar-divider" />
 
       <Button variant="destructive" size="sm" onClick={onBatchDelete}><Trash2 className="size-4" /> 删除</Button>
-      <Button variant="ghost" size="sm" onClick={onClear}>取消</Button>
+      <Button variant="ghost" size="sm" onClick={onClear}><X className="size-4" /> 取消</Button>
     </div>
   );
 }

@@ -29,82 +29,82 @@
 /* ── CSS Variables ── */
 :root {
   color-scheme: dark;
-  /* 中性石墨色系：低饱和深色避免干扰照片色彩感知，层次靠明度递进 */
-  --bg-primary: #0f0f12;
-  --bg-secondary: #16161b;
-  --bg-card: #1c1c22;
-  --bg-hover: #24242b;
-  --bg-input: #101014;
-  --border: #272730;
-  --border-light: #373741;
-  --text-primary: #f3f3f6;
-  --text-secondary: #a2a2ad;
-  --text-muted: #6d6d79;
-  --accent-color: #6366f1;
-  --accent-color-hover: #818cf8;
-  --accent-color-glow: rgba(99, 102, 241, 0.16);
-  --danger: #ef4444;
-  --danger-hover: #f87171;
-  --success: #22c55e;
-  --warning: #f59e0b;
-  --star: #f59e0b;
-  --shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
-  --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.55);
+  /* 中性石墨色系：偏亮中灰减少压抑感，层次靠明度递进 */
+  --bg-primary: #1a1b1f;
+  --bg-secondary: #222328;
+  --bg-card: #2a2b31;
+  --bg-hover: #35363d;
+  --bg-input: #1f2025;
+  --border: #34353c;
+  --border-light: #4a4b54;
+  --text-primary: #f0f1f4;
+  --text-secondary: #b0b1bb;
+  --text-muted: #7c7d88;
+  --accent-color: #818cf8;
+  --accent-color-hover: #a5b4fc;
+  --accent-color-glow: rgba(129, 140, 248, 0.18);
+  --danger: #f87171;
+  --danger-hover: #fca5a5;
+  --success: #4ade80;
+  --warning: #fbbf24;
+  --star: #fbbf24;
+  --shadow: 0 1px 3px rgba(0, 0, 0, 0.28);
+  --shadow-lg: 0 8px 28px rgba(0, 0, 0, 0.4);
   --transition: 150ms ease;
 
   /* 按钮体系（主要=柔和靛蓝、危险=红色轮廓） */
-  --btn-primary-bg: rgba(99, 102, 241, 0.16);
-  --btn-primary-bg-hover: rgba(99, 102, 241, 0.28);
-  --btn-primary-border: rgba(99, 102, 241, 0.38);
-  --btn-primary-border-hover: rgba(129, 140, 248, 0.6);
-  --btn-primary-text: #a6aefb;
-  --btn-primary-text-hover: #ccd1ff;
-  --btn-danger-bg: rgba(239, 68, 68, 0.1);
-  --btn-danger-bg-hover: rgba(239, 68, 68, 0.9);
-  --btn-danger-border: rgba(239, 68, 68, 0.38);
-  --btn-danger-border-hover: #ef4444;
-  --btn-danger-text: #f87171;
+  --btn-primary-bg: rgba(129, 140, 248, 0.18);
+  --btn-primary-bg-hover: rgba(129, 140, 248, 0.3);
+  --btn-primary-border: rgba(129, 140, 248, 0.4);
+  --btn-primary-border-hover: rgba(165, 180, 252, 0.65);
+  --btn-primary-text: #c7cdfc;
+  --btn-primary-text-hover: #e0e3ff;
+  --btn-danger-bg: rgba(248, 113, 113, 0.12);
+  --btn-danger-bg-hover: rgba(248, 113, 113, 0.92);
+  --btn-danger-border: rgba(248, 113, 113, 0.4);
+  --btn-danger-border-hover: #f87171;
+  --btn-danger-text: #fca5a5;
   --btn-danger-text-hover: #ffffff;
-  --btn-secondary-bg: #202027;
-  --btn-secondary-bg-hover: #2a2a33;
+  --btn-secondary-bg: #2e2f36;
+  --btn-secondary-bg-hover: #3a3b43;
 
   /* 图片覆盖层（叠加在图片上，两主题通用） */
-  --overlay-gradient: linear-gradient(to top, rgba(0, 0, 0, 0.85) 0%, rgba(0, 0, 0, 0.45) 45%, transparent 100%);
-  --card-stars-bg: rgba(0, 0, 0, 0.55);
-  --card-checkbox-bg: rgba(0, 0, 0, 0.35);
-  --card-checkbox-border: rgba(255, 255, 255, 0.75);
-  --card-checkbox-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+  --overlay-gradient: linear-gradient(to top, rgba(0, 0, 0, 0.78) 0%, rgba(0, 0, 0, 0.35) 45%, transparent 100%);
+  --card-stars-bg: rgba(20, 20, 24, 0.62);
+  --card-checkbox-bg: rgba(20, 20, 24, 0.4);
+  --card-checkbox-border: rgba(255, 255, 255, 0.78);
+  --card-checkbox-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
   --star-empty: rgba(255, 255, 255, 0.3);
   --card-date: rgba(255, 255, 255, 0.55);
-  --card-tag-bg: rgba(255, 255, 255, 0.08);
+  --card-tag-bg: rgba(255, 255, 255, 0.1);
   --card-tag-add-border: rgba(255, 255, 255, 0.3);
-  --viewer-overlay: rgba(0, 0, 0, 0.95);
+  --viewer-overlay: rgba(18, 18, 20, 0.96);
   --viewer-control-bg: rgba(255, 255, 255, 0.1);
-  --viewer-control-bg-hover: rgba(255, 255, 255, 0.25);
-  --viewer-info-bg: rgba(0, 0, 0, 0.8);
-  --dialog-backdrop: rgba(0, 0, 0, 0.6);
+  --viewer-control-bg-hover: rgba(255, 255, 255, 0.22);
+  --viewer-info-bg: rgba(20, 20, 24, 0.78);
+  --dialog-backdrop: rgba(10, 10, 12, 0.55);
   --filter-chip-bg: var(--bg-hover);
 
   /* shadcn/ui tokens (dark, default) */
-  --background: #0f0f12;
-  --foreground: #f3f3f6;
-  --card: #1c1c22;
-  --card-foreground: #f3f3f6;
-  --popover: #212129;
-  --popover-foreground: #f3f3f6;
-  --primary: #6366f1;
+  --background: #1a1b1f;
+  --foreground: #f0f1f4;
+  --card: #2a2b31;
+  --card-foreground: #f0f1f4;
+  --popover: #2e2f36;
+  --popover-foreground: #f0f1f4;
+  --primary: #818cf8;
   --primary-foreground: #ffffff;
-  --secondary: #24242b;
-  --secondary-foreground: #f3f3f6;
-  --muted: #1c1c22;
-  --muted-foreground: #a2a2ad;
-  --accent: #24242b;
-  --accent-foreground: #f3f3f6;
-  --destructive: #ef4444;
+  --secondary: #2e2f36;
+  --secondary-foreground: #f0f1f4;
+  --muted: #2a2b31;
+  --muted-foreground: #b0b1bb;
+  --accent: #35363d;
+  --accent-foreground: #f0f1f4;
+  --destructive: #f87171;
   --destructive-foreground: #ffffff;
-  --border: #272730;
-  --input: #101014;
-  --ring: #6366f1;
+  --border: #34353c;
+  --input: #1f2025;
+  --ring: #818cf8;
   --radius: 0.5rem;
 }
 
@@ -201,10 +201,11 @@ body {
 /* ── App Layout ── */
 .app-layout {
   display: grid;
-  grid-template-columns: 240px 1fr;
+  grid-template-columns: 232px 1fr;
   grid-template-rows: 1fr;
   height: 100vh;
   overflow: hidden;
+  background: var(--bg-primary);
 }
 
 /* ── Sidebar ── */
@@ -218,11 +219,12 @@ body {
 }
 
 .sidebar-header {
-  padding: 20px;
+  padding: 16px 16px 14px;
   display: flex;
   align-items: center;
   gap: 10px;
   border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
 }
 
 .sidebar-collapse-btn {
@@ -233,13 +235,13 @@ body {
 .sidebar-logo {
   width: 32px;
   height: 32px;
-  background: linear-gradient(135deg, var(--accent-color), #a855f7);
+  background: linear-gradient(135deg, var(--accent-color), #c084fc);
   border-radius: 8px;
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  box-shadow: 0 2px 8px rgba(99, 102, 241, 0.35);
+  box-shadow: 0 2px 8px rgba(129, 140, 248, 0.35);
 }
 
 .sidebar-logo svg {
@@ -288,8 +290,9 @@ body {
 
 .sidebar-nav {
   flex: 1;
-  padding: 12px;
+  padding: 10px 10px 16px;
   overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .nav-section {
@@ -309,13 +312,14 @@ body {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 8px 12px;
-  border-radius: var(--radius);
+  padding: 7px 10px;
+  margin-bottom: 1px;
+  border-radius: 8px;
   color: var(--text-secondary);
   text-decoration: none;
-  font-size: 14px;
+  font-size: 13px;
   cursor: pointer;
-  transition: all var(--transition);
+  transition: background var(--transition), color var(--transition);
   border: none;
   background: none;
   width: 100%;
@@ -329,13 +333,8 @@ body {
 
 .nav-item.active {
   background: var(--accent-color-glow);
-  color: var(--accent-color);
+  color: var(--accent-color-hover);
   font-weight: 500;
-}
-
-.nav-item.active .nav-badge {
-  background: var(--accent-color);
-  color: #fff;
 }
 
 .nav-item svg {
@@ -346,11 +345,20 @@ body {
 
 .nav-badge {
   margin-left: auto;
-  font-size: 12px;
-  background: var(--border-light);
-  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  background: var(--bg-input);
+  color: var(--text-muted);
   padding: 1px 7px;
-  border-radius: 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+}
+
+.nav-item.active .nav-badge {
+  background: var(--accent-color);
+  border-color: transparent;
+  color: #fff;
 }
 
 .sidebar-footer {
@@ -364,18 +372,21 @@ body {
   flex-direction: column;
   overflow: hidden;
   height: 100vh;
+  min-width: 0;
+  background: var(--bg-primary);
 }
 
 /* ── Top Bar ── */
 .topbar {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 12px 20px;
+  gap: 10px;
+  padding: 10px 16px;
   background: var(--bg-secondary);
   border-bottom: 1px solid var(--border);
-  min-height: 56px;
+  min-height: 52px;
   flex-wrap: wrap;
+  flex-shrink: 0;
 }
 
 .search-wrap {
@@ -397,14 +408,15 @@ body {
 
 .search-input {
   width: 100%;
-  padding: 8px 14px 8px 32px;
+  height: 34px;
+  padding: 6px 32px 6px 32px;
   background: var(--bg-input);
   border: 1px solid var(--border);
-  border-radius: var(--radius);
+  border-radius: 8px;
   color: var(--text-primary);
-  font-size: 14px;
+  font-size: 13px;
   outline: none;
-  transition: border-color var(--transition);
+  transition: border-color var(--transition), box-shadow var(--transition);
 }
 
 .search-input:focus {
@@ -509,13 +521,16 @@ body {
 }
 
 .sort-group button {
-  height: 24px;
+  height: 26px;
   padding: 0 10px;
   font-size: 12px;
   font-weight: 500;
   border-radius: 6px;
   background: transparent;
   color: var(--text-secondary);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
 }
 
 .sort-group button:hover {
@@ -540,6 +555,7 @@ body {
   padding: 16px;
   display: flex;
   flex-direction: column;
+  min-height: 0;
 }
 
 .image-grid {
@@ -547,6 +563,7 @@ body {
   grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
   gap: 12px;
   flex-shrink: 0;
+  align-content: start;
 }
 
 .image-grid.is-loading {
@@ -563,11 +580,13 @@ body {
   display: flex;
   align-items: baseline;
   gap: 8px;
-  padding: 10px 4px 8px;
-  background: color-mix(in srgb, var(--bg-primary) 82%, transparent);
-  backdrop-filter: blur(8px);
+  padding: 10px 6px 8px;
+  background: color-mix(in srgb, var(--bg-primary) 92%, transparent);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
   border-bottom: 1px solid var(--border);
   user-select: none;
+  margin-bottom: 2px;
 }
 
 .grid-date-text {
@@ -587,25 +606,21 @@ body {
 .image-card {
   position: relative;
   background: var(--bg-card);
-  border-radius: var(--radius);
+  border-radius: 10px;
   overflow: hidden;
   cursor: pointer;
-  transition: transform var(--transition), border-color var(--transition), box-shadow var(--transition);
   border: 2px solid transparent;
   aspect-ratio: 1;
+  contain: layout paint style;
+  transition: border-color var(--transition), box-shadow var(--transition);
 }
 
 .image-card:hover {
   border-color: var(--accent-color);
-  transform: translateY(-2px);
   box-shadow: var(--shadow-lg);
 }
 
-.image-card.selected {
-  border-color: var(--accent-color);
-  box-shadow: 0 0 0 2px var(--accent-color-glow);
-}
-
+.image-card.selected,
 .image-card.keyboard-active {
   border-color: var(--accent-color);
   box-shadow: 0 0 0 2px var(--accent-color-glow);
@@ -616,11 +631,11 @@ body {
   height: 100%;
   object-fit: cover;
   display: block;
-  transition: transform var(--transition);
+  transition: transform 180ms ease;
 }
 
 .image-card:hover .image-card-thumb {
-  transform: scale(1.05);
+  transform: scale(1.04);
 }
 
 .image-card-placeholder {
@@ -677,6 +692,7 @@ body {
   padding: 3px 8px;
   background: var(--card-stars-bg);
   backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
   border-radius: 12px;
   opacity: 0;
   transition: opacity var(--transition);
@@ -705,11 +721,12 @@ body {
 
 .favorite-heart {
   color: var(--danger);
-  font-size: 12px;
+  width: 14px;
+  height: 14px;
   position: absolute;
   top: 8px;
   right: 8px;
-  filter: drop-shadow(0 1px 2px rgba(0,0,0,0.5));
+  filter: drop-shadow(0 1px 2px rgba(0,0,0,0.55));
   z-index: 2;
 }
 
@@ -784,11 +801,11 @@ body {
   align-items: center;
   justify-content: center;
   gap: 6px;
-  padding: 14px 0 6px;
+  padding: 12px 0 4px;
   margin-top: auto;
   color: var(--text-secondary);
   font-size: 12px;
-  background: var(--bg-primary);
+  background: transparent;
   flex-shrink: 0;
 }
 
@@ -876,7 +893,7 @@ body {
 .viewer-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.95);
+  background: var(--viewer-overlay);
   z-index: 1000;
   display: flex;
   align-items: center;
@@ -925,9 +942,10 @@ body {
   width: 40px;
   height: 40px;
   border-radius: 50%;
-  background: rgba(15, 15, 19, 0.55);
+  background: rgba(30, 30, 34, 0.6);
   backdrop-filter: blur(12px);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
   color: white;
   cursor: pointer;
   display: flex;
@@ -949,9 +967,10 @@ body {
   width: 48px;
   height: 48px;
   border-radius: 50%;
-  background: rgba(15, 15, 19, 0.55);
+  background: rgba(30, 30, 34, 0.6);
   backdrop-filter: blur(12px);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
   color: white;
   cursor: pointer;
   display: flex;
@@ -974,9 +993,10 @@ body {
   left: 50%;
   transform: translateX(-50%);
   max-width: calc(100vw - 40px);
-  background: rgba(15, 15, 19, 0.65);
+  background: rgba(30, 30, 34, 0.7);
   backdrop-filter: blur(12px);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
   color: white;
   padding: 8px 16px;
   border-radius: 20px;
@@ -1021,9 +1041,10 @@ body {
   align-items: center;
   gap: 2px;
   padding: 4px;
-  background: rgba(15, 15, 19, 0.55);
+  background: rgba(30, 30, 34, 0.6);
   backdrop-filter: blur(12px);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 12px;
   z-index: 1001;
 }
@@ -1312,16 +1333,16 @@ body {
   flex-direction: column;
   background: var(--bg-card);
   border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
+  border-radius: 12px;
   padding: 16px;
   cursor: pointer;
-  transition: border-color var(--transition), background var(--transition), transform var(--transition), box-shadow var(--transition);
+  contain: layout style;
+  transition: border-color var(--transition), background var(--transition), box-shadow var(--transition);
 }
 
 .album-card:hover {
   border-color: var(--accent-color);
   background: var(--bg-hover);
-  transform: translateY(-2px);
   box-shadow: var(--shadow-lg);
 }
 
@@ -1429,6 +1450,51 @@ body {
   border: 1px solid var(--border);
 }
 
+/* ── Keyboard Shortcut Chips ── */
+.kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 6px;
+  border: 1px solid var(--border-light);
+  border-bottom-width: 2px;
+  border-radius: 5px;
+  background: var(--bg-input);
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+/* ── Camera Spec Chips ── */
+.exif-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.exif-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.exif-chip strong {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
 /* ── Card Tag Chips ── */
 .card-tag {
   display: inline-flex;
@@ -1528,13 +1594,15 @@ body {
 .batch-bar {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 8px 20px;
-  background: var(--bg-secondary);
+  gap: 8px;
+  padding: 8px 16px;
+  background: color-mix(in srgb, var(--bg-secondary) 96%, var(--accent-color));
   border-bottom: 1px solid var(--border);
-  animation: slideDown 0.2s ease;
+  box-shadow: inset 0 1px 0 var(--accent-color-glow);
+  animation: slideDown 0.18s ease;
   z-index: 30;
   flex-shrink: 0;
+  flex-wrap: wrap;
 }
 
 @keyframes slideDown {
@@ -1602,7 +1670,7 @@ body {
 .settings-section {
   background: var(--bg-card);
   border: 1px solid var(--border);
-  border-radius: var(--radius);
+  border-radius: 10px;
   padding: 18px;
   margin-bottom: 14px;
 }
@@ -1686,6 +1754,13 @@ body {
   background-size: 200% 100%;
   animation: shimmer 1.5s ease-in-out infinite;
   pointer-events: none;
+  border-color: transparent;
+}
+
+.skeleton-block {
+  width: 100%;
+  height: 100%;
+  min-height: 120px;
 }
 
 @keyframes shimmer {
@@ -1696,22 +1771,22 @@ body {
 /* ── Light Theme ── */
 [data-theme="light"] {
   color-scheme: light;
-  --bg-primary: #f4f5f7;
+  --bg-primary: #f6f7f9;
   --bg-secondary: #ffffff;
   --bg-card: #ffffff;
-  --bg-hover: #e9ecef;
+  --bg-hover: #eceef2;
   --bg-input: #f1f3f5;
-  --border: #dee2e6;
-  --border-light: #ced4da;
-  --text-primary: #212529;
-  --text-secondary: #495057;
-  --text-muted: #868e96;
-  --accent-color: #4c6ef5;
-  --accent-color-hover: #4263eb;
-  --accent-color-glow: rgba(76, 110, 245, 0.1);
-  --shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
-  --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.12);
-  --danger: #e03131;
+  --border: #e2e5ea;
+  --border-light: #cfd4dc;
+  --text-primary: #1c1f26;
+  --text-secondary: #4b5160;
+  --text-muted: #8b919e;
+  --accent-color: #5b6ef5;
+  --accent-color-hover: #4256e0;
+  --accent-color-glow: rgba(91, 110, 245, 0.12);
+  --shadow: 0 1px 3px rgba(16, 24, 40, 0.06);
+  --shadow-lg: 0 8px 24px rgba(16, 24, 40, 0.1);
+  --danger: #e5484d;
   --danger-hover: #f87171;
   --success: #2f9e44;
   --warning: #f59e0b;
@@ -1719,41 +1794,48 @@ body {
   --transition: 150ms ease;
 
   /* 按钮体系（浅色主题适配） */
-  --btn-primary-bg: rgba(76, 110, 245, 0.09);
-  --btn-primary-bg-hover: rgba(76, 110, 245, 0.17);
-  --btn-primary-border: rgba(76, 110, 245, 0.32);
-  --btn-primary-border-hover: rgba(76, 110, 245, 0.55);
-  --btn-primary-text: #4263eb;
-  --btn-primary-text-hover: #364fc7;
-  --btn-danger-bg: rgba(224, 49, 49, 0.07);
-  --btn-danger-bg-hover: #e03131;
-  --btn-danger-border: rgba(224, 49, 49, 0.32);
-  --btn-danger-border-hover: #e03131;
-  --btn-danger-text: #e03131;
+  --btn-primary-bg: rgba(91, 110, 245, 0.1);
+  --btn-primary-bg-hover: rgba(91, 110, 245, 0.18);
+  --btn-primary-border: rgba(91, 110, 245, 0.3);
+  --btn-primary-border-hover: rgba(66, 86, 224, 0.5);
+  --btn-primary-text: #4256e0;
+  --btn-primary-text-hover: #3444c4;
+  --btn-danger-bg: rgba(229, 72, 77, 0.08);
+  --btn-danger-bg-hover: #e5484d;
+  --btn-danger-border: rgba(229, 72, 77, 0.32);
+  --btn-danger-border-hover: #e5484d;
+  --btn-danger-text: #e5484d;
   --btn-danger-text-hover: #ffffff;
   --btn-secondary-bg: #ffffff;
   --btn-secondary-bg-hover: #eef1f4;
 
+  /* 图片覆盖层（浅色下仍用深遮罩保证可读） */
+  --overlay-gradient: linear-gradient(to top, rgba(0, 0, 0, 0.72) 0%, rgba(0, 0, 0, 0.3) 45%, transparent 100%);
+  --card-stars-bg: rgba(20, 20, 24, 0.55);
+  --card-checkbox-bg: rgba(20, 20, 24, 0.35);
+  --dialog-backdrop: rgba(16, 20, 32, 0.4);
+  --viewer-overlay: rgba(22, 22, 26, 0.96);
+
   /* shadcn/ui tokens (light) */
-  --background: #f4f5f7;
-  --foreground: #212529;
+  --background: #f6f7f9;
+  --foreground: #1c1f26;
   --card: #ffffff;
-  --card-foreground: #212529;
+  --card-foreground: #1c1f26;
   --popover: #ffffff;
-  --popover-foreground: #212529;
-  --primary: #4c6ef5;
+  --popover-foreground: #1c1f26;
+  --primary: #5b6ef5;
   --primary-foreground: #ffffff;
-  --secondary: #e9ecef;
-  --secondary-foreground: #212529;
-  --muted: #e9ecef;
-  --muted-foreground: #495057;
-  --accent: #e9ecef;
-  --accent-foreground: #212529;
-  --destructive: #ef4444;
+  --secondary: #eceef2;
+  --secondary-foreground: #1c1f26;
+  --muted: #eceef2;
+  --muted-foreground: #4b5160;
+  --accent: #eceef2;
+  --accent-foreground: #1c1f26;
+  --destructive: #e5484d;
   --destructive-foreground: #ffffff;
-  --border: #dee2e6;
+  --border: #e2e5ea;
   --input: #f1f3f5;
-  --ring: #4c6ef5;
+  --ring: #5b6ef5;
 }
 
 body {

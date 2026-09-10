@@ -4,16 +4,17 @@ import { Button } from '@/components/ui/button';
 import {
   LayoutGrid,
   Heart,
-  Folder,
+  FolderOpen,
   Images,
-  Tags,
+  Tag,
   Settings,
-  Calendar,
+  CalendarDays,
   PanelLeftClose,
   PanelLeftOpen,
   Upload,
   ChevronDown,
   ChevronRight,
+  Keyboard,
 } from 'lucide-react';
 
 export default function Sidebar({
@@ -25,6 +26,7 @@ export default function Sidebar({
   filterFavorites, onFilterFavorites,
   onClearFilters,
   collapsed, onToggleCollapse,
+  onShowShortcuts,
 }) {
   const [dateExpand, setDateExpand] = useState(false);
 
@@ -33,7 +35,7 @@ export default function Sidebar({
   return (
     <aside className="sidebar">
       <div className="sidebar-header">
-        <div className="sidebar-logo"><Images /></div>
+        <div className="sidebar-logo"><Images strokeWidth={2} /></div>
         {!collapsed && <span className="sidebar-title">PixYang</span>}
         <Button
           variant="ghost"
@@ -52,17 +54,17 @@ export default function Sidebar({
           {!collapsed && <div className="nav-section-title">图库</div>}
           <NavLink to="/" end className={({ isActive }) => `nav-item ${isActive && !filterFavorites ? 'active' : ''}`}
             onClick={() => onFilterFavorites(false)} title="全部图片">
-            <LayoutGrid />
+            <LayoutGrid strokeWidth={1.75} />
             {!collapsed && <span>全部图片</span>}
             {!collapsed && <span className="nav-badge">{stats.totalImages}</span>}
           </NavLink>
           <NavLink to="/favorites" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`} title="收藏夹">
-            <Heart />
+            <Heart strokeWidth={1.75} fill={filterFavorites ? 'currentColor' : 'none'} />
             {!collapsed && <span>收藏夹</span>}
             {!collapsed && <span className="nav-badge">{stats.favorites}</span>}
           </NavLink>
           <NavLink to="/albums" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`} title="相册">
-            <Folder />
+            <FolderOpen strokeWidth={1.75} />
             {!collapsed && <span>相册</span>}
             {!collapsed && <span className="nav-badge">{stats.totalAlbums}</span>}
           </NavLink>
@@ -89,7 +91,7 @@ export default function Sidebar({
                 onClick={() => onFilterAlbum(filterAlbum === album.id ? null : album.id)}
                 title={album.name}
               >
-                <Folder />
+                <FolderOpen strokeWidth={1.5} />
                 {!collapsed && <span>{album.name}</span>}
                 {!collapsed && <span className="nav-badge">{album.image_count}</span>}
               </button>
@@ -117,7 +119,7 @@ export default function Sidebar({
                     style={{ fontSize: 12 }}
                     title={date}
                   >
-                    <Calendar />
+                    <CalendarDays strokeWidth={1.5} />
                     <span>{date}</span>
                     <span className="nav-badge">{count}</span>
                   </button>
@@ -166,7 +168,7 @@ export default function Sidebar({
         <div className="nav-section">
           {!collapsed && <div className="nav-section-title">标签</div>}
           <NavLink to="/tags" className="nav-item" title="管理标签">
-            <Tags />
+            <Tag strokeWidth={1.75} />
             {!collapsed && <span>管理标签</span>}
           </NavLink>
         </div>
@@ -175,7 +177,7 @@ export default function Sidebar({
         <div className="nav-section">
           {!collapsed && <div className="nav-section-title">其他</div>}
           <NavLink to="/settings" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`} title="设置">
-            <Settings />
+            <Settings strokeWidth={1.75} />
             {!collapsed && <span>设置</span>}
           </NavLink>
         </div>
@@ -192,6 +194,18 @@ export default function Sidebar({
           <Upload />
           {!collapsed && <span>导入图片</span>}
         </Button>
+        {onShowShortcuts && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="w-full mt-1"
+            onClick={onShowShortcuts}
+            title="快捷键（?）"
+          >
+            <Keyboard />
+            {!collapsed && <span>快捷键</span>}
+          </Button>
+        )}
       </div>
     </aside>
   );

@@ -1,8 +1,15 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Button } from '@/components/ui/button';
-import { RotateCw, RotateCcw, FlipHorizontal2, FlipVertical2, Save, Heart, HeartOff, Star, X, ChevronLeft, ChevronRight, Camera, Calendar } from 'lucide-react';
+import {
+  RotateCw, RotateCcw, FlipHorizontal2, FlipVertical2, Save, Heart, HeartOff,
+  Star, X, ChevronLeft, ChevronRight, Camera, Calendar, Info,
+} from 'lucide-react';
+import { matchViewerShortcut, VIEWER_ACTIONS, ratingFromViewerAction } from '@/lib/shortcuts';
 
-export default function ImageViewer({ image, imageIndex = 0, totalCount = 0, onClose, onPrev, onNext, hasPrev, hasNext, onImageUpdated }) {
+export default function ImageViewer({
+  image, imageIndex = 0, totalCount = 0, onClose, onPrev, onNext, hasPrev, hasNext, onImageUpdated,
+  onOpenInfo,
+}) {
   const [thumbSrc, setThumbSrc] = useState(null);
   const [fullSrc, setFullSrc] = useState(null);
   const [fullLoaded, setFullLoaded] = useState(false);
@@ -24,11 +31,18 @@ export default function ImageViewer({ image, imageIndex = 0, totalCount = 0, onC
   posRef.current = pos;
   const zoomRef = useRef(zoom);
   zoomRef.current = zoom;
+  const localFavoriteRef = useRef(localFavorite);
+  localFavoriteRef.current = localFavorite;
 
   // 同步图片切换
   useEffect(() => {
     loadImage();
-    loadTags();
+    const loadId = image?.id;
+    if (!image || !window.pixyang) return;
+    window.pixyang.getImageTags(image.id).then(tags => {
+      // 快速翻页时丢弃过期标签响应
+      if (image.id === loadId) setImgTags(tags || []);
+    });
     setZoom(1);
     setPos({ x: 0, y: 0 });
     setRotation(image?.rotation || 0);
@@ -46,62 +60,66 @@ export default function ImageViewer({ image, imageIndex = 0, totalCount = 0, onC
     }
   }, [image?.rating, image?.favorite]);
 
+  const toggleFavorite = useCallback(async () => {
+    if (!window.pixyang || !image) return;
+    const newFav = localFavoriteRef.current ? 0 : 1;
+    setLocalFavorite(newFav);
+    await window.pixyang.updateImage(image.id, { favorite: newFav });
+    onImageUpdated?.(image.id, { favorite: newFav });
+  }, [image, onImageUpdated]);
+
+  const setRating = useCallback(async (r) => {
+    if (!window.pixyang || !image) return;
+    const newRating = r === localRating ? 0 : r;
+    setLocalRating(newRating);
+    await window.pixyang.updateImage(image.id, { rating: newRating });
+    onImageUpdated?.(image.id, { rating: newRating });
+  }, [image, localRating, onImageUpdated]);
+
   // 键盘
   useEffect(() => {
     const handleKey = (e) => {
-      switch (e.key) {
-        case 'Escape': onClose(); break;
-        case 'ArrowLeft': if (hasPrev) onPrev(); break;
-        case 'ArrowRight': if (hasNext) onNext(); break;
-        case '+':
-        case '=': setZoom(z => Math.min(z + 0.25, 5)); break;
-        case '-': setZoom(z => Math.max(z - 0.25, 0.25)); break;
-        case '0': setZoom(1); setPos({ x: 0, y: 0 }); setRotation(0); setFlipH(false); setFlipV(false); break;
-        case 'r': setRotation(r => (r + 90) % 360); break;
-        case 'R': setRotation(r => (r + 270) % 360); break;
-        case 'h': setFlipH(f => !f); break;
-        case 'v': setFlipV(f => !f); break;
-        case 'f':
-          if (window.pixyang && image) {
-            const newFav = localFavorite ? 0 : 1;
-            setLocalFavorite(newFav);
-            window.pixyang.updateImage(image.id, { favorite: newFav });
-            onImageUpdated?.(image.id, { favorite: newFav });
-          }
+      const action = matchViewerShortcut(e);
+      if (!action) return;
+      e.preventDefault();
+      switch (action) {
+        case VIEWER_ACTIONS.Close: onClose(); break;
+        case VIEWER_ACTIONS.Prev: if (hasPrev) onPrev(); break;
+        case VIEWER_ACTIONS.Next: if (hasNext) onNext(); break;
+        case VIEWER_ACTIONS.ZoomIn: setZoom(z => Math.min(z + 0.25, 5)); break;
+        case VIEWER_ACTIONS.ZoomOut: setZoom(z => Math.max(z - 0.25, 0.25)); break;
+        case VIEWER_ACTIONS.RotateCw: setRotation(r => (r + 90) % 360); break;
+        case VIEWER_ACTIONS.RotateCcw: setRotation(r => (r + 270) % 360); break;
+        case VIEWER_ACTIONS.FlipH: setFlipH(f => !f); break;
+        case VIEWER_ACTIONS.FlipV: setFlipV(f => !f); break;
+        case VIEWER_ACTIONS.Favorite: toggleFavorite(); break;
+        case VIEWER_ACTIONS.ToggleInfo: onOpenInfo?.(image); break;
+        case VIEWER_ACTIONS.ZoomReset:
+          setZoom(1); setPos({ x: 0, y: 0 }); setRotation(0); setFlipH(false); setFlipV(false);
           break;
-        default: break;
+        default: {
+          const rating = ratingFromViewerAction(action);
+          if (rating != null) setRating(rating);
+        }
       }
     };
     window.addEventListener('keydown', handleKey);
     return () => window.removeEventListener('keydown', handleKey);
-  }, [hasPrev, hasNext, image, onClose, onPrev, onNext, onImageUpdated, localFavorite, localRating]);
+  }, [hasPrev, hasNext, image, onClose, onPrev, onNext, toggleFavorite, setRating, onOpenInfo]);
 
-  // 加载策略：缩略图立即显示占位，原图 file URL 由浏览器异步解码后替换，避免主进程同步解码大图
+  // 加载策略：中图占位，原图异步替换；列表小图不用于查看器
   const loadImage = async () => {
     if (!image || !window.pixyang) return;
+    const loadId = image.id;
     setThumbSrc(null);
     setFullSrc(null);
     setFullLoaded(false);
     if (Number(image.orientation) === 1 && image.thumbnail_path) {
       const thumb = await window.pixyang.toFileUrl(image.thumbnail_path);
-      if (thumb) setThumbSrc(thumb);
+      if (image.id === loadId && thumb) setThumbSrc(thumb);
     }
     const url = await window.pixyang.toFileUrl(image.filepath);
-    setFullSrc(url || null);
-  };
-
-  // 预加载原图，完成后切换显示
-  useEffect(() => {
-    if (!fullSrc || fullLoaded) return;
-    const im = new Image();
-    im.onload = () => setFullLoaded(true);
-    im.src = fullSrc;
-  }, [fullSrc, fullLoaded]);
-
-  const loadTags = async () => {
-    if (!image || !window.pixyang) return;
-    const tags = await window.pixyang.getImageTags(image.id);
-    setImgTags(tags);
+    if (image.id === loadId) setFullSrc(url || null);
   };
 
   // 鼠标拖拽平移
@@ -142,11 +160,7 @@ export default function ImageViewer({ image, imageIndex = 0, totalCount = 0, onC
   // 点赞
   const handleFavToggle = async (e) => {
     e.stopPropagation();
-    if (!window.pixyang || !image) return;
-    const newFav = localFavorite ? 0 : 1;
-    setLocalFavorite(newFav);
-    await window.pixyang.updateImage(image.id, { favorite: newFav });
-    onImageUpdated?.(image.id, { favorite: newFav });
+    toggleFavorite();
   };
 
   // 保存旋转/翻转
@@ -164,11 +178,7 @@ export default function ImageViewer({ image, imageIndex = 0, totalCount = 0, onC
   // 评分
   const handleRating = async (r, e) => {
     e.stopPropagation();
-    if (!window.pixyang || !image) return;
-    const newRating = r === localRating ? 0 : r;
-    setLocalRating(newRating);
-    await window.pixyang.updateImage(image.id, { rating: newRating });
-    onImageUpdated?.(image.id, { rating: newRating });
+    setRating(r);
   };
 
   // 双击重置
@@ -218,6 +228,11 @@ export default function ImageViewer({ image, imageIndex = 0, totalCount = 0, onC
         <Button variant="ghost" size="icon" onClick={handleSaveRotation} title="保存旋转/翻转">
           <Save className="size-5" />
         </Button>
+        {onOpenInfo && (
+          <Button variant="ghost" size="icon" onClick={() => onOpenInfo(image)} title="查看详情 (I)">
+            <Info className="size-5" />
+          </Button>
+        )}
         <span className="viewer-zoom-label">{Math.round(zoom * 100)}%</span>
       </div>
 

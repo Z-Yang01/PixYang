@@ -2,6 +2,16 @@ import React, { useState, useEffect, useCallback, useRef, memo } from 'react';
 import { Routes, Route, useLocation, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { Upload } from 'lucide-react';
+import {
+  buildImageQuery,
+  createLoadSequencer,
+  hasActiveFilters as computeHasActiveFilters,
+  pageAfterDelete,
+  pageSizeOf,
+  globalIndexOfPage,
+  applyLightLocalUpdate,
+  removeImageFromList,
+} from './lib/gallery';
 import Sidebar from './components/Layout/Sidebar';
 import TopBar from './components/Layout/TopBar';
 import ImageGrid from './components/Browser/ImageGrid';
@@ -13,8 +23,10 @@ import AlbumsView from './components/Explorer/AlbumsView';
 import BatchBar from './components/Browser/BatchBar';
 import SettingsPage from './components/Settings/SettingsPage';
 import ConfirmDialog from './components/Layout/ConfirmDialog';
+import ShortcutsHelp from './components/Layout/ShortcutsHelp';
 import { Toaster } from '@/components/ui/sonner';
 import { TooltipProvider } from '@/components/ui/tooltip';
+import { matchGlobalShortcut, GLOBAL_ACTIONS, isTypingTarget } from './lib/shortcuts';
 
 const MemoSidebar = memo(Sidebar);
 const MemoBatchBar = memo(BatchBar);
@@ -51,6 +63,8 @@ export default function App() {
   // 批量操作确认
   const [pendingBatchAction, setPendingBatchAction] = useState(null);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [showShortcuts, setShowShortcuts] = useState(false);
+  const searchInputRef = useRef(null);
 
   // 缩略图文件版本号（重新生成后用于刷新图片 URL 缓存）
   const [thumbVersion, setThumbVersion] = useState(0);
@@ -59,6 +73,9 @@ export default function App() {
   const navigate = useNavigate();
 
   const loadImagesRef = useRef(null);
+  const loadSeqRef = useRef(null);
+  if (!loadSeqRef.current) loadSeqRef.current = createLoadSequencer();
+  const lastSearchRef = useRef(search);
   const infoImageRef = useRef(null);
   infoImageRef.current = infoImage;
   const viewerImageRef = useRef(null);
@@ -75,28 +92,45 @@ export default function App() {
 
   const loadImages = useCallback(async (opts = {}) => {
     if (!window.pixyang) return;
+    const token = loadSeqRef.current.next();
     setLoading(true);
     try {
-      const options = {
-        search: opts.search ?? search,
-        sortBy: opts.sortBy ?? sortBy,
-        sortOrder: opts.sortOrder ?? sortOrder,
-        tagId: opts.tagId ?? filterTag,
-        albumId: opts.albumId ?? filterAlbum,
-        favorite: opts.favorite ?? filterFavorites,
-        importDate: opts.importDate ?? filterDate,
-        dateFrom: opts.dateFrom ?? dateRange.from,
-        dateTo: opts.dateTo ?? dateRange.to,
-        limit: opts.limit ?? gridSettings.rows * gridSettings.columns,
-        offset: opts.offset ?? (page - 1) * gridSettings.rows * gridSettings.columns,
-      };
+      const options = opts.search !== undefined || opts.sortBy !== undefined || opts.limit !== undefined
+        ? {
+            search: opts.search ?? search,
+            sortBy: opts.sortBy ?? sortBy,
+            sortOrder: opts.sortOrder ?? sortOrder,
+            tagId: opts.tagId ?? filterTag,
+            albumId: opts.albumId ?? filterAlbum,
+            favorite: opts.favorite ?? filterFavorites,
+            importDate: opts.importDate ?? filterDate,
+            dateFrom: opts.dateFrom ?? dateRange.from,
+            dateTo: opts.dateTo ?? dateRange.to,
+            limit: opts.limit ?? gridSettings.rows * gridSettings.columns,
+            offset: opts.offset ?? (page - 1) * gridSettings.rows * gridSettings.columns,
+          }
+        : buildImageQuery({
+            search,
+            sortBy,
+            sortOrder,
+            tagId: filterTag,
+            albumId: filterAlbum,
+            favorite: filterFavorites,
+            importDate: filterDate,
+            dateFrom: dateRange.from,
+            dateTo: dateRange.to,
+            page,
+            gridSettings,
+          });
       const result = await window.pixyang.getImages(options);
+      if (!loadSeqRef.current.isCurrent(token)) return;
       setImages(result.images);
       setTotalImages(result.total);
     } catch (err) {
       console.error('加载图片失败:', err);
+    } finally {
+      if (loadSeqRef.current.isCurrent(token)) setLoading(false);
     }
-    setLoading(false);
   }, [search, sortBy, sortOrder, filterTag, filterAlbum, filterFavorites, filterDate, dateRange, page, gridSettings]);
 
   loadImagesRef.current = loadImages;
@@ -142,13 +176,19 @@ export default function App() {
     document.documentElement.setAttribute('data-theme', settings.theme === 'light' ? 'light' : 'dark');
   }, []);
 
-  // 加载图片（150ms 防抖，合并快速变化如连续输入搜索；stats/共享数据只在数据变更时刷新）
+  // 翻页/排序/筛选立即加载；仅搜索输入做 200ms 防抖，合并快速输入
   useEffect(() => {
+    const searchChanged = lastSearchRef.current !== search;
+    lastSearchRef.current = search;
+    if (!searchChanged) {
+      loadImages();
+      return undefined;
+    }
     const t = setTimeout(() => {
       loadImages();
-    }, 150);
+    }, 200);
     return () => clearTimeout(t);
-  }, [filterTag, filterAlbum, filterFavorites, filterDate, dateRange, page, gridSettings, sortBy, sortOrder, search]);
+  }, [filterTag, filterAlbum, filterFavorites, filterDate, dateRange, page, gridSettings, sortBy, sortOrder, search, loadImages]);
 
   useEffect(() => {
     loadGridSettings();
@@ -198,7 +238,7 @@ export default function App() {
       setViewerImage(updated);
       return;
     }
-    const pageSize = gridSettings.rows * gridSettings.columns;
+    const pageSize = pageSizeOf(gridSettings);
     const pageStart = (page - 1) * pageSize;
     if (viewerIndexRef.current >= pageStart && viewerIndexRef.current < pageStart + images.length) {
       setViewerImage(null);
@@ -282,19 +322,19 @@ export default function App() {
   const openViewer = useCallback((image, index) => {
     setViewerImage(image);
     // 记录当前筛选下的全局位置，支持查看器跨页翻页
-    setViewerIndex((page - 1) * gridSettings.rows * gridSettings.columns + index);
+    setViewerIndex(globalIndexOfPage(page, gridSettings, index));
   }, [page, gridSettings]);
 
-  const closeViewer = () => {
+  const closeViewer = useCallback(() => {
     setViewerImage(null);
     setViewerIndex(-1);
-  };
+  }, []);
 
   // 查看器翻页：优先用本页数据，跨页时按当前筛选+排序查询单张
   const navigateViewer = useCallback(async (gIdx) => {
     if (!window.pixyang || viewerNavBusyRef.current) return;
     if (gIdx < 0 || gIdx >= totalImages) return;
-    const pageSize = gridSettings.rows * gridSettings.columns;
+    const pageSize = pageSizeOf(gridSettings);
     const pageStart = (page - 1) * pageSize;
     if (gIdx >= pageStart && gIdx < pageStart + images.length) {
       setViewerIndex(gIdx);
@@ -336,18 +376,28 @@ export default function App() {
     if (viewerIndex < totalImages - 1) navigateViewer(viewerIndex + 1);
   }, [viewerIndex, totalImages, navigateViewer]);
 
+  // 查看器中打开详情后，翻页时详情面板跟随当前图
+  const infoFromViewerRef = useRef(false);
+  useEffect(() => {
+    if (viewerImage && infoFromViewerRef.current) {
+      setInfoImage(viewerImage);
+    }
+  }, [viewerImage]);
+
   // 单图轻量更新（评分/收藏/备注/重命名等）：本地合并，避免全量刷新
   // id/updates 为空时表示结构性变化（删除/导入/标签变动等），走全量刷新
   const handleImageUpdated = useCallback((id, updates) => {
     if (id && updates && Object.keys(updates).length > 0) {
       // 收藏页下取消收藏的图片应立即从列表移除
       if (filterFavorites && updates.favorite === 0) {
-        setImages(prev => prev.filter(img => img.id !== id));
-        setTotalImages(t => Math.max(0, t - 1));
+        const nextTotal = Math.max(0, totalImages - 1);
+        setImages(prev => removeImageFromList(prev, id));
+        setTotalImages(nextTotal);
+        setPage(prev => pageAfterDelete(prev, nextTotal, gridSettings));
         loadStats();
         return;
       }
-      setImages(prev => prev.map(img => (img.id === id ? { ...img, ...updates } : img)));
+      setImages(prev => applyLightLocalUpdate(prev, id, updates));
       if ('favorite' in updates) loadStats();
       if (infoImageRef.current?.id === id) {
         setInfoImage(prev => ({ ...prev, ...updates }));
@@ -360,7 +410,7 @@ export default function App() {
     if (infoImageRef.current) {
       setInfoImage(prev => ({ ...prev, _refresh: Date.now() }));
     }
-  }, [filterFavorites, loadStats, loadAppData]);
+  }, [filterFavorites, totalImages, gridSettings, loadStats, loadAppData]);
 
   // 清除单个筛选
   const clearSingleFilter = useCallback((type) => {
@@ -516,8 +566,9 @@ export default function App() {
   const handleBatchUpdate = useCallback(async (updates) => {
     if (!window.pixyang || selectedIds.size === 0) return;
     const ids = [...selectedIds];
+    const idSet = new Set(ids);
     await window.pixyang.updateImages(ids, updates);
-    setImages(prev => prev.map(img => (ids.includes(img.id) ? { ...img, ...updates } : img)));
+    setImages(prev => prev.map(img => (idSet.has(img.id) ? { ...img, ...updates } : img)));
     if ('favorite' in updates) loadStats();
     const desc = 'rating' in updates
       ? (updates.rating > 0 ? `已设为 ${updates.rating} 星` : '已清除评分')
@@ -527,13 +578,21 @@ export default function App() {
 
   const executeBatchDelete = async () => {
     if (!window.pixyang) return;
-    await window.pixyang.batchDeleteImages([...selectedIds]);
+    const deletedCount = selectedIds.size;
+    const deletedIds = [...selectedIds];
+    await window.pixyang.batchDeleteImages(deletedIds);
     setSelectedIds(new Set());
     setPendingBatchAction(null);
-    showToast(`已删除 ${selectedIds.size} 张图片`, 'success');
-    loadImages();
-    loadStats();
-    loadAppData();
+    showToast(`已删除 ${deletedCount} 张图片`, 'success');
+    const nextTotal = Math.max(0, totalImages - deletedCount);
+    const nextPage = pageAfterDelete(page, nextTotal, gridSettings);
+    const pageSize = pageSizeOf(gridSettings);
+    setPage(nextPage);
+    await Promise.all([
+      loadImages({ offset: (nextPage - 1) * pageSize, limit: pageSize }),
+      loadStats(),
+      loadAppData(),
+    ]);
   };
 
   // 判断标签/相册名
@@ -541,31 +600,73 @@ export default function App() {
   const getAlbumName = (id) => albums.find(a => a.id === id)?.name || '';
 
   const isGallery = location.pathname === '/' || location.pathname === '/favorites';
-  const hasActiveFilters = !!(filterTag || filterAlbum || filterFavorites || filterDate || dateRange.from || dateRange.to || search);
+  const hasActiveFilters = computeHasActiveFilters({
+    search,
+    filterTag,
+    filterAlbum,
+    filterDate,
+    dateRange,
+    filterFavorites,
+  });
 
   // 全局快捷键（置于各 handler 定义之后）
   useEffect(() => {
     const handleKey = (e) => {
-      const t = e.target;
-      const isTyping = t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable);
-      if (isTyping || viewerImage) return;
-      // 确认对话框打开时忽略全局快捷键，避免 Delete/Escape 误触底层逻辑
-      if (pendingBatchAction) return;
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'a') {
+      // 确认/导入等模态打开时忽略全局快捷键，避免 Delete/Escape 误触底层逻辑
+      if (pendingBatchAction || showImport) return;
+
+      // Escape 分层关闭：帮助 → 详情 → 查看器 → 清选择
+      if (e.key === 'Escape' && !isTypingTarget(e.target)) {
+        if (showShortcuts) {
+          e.preventDefault();
+          setShowShortcuts(false);
+          return;
+        }
+        if (infoImage) {
+          e.preventDefault();
+          setInfoImage(null);
+          return;
+        }
+        if (viewerImage) {
+          e.preventDefault();
+          closeViewer();
+          return;
+        }
+        if (selectedIds.size > 0) {
+          setSelectedIds(new Set());
+        }
+        return;
+      }
+
+      // 查看器打开时交给查看器处理其余按键
+      if (viewerImage) return;
+      // 详情面板打开时不响应全选/删除，避免误操作
+      if (infoImage) return;
+
+      const action = matchGlobalShortcut(e);
+      if (!action) return;
+      if (action === GLOBAL_ACTIONS.FocusSearch) {
+        e.preventDefault();
+        searchInputRef.current?.focus();
+        searchInputRef.current?.select();
+      } else if (action === GLOBAL_ACTIONS.ToggleHelp) {
+        e.preventDefault();
+        setShowShortcuts(v => !v);
+      } else if (action === GLOBAL_ACTIONS.SelectAll) {
         e.preventDefault();
         handleSelectAllAll();
-      } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'e') {
+      } else if (action === GLOBAL_ACTIONS.ExportSelected) {
         e.preventDefault();
         handleExportSelected();
-      } else if (e.key === 'Delete') {
+      } else if (action === GLOBAL_ACTIONS.DeleteSelected) {
         if (selectedIds.size > 0) handleBatchDelete();
-      } else if (e.key === 'Escape') {
+      } else if (action === GLOBAL_ACTIONS.ClearSelection) {
         if (selectedIds.size > 0) setSelectedIds(new Set());
       }
     };
     window.addEventListener('keydown', handleKey);
     return () => window.removeEventListener('keydown', handleKey);
-  }, [viewerImage, pendingBatchAction, selectedIds.size, handleSelectAllAll, handleExportSelected, handleBatchDelete]);
+  }, [viewerImage, pendingBatchAction, showImport, showShortcuts, infoImage, selectedIds.size, closeViewer, handleSelectAllAll, handleExportSelected, handleBatchDelete]);
 
   return (
     <TooltipProvider>
@@ -605,12 +706,14 @@ export default function App() {
         filterFavorites={filterFavorites}
         onFilterFavorites={setFilterFavorites}
         onClearFilters={clearFilters}
+        onShowShortcuts={() => setShowShortcuts(true)}
       />
       <div className="main-content">
         <TopBar
           showFilters={isGallery}
           search={search}
           onSearch={handleSearch}
+          searchInputRef={searchInputRef}
           sortBy={sortBy}
           sortOrder={sortOrder}
           onSort={handleSort}
@@ -654,7 +757,10 @@ export default function App() {
               selectedIds={selectedIds}
               onSelect={setSelectedIds}
               onView={openViewer}
-              onInfo={setInfoImage}
+              onInfo={(img) => {
+                infoFromViewerRef.current = false;
+                setInfoImage(img);
+              }}
               onImageUpdated={handleImageUpdated}
               albums={albums}
               gridSettings={gridSettings}
@@ -698,6 +804,16 @@ export default function App() {
           hasPrev={viewerIndex > 0}
           hasNext={viewerIndex < totalImages - 1}
           onImageUpdated={handleImageUpdated}
+          onOpenInfo={(img) => {
+            if (!img) return;
+            if (infoImageRef.current?.id === img.id) {
+              infoFromViewerRef.current = false;
+              setInfoImage(null);
+            } else {
+              infoFromViewerRef.current = true;
+              setInfoImage(img);
+            }
+          }}
         />
       )}
 
@@ -737,6 +853,8 @@ export default function App() {
           onCancel={() => setPendingBatchAction(null)}
         />
       )}
+
+      <ShortcutsHelp open={showShortcuts} onClose={() => setShowShortcuts(false)} />
 
       <Toaster position="bottom-center" richColors />
       </div>

@@ -1,6 +1,6 @@
 import React from 'react';
 import { Button } from '@/components/ui/button';
-import { Search, X, Upload } from 'lucide-react';
+import { Search, X, Upload, ArrowUp, ArrowDown } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
 function FilterChip({ label, onRemove }) {
@@ -38,9 +38,15 @@ export default function TopBar({
   getTagName, getAlbumName, onClearFilter,
   tags = [], onFilterTag,
   dateFrom, dateTo, onDateRange,
+  searchInputRef,
 }) {
   const hasFilters = filterTag || filterAlbum || filterDate || dateRange.from || dateRange.to || filterFavorites;
-  const sortArrow = (key) => (sortBy === key ? (sortOrder === 'ASC' ? '↑' : '↓') : '');
+  const sortArrow = (key) => {
+    if (sortBy !== key) return null;
+    return sortOrder === 'ASC'
+      ? <ArrowUp className="size-3 opacity-80" />
+      : <ArrowDown className="size-3 opacity-80" />;
+  };
 
   return (
     <div className="topbar">
@@ -48,9 +54,10 @@ export default function TopBar({
         <div className="search-wrap">
           <Search className="search-icon" />
           <input
+            ref={searchInputRef}
             type="text"
             className="search-input"
-            placeholder="搜索图片名称、标签、备注"
+            placeholder="搜索图片名称、标签、备注  (/)"
             value={search}
             onChange={(e) => onSearch(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Escape' && search) onSearch(''); }}

@@ -7,6 +7,7 @@ const {
   getDatabasePath,
   getThumbnailFilePath,
   setImagesRoot,
+  getThumbnailSmallFilePath,
   scanImageFiles,
   collectImportFiles,
   prepareCameraSync,
@@ -100,7 +101,7 @@ function createWindow() {
       webSecurity: isDev ? false : true,
     },
     frame: true,
-    backgroundColor: '#0f0f12',
+    backgroundColor: '#1a1b1f',
     show: false,
   });
 
@@ -244,7 +245,11 @@ function parseTiffOrientation(buf, tiffStart, tiffLen) {
 
 // 解析 JPEG 完整 EXIF（相机/镜头/ISO/光圈/快门/焦距/拍摄时间），供详情面板按需读取
 function parseFullExif(filepath) {
-  const empty = { camera: '', lens: '', iso: '', fNumber: '', exposure: '', focalLength: '', dateTime: '' };
+  const empty = {
+    camera: '', lens: '', iso: '', fNumber: '', exposure: '', focalLength: '', dateTime: '',
+    focal35mm: '', flash: '', whiteBalance: '', exposureProgram: '', meteringMode: '',
+    exposureBias: '', software: '', artist: '', copyright: '', colorSpace: '', sceneCapture: '',
+  };
   try {
     const stat = fs.statSync(filepath);
     const headLen = Math.min(262144, stat.size);
@@ -328,10 +333,16 @@ function parseFullExif(filepath) {
 
     const result = { ...empty };
     let exifIfd = -1;
+    let software = '';
+    let artist = '';
+    let copyright = '';
 
     walkIfd(u32(4), (tag, entry) => {
       if (tag === 0x010F) result.camera = readAscii(entry);
       else if (tag === 0x0110) result.model = readAscii(entry);
+      else if (tag === 0x0131) software = readAscii(entry);
+      else if (tag === 0x013B) artist = readAscii(entry);
+      else if (tag === 0x8298) copyright = readAscii(entry);
       else if (tag === 0x8769) exifIfd = u32(entry + 8);
     });
     if (result.camera && result.model && result.model.startsWith(result.camera)) {
@@ -340,13 +351,21 @@ function parseFullExif(filepath) {
       result.camera = [result.camera, result.model].filter(Boolean).join(' ');
     }
     delete result.model;
+    if (software) result.software = software;
+    if (artist) result.artist = artist;
+
+    const readShort = (entry, idx = 0) => {
+      const e = readEntry(entry);
+      if (!e || e.type !== 3 || idx >= e.count) return null;
+      return u16(e.dataOff + idx * 2);
+    };
 
     if (exifIfd > 0) {
       let lensModel = '';
       walkIfd(exifIfd, (tag, entry) => {
         if (tag === 0x8827) {
-          const e = readEntry(entry);
-          if (e && e.type === 3 && e.count > 0) result.iso = String(u16(e.dataOff));
+          const v = readShort(entry);
+          if (v != null) result.iso = String(v);
         } else if (tag === 0x829D) {
           const f = readRational(entry);
           if (f) result.fNumber = `f/${f.toFixed(1)}`;
@@ -356,6 +375,9 @@ function parseFullExif(filepath) {
         } else if (tag === 0x920A) {
           const f = readRational(entry);
           if (f) result.focalLength = `${Math.round(f)}mm`;
+        } else if (tag === 0xA405) {
+          const f = readShort(entry);
+          if (f) result.focal35mm = `${f}mm`;
         } else if (tag === 0xA434) {
           lensModel = readAscii(entry);
         } else if (tag === 0x9003) {
@@ -364,10 +386,49 @@ function parseFullExif(filepath) {
             const s = buf.toString('latin1', tiffStart + e.dataOff, tiffStart + e.dataOff + Math.min(e.count, 19));
             result.dateTime = s.replace(/\0.*$/s, '').trim();
           }
+        } else if (tag === 0x9209) {
+          const v = readShort(entry);
+          if (v != null) result.flash = (v & 0x01) ? '已闪光' : '未闪光';
+        } else if (tag === 0xA403) {
+          const v = readShort(entry);
+          if (v != null) result.whiteBalance = v === 0 ? '自动' : '手动';
+        } else if (tag === 0x8822) {
+          const v = readShort(entry);
+          if (v != null) {
+            result.exposureProgram = ({
+              0: '未定义', 1: '手动', 2: '程序自动', 3: '光圈优先',
+              4: '快门优先', 5: '创意', 6: '运动', 7: '肖像', 8: '风景',
+            })[v] || String(v);
+          }
+        } else if (tag === 0x9207) {
+          const v = readShort(entry);
+          if (v != null) {
+            result.meteringMode = ({
+              0: '未知', 1: '平均', 2: '中央重点', 3: '点测光',
+              4: '多点', 5: '矩阵', 6: '局部', 255: '其他',
+            })[v] || String(v);
+          }
+        } else if (tag === 0x9204) {
+          const f = readRational(entry);
+          if (f != null) result.exposureBias = `${f > 0 ? '+' : ''}${f.toFixed(1)} EV`;
+        } else if (tag === 0x8298) {
+          const s = readAscii(entry);
+          if (s) result.copyright = s;
+        } else if (tag === 0xA001) {
+          const v = readShort(entry);
+          if (v != null) result.colorSpace = v === 1 ? 'sRGB' : (v === 0xFFFF ? 'Uncalibrated' : String(v));
+        } else if (tag === 0xA406) {
+          const v = readShort(entry);
+          if (v != null) {
+            result.sceneCapture = ({
+              0: '标准', 1: '风景', 2: '人像', 3: '夜景', 4: '运动',
+            })[v] || String(v);
+          }
         }
       });
       result.lens = lensModel;
     }
+    if (copyright) result.copyright = copyright;
 
     return result;
   } catch (e) {
@@ -412,11 +473,56 @@ function generateThumbnail(filepath, maxSize = 512) {
   }
 }
 
+// 一次解码同时产出列表用小图与中图，避免二次读盘
+const THUMB_SMALL_SIZE = 160;
+const THUMB_MEDIUM_SIZE = 400;
+
+function generateThumbnailTiers(filepath) {
+  try {
+    if (!fs.existsSync(filepath)) return null;
+    if (getExifOrientation(filepath) !== 1) return null;
+
+    const buf = fs.readFileSync(filepath);
+    let image = nativeImage.createFromBuffer(buf);
+    if (image.isEmpty()) image = nativeImage.createFromPath(filepath);
+    if (image.isEmpty()) return null;
+
+    const size = image.getSize();
+    const make = (maxSide) => {
+      let { width, height } = size;
+      if (width > maxSide || height > maxSide) {
+        const ratio = Math.min(maxSide / width, maxSide / height);
+        width = Math.round(width * ratio);
+        height = Math.round(height * ratio);
+      }
+      return image.resize({ width, height, quality: 'good' }).toJPEG(80);
+    };
+
+    return {
+      small: make(THUMB_SMALL_SIZE),
+      medium: make(THUMB_MEDIUM_SIZE),
+      width: size.width,
+      height: size.height,
+    };
+  } catch (err) {
+    console.error('[缩略图] 生成失败:', err.message);
+    return null;
+  }
+}
+
 // 将缩略图 JPEG Buffer 写入缩略图目录并更新记录，返回文件路径
 function saveThumbnailFile(id, jpgBuf) {
   const thumbPath = getThumbnailFilePath(id);
   fs.writeFileSync(thumbPath, jpgBuf);
   return thumbPath;
+}
+
+function saveThumbnailTiers(id, tiers) {
+  const mediumPath = getThumbnailFilePath(id);
+  const smallPath = getThumbnailSmallFilePath(id);
+  fs.writeFileSync(mediumPath, tiers.medium);
+  fs.writeFileSync(smallPath, tiers.small);
+  return { mediumPath, smallPath };
 }
 
 function getImageData(filepath, maxWidth = 1920) {
@@ -465,11 +571,16 @@ function scheduleThumbnailRebuild() {
       const readyIds = [];
       for (let i = 0; i < rows.length; i++) {
         const r = rows[i];
-        const thumb = generateThumbnail(r.filepath, 256);
-        if (thumb) {
+        const tiers = generateThumbnailTiers(r.filepath);
+        if (tiers) {
           try {
-            const thumbPath = saveThumbnailFile(r.id, thumb.buf);
-            await updateImage(r.id, { thumbnail_path: thumbPath, width: thumb.width, height: thumb.height });
+            const saved = saveThumbnailTiers(r.id, tiers);
+            await updateImage(r.id, {
+              thumbnail_path: saved.mediumPath,
+              thumbnail_small_path: saved.smallPath,
+              width: tiers.width,
+              height: tiers.height,
+            });
             readyIds.push(r.id);
           } catch (e) {
             console.error('[缩略图] 写入失败:', e.message);
@@ -615,11 +726,16 @@ function setupIPC() {
     let failed = 0;
     for (let i = 0; i < rows.length; i++) {
       const r = rows[i];
-      const thumb = generateThumbnail(r.filepath, 512);
-      if (thumb) {
+      const tiers = generateThumbnailTiers(r.filepath);
+      if (tiers) {
         try {
-          const thumbPath = saveThumbnailFile(r.id, thumb.buf);
-          await updateImage(r.id, { thumbnail_path: thumbPath, width: thumb.width, height: thumb.height });
+          const saved = saveThumbnailTiers(r.id, tiers);
+          await updateImage(r.id, {
+            thumbnail_path: saved.mediumPath,
+            thumbnail_small_path: saved.smallPath,
+            width: tiers.width,
+            height: tiers.height,
+          });
           rebuilt++;
         } catch (e) {
           failed++;

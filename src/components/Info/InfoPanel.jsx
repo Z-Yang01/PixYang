@@ -214,13 +214,27 @@ export default function InfoPanel({ image, onClose, onImageUpdated }) {
         </details>
 
         {/* EXIF 信息 */}
-        <details className="info-section">
-          <summary className="info-section-title">EXIF</summary>
+        <details open className="info-section">
+          <summary className="info-section-title">EXIF / 相机</summary>
           <div className="info-group">
             {exif === null ? (
               <div className="info-row"><span className="info-value">加载中...</span></div>
             ) : (
               <>
+                {(exif.fNumber || exif.exposure || exif.iso || exif.focalLength) && (
+                  <div className="exif-summary">
+                    {exif.fNumber && <span className="exif-chip"><strong>{exif.fNumber}</strong></span>}
+                    {exif.exposure && <span className="exif-chip"><strong>{exif.exposure}</strong></span>}
+                    {exif.iso && <span className="exif-chip">ISO <strong>{exif.iso}</strong></span>}
+                    {exif.focalLength && (
+                      <span className="exif-chip">
+                        <strong>{exif.focalLength}</strong>
+                        {exif.focal35mm && exif.focal35mm !== exif.focalLength ? ` (${exif.focal35mm})` : ''}
+                      </span>
+                    )}
+                  </div>
+                )}
+
                 <div className="info-row">
                   <span className="info-label">相机</span>
                   <span className="info-value">{exif.camera || '未知'}</span>
@@ -253,6 +267,72 @@ export default function InfoPanel({ image, onClose, onImageUpdated }) {
                   <div className="info-row">
                     <span className="info-label">焦距</span>
                     <span className="info-value">{exif.focalLength}</span>
+                  </div>
+                )}
+                {exif.focal35mm && (
+                  <div className="info-row">
+                    <span className="info-label">等效焦距</span>
+                    <span className="info-value">{exif.focal35mm}</span>
+                  </div>
+                )}
+                {exif.exposureProgram && (
+                  <div className="info-row">
+                    <span className="info-label">曝光程序</span>
+                    <span className="info-value">{exif.exposureProgram}</span>
+                  </div>
+                )}
+                {exif.exposureBias && (
+                  <div className="info-row">
+                    <span className="info-label">曝光补偿</span>
+                    <span className="info-value">{exif.exposureBias}</span>
+                  </div>
+                )}
+                {exif.meteringMode && (
+                  <div className="info-row">
+                    <span className="info-label">测光</span>
+                    <span className="info-value">{exif.meteringMode}</span>
+                  </div>
+                )}
+                {exif.flash && (
+                  <div className="info-row">
+                    <span className="info-label">闪光灯</span>
+                    <span className="info-value">{exif.flash}</span>
+                  </div>
+                )}
+                {exif.whiteBalance && (
+                  <div className="info-row">
+                    <span className="info-label">白平衡</span>
+                    <span className="info-value">{exif.whiteBalance}</span>
+                  </div>
+                )}
+                {exif.sceneCapture && (
+                  <div className="info-row">
+                    <span className="info-label">场景模式</span>
+                    <span className="info-value">{exif.sceneCapture}</span>
+                  </div>
+                )}
+                {exif.colorSpace && (
+                  <div className="info-row">
+                    <span className="info-label">色彩空间</span>
+                    <span className="info-value">{exif.colorSpace}</span>
+                  </div>
+                )}
+                {exif.software && (
+                  <div className="info-row">
+                    <span className="info-label">软件</span>
+                    <span className="info-value">{exif.software}</span>
+                  </div>
+                )}
+                {exif.artist && (
+                  <div className="info-row">
+                    <span className="info-label">作者</span>
+                    <span className="info-value">{exif.artist}</span>
+                  </div>
+                )}
+                {exif.copyright && (
+                  <div className="info-row">
+                    <span className="info-label">版权</span>
+                    <span className="info-value">{exif.copyright}</span>
                   </div>
                 )}
                 {exif.dateTime && (

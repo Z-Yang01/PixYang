@@ -34,10 +34,15 @@ function getThumbnailFilePath(id) {
   return path.join(getThumbnailsDir(), `${id}.jpg`);
 }
 
+function getThumbnailSmallFilePath(id) {
+  return path.join(getThumbnailsDir(), `${id}_s.jpg`);
+}
+
 function deleteThumbnailFile(id) {
   try {
-    const p = getThumbnailFilePath(id);
-    if (fs.existsSync(p)) fs.unlinkSync(p);
+    for (const p of [getThumbnailFilePath(id), getThumbnailSmallFilePath(id)]) {
+      if (fs.existsSync(p)) fs.unlinkSync(p);
+    }
   } catch (e) {
     console.error('[缩略图] 删除文件失败:', e.message);
   }
@@ -120,6 +125,8 @@ async function initDatabase() {
       height INTEGER DEFAULT 0,
       format TEXT DEFAULT '',
       thumbnail TEXT DEFAULT '',
+      thumbnail_path TEXT DEFAULT '',
+      thumbnail_small_path TEXT DEFAULT '',
       rating INTEGER DEFAULT 0,
       favorite INTEGER DEFAULT 0,
       notes TEXT DEFAULT '',
@@ -199,13 +206,17 @@ async function initDatabase() {
   // 旧库一次性迁移：base64 缩略图落盘为文件，避免数据库膨胀与查询携带大字段
   migrateThumbnailsToFiles();
 
-  // 常用查询索引（hidden/import_date/favorite/taken_at）
+  // 常用查询索引：隐藏过滤 + 排序/筛选字段组合，避免大库全表扫描
   db.run('CREATE INDEX IF NOT EXISTS idx_images_hidden ON images(hidden)');
   db.run('CREATE INDEX IF NOT EXISTS idx_images_import_date ON images(import_date)');
   db.run('CREATE INDEX IF NOT EXISTS idx_images_favorite ON images(favorite)');
   db.run('CREATE INDEX IF NOT EXISTS idx_images_taken_at ON images(taken_at)');
+  db.run('CREATE INDEX IF NOT EXISTS idx_images_filename ON images(filename)');
   db.run('CREATE INDEX IF NOT EXISTS idx_images_original_path ON images(original_path)');
   db.run('CREATE INDEX IF NOT EXISTS idx_images_original_raw_path ON images(original_raw_path)');
+  db.run('CREATE INDEX IF NOT EXISTS idx_images_hidden_import_date ON images(hidden, import_date)');
+  db.run('CREATE INDEX IF NOT EXISTS idx_images_hidden_taken_at ON images(hidden, taken_at)');
+  db.run('CREATE INDEX IF NOT EXISTS idx_images_hidden_favorite ON images(hidden, favorite)');
 
   // 从设置中读取自定义路径（如果有的话）
   const customImagesRoot = getSetting('images_root');
@@ -260,6 +271,9 @@ function migrateSchema() {
       }
       if (!colNames.includes('thumbnail_path')) {
         db.run('ALTER TABLE images ADD COLUMN thumbnail_path TEXT DEFAULT ""');
+      }
+      if (!colNames.includes('thumbnail_small_path')) {
+        db.run('ALTER TABLE images ADD COLUMN thumbnail_small_path TEXT DEFAULT ""');
       }
     }
   } catch (e) {
@@ -580,7 +594,9 @@ function getAllImagePaths() {
 // 返回可见图片的 id 与 filepath；all=true 重建全部，否则只取缺失缩略图的
 // （orientation != 1 的竖图不生成缩略图，由前端直接显示原图，避免每次都被重捞）
 function getImagesForRebuild(all = false) {
-  const where = all ? 'hidden = 0' : 'hidden = 0 AND thumbnail_path = "" AND orientation = 1';
+  const where = all
+    ? 'hidden = 0'
+    : "hidden = 0 AND orientation = 1 AND (thumbnail_path = '' OR thumbnail_small_path = '')";
   const stmt = db.prepare(`SELECT id, filepath, filename FROM images WHERE ${where}`);
   const rows = [];
   while (stmt.step()) rows.push(stmt.getAsObject());
@@ -682,7 +698,7 @@ async function updateImage(id, updates) {
     }
   }
 
-  const allowed = ['filename', 'rating', 'favorite', 'notes', 'width', 'height', 'thumbnail', 'thumbnail_path', 'import_date', 'rotation', 'flip_h', 'flip_v'];
+  const allowed = ['filename', 'rating', 'favorite', 'notes', 'width', 'height', 'thumbnail', 'thumbnail_path', 'thumbnail_small_path', 'import_date', 'rotation', 'flip_h', 'flip_v'];
   const aliases = { flipH: 'flip_h', flipV: 'flip_v' };
   const sets = [];
   const params = [];
@@ -1353,6 +1369,7 @@ function getStats() {
 }
 
 module.exports = {
+  getThumbnailSmallFilePath,
   initDatabase,
   saveDatabase,
   getImagesRoot,

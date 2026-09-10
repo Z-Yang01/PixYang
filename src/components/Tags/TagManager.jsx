@@ -4,7 +4,7 @@ import { Input } from '@/components/ui/input';
 import { Search, Trash2, Tag } from 'lucide-react';
 import ConfirmDialog from '../Layout/ConfirmDialog';
 
-const TAG_COLORS = ['#6366f1', '#ec4899', '#f59e0b', '#22c55e', '#ef4444', '#06b6d4', '#a855f7', '#f97316'];
+const TAG_COLORS = ['#818cf8', '#f472b6', '#fbbf24', '#4ade80', '#f87171', '#22d3ee', '#c084fc', '#fb923c'];
 
 export default function TagManager({ onSelectTag, onRefresh }) {
   const [tags, setTags] = useState([]);
@@ -69,8 +69,13 @@ export default function TagManager({ onSelectTag, onRefresh }) {
                 onClick={() => setNewColor(c)}
                 style={{
                   width: 28, height: 28, borderRadius: '50%',
-                  background: c, border: newColor === c ? '3px solid white' : '3px solid transparent',
-                  cursor: 'pointer', transition: 'all 0.1s',
+                  background: c,
+                  border: newColor === c
+                    ? '3px solid var(--text-primary)'
+                    : '3px solid transparent',
+                  boxShadow: newColor === c ? '0 0 0 2px var(--accent-color-glow)' : 'none',
+                  cursor: 'pointer',
+                  transition: 'box-shadow 100ms ease, border-color 100ms ease',
                 }}
                 title={c}
               />
