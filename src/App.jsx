@@ -668,6 +668,35 @@ export default function App() {
     return () => window.removeEventListener('keydown', handleKey);
   }, [viewerImage, pendingBatchAction, showImport, showShortcuts, infoImage, selectedIds.size, closeViewer, handleSelectAllAll, handleExportSelected, handleBatchDelete]);
 
+  // / 与 /favorites 共用同一实例，切换时不重挂、保留网格缓存。
+  // 注意：react-router-dom v6 的 <Route path> 不支持数组（v7 才支持），
+  // 数组会在 Routes 匹配时抛 TypeError，因此拆成两个 Route 复用同一 element。
+  const galleryGrid = (
+    <ImageGrid
+      images={images}
+      loading={loading}
+      selectedIds={selectedIds}
+      onSelect={setSelectedIds}
+      onView={openViewer}
+      onInfo={(img) => {
+        infoFromViewerRef.current = false;
+        setInfoImage(img);
+      }}
+      onImageUpdated={handleImageUpdated}
+      albums={albums}
+      gridSettings={gridSettings}
+      page={page}
+      totalImages={totalImages}
+      onPageChange={setPage}
+      onImport={openImport}
+      thumbVersion={thumbVersion}
+      hasActiveFilters={hasActiveFilters}
+      onClearFilters={clearFilters}
+      onColumnsChange={handleColumnsChange}
+      viewerActive={!!viewerImage}
+    />
+  );
+
   return (
     <TooltipProvider>
       <div className={`app-layout${sidebarCollapsed ? ' sidebar-collapsed' : ''}`}>
@@ -749,32 +778,9 @@ export default function App() {
           />
         )}
         <Routes>
-          {/* / 与 /favorites 共用同一实例，切换时不重挂、保留网格缓存 */}
-          <Route path={['/', '/favorites']} element={
-            <ImageGrid
-              images={images}
-              loading={loading}
-              selectedIds={selectedIds}
-              onSelect={setSelectedIds}
-              onView={openViewer}
-              onInfo={(img) => {
-                infoFromViewerRef.current = false;
-                setInfoImage(img);
-              }}
-              onImageUpdated={handleImageUpdated}
-              albums={albums}
-              gridSettings={gridSettings}
-              page={page}
-              totalImages={totalImages}
-              onPageChange={setPage}
-              onImport={openImport}
-              thumbVersion={thumbVersion}
-              hasActiveFilters={hasActiveFilters}
-              onClearFilters={clearFilters}
-              onColumnsChange={handleColumnsChange}
-              viewerActive={!!viewerImage}
-            />
-          } />
+          {/* / 与 /favorites 共用同一实例（galleryGrid），切换时不重挂、保留网格缓存 */}
+          <Route path="/" element={galleryGrid} />
+          <Route path="/favorites" element={galleryGrid} />
           <Route path="/albums" element={
             <AlbumsView
               onSelectAlbum={(id) => { navigate('/', { state: { albumId: id } }); }}

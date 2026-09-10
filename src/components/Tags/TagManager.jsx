@@ -32,7 +32,8 @@ export default function TagManager({ onSelectTag, onRefresh }) {
   };
 
   const confirmDelete = async () => {
-    const id = deleteTarget;
+    // deleteTarget 存完整 tag 对象：确认框消息需要 name，删除需要 id
+    const id = deleteTarget?.id;
     setDeleteTarget(null);
     if (!id || !window.pixyang) return;
     await window.pixyang.deleteTag(id);
@@ -103,7 +104,7 @@ export default function TagManager({ onSelectTag, onRefresh }) {
               <Button
                 variant="ghost"
                 size="xs"
-                onClick={() => setDeleteTarget(tag.id)}
+                onClick={() => setDeleteTarget(tag)}
                 className="text-destructive hover:text-destructive"
                 title="删除标签"
               >

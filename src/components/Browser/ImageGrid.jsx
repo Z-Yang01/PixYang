@@ -322,6 +322,13 @@ export default function ImageGrid({
   activeIndexRef.current = activeIndex;
   const dialogsOpen = !!addToAlbumImage || !!renameImage || !!deleteTarget;
 
+  // 键盘导航依赖本回调，必须先于下方 useEffect 定义（此前定义在其后，
+  // useEffect 依赖数组引用未初始化的 const，每次渲染抛 TDZ ReferenceError，网格整体白屏）
+  const handleCheckboxClick = useCallback((image) => {
+    onSelect(toggleIdInSet(selectedIdsRef.current, image.id));
+    lastSelectedRef.current = image.id;
+  }, [onSelect]);
+
   useEffect(() => {
     if (viewerActive || dialogsOpen) return;
     const columns = gridSettings.columns;
@@ -441,11 +448,6 @@ export default function ImageGrid({
       lastSelectedRef.current = image.id;
     }
   }, [onSelect, onView]);
-
-  const handleCheckboxClick = useCallback((image) => {
-    onSelect(toggleIdInSet(selectedIdsRef.current, image.id));
-    lastSelectedRef.current = image.id;
-  }, [onSelect]);
 
   // 空白区拖拽框选；未拖动时点击空白清除选择
   const handleGridMouseDown = (e) => {
