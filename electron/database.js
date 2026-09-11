@@ -1185,6 +1185,36 @@ function batchDeleteImages(ids) {
   return results;
 }
 
+// 编辑保存：用编辑产物（-temp 文件）原子替代原文件，重置已被烘焙的变换元数据并清空缩略图。
+// 顺序：rename 成功后才更新 DB（rename 失败即无任何变化）；NEF 配对不动（主名不变）。
+function saveEditedImage(id, tempPath, { width, height }) {
+  const img = getImageById(id);
+  if (!img) return { error: '图片不存在' };
+  if (!fs.existsSync(tempPath)) return { error: '编辑产物不存在' };
+
+  const size = fs.statSync(tempPath).size;
+  try {
+    fs.renameSync(tempPath, img.filepath);
+  } catch (e) {
+    return { error: `替代原文件失败：${e.message}` };
+  }
+
+  db.transaction(() => {
+    db.prepare(`
+      UPDATE images
+      SET width = ?, height = ?, size = ?,
+          rotation = 0, flip_h = 0, flip_v = 0,
+          thumbnail = '', thumbnail_path = '', thumbnail_small_path = '',
+          updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `).run(width || img.width, height || img.height, size, id);
+  })();
+
+  deleteThumbnailFile(id);
+  saveDatabase();
+  return getImageById(id);
+}
+
 // 批量更新字段（仅限评分/收藏）
 function updateImages(imageIds, updates) {
   const allowed = ['rating', 'favorite'];
@@ -1354,6 +1384,7 @@ module.exports = {
   renameImage,
   deleteImage,
   batchDeleteImages,
+  saveEditedImage,
   findBrokenRecords,
   deleteBrokenRecords,
   findDuplicates,

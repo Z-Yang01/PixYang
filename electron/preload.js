@@ -30,7 +30,10 @@ contextBridge.exposeInMainWorld('pixyang', {
 
   // 重建缩略图
   rebuildThumbnails: () => ipcRenderer.invoke('db:rebuild-thumbnails'),
-  onRebuildProgress: (callback) => {
+  editOpen: (id) => ipcRenderer.invoke('fs:edit-open', id),
+  editRender: (id, ops) => ipcRenderer.invoke('fs:edit-render', id, ops),
+  editSave: (id) => ipcRenderer.invoke('fs:edit-save', id),
+  editCancel: (id) => ipcRenderer.invoke('fs:edit-cancel', id),  onRebuildProgress: (callback) => {
     const handler = (_event, progress) => callback(progress);
     ipcRenderer.on('rebuild-progress', handler);
     return () => ipcRenderer.removeListener('rebuild-progress', handler);

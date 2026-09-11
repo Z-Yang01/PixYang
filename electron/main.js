@@ -3,7 +3,7 @@ const { pathToFileURL } = require('url');
 const path = require('path');
 const fs = require('fs');
 const exifr = require('exifr');
-const { generateThumbnailTiers, closeWorker } = require('./imageWorker');
+const { generateThumbnailTiers, extractNefPreview, normalizeEditBase, renderEdit, closeWorker } = require('./imageWorker');
 const {
   initDatabase,
   closeDatabase,
@@ -28,6 +28,7 @@ const {
   renameImage,
   deleteImage,
   batchDeleteImages,
+  saveEditedImage,
   findBrokenRecords,
   deleteBrokenRecords,
   findDuplicates,
@@ -270,6 +271,122 @@ function sendProgress(channel, payload) {
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send(channel, payload);
   }
+}
+
+// ── 编辑会话 ──
+// 工作流：open 准备规范化底图（NEF 有配对时取其内嵌全尺寸预览，否则用原图）→
+// render 按参数写 `原名-temp.ext`（原图始终不动）→ save 用 temp 原子替代原图并更新记录 →
+// cancel/关闭清理 temp。NEF 底片永不修改。
+const editSessions = new Map();
+
+function getEditCacheDir() {
+  const dir = path.join(app.getPath('userData'), 'edit-cache');
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  return dir;
+}
+
+async function openEditSession(id) {
+  const img = getImageById(id);
+  if (!img) return { error: '图片不存在' };
+  if (img.hidden) return { error: '隐藏的 NEF 记录不支持编辑' };
+  if (!fs.existsSync(img.filepath)) return { error: '图片文件不存在' };
+
+  const ext = path.extname(img.filepath).toLowerCase();
+  const dir = path.dirname(img.filepath);
+  const base = path.basename(img.filepath, ext);
+  const tempPath = path.join(dir, `${base}-temp${ext}`);
+
+  // 清理上次会话的残留 temp
+  try {
+    if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
+  } catch (e) {
+    return { error: `清理临时文件失败：${e.message}` };
+  }
+
+  // 编辑底图：优先 NEF 内嵌全尺寸预览（机内显影质量），无/失败回退 JPG 原图
+  let source = 'jpg';
+  let basePath = path.join(getEditCacheDir(), `${id}-base.jpg`);
+  if (img.raw_path && fs.existsSync(img.raw_path)) {
+    const preview = await extractNefPreview(img.raw_path, basePath);
+    if (preview && preview.ok) source = 'nef';
+  }
+  let dims;
+  try {
+    dims = await normalizeEditBase(source === 'nef' ? basePath : img.filepath, basePath);
+  } catch (e) {
+    return { error: `准备编辑底图失败：${e.message}` };
+  }
+
+  const session = {
+    id,
+    filepath: img.filepath,
+    tempPath,
+    basePath,
+    source,
+    format: ext === '.png' ? '.png' : '.jpg',
+  };
+  editSessions.set(id, session);
+
+  return {
+    id,
+    source,
+    basePath,
+    tempPath,
+    width: dims.width,
+    height: dims.height,
+    hasNef: !!img.raw_path,
+  };
+}
+
+async function renderEditSession(id, ops) {
+  const session = editSessions.get(id);
+  if (!session) return { error: '编辑会话不存在' };
+  try {
+    const result = await renderEdit({
+      srcPath: session.basePath,
+      outPath: session.tempPath,
+      ops: { ...ops, format: session.format },
+    });
+    session.lastRender = { width: result.width, height: result.height };
+    return { ok: true, tempPath: session.tempPath, width: result.width, height: result.height };
+  } catch (e) {
+    return { error: `渲染失败：${e.message}` };
+  }
+}
+
+// 保存：temp 存在校验 → saveEditedImage（原子替代 + 事务更新）→ 清理底图缓存 → 后台重生成缩略图
+async function saveEditSession(id) {
+  const session = editSessions.get(id);
+  if (!session) return { error: '编辑会话不存在' };
+  if (!fs.existsSync(session.tempPath)) {
+    return { error: '尚未渲染编辑结果' };
+  }
+  const saved = saveEditedImage(id, session.tempPath, {
+    width: session.lastRender?.width,
+    height: session.lastRender?.height,
+  });
+  if (saved.error) return saved;
+
+  editSessions.delete(id);
+  try {
+    if (fs.existsSync(session.basePath)) fs.unlinkSync(session.basePath);
+  } catch { /* 缓存清理失败无碍 */ }
+
+  scheduleThumbnailRebuild();
+  return { ok: true, image: saved };
+}
+
+function cancelEditSession(id) {
+  const session = editSessions.get(id);
+  if (!session) return { ok: true };
+  try {
+    if (fs.existsSync(session.tempPath)) fs.unlinkSync(session.tempPath);
+    if (fs.existsSync(session.basePath)) fs.unlinkSync(session.basePath);
+  } catch (e) {
+    console.error('[编辑] 清理失败:', e.message);
+  }
+  editSessions.delete(id);
+  return { ok: true };
 }
 
 // 后台为缺失缩略图的图片补生成（防抖，分批让出事件循环避免阻塞主进程）
@@ -596,6 +713,25 @@ function setupIPC() {
   // ── 批量删除 ──
   ipcMain.handle('db:batch-delete-images', async (_event, ids) => {
     return batchDeleteImages(ids);
+  });
+
+  // ── 编辑模式 ──
+  // open 准备编辑底图（NEF 配对时取其内嵌全尺寸预览），render 写 -temp 文件，
+  // save 用 temp 原子替代原图（数据库同步更新），cancel 清理临时文件
+  ipcMain.handle('fs:edit-open', async (_event, id) => {
+    return openEditSession(id);
+  });
+
+  ipcMain.handle('fs:edit-render', async (_event, id, ops) => {
+    return renderEditSession(id, ops || {});
+  });
+
+  ipcMain.handle('fs:edit-save', async (_event, id) => {
+    return saveEditSession(id);
+  });
+
+  ipcMain.handle('fs:edit-cancel', async (_event, id) => {
+    return cancelEditSession(id);
   });
 
   // ── 路径转 file:// URL ──

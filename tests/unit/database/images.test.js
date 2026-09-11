@@ -398,6 +398,47 @@ describe('deleteImage / batchDeleteImages / updateImages', () => {
   });
 });
 
+describe('saveEditedImage 编辑保存', () => {
+  it('temp 原子替代原图，变换元数据归零、尺寸更新、缩略图清空', async () => {
+    const dir = tmpDir('edit-save');
+    const [img] = await db.importImages([makeImage('edited.jpg', dir, 'original-bytes')]);
+    // 预置变换元数据与缩略图
+    await db.updateImage(img.id, {
+      rating: 3,
+      rotation: 90,
+      flip_h: 1,
+      width: 100,
+      height: 80,
+      thumbnail_path: 'thumb-old.jpg',
+    });
+    const tempPath = path.join(dir, 'edited-temp.jpg');
+    fs.writeFileSync(tempPath, 'edited-new-bytes');
+
+    const saved = db.saveEditedImage(img.id, tempPath, { width: 1920, height: 1080 });
+    expect(saved.error).toBeUndefined();
+    expect(saved.filepath).toBe(img.filepath);
+    expect(saved.width).toBe(1920);
+    expect(saved.height).toBe(1080);
+    expect(saved.size).toBe('edited-new-bytes'.length);
+    // 原路径内容已被替代
+    expect(fs.readFileSync(img.filepath, 'utf8')).toBe('edited-new-bytes');
+    expect(fs.existsSync(tempPath)).toBe(false);
+    // 变换烘焙归零，缩略图清空待重生成；评分不受影响
+    expect(saved.rotation).toBe(0);
+    expect(saved.flip_h).toBe(0);
+    expect(saved.thumbnail_path).toBe('');
+    expect(saved.rating).toBe(3);
+  });
+
+  it('temp 缺失或不存在的记录返回错误且原图不动', async () => {
+    const dir = tmpDir('edit-err');
+    const [img] = await db.importImages([makeImage('keep.jpg', dir, 'keep-bytes')]);
+    expect(db.saveEditedImage(img.id, path.join(dir, 'nope-temp.jpg'), {})).toEqual({ error: '编辑产物不存在' });
+    expect(db.saveEditedImage(999999, path.join(dir, 'x-temp.jpg'), {})).toEqual({ error: '图片不存在' });
+    expect(fs.readFileSync(img.filepath, 'utf8')).toBe('keep-bytes');
+  });
+});
+
 describe('查询辅助函数', () => {
   it('getImageById 返回完整记录', async () => {
     const dir = tmpDir('byid');

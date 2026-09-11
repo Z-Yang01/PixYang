@@ -6,7 +6,7 @@ let worker = null;
 let seq = 0;
 const pending = new Map();
 
-// 缩略图解码/缩放全部在 worker 线程完成，主进程只做调度，不再被图片解码阻塞 IPC
+// 缩略图/编辑底图/渲染全部在 worker 线程完成，主进程只做调度，不再被图片解码阻塞 IPC
 function ensureWorker() {
   if (worker) return worker;
   worker = new Worker(path.join(__dirname, 'thumbWorker.js'));
@@ -25,20 +25,44 @@ function ensureWorker() {
   return worker;
 }
 
+function callWorker(message) {
+  const w = ensureWorker();
+  const id = ++seq;
+  return new Promise((resolve, reject) => {
+    pending.set(id, { resolve, reject });
+    w.postMessage({ id, ...message });
+  });
+}
+
 // 生成失败/文件不存在均返回 null，调用方按"无法生成"处理
 async function generateThumbnailTiers(filepath) {
   if (!filepath || !fs.existsSync(filepath)) return null;
   try {
-    const w = ensureWorker();
-    const id = ++seq;
-    return await new Promise((resolve, reject) => {
-      pending.set(id, { resolve, reject });
-      w.postMessage({ id, type: 'tiers', filepath });
-    });
+    return await callWorker({ type: 'tiers', filepath });
   } catch (e) {
     console.error('[缩略图] 生成失败:', e.message);
     return null;
   }
+}
+
+// 提取 NEF 全尺寸预览；失败返回 null
+async function extractNefPreview(nefPath, outPath) {
+  try {
+    return await callWorker({ type: 'nef-preview', nefPath, outPath });
+  } catch (e) {
+    console.error('[编辑] NEF 预览提取失败:', e.message);
+    return null;
+  }
+}
+
+// 规范化编辑底图（auto-orient 转正），返回 { width, height }
+async function normalizeEditBase(srcPath, outPath) {
+  return callWorker({ type: 'normalize', srcPath, outPath });
+}
+
+// 按编辑参数渲染到 outPath
+async function renderEdit({ srcPath, outPath, ops }) {
+  return callWorker({ type: 'render', srcPath, outPath, ops });
 }
 
 async function closeWorker() {
@@ -49,4 +73,4 @@ async function closeWorker() {
   }
 }
 
-module.exports = { generateThumbnailTiers, closeWorker };
+module.exports = { generateThumbnailTiers, extractNefPreview, normalizeEditBase, renderEdit, closeWorker };

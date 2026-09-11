@@ -147,3 +147,34 @@
 - `perf: 图片处理移 worker 线程 + exifr`（阶段 2）
 - `refactor: 前端架构 zustand store + hooks 拆分`（阶段 3）
 - （未 push）
+
+---
+
+# 2026-09-12 编辑模式轮（Lightroom 式：编辑 NEF → -temp → 保存替代 JPG）
+
+### 工作流（按需求：保存才能替代，否则是 -temp）
+
+1. 打开编辑：主进程准备规范化底图（配对 NEF 时提取其内嵌全尺寸 JPEG 预览＝机内显影产物；无 NEF 用原图），auto-orient 转正去方向标记，清理同图残留 temp。
+2. 编辑中：调整仅前端实时预览（CSS filter/transform，`src/lib/editParams.js` 与 sharp 同一换算语义）；参数防抖 800ms 后 worker 渲染写 `原名-temp.ext`——不保存时原图永不改动。
+3. 保存并替代：temp → 同盘原子 rename 替代原图 + DB 事务更新（宽高/size、rotation/flip 烘焙归零、缩略图清空）→ 后台自动重生成缩略图。
+4. 放弃/退出：删 temp；NEF 底片永不修改，主名不变配对关系保持。
+
+### 实现
+
+- worker（`thumbWorker.js`/`imageWorker.js`）新增：`nef-preview`（扫描二进制取最大完整 JPEG 段，跳过小缩略图）、`normalize`（底图转正）、`render`（sharp 管线：extract 裁剪 → rotate → flip/flop → linear(曝光/对比度/色温通道增益) → modulate(饱和度) → keepExif 保留拍摄时间）。
+- `database.js saveEditedImage`：rename 成功后才更新 DB（失败无任何变化）；导入会话编辑的隐藏 NEF 记录拒绝编辑。
+- IPC：`fs:edit-open/render/save/cancel`（preload `editOpen/editRender/editSave/editCancel`）。
+- ImageViewer 编辑态：右侧参数面板（曝光/对比度/饱和度/色温滑杆 + 裁剪比例锁定 + 框选）、编辑源标记（NEF 显影/JPG）、保存前强制渲染防竞态、未保存退出弹确认（放弃删 temp）。已有 CSS 旋转/翻转进入编辑时作为初始角度（保存后烘焙）。
+- 顺手修复既有低危 bug：查看器关闭按钮 onClick 冒泡导致 onClose 双触发（现已 stopPropagation）。
+
+### 测试与验证
+
+- **276 passed / 0 failed**；覆盖 **76.77%**（≥ 门槛）。新增：编辑会话 IPC 5 例、saveEditedImage 2 例、编辑态组件 3 例。
+- 真实冒烟（无 mock）：伪 NEF（缩略图+全尺寸预览双段）提取选最大段 2000×1200 ✓；渲染裁剪 800×600+旋转 90° → 600×800 ✓；端到端（真实 sql 库+worker）：temp 渲染→替代→DB 归零→缩略图清空 ✓。
+
+### 遗留（二期）
+
+- libraw-wasm 真 RAW 解码（RAW 级白平衡/去马赛克），一期底图为机内显影预览；
+- 色温预览为 soft-light 叠加近似（sharp 端为 RGB 通道增益），需真实样张校准；
+- 裁剪模式下预览变换归零（裁剪坐标基于原始方向），旋转+裁剪叠加的组合预览待打磨；
+- undo/redo 历史、批量编辑。

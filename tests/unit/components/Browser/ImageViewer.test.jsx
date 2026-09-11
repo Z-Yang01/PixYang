@@ -71,11 +71,11 @@ describe('ImageViewer', () => {
     expect(window.pixyang.getImageTags).toHaveBeenCalledWith(3);
   });
 
-  it('点击右上角关闭按钮回调 onClose（按钮 onClick 与 overlay onClick 冒泡各触发一次，共 2 次）', () => {
+  it('点击右上角关闭按钮回调 onClose（stopPropagation 后不再冒泡 overlay，仅 1 次）', () => {
     const onClose = vi.fn();
     const { container } = render(<ImageViewer {...baseProps({ onClose })} />);
     fireEvent.click(container.querySelector('.viewer-close'));
-    expect(onClose).toHaveBeenCalledTimes(2);
+    expect(onClose).toHaveBeenCalledTimes(1);
   });
 
   it('hasNext/hasPrev 为真时渲染导航按钮并回调翻页', () => {
@@ -126,4 +126,68 @@ describe('ImageViewer', () => {
     // 本地立即反馈：收藏后按钮 title 不变但图标切换为实心 Heart
     expect(container.querySelector('.viewer-actions')).toBeInTheDocument();
   });
+
+  it('编辑模式：进入后渲染参数面板与编辑源标记，编辑态隐藏翻页按钮', async () => {
+    window.pixyang.editOpen = vi.fn().mockResolvedValue({
+      id: 3, source: 'nef', basePath: 'C:/cache/3-base.jpg', tempPath: 'C:/pics/sunset-temp.jpg',
+      width: 1920, height: 1080, hasNef: true,
+    });
+    window.pixyang.toFileUrl.mockImplementation((p) => Promise.resolve(p ? `file:///${p}` : null));
+    const { container } = render(<ImageViewer {...baseProps()} />);
+    fireEvent.click(screen.getByTitle(/编辑模式/));
+    expect(await screen.findByText('编辑')).toBeInTheDocument();
+    expect(screen.getByText('NEF 显影')).toBeInTheDocument();
+    expect(screen.getByText('曝光')).toBeInTheDocument();
+    expect(screen.getByText('保存并替代')).toBeInTheDocument();
+    // 编辑态隐藏翻页
+    expect(container.querySelectorAll('.viewer-nav').length).toBe(0);
+  });
+
+  it('编辑模式：调参后保存走 render→save 并全量刷新', async () => {
+    window.pixyang.editOpen = vi.fn().mockResolvedValue({
+      id: 3, source: 'jpg', basePath: 'C:/cache/3-base.jpg', tempPath: 'C:/pics/sunset-temp.jpg',
+      width: 1920, height: 1080, hasNef: false,
+    });
+    window.pixyang.toFileUrl.mockImplementation((p) => Promise.resolve(p ? `file:///${p}` : null));
+    window.pixyang.editRender = vi.fn().mockResolvedValue({ ok: true, width: 1800, height: 1000 });
+    window.pixyang.editSave = vi.fn().mockResolvedValue({ ok: true, image: { id: 3 } });
+    window.pixyang.editCancel = vi.fn().mockResolvedValue({ ok: true });
+    const onImageUpdated = vi.fn();
+    render(<ImageViewer {...baseProps({ onImageUpdated })} />);
+    fireEvent.click(screen.getByTitle(/编辑模式/));
+    const saveBtn = await screen.findByText('保存并替代');
+    expect(saveBtn).toBeDisabled(); // 未做任何编辑
+    // 调曝光滑杆
+    const sliders = document.querySelectorAll('.editor-slider-row input[type="range"]');
+    fireEvent.change(sliders[0], { target: { value: '0.5' } });
+    await vi.waitFor(() => expect(saveBtn).not.toBeDisabled());
+    fireEvent.click(saveBtn);
+    await vi.waitFor(() => {
+      expect(window.pixyang.editRender).toHaveBeenCalled();
+      expect(window.pixyang.editSave).toHaveBeenCalledWith(3);
+      expect(onImageUpdated).toHaveBeenCalledWith(); // 无参 = 结构性全量刷新
+    });
+  });
+
+  it('编辑模式：有未保存编辑时退出弹确认，放弃后调用 editCancel', async () => {
+    window.pixyang.editOpen = vi.fn().mockResolvedValue({
+      id: 3, source: 'jpg', basePath: 'C:/cache/3-base.jpg', tempPath: 'C:/pics/sunset-temp.jpg',
+      width: 1920, height: 1080, hasNef: false,
+    });
+    window.pixyang.toFileUrl.mockImplementation((p) => Promise.resolve(p ? `file:///${p}` : null));
+    window.pixyang.editCancel = vi.fn().mockResolvedValue({ ok: true });
+    render(<ImageViewer {...baseProps()} />);
+    fireEvent.click(screen.getByTitle(/编辑模式/));
+    await screen.findByText('编辑');
+    // 右旋一次产生编辑
+    fireEvent.click(screen.getByTitle('右旋 90° (R)'));
+    fireEvent.click(container_close());
+    expect(await screen.findByText('放弃未保存的编辑？')).toBeInTheDocument();
+    fireEvent.click(screen.getByText('放弃编辑'));
+    await vi.waitFor(() => expect(window.pixyang.editCancel).toHaveBeenCalledWith(3));
+  });
 });
+
+function container_close() {
+  return document.querySelector('.viewer-close');
+}
