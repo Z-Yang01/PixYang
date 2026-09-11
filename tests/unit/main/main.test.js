@@ -10,6 +10,7 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, '..', '..', '..');
 const MAIN_JS = path.join(ROOT, 'electron', 'main.js');
 const DB_JS = path.join(ROOT, 'electron', 'database.js');
+const IMAGE_WORKER_JS = path.join(ROOT, 'electron', 'imageWorker.js');
 const TMP_BASE = path.join(os.tmpdir(), `pixyang-main-test-${process.pid}`);
 const FIXTURES = path.join(TMP_BASE, 'fixtures');
 const THUMBS = path.join(TMP_BASE, 'thumbs');
@@ -242,6 +243,11 @@ for (const [key, impl] of Object.entries(dbDefaults)) {
   dbStub[key] = vi.fn(impl);
 }
 
+const workerStub = {
+  generateThumbnailTiers: vi.fn(async () => null),
+  closeWorker: vi.fn(async () => {}),
+};
+
 require.cache[require.resolve('electron')] = {
   id: 'electron',
   filename: require.resolve('electron'),
@@ -249,6 +255,7 @@ require.cache[require.resolve('electron')] = {
   exports: electronStub,
 };
 require.cache[DB_JS] = { id: DB_JS, filename: DB_JS, loaded: true, exports: dbStub };
+require.cache[IMAGE_WORKER_JS] = { id: IMAGE_WORKER_JS, filename: IMAGE_WORKER_JS, loaded: true, exports: workerStub };
 
 const call = (channel, ...args) => handlers.get(channel)({ sender: { id: 1 } }, ...args);
 const randomJpg = path.join(FIXTURES, 'random.jpg');
@@ -285,8 +292,6 @@ const ALL_CHANNELS = [
   'db:get-import-dates',
   'fs:get-images-root',
   'fs:set-images-root',
-  'fs:get-thumbnail',
-  'fs:get-image-data',
   'fs:get-exif',
   'fs:file-exists',
   'db:get-tags',
@@ -328,6 +333,8 @@ function setDefaultMocks() {
   electronStub.nativeImage.createFromBuffer.mockImplementation(() => emptyImage());
   electronStub.nativeImage.createFromPath.mockReset();
   electronStub.nativeImage.createFromPath.mockImplementation(() => emptyImage());
+  workerStub.generateThumbnailTiers.mockReset();
+  workerStub.generateThumbnailTiers.mockImplementation(async () => null);
 }
 
 beforeAll(async () => {
@@ -621,44 +628,6 @@ describe('fs 工具类 handler', () => {
     await expect(call('fs:file-exists', path.join(TMP_BASE, 'nope.jpg'))).resolves.toBe(false);
   });
 
-  it('fs:get-thumbnail：nativeImage 为空时返回 null', async () => {
-    await expect(call('fs:get-thumbnail', randomJpg)).resolves.toBeNull();
-  });
-
-  it('fs:get-thumbnail：orientation=1 的 JPEG 走完加载降级仍返回 null', async () => {
-    await expect(call('fs:get-thumbnail', exif1Jpg)).resolves.toBeNull();
-    expect(electronStub.nativeImage.createFromBuffer).toHaveBeenCalled();
-    expect(electronStub.nativeImage.createFromPath).toHaveBeenCalled();
-  });
-
-  it('fs:get-image-data：图片为空时返回 null', async () => {
-    await expect(call('fs:get-image-data', randomJpg)).resolves.toBeNull();
-  });
-
-  it('fs:get-image-data：宽图 PNG 按比例缩放并返回 png data URL', async () => {
-    const img = nonEmptyImage(4000, 2000);
-    electronStub.nativeImage.createFromPath.mockReturnValueOnce(img);
-    const url = await call('fs:get-image-data', photoPng, 1920);
-    expect(url).toBe(`data:image/png;base64,${Buffer.from('thumbpng').toString('base64')}`);
-    expect(img.resize).toHaveBeenCalledWith({
-      width: 1920,
-      height: 960,
-      quality: 'best',
-    });
-  });
-
-  it('fs:get-image-data：小图不缩放并返回 jpeg data URL', async () => {
-    const img = nonEmptyImage(800, 600);
-    electronStub.nativeImage.createFromPath.mockReturnValueOnce(img);
-    const url = await call('fs:get-image-data', randomJpg);
-    expect(url).toBe(`data:image/jpeg;base64,${Buffer.from('thumbjpg').toString('base64')}`);
-    expect(img.resize).toHaveBeenCalledWith({
-      width: 800,
-      height: 600,
-      quality: 'best',
-    });
-  });
-
   it('fs:get-exif：非 JPEG 随机文件返回空字段对象', async () => {
     await expect(call('fs:get-exif', randomJpg)).resolves.toEqual(EMPTY_EXIF);
   });
@@ -775,33 +744,35 @@ describe('缩略图重建、导出与备份', () => {
     ]);
     await expect(call('db:rebuild-thumbnails')).resolves.toEqual({ total: 2, rebuilt: 0, failed: 2 });
     expect(dbStub.getImagesForRebuild).toHaveBeenCalledWith(true);
+    expect(workerStub.generateThumbnailTiers).toHaveBeenCalledWith(randomJpg);
   });
 
   it('db:rebuild-thumbnails：成功生成时写双档缩略图并更新记录', async () => {
-    const small = nonEmptyImage(100, 100);
-    const big = nonEmptyImage(2000, 1000);
-    electronStub.nativeImage.createFromBuffer.mockReturnValueOnce(small).mockReturnValueOnce(big);
+    workerStub.generateThumbnailTiers.mockImplementation(async (_fp) => ({
+      small: Buffer.from('small-jpg'),
+      medium: Buffer.from('medium-jpg'),
+      width: 4000,
+      height: 2000,
+    }));
     dbStub.getImagesForRebuild.mockReturnValueOnce([
       { id: 's1', filepath: randomJpg },
       { id: 'b1', filepath: randomJpg },
     ]);
     await expect(call('db:rebuild-thumbnails')).resolves.toEqual({ total: 2, rebuilt: 2, failed: 0 });
-    expect(small.resize).toHaveBeenCalledWith({ width: 100, height: 100, quality: 'good' });
-    expect(big.resize).toHaveBeenCalledWith({ width: 400, height: 200, quality: 'good' });
     expect(dbStub.updateImage).toHaveBeenNthCalledWith(1, 's1', {
       thumbnail_path: path.join(THUMBS, 's1.jpg'),
       thumbnail_small_path: path.join(THUMBS, 's1_s.jpg'),
-      width: 100,
-      height: 100,
+      width: 4000,
+      height: 2000,
     });
     expect(dbStub.updateImage).toHaveBeenNthCalledWith(2, 'b1', {
       thumbnail_path: path.join(THUMBS, 'b1.jpg'),
       thumbnail_small_path: path.join(THUMBS, 'b1_s.jpg'),
-      width: 2000,
-      height: 1000,
+      width: 4000,
+      height: 2000,
     });
-    expect(fs.existsSync(path.join(THUMBS, 's1.jpg'))).toBe(true);
-    expect(fs.existsSync(path.join(THUMBS, 's1_s.jpg'))).toBe(true);
+    expect(fs.readFileSync(path.join(THUMBS, 's1.jpg')).toString()).toBe('medium-jpg');
+    expect(fs.readFileSync(path.join(THUMBS, 's1_s.jpg')).toString()).toBe('small-jpg');
   });
 
   it('fs:export-images：跳过 null 记录与缺失文件，仅复制存在的 JPG/NEF', async () => {

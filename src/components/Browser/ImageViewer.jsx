@@ -114,7 +114,7 @@ export default function ImageViewer({
     setThumbSrc(null);
     setFullSrc(null);
     setFullLoaded(false);
-    if (Number(image.orientation) === 1 && image.thumbnail_path) {
+    if (image.thumbnail_path) {
       const thumb = await window.pixyang.toFileUrl(image.thumbnail_path);
       if (image.id === loadId && thumb) setThumbSrc(thumb);
     }

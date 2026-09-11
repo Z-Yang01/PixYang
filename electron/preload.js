@@ -8,7 +8,6 @@ contextBridge.exposeInMainWorld('pixyang', {
   scanDirectory: (dirPath) => ipcRenderer.invoke('fs:scan-directory', dirPath),
   collectImportFiles: (paths) => ipcRenderer.invoke('fs:collect-import-files', paths),
   getPathForFile: (file) => webUtils.getPathForFile(file),
-  getImageData: (filepath, maxWidth) => ipcRenderer.invoke('fs:get-image-data', filepath, maxWidth),
   getExif: (filepath) => ipcRenderer.invoke('fs:get-exif', filepath),
   toFileUrl: (filepath) => ipcRenderer.invoke('fs:to-file-url', filepath),
   toFileUrls: (paths) => ipcRenderer.invoke('fs:to-file-urls', paths),
@@ -77,6 +76,13 @@ contextBridge.exposeInMainWorld('pixyang', {
   getSettings: () => ipcRenderer.invoke('settings:get-all'),
   getSetting: (key) => ipcRenderer.invoke('settings:get', key),
   setSetting: (key, value) => ipcRenderer.invoke('settings:set', key, value),
+
+  // 导入进度通知（EXIF 提取等主进程侧阶段性进度）
+  onImportProgress: (callback) => {
+    const handler = (_event, progress) => callback(progress || null);
+    ipcRenderer.on('import-progress', handler);
+    return () => ipcRenderer.removeListener('import-progress', handler);
+  },
 
   // 方向回填完成通知
   onOrientationBackfill: (callback) => {

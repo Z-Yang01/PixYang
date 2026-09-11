@@ -425,7 +425,8 @@ describe('查询辅助函数', () => {
     const partialIds = partial.map((r) => r.id);
     expect(partialIds).toContain(r1.id);
     expect(partialIds).not.toContain(r2.id);
-    expect(partialIds).not.toContain(r3.id);
+    // 竖图（orientation != 1）现在也生成缩略图，缺失时同样进入重建列表
+    expect(partialIds).toContain(r3.id);
     expect(partialIds).not.toContain(hiddenNefId);
     expect(partial[0]).toHaveProperty('filename');
     const full = db.getImagesForRebuild(true);

@@ -547,11 +547,11 @@ function getAllImagePaths() {
 }
 
 // 返回可见图片的 id 与 filepath；all=true 重建全部，否则只取缺失缩略图的
-// （orientation != 1 的竖图不生成缩略图，由前端直接显示原图，避免每次都被重捞）
+// （竖图现在也生成缩略图：worker 内 sharp .rotate() 按 EXIF 方向转正）
 function getImagesForRebuild(all = false) {
   const where = all
     ? 'hidden = 0'
-    : "hidden = 0 AND orientation = 1 AND (thumbnail_path = '' OR thumbnail_small_path = '')";
+    : "hidden = 0 AND (thumbnail_path = '' OR thumbnail_small_path = '')";
   return db.prepare(`SELECT id, filepath, filename FROM images WHERE ${where}`).all();
 }
 

@@ -52,7 +52,7 @@ const ImageCard = memo(function ImageCard({
   onClick, onCheckboxClick, onRate, onToggleFavorite, onQuickTag, onView, onInfo,
   onRename, onDelete, onAddToAlbum, onThumbError, onOriginalError,
 }) {
-  const useThumb = Number(image.orientation) === 1;
+  // 缩略图由 sharp 按 EXIF 方向物理转正，竖图同样优先缩略图；缺失时回退原图（浏览器自动转正）
   const cardTransform = (image.rotation || image.flip_h || image.flip_v)
     ? `rotate(${image.rotation || 0}deg) scaleX(${image.flip_h ? -1 : 1}) scaleY(${image.flip_v ? -1 : 1})`
     : undefined;
@@ -76,7 +76,7 @@ const ImageCard = memo(function ImageCard({
             {selected && <Check className="size-3" />}
           </span>
 
-          {useThumb && thumbSrc && !thumbBroken ? (
+          {thumbSrc && !thumbBroken ? (
             <img
               className="image-card-thumb"
               src={thumbSrc}
@@ -397,9 +397,8 @@ export default function ImageGrid({
     const needThumbPaths = [];
     const needOrigPaths = [];
     for (const img of imgs) {
-      const oriented = Number(img.orientation) === 1;
       const preferredThumb = img.thumbnail_small_path || img.thumbnail_path;
-      if (oriented && preferredThumb && thumbUrlsRef.current[img.id] === undefined) {
+      if (preferredThumb && thumbUrlsRef.current[img.id] === undefined) {
         needThumbPaths.push(preferredThumb);
       }
       if (fileUrlsRef.current[img.id] === undefined) {

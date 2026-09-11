@@ -37,6 +37,13 @@ export default function ImportDialog({ onClose, onDone, initialFiles = null }) {
   const [result, setResult] = useState(null);
   const [error, setError] = useState('');
   const cancelImportRef = useRef(false);
+  const [exifProgress, setExifProgress] = useState(null);
+
+  // 主进程 EXIF 提取的批内进度（当前批次细分显示）
+  useEffect(() => {
+    if (!window.pixyang?.onImportProgress) return;
+    return window.pixyang.onImportProgress((p) => setExifProgress(p || null));
+  }, []);
 
   useEffect(() => {
     if (initialFiles && initialFiles.length > 0) {
@@ -97,6 +104,7 @@ export default function ImportDialog({ onClose, onDone, initialFiles = null }) {
     setError('');
     setResult(null);
     cancelImportRef.current = false;
+    setExifProgress(null);
 
     const override = dateMode === 'today' ? todayStr() : (dateMode === 'custom' ? customDate : null);
     const allImported = [];
@@ -223,6 +231,7 @@ export default function ImportDialog({ onClose, onDone, initialFiles = null }) {
               <div className="import-scanning">
                 <Loader2 className="size-4 animate-spin" />
                 {currentFile ? `正在导入 ${currentFile}...` : `正在导入图片... ${progress}%`}
+                {exifProgress && exifProgress.total > 0 && `（读取信息 ${exifProgress.done}/${exifProgress.total}）`}
               </div>
               <div className="progress-bar" style={{ marginTop: 8 }}>
                 <div className="progress-bar-fill" style={{ width: `${progress}%` }} />
