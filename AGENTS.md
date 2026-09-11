@@ -66,7 +66,11 @@ src/
 
 ## 验证
 
-- 无 lint / typecheck / 测试脚本。
+- 测试：`npm test`（vitest，22 个文件 / 262 例）；覆盖率：`npm run test:coverage`，门槛配置在 `vitest.config.js`（statements/lines 75、branches 70、functions 50）。
+- Lint：`npm run lint`（ESLint flat config，`eslint.config.mjs`）；0 error 为准，warning 不阻塞。
+- 类型检查：`npm run typecheck`（tsc --noEmit，覆盖 src 下 TS/TSX）。
+- 格式检查：`npm run format:check`（Prettier 仅检查，禁止全量重排产生巨 diff）。
+- CI：GitHub Actions（`.github/workflows/ci.yml`），push/PR 时在 Windows + Ubuntu 跑 lint/typecheck/test。
 - 前端编译验证：`npx vite build`。
 - 修改 Electron 端代码后，运行 `npm run dev` 手动验证（Vite + Electron 并行）。
 - 修改 opencode 配置后需重启 opencode 生效。

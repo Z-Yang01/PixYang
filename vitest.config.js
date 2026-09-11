@@ -18,7 +18,7 @@ export default defineConfig({
     include: ['tests/**/*.test.{js,jsx,ts,tsx}'],
     coverage: {
       provider: 'v8',
-      reporter: ['text', 'text-summary'],
+      reporter: ['text', 'html', 'json-summary'],
       include: [
         'electron/database.js',
         'electron/main.js',
@@ -26,6 +26,12 @@ export default defineConfig({
         'src/hooks/**',
         'src/components/**', // D 组组件冒烟测试：将 UI 组件纳入覆盖率统计
       ],
+      thresholds: {
+        statements: 75,
+        branches: 70,
+        functions: 50,
+        lines: 75,
+      },
     },
   },
 });
