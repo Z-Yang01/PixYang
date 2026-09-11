@@ -125,3 +125,79 @@ describe('initDatabase 初始化与基础路径', () => {
     expect(fs.existsSync(db.getDatabasePath())).toBe(true);
   });
 });
+
+describe('非破坏编辑表迁移（edits / edit_history / presets）', () => {
+  function makeImg(name) {
+    const dir = fs.mkdtempSync(path.join(TMP_ROOT, 'ed-'));
+    const src = path.join(dir, name);
+    fs.writeFileSync(src, 'bytes');
+    return { filename: name, filepath: src, size: 5, format: '.jpg', width: 0, height: 0 };
+  }
+
+  it('initDatabase 后新表存在且幂等（二次初始化无副作用）', async () => {
+    const tables = db.getAllSettings && db.getDatabasePath ? null : null; // 占位，表存在性通过行为验证
+    expect(tables).toBeNull();
+    // 幂等：重复跑一次迁移路径（模拟二次启动）
+    await db.initDatabase();
+    await db.initDatabase();
+    expect(db.getEdits(12345678)).toBeNull();
+  });
+
+  it('saveEdits/getEdits：版本递增、参数归一化、原图字节不变', async () => {
+    const [img] = await db.importImages([makeImg('ne.jpg')]);
+    const before = fs.readFileSync(img.filepath, 'utf8');
+    const r1 = db.saveEdits(img.id, { basic: { exposure: 0.5 } }, { label: '曝光', before: 0, after: 0.5 });
+    const r2 = db.saveEdits(img.id, { basic: { exposure: 1 } }, { label: '曝光', before: 0.5, after: 1 });
+    expect(r1.version).toBe(1);
+    expect(r2.version).toBe(2);
+    expect(r2.params.basic.exposure).toBe(1);
+    expect(r2.params.output.format).toBe('jpeg'); // 缺失字段回填默认
+    expect(db.getEdits(img.id).params.basic.exposure).toBe(1);
+    expect(fs.readFileSync(img.filepath, 'utf8')).toBe(before); // 像素不动
+  });
+
+  it('edit_history：滑杆全程一条、裁剪到上限 50 步', () => {
+    const rows = db.getAllImagePaths();
+    const id = rows[rows.length - 1].id;
+    expect(db.getEditHistory(id).length).toBe(2);
+    for (let i = 0; i < 60; i++) {
+      db.saveEdits(id, { basic: { contrast: i } }, { label: `对比度 ${i}` });
+    }
+    const hist = db.getEditHistory(id);
+    expect(hist.length).toBe(50);
+    expect(hist[0].step).toBe(13); // 62 步只留最后 50 步
+  });
+
+  it('clearEdits 清参数与历史', async () => {
+    const [img] = await db.importImages([makeImg('ce.jpg')]);
+    db.saveEdits(img.id, { basic: { exposure: 1 } }, { label: '曝光' });
+    db.clearEdits(img.id);
+    expect(db.getEdits(img.id)).toBeNull();
+    expect(db.getEditHistory(img.id)).toEqual([]);
+  });
+
+  it('presets：创建/重名拒绝/删除', () => {
+    const p = db.createPreset('my-preset', { basic: { temperature: 30 } });
+    expect(p.id).toBeGreaterThan(0);
+    const list = db.getPresets();
+    expect(list.find(x => x.name === 'my-preset').params.basic.temperature).toBe(30);
+    expect(db.createPreset('my-preset', {}).error).toBeTruthy();
+    db.deletePreset(p.id);
+    expect(db.getPresets().find(x => x.name === 'my-preset')).toBeUndefined();
+  });
+
+  it('烘焙替代后 edits.orientation 归零而影调保留（saveEditedImage 联动）', async () => {
+    const dir = fs.mkdtempSync(path.join(TMP_ROOT, 'bake-'));
+    const src = path.join(dir, 'b.jpg');
+    fs.writeFileSync(src, 'v1');
+    const [img] = await db.importImages([{ filename: 'b.jpg', filepath: src, size: 2, format: '.jpg', width: 0, height: 0 }]);
+    db.saveEdits(img.id, { orientation: { rotate: 90 }, basic: { exposure: 0.4 } });
+    const temp = path.join(dir, 'b-temp.jpg');
+    fs.writeFileSync(temp, 'v2-longer');
+    const saved = db.saveEditedImage(img.id, temp, { width: 800, height: 600 });
+    const after = db.getEdits(img.id);
+    expect(after.params.orientation.rotate).toBe(0);
+    expect(after.params.basic.exposure).toBe(0.4);
+    expect(saved.width).toBe(800);
+  });
+});

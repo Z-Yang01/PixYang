@@ -61,8 +61,8 @@ async function normalizeEditBase(srcPath, outPath) {
 }
 
 // 按编辑参数渲染到 outPath
-async function renderEdit({ srcPath, outPath, ops }) {
-  return callWorker({ type: 'render', srcPath, outPath, ops });
+async function renderEdit({ srcPath, outPath, edits }) {
+  return callWorker({ type: 'render', srcPath, outPath, edits });
 }
 
 async function closeWorker() {

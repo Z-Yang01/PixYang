@@ -3,6 +3,7 @@ const path = require('path');
 const { app } = require('electron');
 const fs = require('fs');
 const Database = require('better-sqlite3');
+const { upgradeEdits, DEFAULT_EDITS, HISTORY_LIMIT } = require('../shared/editSchema.cjs');
 
 let db;
 
@@ -182,6 +183,32 @@ async function initDatabase() {
   // 迁移旧表：如果不存在 import_date 列则添加
   migrateSchema();
 
+  // ── 非破坏编辑：参数 / 历史 / 预设（LR-like，collections 复用 albums）──
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS edits (
+      image_id INTEGER PRIMARY KEY REFERENCES images(id) ON DELETE CASCADE,
+      version INTEGER NOT NULL DEFAULT 0,
+      params_json TEXT NOT NULL,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS edit_history (
+      image_id INTEGER NOT NULL REFERENCES images(id) ON DELETE CASCADE,
+      step INTEGER NOT NULL,
+      command_json TEXT NOT NULL,
+      PRIMARY KEY (image_id, step)
+    )
+  `);
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS presets (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL UNIQUE,
+      params_json TEXT NOT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
   // 旧库一次性迁移：base64 缩略图落盘为文件，避免数据库膨胀与查询携带大字段
   migrateThumbnailsToFiles();
 
@@ -258,6 +285,13 @@ function migrateSchema() {
       }
       if (!colNames.includes('thumbnail_small_path')) {
         db.exec('ALTER TABLE images ADD COLUMN thumbnail_small_path TEXT DEFAULT ""');
+      }
+      // 非破坏编辑：内容哈希（缓存失效/去重）与旗标
+      if (!colNames.includes('hash')) {
+        db.exec('ALTER TABLE images ADD COLUMN hash TEXT DEFAULT ""');
+      }
+      if (!colNames.includes('flag')) {
+        db.exec('ALTER TABLE images ADD COLUMN flag INTEGER DEFAULT 0');
       }
     }
   } catch (e) {
@@ -1212,7 +1246,116 @@ function saveEditedImage(id, tempPath, { width, height }) {
 
   deleteThumbnailFile(id);
   saveDatabase();
+
+  // 烘焙后 orientation 已进像素：参数侧同步归零（其余参数保留），无参数行则不动
+  const editRow = getEdits(id);
+  if (editRow) {
+    const zeroed = {
+      ...editRow.params,
+      orientation: { rotate: 0, flipH: false, flipV: false },
+    };
+    db.prepare('UPDATE edits SET params_json = ? WHERE image_id = ?').run(JSON.stringify(zeroed), id);
+  }
   return getImageById(id);
+}
+
+// ── 非破坏编辑参数（LR-like）──
+// 默认保存只写参数 JSON，像素不动；schema 校验/迁移在 shared/editSchema.cjs
+
+function getEdits(id) {
+  const row = getObject('SELECT version, params_json, updated_at FROM edits WHERE image_id = ?', [id]);
+  if (!row) return null;
+  let params;
+  try {
+    params = upgradeEdits(JSON.parse(row.params_json));
+  } catch (e) {
+    console.error('[编辑参数] 解析失败:', e.message);
+    params = DEFAULT_EDITS();
+  }
+  return { version: row.version, updatedAt: row.updated_at, params };
+}
+
+// 保存参数：upsert 且 version+1；command = { label, before, after } 时推入历史（滑杆拖动全程一条）
+function saveEdits(id, params, command) {
+  if (!getImageById(id)) return { error: '图片不存在' };
+  const normalized = upgradeEdits(params);
+  const json = JSON.stringify(normalized);
+  let version = 0;
+  db.transaction(() => {
+    db.prepare(`
+      INSERT INTO edits (image_id, version, params_json, updated_at)
+      VALUES (?, 1, ?, CURRENT_TIMESTAMP)
+      ON CONFLICT(image_id) DO UPDATE SET
+        version = version + 1,
+        params_json = excluded.params_json,
+        updated_at = CURRENT_TIMESTAMP
+    `).run(id, json);
+    version = getObject('SELECT version FROM edits WHERE image_id = ?', [id]).version;
+
+    if (command && command.label) {
+      const last = getObject('SELECT MAX(step) AS m FROM edit_history WHERE image_id = ?', [id])?.m || 0;
+      db.prepare('INSERT INTO edit_history (image_id, step, command_json) VALUES (?, ?, ?)')
+        .run(id, last + 1, JSON.stringify({
+          label: String(command.label).slice(0, 100),
+          before: command.before ?? null,
+          after: command.after ?? null,
+          at: Date.now(),
+        }));
+      // 历史上限：只保留最近 HISTORY_LIMIT 步
+      db.prepare(`
+        DELETE FROM edit_history
+        WHERE image_id = ? AND step <= (SELECT MAX(step) FROM edit_history WHERE image_id = ?) - ?
+      `).run(id, id, HISTORY_LIMIT);
+    }
+  })();
+  saveDatabase();
+  return { version, params: normalized };
+}
+
+// 清空某图编辑参数（含历史）：烘焙替代后 orientation 归零时使用；查看态旋转双写在 updateImage 侧
+function clearEdits(id) {
+  db.transaction(() => {
+    db.prepare('DELETE FROM edits WHERE image_id = ?').run(id);
+    db.prepare('DELETE FROM edit_history WHERE image_id = ?').run(id);
+  })();
+  saveDatabase();
+}
+
+function getEditHistory(id) {
+  return db.prepare('SELECT step, command_json FROM edit_history WHERE image_id = ? ORDER BY step')
+    .all(id)
+    .map(r => {
+      let command = null;
+      try { command = JSON.parse(r.command_json); } catch { /* 忽略坏行 */ }
+      return { step: r.step, command };
+    });
+}
+
+// ── 预设 ──
+
+function getPresets() {
+  return db.prepare('SELECT id, name, params_json, created_at FROM presets ORDER BY created_at DESC').all()
+    .map(r => {
+      let params = null;
+      try { params = upgradeEdits(JSON.parse(r.params_json)); } catch { /* 忽略坏行 */ }
+      return { id: r.id, name: r.name, params, createdAt: r.created_at };
+    });
+}
+
+function createPreset(name, params) {
+  const normalized = upgradeEdits(params);
+  try {
+    db.prepare('INSERT INTO presets (name, params_json) VALUES (?, ?)').run(String(name).slice(0, 100), JSON.stringify(normalized));
+    saveDatabase();
+    return getObject('SELECT id, name FROM presets WHERE name = ?', [String(name).slice(0, 100)]);
+  } catch (e) {
+    return { error: '同名预设已存在' };
+  }
+}
+
+function deletePreset(id) {
+  db.prepare('DELETE FROM presets WHERE id = ?').run(id);
+  saveDatabase();
 }
 
 // 批量更新字段（仅限评分/收藏）
@@ -1385,6 +1528,13 @@ module.exports = {
   deleteImage,
   batchDeleteImages,
   saveEditedImage,
+  getEdits,
+  saveEdits,
+  clearEdits,
+  getEditHistory,
+  getPresets,
+  createPreset,
+  deletePreset,
   findBrokenRecords,
   deleteBrokenRecords,
   findDuplicates,

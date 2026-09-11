@@ -127,73 +127,116 @@ describe('ImageViewer', () => {
     expect(container.querySelector('.viewer-actions')).toBeInTheDocument();
   });
 
-  it('编辑模式：进入后渲染参数面板与编辑源标记，编辑态隐藏翻页按钮', async () => {
+  function mockEditBridge(over = {}) {
     window.pixyang.editOpen = vi.fn().mockResolvedValue({
-      id: 3, source: 'nef', basePath: 'C:/cache/3-base.jpg', tempPath: 'C:/pics/sunset-temp.jpg',
-      width: 1920, height: 1080, hasNef: true,
+      id: 3, source: 'jpg', basePath: 'C:/cache/3-base.jpg',
+      width: 1920, height: 1080, hasNef: false, savedEdits: null,
+      ...over,
     });
     window.pixyang.toFileUrl.mockImplementation((p) => Promise.resolve(p ? `file:///${p}` : null));
+    window.pixyang.editCancel = vi.fn().mockResolvedValue({ ok: true });
+    window.pixyang.saveEdits = vi.fn().mockResolvedValue({ version: 1, params: {} });
+    window.pixyang.editBake = vi.fn().mockResolvedValue({ ok: true, image: { id: 3 } });
+    window.pixyang.editExport = vi.fn().mockResolvedValue({ ok: true, path: 'C:/out/x-edited.jpg' });
+    window.pixyang.selectExportDirectory = vi.fn().mockResolvedValue('C:/out');
+  }
+
+  it('编辑模式：进入后渲染参数面板与编辑源标记，编辑态隐藏翻页按钮', async () => {
+    mockEditBridge({ source: 'nef', hasNef: true, savedEdits: { version: 1, params: { basic: { exposure: 0.5 } } } });
     const { container } = render(<ImageViewer {...baseProps()} />);
     fireEvent.click(screen.getByTitle(/编辑模式/));
     expect(await screen.findByText('编辑')).toBeInTheDocument();
     expect(screen.getByText('NEF 显影')).toBeInTheDocument();
     expect(screen.getByText('曝光')).toBeInTheDocument();
-    expect(screen.getByText('保存并替代')).toBeInTheDocument();
+    expect(screen.getByText('参数已保存')).toBeInTheDocument();
     // 编辑态隐藏翻页
     expect(container.querySelectorAll('.viewer-nav').length).toBe(0);
   });
 
-  it('编辑模式：调参后保存走 render→save 并全量刷新', async () => {
-    window.pixyang.editOpen = vi.fn().mockResolvedValue({
-      id: 3, source: 'jpg', basePath: 'C:/cache/3-base.jpg', tempPath: 'C:/pics/sunset-temp.jpg',
-      width: 1920, height: 1080, hasNef: false,
-    });
-    window.pixyang.toFileUrl.mockImplementation((p) => Promise.resolve(p ? `file:///${p}` : null));
-    window.pixyang.editRender = vi.fn().mockResolvedValue({ ok: true, width: 1800, height: 1000 });
-    window.pixyang.editSave = vi.fn().mockResolvedValue({ ok: true, image: { id: 3 } });
-    window.pixyang.editCancel = vi.fn().mockResolvedValue({ ok: true });
+  it('编辑模式：保存参数只写 edits JSON（不渲染像素、不刷新列表），保存后 dirty 复位', async () => {
+    mockEditBridge();
     const onImageUpdated = vi.fn();
     render(<ImageViewer {...baseProps({ onImageUpdated })} />);
     fireEvent.click(screen.getByTitle(/编辑模式/));
-    const saveBtn = await screen.findByText('保存并替代');
-    expect(saveBtn).toBeDisabled(); // 未做任何编辑
+    expect(await screen.findByText('参数已保存')).toBeDisabled(); // 无变更
     // 调曝光滑杆
     const sliders = document.querySelectorAll('.editor-slider-row input[type="range"]');
     fireEvent.change(sliders[0], { target: { value: '0.5' } });
-    await vi.waitFor(() => expect(saveBtn).not.toBeDisabled());
+    const saveBtn = await screen.findByText('保存参数');
     fireEvent.click(saveBtn);
     await vi.waitFor(() => {
-      expect(window.pixyang.editRender).toHaveBeenCalled();
-      expect(window.pixyang.editSave).toHaveBeenCalledWith(3);
+      expect(window.pixyang.saveEdits).toHaveBeenCalledTimes(1);
+      const [, params, command] = window.pixyang.saveEdits.mock.calls[0];
+      expect(params.basic.exposure).toBe(0.5);
+      expect(command.label).toBe('保存编辑参数');
+      // 非破坏：不渲染像素、不触发列表刷新
+      expect(window.pixyang.editBake).not.toHaveBeenCalled();
+      expect(onImageUpdated).not.toHaveBeenCalled();
+    });
+    // dirty 复位
+    await vi.waitFor(() => expect(screen.getByText('参数已保存')).toBeDisabled());
+  });
+
+  it('编辑模式：烘焙替代需确认后渲染替代原图，并全量刷新列表', async () => {
+    mockEditBridge();
+    const onImageUpdated = vi.fn();
+    render(<ImageViewer {...baseProps({ onImageUpdated })} />);
+    fireEvent.click(screen.getByTitle(/编辑模式/));
+    await screen.findByText('参数已保存');
+    fireEvent.change(document.querySelectorAll('.editor-slider-row input[type="range"]')[0], { target: { value: '0.5' } });
+    fireEvent.click(screen.getByText('烘焙替代…'));
+    expect(await screen.findByText('烘焙并替代原图？')).toBeInTheDocument();
+    fireEvent.click(screen.getByText('烘焙替代'));
+    await vi.waitFor(() => {
+      expect(window.pixyang.editBake).toHaveBeenCalledTimes(1);
+      const [, edits] = window.pixyang.editBake.mock.calls[0];
+      expect(edits.basic.exposure).toBe(0.5);
       expect(onImageUpdated).toHaveBeenCalledWith(); // 无参 = 结构性全量刷新
     });
   });
 
-  it('编辑模式：有未保存编辑时退出弹确认，放弃后调用 editCancel', async () => {
-    window.pixyang.editOpen = vi.fn().mockResolvedValue({
-      id: 3, source: 'jpg', basePath: 'C:/cache/3-base.jpg', tempPath: 'C:/pics/sunset-temp.jpg',
-      width: 1920, height: 1080, hasNef: false,
+  it('编辑模式：导出渲染到所选目录，不写 edits、不替代原图', async () => {
+    mockEditBridge();
+    const onImageUpdated = vi.fn();
+    render(<ImageViewer {...baseProps({ onImageUpdated })} />);
+    fireEvent.click(screen.getByTitle(/编辑模式/));
+    await screen.findByText('参数已保存');
+    fireEvent.change(document.querySelectorAll('.editor-slider-row input[type="range"]')[0], { target: { value: '0.5' } });
+    fireEvent.click(screen.getByText('导出…'));
+    await vi.waitFor(() => {
+      expect(window.pixyang.editExport).toHaveBeenCalledTimes(1);
+      const [, edits, dir] = window.pixyang.editExport.mock.calls[0];
+      expect(dir).toBe('C:/out');
+      expect(edits.basic.exposure).toBe(0.5);
+      expect(onImageUpdated).not.toHaveBeenCalled();
     });
-    window.pixyang.toFileUrl.mockImplementation((p) => Promise.resolve(p ? `file:///${p}` : null));
-    window.pixyang.editCancel = vi.fn().mockResolvedValue({ ok: true });
+  });
+
+  it('编辑模式：已保存参数在重进编辑时恢复（edits 表回读）', async () => {
+    mockEditBridge({ savedEdits: { version: 1, params: { basic: { exposure: 0.5 }, orientation: { rotate: 90 } } } });
     render(<ImageViewer {...baseProps()} />);
     fireEvent.click(screen.getByTitle(/编辑模式/));
-    await screen.findByText('编辑');
-    // 右旋一次产生编辑
+    await screen.findByText('参数已保存'); // 与已存参数一致 → 无变更
+    const layer = () => document.querySelector('.editor-transform-layer');
+    expect(layer().style.transform).toContain('rotate(90deg)');
+    expect(window.pixyang.editOpen).toHaveBeenCalledWith(3);
+  });
+
+  it('编辑模式：有未保存参数时退出弹确认，放弃后调用 editCancel', async () => {
+    mockEditBridge();
+    render(<ImageViewer {...baseProps()} />);
+    fireEvent.click(screen.getByTitle(/编辑模式/));
+    await screen.findByText('参数已保存');
+    // 右旋一次产生变更
     fireEvent.click(screen.getByTitle('右旋 90° (R)'));
     fireEvent.click(container_close());
-    expect(await screen.findByText('放弃未保存的编辑？')).toBeInTheDocument();
+    expect(await screen.findByText('放弃未保存的参数编辑？')).toBeInTheDocument();
     fireEvent.click(screen.getByText('放弃编辑'));
     await vi.waitFor(() => expect(window.pixyang.editCancel).toHaveBeenCalledWith(3));
   });
 
   it('编辑模式：撤销/重做回退与恢复旋转状态', async () => {
-    window.pixyang.editOpen = vi.fn().mockResolvedValue({
-      id: 3, source: 'jpg', basePath: 'C:/cache/3-base.jpg', tempPath: 'C:/pics/sunset-temp.jpg',
-      width: 1920, height: 1080, hasNef: false,
-    });
-    window.pixyang.toFileUrl.mockImplementation((p) => Promise.resolve(p ? `file:///${p}` : null));
-    window.pixyang.editRender = vi.fn().mockResolvedValue({ ok: true, width: 100, height: 100 });
+    mockEditBridge();
     render(<ImageViewer {...baseProps()} />);
     fireEvent.click(screen.getByTitle(/编辑模式/));
     await screen.findByText('编辑');
@@ -208,23 +251,16 @@ describe('ImageViewer', () => {
     expect(layer().style.transform).toContain('rotate(90deg)');
   });
 
-  it('编辑模式：拖拽框选的 crop 合入渲染参数', async () => {
-    window.pixyang.editOpen = vi.fn().mockResolvedValue({
-      id: 3, source: 'jpg', basePath: 'C:/cache/3-base.jpg', tempPath: 'C:/pics/sunset-temp.jpg',
-      width: 1920, height: 1080, hasNef: false,
-    });
-    window.pixyang.toFileUrl.mockImplementation((p) => Promise.resolve(p ? `file:///${p}` : null));
-    window.pixyang.editRender = vi.fn().mockResolvedValue({ ok: true, width: 100, height: 100 });
-    window.pixyang.editSave = vi.fn().mockResolvedValue({ ok: true, image: { id: 3 } });
+  it('编辑模式：拖拽框选的 crop 合入保存参数', async () => {
+    mockEditBridge();
     // 图像显示区域固定为 1000x1000 @ (0,0)，便于坐标换算
     const rectSpy = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({
       left: 0, top: 0, right: 1000, bottom: 1000, width: 1000, height: 1000, x: 0, y: 0,
       toJSON: () => {},
     });
-    const onImageUpdated = vi.fn();
-    const { container } = render(<ImageViewer {...baseProps({ onImageUpdated })} />);
+    const { container } = render(<ImageViewer {...baseProps()} />);
     fireEvent.click(screen.getByTitle(/编辑模式/));
-    await screen.findByText('编辑');
+    await screen.findByText('参数已保存');
     fireEvent.click(screen.getByTitle('裁剪'));
     const content = container.querySelector('.viewer-content');
     fireEvent.mouseDown(content, { clientX: 200, clientY: 200 });
@@ -232,45 +268,15 @@ describe('ImageViewer', () => {
     fireEvent.mouseUp(window);
     // 裁剪框渲染
     expect(container.querySelector('.editor-crop-box')).toBeInTheDocument();
-    // 保存时 crop 合入渲染参数（save 前的强制渲染）
-    fireEvent.click(screen.getByText('保存并替代'));
+    // 保存参数时 crop 合入 EditParams
+    fireEvent.click(screen.getByText('保存参数'));
     await vi.waitFor(() => {
-      expect(window.pixyang.editRender).toHaveBeenCalled();
-      const ops = window.pixyang.editRender.mock.calls.at(-1)[1];
-      expect(ops.crop).toBeTruthy();
-      expect(ops.crop.width).toBeGreaterThan(0);
+      expect(window.pixyang.saveEdits).toHaveBeenCalled();
+      const [, params] = window.pixyang.saveEdits.mock.calls.at(-1);
+      expect(params.crop).toBeTruthy();
+      expect(params.crop.w).toBeGreaterThan(0);
     });
     rectSpy.mockRestore();
-  });
-
-  it('编辑模式：参数与上次渲染一致时保存不再重复渲染', async () => {
-    vi.useFakeTimers();
-    const flush = async (ms) => { await act(async () => { await vi.advanceTimersByTimeAsync(ms); }); };
-    try {
-      window.pixyang.editOpen = vi.fn().mockResolvedValue({
-        id: 3, source: 'jpg', basePath: 'C:/cache/3-base.jpg', tempPath: 'C:/pics/sunset-temp.jpg',
-        width: 1920, height: 1080, hasNef: false,
-      });
-      window.pixyang.toFileUrl.mockImplementation((p) => Promise.resolve(p ? `file:///${p}` : null));
-      window.pixyang.editRender = vi.fn().mockResolvedValue({ ok: true, width: 100, height: 100 });
-      window.pixyang.editSave = vi.fn().mockResolvedValue({ ok: true, image: { id: 3 } });
-      render(<ImageViewer {...baseProps()} />);
-      fireEvent.click(screen.getByTitle(/编辑模式/));
-      await flush(0);
-      expect(screen.getByText('保存并替代')).toBeInTheDocument();
-      const sliders = document.querySelectorAll('.editor-slider-row input[type="range"]');
-      fireEvent.change(sliders[0], { target: { value: '0.5' } });
-      // 防抖渲染完成
-      await flush(800);
-      expect(window.pixyang.editRender).toHaveBeenCalledTimes(1);
-      // 立即保存：参数未变，不再渲染
-      fireEvent.click(screen.getByText('保存并替代'));
-      await flush(100);
-      expect(window.pixyang.editSave).toHaveBeenCalledWith(3);
-      expect(window.pixyang.editRender).toHaveBeenCalledTimes(1);
-    } finally {
-      vi.useRealTimers();
-    }
   });
 });
 

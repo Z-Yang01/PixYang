@@ -6,10 +6,12 @@ import {
   Star, X, ChevronLeft, ChevronRight, Camera, Calendar, Info, Pencil,
   Crop, RotateCcwSquare, Loader2, SlidersHorizontal, Undo2, Redo2,
 } from 'lucide-react';
+import { toast } from 'sonner';
 import { matchViewerShortcut, VIEWER_ACTIONS, ratingFromViewerAction } from '@/lib/shortcuts';
 import api from '@/lib/api';
 import {
-  EDIT_DEFAULTS, CROP_RATIOS, sanitizeEditOps, hasEdits, cssFilter, tintMatrixValues,
+  EDIT_DEFAULTS, CROP_RATIOS, sanitizeEditOps, cssFilter, tintMatrixValues,
+  toEditParams, fromEditParams, opsChanged,
 } from '@/lib/editParams';
 import ConfirmDialog from '@/components/Layout/ConfirmDialog';
 
@@ -54,6 +56,7 @@ export default function ImageViewer({
   const [cropMode, setCropMode] = useState(false);
   const [cropRatioKey, setCropRatioKey] = useState('free');
   const [exitConfirm, setExitConfirm] = useState(false);
+  const [bakeConfirm, setBakeConfirm] = useState(false);
   const [histInfo, setHistInfo] = useState({ canUndo: false, canRedo: false });
   const editImgRef = useRef(null);
   const contentRef = useRef(null);
@@ -62,9 +65,8 @@ export default function ImageViewer({
   editOpsRef.current = editOps;
   const editingRef = useRef(false);
   editingRef.current = editing;
-  const renderTimerRef = useRef(null);
   const historyRef = useRef(null); // { stack: [ops], index }
-  const lastRenderedRef = useRef(null); // 最近一次已渲染的 ops JSON（跳过重复渲染）
+  const savedBaselineRef = useRef(null); // 最近一次保存的参数快照（dirty 判定基线）
 
   // 同步图片切换
   useEffect(() => {
@@ -108,9 +110,9 @@ export default function ImageViewer({
     onImageUpdated?.(image.id, { rating: newRating });
   }, [image, localRating, onImageUpdated]);
 
-  // ── 编辑会话 ──
+  // ── 编辑会话（非破坏：保存=只写参数；烘焙替代=显式动作才写像素）──
+
   const cleanupEditSession = useCallback(() => {
-    if (renderTimerRef.current) clearTimeout(renderTimerRef.current);
     setEditSession(null);
     setEditBaseSrc(null);
     setEditOps({ ...EDIT_DEFAULTS });
@@ -119,7 +121,7 @@ export default function ImageViewer({
     setEditBusy(false);
     setHistInfo({ canUndo: false, canRedo: false });
     historyRef.current = null;
-    lastRenderedRef.current = null;
+    savedBaselineRef.current = null;
   }, []);
 
   const enterEdit = useCallback(async () => {
@@ -135,16 +137,18 @@ export default function ImageViewer({
       const url = await api.toFileUrl(session.basePath);
       setEditSession(session);
       setEditBaseSrc(url);
-      // 已有 CSS 变换作为初始编辑角度（保存后烘焙归零）
-      const initial = {
-        ...EDIT_DEFAULTS,
-        rotation: Number(image.rotation) || 0,
-        flipH: !!image.flip_h,
-        flipV: !!image.flip_v,
-      };
+      // 已保存的参数优先；无参数时从记录上的 CSS 变换初始化（legacy 兼容）
+      const initial = session.savedEdits
+        ? fromEditParams(session.savedEdits.params)
+        : {
+            ...EDIT_DEFAULTS,
+            rotation: Number(image.rotation) || 0,
+            flipH: !!image.flip_h,
+            flipV: !!image.flip_v,
+          };
       setEditOps(initial);
       historyRef.current = { stack: [initial], index: 0 };
-      lastRenderedRef.current = null;
+      savedBaselineRef.current = initial;
       setEditing(true);
       setZoom(1);
       setPos({ x: 0, y: 0 });
@@ -180,7 +184,7 @@ export default function ImageViewer({
     syncHistInfo();
   }, [syncHistInfo]);
 
-  // 当前渲染参数（含裁剪框）
+  // 当前编辑参数（含裁剪框）
   const composeOps = useCallback(() => (
     sanitizeEditOps({
       ...editOpsRef.current,
@@ -188,61 +192,79 @@ export default function ImageViewer({
     })
   ), []);
 
-  // 参数变化防抖渲染到 temp；与上次渲染参数一致时跳过
-  useEffect(() => {
-    if (!editing || !editSession) return undefined;
-    const ops = composeOps();
-    const json = JSON.stringify(ops);
-    if (json === lastRenderedRef.current) return undefined;
-    if (renderTimerRef.current) clearTimeout(renderTimerRef.current);
-    renderTimerRef.current = setTimeout(async () => {
-      lastRenderedRef.current = json;
-      setEditBusy(true);
-      const result = await api.editRender(image.id, ops);
-      setEditBusy(false);
-      if (result?.error) setEditError(result.error);
-    }, 800);
-    return () => clearTimeout(renderTimerRef.current);
-  }, [editOps, editing, editSession, image?.id, composeOps]);
+  const editDirty = editing && opsChanged(composeOps(), savedBaselineRef.current);
 
-  const saveEdit = useCallback(async () => {
+  // 保存：只写 EditParams JSON 到数据库（像素不动）
+  const saveParams = useCallback(async () => {
     if (!image || editBusy) return;
     setEditBusy(true);
     try {
-      // 防抖窗口内点保存时 temp 可能尚未生成：仅当参数与上次渲染不一致才强制渲染
       const ops = composeOps();
-      if (JSON.stringify(ops) !== lastRenderedRef.current) {
-        const rendered = await api.editRender(image.id, ops);
-        if (rendered?.error) {
-          setEditError(rendered.error);
-          return;
-        }
-        lastRenderedRef.current = JSON.stringify(ops);
-      }
-      const result = await api.editSave(image.id);
+      const result = await api.saveEdits(image.id, toEditParams(ops), {
+        label: '保存编辑参数',
+        before: savedBaselineRef.current,
+        after: ops,
+      });
       if (result?.error) {
         setEditError(result.error);
         return;
       }
+      savedBaselineRef.current = ops;
+      toast.success('已保存编辑参数');
+    } finally {
+      setEditBusy(false);
+    }
+  }, [image, editBusy, composeOps]);
+
+  // 导出：渲染全尺寸到用户选的目标目录（绝不覆盖原图）
+  const exportEdits = useCallback(async () => {
+    if (!image || editBusy) return;
+    const dir = await api.selectExportDirectory();
+    if (!dir) return;
+    setEditBusy(true);
+    try {
+      const result = await api.editExport(image.id, toEditParams(composeOps()), dir);
+      if (result?.error) {
+        setEditError(result.error);
+        return;
+      }
+      toast.success(`已导出到 ${result.path}`);
+    } finally {
+      setEditBusy(false);
+    }
+  }, [image, editBusy, composeOps]);
+
+  // 烘焙替代：渲染并原子替代原图（唯一写原图的路径，需确认）
+  const bakeEdits = useCallback(async () => {
+    if (!image || editBusy) return;
+    setEditBusy(true);
+    try {
+      const result = await api.editBake(image.id, toEditParams(composeOps()));
+      if (result?.error) {
+        setEditError(result.error);
+        return;
+      }
+      setBakeConfirm(false);
       setEditing(false);
       cleanupEditSession();
-      // 结构性变化：缩略图/尺寸已变，走全量刷新（查看器内 image 由 App 同步 effect 更新）
+      toast.success('已烘焙并替代原图');
+      // 结构性变化：像素/尺寸/缩略图已变，走全量刷新（查看器内 image 由 App 同步 effect 更新）
       onImageUpdated?.();
     } finally {
       setEditBusy(false);
     }
   }, [image, editBusy, onImageUpdated, cleanupEditSession, composeOps]);
 
-  // 退出编辑：有未保存编辑时先确认（放弃即删除 -temp，原图不受影响）
+  // 退出编辑：有未保存的参数变更时先确认（放弃=不写参数，原图/像素均不受影响）
   const requestExitEdit = useCallback(() => {
-    if (hasEdits(editOpsRef.current)) {
+    if (opsChanged(composeOps(), savedBaselineRef.current)) {
       setExitConfirm(true);
       return;
     }
     api.editCancel(image?.id);
     setEditing(false);
     cleanupEditSession();
-  }, [image?.id, cleanupEditSession]);
+  }, [image?.id, cleanupEditSession, composeOps]);
 
   const discardEditAndExit = useCallback(async () => {
     setExitConfirm(false);
@@ -822,18 +844,47 @@ export default function ImageViewer({
             </Button>
             <Button
               variant="default" size="sm" className="w-full"
-              disabled={editBusy || !hasEdits(editOps)}
-              onClick={saveEdit}
+              disabled={editBusy || !editDirty}
+              onClick={saveParams}
+              title="保存编辑参数（原图不动，可随时回到当前效果）"
             >
               {editBusy ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />}
-              保存并替代
+              {editDirty ? '保存参数' : '参数已保存'}
             </Button>
+            <div className="editor-footer-row">
+              <Button
+                variant="secondary" size="sm" className="w-full"
+                disabled={editBusy || !editDirty}
+                onClick={exportEdits}
+                title="按当前参数渲染新文件到所选目录，绝不覆盖原图"
+              >
+                导出…
+              </Button>
+              <Button
+                variant="destructive" size="sm" className="w-full"
+                disabled={editBusy || !editDirty}
+                onClick={() => setBakeConfirm(true)}
+                title="渲染当前效果并覆盖原图文件（不可逆，NEF 底片保留）"
+              >
+                烘焙替代…
+              </Button>
+            </div>
             <p className="editor-hint">
-              保存前编辑仅写入 <code>{image.filename?.replace(/\.\w+$/, '')}-temp</code>，原图不受影响；
-              {editSession.hasNef ? ' 配对 NEF 底片将保留。' : ''}
+              保存只记录编辑参数，原图与 NEF 底片不受影响；「烘焙替代」才会把效果写入 <code>{image.filename?.replace(/\.\w+$/, '')}.jpg</code>（原文件被覆盖）。
             </p>
           </div>
         </div>
+      )}
+
+      {bakeConfirm && (
+        <ConfirmDialog
+          title="烘焙并替代原图？"
+          message={`将按当前参数渲染并覆盖「${image.filename}」的原图文件，旋转/翻转将写入像素，此操作不可撤销。NEF 底片与参数副本会保留。`}
+          confirmLabel="烘焙替代"
+          danger
+          onConfirm={bakeEdits}
+          onCancel={() => setBakeConfirm(false)}
+        />
       )}
 
       {/* 底部信息 */}
@@ -881,8 +932,8 @@ export default function ImageViewer({
 
       {exitConfirm && (
         <ConfirmDialog
-          title="放弃未保存的编辑？"
-          message="编辑尚未替代原图。退出将删除 -temp 临时文件，原图保持不变。"
+          title="放弃未保存的参数编辑？"
+          message="当前调整尚未保存为编辑参数，退出后将丢失（原图不受任何影响）。可先「保存参数」保留调整。"
           confirmLabel="放弃编辑"
           danger
           onConfirm={discardEditAndExit}

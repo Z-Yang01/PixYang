@@ -214,6 +214,12 @@ const dbDefaults = {
   deleteImage: async () => {},
   batchDeleteImages: async () => {},
   saveEditedImage: () => ({ error: 'not stubbed' }),
+  getEdits: () => null,
+  saveEdits: () => ({ error: 'not stubbed' }),
+  getEditHistory: () => [],
+  getPresets: () => [],
+  createPreset: () => ({ error: 'not stubbed' }),
+  deletePreset: () => {},
   findBrokenRecords: () => [],
   deleteBrokenRecords: async () => [],
   findDuplicates: () => [],
@@ -291,6 +297,14 @@ const ALL_CHANNELS = [
   'db:rename-image',
   'db:delete-image',
   'db:rebuild-thumbnails',
+  'edits:get',
+  'edits:save',
+  'edit-history:get',
+  'presets:list',
+  'presets:create',
+  'presets:delete',
+  'fs:edit-bake',
+  'fs:edit-export',
   'fs:get-database-path',
   'fs:backup-database',
   'db:get-import-dates',
@@ -345,6 +359,16 @@ function setDefaultMocks() {
   workerStub.normalizeEditBase.mockImplementation(async () => ({ width: 2000, height: 1200 }));
   workerStub.renderEdit.mockReset();
   workerStub.renderEdit.mockImplementation(async () => ({ ok: true, width: 800, height: 600 }));
+  dbStub.getEdits.mockReset();
+  dbStub.getEdits.mockImplementation(() => null);
+  dbStub.saveEdits.mockReset();
+  dbStub.saveEdits.mockImplementation(() => ({ error: 'not stubbed' }));
+  dbStub.getEditHistory.mockReset();
+  dbStub.getEditHistory.mockImplementation(() => []);
+  dbStub.getPresets.mockReset();
+  dbStub.getPresets.mockImplementation(() => []);
+  dbStub.createPreset.mockReset();
+  dbStub.createPreset.mockImplementation(() => ({ error: 'not stubbed' }));
 }
 
 beforeAll(async () => {
@@ -746,7 +770,7 @@ describe('导入与相机同步', () => {
   });
 });
 
-describe('编辑会话', () => {
+describe('编辑会话（非破坏保存）', () => {
   const editImage = () => ({
     id: 77,
     filename: 'editme.jpg',
@@ -756,17 +780,18 @@ describe('编辑会话', () => {
     width: 2000,
     height: 1200,
   });
+  const sampleEdits = { orientation: { rotate: 90 }, basic: { exposure: 0.5 } };
 
-  it('fs:edit-open：jpg 源返回会话信息并清理残留 temp', async () => {
+  it('fs:edit-open：jpg 源返回会话信息（含已存参数）并清理残留 temp', async () => {
     fs.writeFileSync(path.join(FIXTURES, 'editme.jpg'), 'img');
     fs.writeFileSync(path.join(FIXTURES, 'editme-temp.jpg'), 'stale-temp');
     dbStub.getImageById.mockReturnValueOnce(editImage());
+    dbStub.getEdits.mockReturnValueOnce({ version: 2, params: sampleEdits });
     const session = await call('fs:edit-open', 77);
     expect(session.error).toBeUndefined();
     expect(session.source).toBe('jpg');
     expect(session.width).toBe(2000);
-    expect(session.height).toBe(1200);
-    expect(session.tempPath).toBe(path.join(FIXTURES, 'editme-temp.jpg'));
+    expect(session.savedEdits.version).toBe(2);
     expect(fs.existsSync(path.join(FIXTURES, 'editme-temp.jpg'))).toBe(false);
     expect(workerStub.normalizeEditBase).toHaveBeenCalled();
     await call('fs:edit-cancel', 77);
@@ -780,10 +805,6 @@ describe('编辑会话', () => {
     const session = await call('fs:edit-open', 77);
     expect(session.source).toBe('nef');
     expect(session.hasNef).toBe(true);
-    expect(workerStub.extractNefPreview).toHaveBeenCalledWith(
-      path.join(FIXTURES, 'editme.nef'),
-      expect.stringContaining('77-base.jpg')
-    );
     await call('fs:edit-cancel', 77);
   });
 
@@ -800,41 +821,75 @@ describe('编辑会话', () => {
     expect(missing.error).toBe('图片文件不存在');
   });
 
-  it('fs:edit-render / fs:edit-save / fs:edit-cancel 全链路', async () => {
+  it('fs:edit-bake：渲染 EditParams 到 temp 并委托 saveEditedImage', async () => {
     fs.writeFileSync(path.join(FIXTURES, 'editme.jpg'), 'img');
     dbStub.getImageById.mockReturnValue(editImage());
-    const session = await call('fs:edit-open', 77);
+    await call('fs:edit-open', 77);
 
-    const rendered = await call('fs:edit-render', 77, { rotation: 90, exposure: 0.5 });
-    expect(rendered.ok).toBe(true);
-    expect(rendered.width).toBe(800);
+    workerStub.renderEdit.mockResolvedValueOnce({ ok: true, width: 800, height: 600 });
+    const baked = { id: 77, filename: 'editme.jpg', filepath: path.join(FIXTURES, 'editme.jpg') };
+    dbStub.saveEditedImage.mockReturnValueOnce(baked);
+    const result = await call('fs:edit-bake', 77, sampleEdits);
+    expect(result.ok).toBe(true);
+    expect(result.image).toBe(baked);
     expect(workerStub.renderEdit).toHaveBeenCalledWith(
-      expect.objectContaining({ outPath: session.tempPath, ops: expect.objectContaining({ rotation: 90, format: '.jpg' }) })
+      expect.objectContaining({
+        outPath: path.join(FIXTURES, 'editme-temp.jpg'),
+        edits: expect.objectContaining({ basic: expect.objectContaining({ exposure: 0.5 }) }),
+      })
     );
-
-    // save 前手动补 temp 文件（worker 为 stub 不真实写盘）
-    fs.writeFileSync(session.tempPath, 'rendered');
-    dbStub.saveEditedImage.mockReturnValueOnce({ id: 77, filename: 'editme.jpg', filepath: session.filepath });
-    const saved = await call('fs:edit-save', 77);
-    expect(saved.ok).toBe(true);
-    expect(dbStub.saveEditedImage).toHaveBeenCalledWith(
-      77, session.tempPath, { width: 800, height: 600 }
-    );
-    // 保存后会话关闭：再次保存报会话不存在
-    expect((await call('fs:edit-save', 77)).error).toBe('编辑会话不存在');
+    expect(dbStub.saveEditedImage).toHaveBeenCalledWith(77, path.join(FIXTURES, 'editme-temp.jpg'), { width: 800, height: 600 });
+    // 烘焙后会话关闭
+    expect((await call('fs:edit-bake', 77, sampleEdits)).error).toBe('编辑会话不存在');
   });
 
-  it('fs:edit-render/save 无会话时返回错误；cancel 幂等且清理 temp', async () => {
-    expect((await call('fs:edit-render', 55, {})).error).toBe('编辑会话不存在');
-    expect((await call('fs:edit-save', 55)).error).toBe('编辑会话不存在');
+  it('fs:edit-export：渲染到目标目录（重名自动加序号），不碰原图', async () => {
+    fs.writeFileSync(path.join(FIXTURES, 'editme.jpg'), 'img');
+    dbStub.getImageById.mockReturnValue(editImage());
+    await call('fs:edit-open', 77);
 
+    const destDir = path.join(TMP_BASE, 'export-dir');
+    fs.mkdirSync(destDir, { recursive: true });
+    workerStub.renderEdit.mockResolvedValue({ ok: true, width: 800, height: 600 });
+    const r1 = await call('fs:edit-export', 77, sampleEdits, destDir);
+    expect(r1.ok).toBe(true);
+    expect(r1.path).toBe(path.join(destDir, 'editme-edited.jpg'));
+    fs.writeFileSync(r1.path, 'rendered'); // 模拟渲染产物（stub 不真写盘），触发第二次重名
+    const r2 = await call('fs:edit-export', 77, sampleEdits, destDir);
+    expect(r2.path).toBe(path.join(destDir, 'editme-edited_1.jpg'));
+    expect(workerStub.renderEdit).toHaveBeenCalledTimes(2);
+    await call('fs:edit-cancel', 77);
+  });
+
+  it('edits:get/save、edit-history:get、presets 透传数据库层', async () => {
+    const stored = { version: 3, params: sampleEdits };
+    dbStub.getEdits.mockReturnValueOnce(stored);
+    await expect(call('edits:get', 77)).resolves.toBe(stored);
+
+    const saved = { version: 4, params: sampleEdits };
+    dbStub.saveEdits.mockReturnValueOnce(saved);
+    const r = await call('edits:save', 77, sampleEdits, { label: '曝光' });
+    expect(r).toBe(saved);
+    expect(dbStub.saveEdits).toHaveBeenCalledWith(77, sampleEdits, { label: '曝光' });
+
+    const hist = [{ step: 1, command: { label: '曝光' } }];
+    dbStub.getEditHistory.mockReturnValueOnce(hist);
+    await expect(call('edit-history:get', 77)).resolves.toBe(hist);
+
+    dbStub.getPresets.mockReturnValueOnce([]);
+    await expect(call('presets:list')).resolves.toEqual([]);
+    dbStub.createPreset.mockReturnValueOnce({ id: 1, name: '暖调' });
+    await expect(call('presets:create', '暖调', sampleEdits)).resolves.toEqual({ id: 1, name: '暖调' });
+    await call('presets:delete', 1);
+    expect(dbStub.deletePreset).toHaveBeenCalledWith(1);
+  });
+
+  it('fs:edit-cancel 幂等且清理底图缓存', async () => {
     fs.writeFileSync(path.join(FIXTURES, 'editme.jpg'), 'img');
     dbStub.getImageById.mockReturnValueOnce(editImage());
-    const session = await call('fs:edit-open', 77);
-    fs.writeFileSync(session.tempPath, 'temp-content');
+    await call('fs:edit-open', 77);
     expect(await call('fs:edit-cancel', 77)).toEqual({ ok: true });
-    expect(fs.existsSync(session.tempPath)).toBe(false);
-    // 幂等
+    expect(fs.existsSync(path.join(USER_DATA, 'edit-cache', '77-base.jpg'))).toBe(false);
     expect(await call('fs:edit-cancel', 77)).toEqual({ ok: true });
   });
 });

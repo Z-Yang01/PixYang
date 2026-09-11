@@ -21,6 +21,7 @@ export default defineConfig({
       reporter: ['text', 'html', 'json-summary'],
       include: [
         'electron/database.js',
+        'shared/**',
         'electron/main.js',
         'src/lib/**',
         'src/hooks/**',

@@ -1,15 +1,23 @@
 // 编辑参数语义中心：前端预览（CSS）与 worker 渲染（sharp）共用同一换算，
-// 保证"所见即所得"。
+// 保证"所见即所得"。持久化结构 EditParams 见 shared/editSchema.cjs（唯一事实源），
+// 本文件的平铺结构仅作 UI 内部模型，经 toEditParams/fromEditParams 在边界转换。
+
+import editSchema from '../../shared/editSchema.cjs';
 
 export const EDIT_DEFAULTS = {
   rotation: 0,        // 90 的倍数
   flipH: false,
   flipV: false,
-  crop: null,         // { left, top, width, height }，基于规范化底图像素坐标
+  crop: null,         // { left, top, width, height, ratio? }，基于规范化底图像素坐标
   exposure: 0,        // -2..2 EV
   contrast: 0,        // -50..50
   saturation: 0,      // -100..100（0 为原色，-100 黑白）
   temperature: 0,     // -100..100（暖+ 冷-，预览为叠加近似）
+  highlights: 0,      // -100..100
+  shadows: 0,         // -100..100
+  whites: 0,          // -100..100
+  blacks: 0,          // -100..100
+  tint: 0,            // -100..100（绿- 品红+）
 };
 
 export const CROP_RATIOS = [
@@ -67,4 +75,55 @@ export function cssFilter(ops) {
   const saturate = 1 + s.saturation / 100;
   const tint = s.temperature !== 0 ? 'url(#pixyang-tint) ' : '';
   return `${tint}brightness(${brightness.toFixed(4)}) contrast(${contrastF.toFixed(4)}) saturate(${saturate.toFixed(4)})`;
+}
+
+// ── UI 平铺模型 ↔ EditParams v1（持久化结构）双向转换 ──
+
+// UI 平铺 ops → EditParams v1（经 zod 归一化，可入 edits 表）
+export function toEditParams(ops) {
+  const s = sanitizeEditOps(ops);
+  return editSchema.normalizeEdits({
+    orientation: { rotate: s.rotation, flipH: s.flipH, flipV: s.flipV },
+    crop: s.crop
+      ? { x: s.crop.left, y: s.crop.top, w: s.crop.width, h: s.crop.height, ratio: s.crop.ratio || 'free' }
+      : null,
+    basic: {
+      exposure: s.exposure,
+      contrast: s.contrast,
+      highlights: s.highlights || 0,
+      shadows: s.shadows || 0,
+      whites: s.whites || 0,
+      blacks: s.blacks || 0,
+      saturation: s.saturation,
+      temperature: s.temperature,
+      tint: s.tint || 0,
+    },
+  });
+}
+
+// EditParams v1 → UI 平铺 ops（打开会话时读回）
+export function fromEditParams(params) {
+  const p = editSchema.normalizeEdits(params);
+  return {
+    rotation: p.orientation.rotate,
+    flipH: p.orientation.flipH,
+    flipV: p.orientation.flipV,
+    crop: p.crop
+      ? { left: p.crop.x, top: p.crop.y, width: p.crop.w, height: p.crop.h, ratio: p.crop.ratio || 'free' }
+      : null,
+    exposure: p.basic.exposure,
+    contrast: p.basic.contrast,
+    highlights: p.basic.highlights,
+    shadows: p.basic.shadows,
+    whites: p.basic.whites,
+    blacks: p.basic.blacks,
+    saturation: p.basic.saturation,
+    temperature: p.basic.temperature,
+    tint: p.basic.tint,
+  };
+}
+
+// 是否有未保存的参数变更（与基线快照比较）
+export function opsChanged(a, b) {
+  return JSON.stringify(sanitizeEditOps(a)) !== JSON.stringify(sanitizeEditOps(b));
 }

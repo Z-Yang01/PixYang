@@ -29,6 +29,12 @@ const {
   deleteImage,
   batchDeleteImages,
   saveEditedImage,
+  getEdits,
+  saveEdits,
+  getEditHistory,
+  getPresets,
+  createPreset,
+  deletePreset,
   findBrokenRecords,
   deleteBrokenRecords,
   findDuplicates,
@@ -273,16 +279,23 @@ function sendProgress(channel, payload) {
   }
 }
 
-// ── 编辑会话 ──
-// 工作流：open 准备规范化底图（NEF 有配对时取其内嵌全尺寸预览，否则用原图）→
-// render 按参数写 `原名-temp.ext`（原图始终不动）→ save 用 temp 原子替代原图并更新记录 →
-// cancel/关闭清理 temp。NEF 底片永不修改。
+// ── 编辑会话（LR-like 非破坏）──
+// open 准备规范化底图（NEF 有配对时取其内嵌全尺寸预览，否则用原图）；
+// 保存 = 只写 edits.params_json（参数化，像素不动）；
+// 烘焙替代 = 渲染到 原名-temp → 原子替代原图（显式动作，唯一写原图路径）；
+// 导出 = 渲染到用户选的目标目录，绝不覆盖原图。NEF 底片永不修改。
 const editSessions = new Map();
 
 function getEditCacheDir() {
   const dir = path.join(app.getPath('userData'), 'edit-cache');
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
   return dir;
+}
+
+function editTempPathFor(filepath) {
+  const ext = path.extname(filepath).toLowerCase();
+  const base = path.basename(filepath, ext);
+  return path.join(path.dirname(filepath), `${base}-temp${ext}`);
 }
 
 async function openEditSession(id) {
@@ -292,11 +305,9 @@ async function openEditSession(id) {
   if (!fs.existsSync(img.filepath)) return { error: '图片文件不存在' };
 
   const ext = path.extname(img.filepath).toLowerCase();
-  const dir = path.dirname(img.filepath);
-  const base = path.basename(img.filepath, ext);
-  const tempPath = path.join(dir, `${base}-temp${ext}`);
+  const tempPath = editTempPathFor(img.filepath);
 
-  // 清理上次会话的残留 temp
+  // 清理上次烘焙中断的残留 temp
   try {
     if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
   } catch (e) {
@@ -305,7 +316,7 @@ async function openEditSession(id) {
 
   // 编辑底图：优先 NEF 内嵌全尺寸预览（机内显影质量），无/失败回退 JPG 原图
   let source = 'jpg';
-  let basePath = path.join(getEditCacheDir(), `${id}-base.jpg`);
+  const basePath = path.join(getEditCacheDir(), `${id}-base.jpg`);
   if (img.raw_path && fs.existsSync(img.raw_path)) {
     const preview = await extractNefPreview(img.raw_path, basePath);
     if (preview && preview.ok) source = 'nef';
@@ -317,54 +328,45 @@ async function openEditSession(id) {
     return { error: `准备编辑底图失败：${e.message}` };
   }
 
-  const session = {
+  editSessions.set(id, {
     id,
     filepath: img.filepath,
-    tempPath,
     basePath,
     source,
     format: ext === '.png' ? '.png' : '.jpg',
-  };
-  editSessions.set(id, session);
+  });
 
+  const saved = getEdits(id);
   return {
     id,
     source,
     basePath,
-    tempPath,
     width: dims.width,
     height: dims.height,
     hasNef: !!img.raw_path,
+    savedEdits: saved ? { version: saved.version, params: saved.params } : null,
   };
 }
 
-async function renderEditSession(id, ops) {
+// 烘焙替代：渲染 EditParams → 原名-temp → 原子替代原图（saveEditedImage 内含
+// DB 事务更新、orientation 归零双写、缩略图清空），随后后台重生成缩略图
+async function bakeEditSession(id, edits) {
   const session = editSessions.get(id);
   if (!session) return { error: '编辑会话不存在' };
+
+  const tempPath = editTempPathFor(session.filepath);
+  let dims;
   try {
-    const result = await renderEdit({
+    dims = await renderEdit({
       srcPath: session.basePath,
-      outPath: session.tempPath,
-      ops: { ...ops, format: session.format },
+      outPath: tempPath,
+      edits: { ...edits, output: { ...edits?.output, format: session.format === '.png' ? 'png' : 'jpeg' } },
     });
-    session.lastRender = { width: result.width, height: result.height };
-    return { ok: true, tempPath: session.tempPath, width: result.width, height: result.height };
   } catch (e) {
     return { error: `渲染失败：${e.message}` };
   }
-}
 
-// 保存：temp 存在校验 → saveEditedImage（原子替代 + 事务更新）→ 清理底图缓存 → 后台重生成缩略图
-async function saveEditSession(id) {
-  const session = editSessions.get(id);
-  if (!session) return { error: '编辑会话不存在' };
-  if (!fs.existsSync(session.tempPath)) {
-    return { error: '尚未渲染编辑结果' };
-  }
-  const saved = saveEditedImage(id, session.tempPath, {
-    width: session.lastRender?.width,
-    height: session.lastRender?.height,
-  });
+  const saved = saveEditedImage(id, tempPath, { width: dims.width, height: dims.height });
   if (saved.error) return saved;
 
   editSessions.delete(id);
@@ -376,11 +378,37 @@ async function saveEditSession(id) {
   return { ok: true, image: saved };
 }
 
+// 导出：渲染全尺寸到目标目录（原名-edited.ext，重名自动加序号），绝不覆盖原图
+async function exportEditSession(id, edits, destDir) {
+  const session = editSessions.get(id);
+  if (!session) return { error: '编辑会话不存在' };
+  if (!destDir || !fs.existsSync(destDir)) return { error: '导出目录不存在' };
+
+  const ext = path.extname(session.filepath).toLowerCase();
+  const base = path.basename(session.filepath, ext);
+  let dest = path.join(destDir, `${base}-edited${ext}`);
+  let n = 1;
+  while (fs.existsSync(dest)) {
+    dest = path.join(destDir, `${base}-edited_${n}${ext}`);
+    n++;
+  }
+
+  try {
+    const dims = await renderEdit({
+      srcPath: session.basePath,
+      outPath: dest,
+      edits: { ...edits, output: { ...edits?.output, format: session.format === '.png' ? 'png' : 'jpeg' } },
+    });
+    return { ok: true, path: dest, width: dims.width, height: dims.height };
+  } catch (e) {
+    return { error: `导出失败：${e.message}` };
+  }
+}
+
 function cancelEditSession(id) {
   const session = editSessions.get(id);
   if (!session) return { ok: true };
   try {
-    if (fs.existsSync(session.tempPath)) fs.unlinkSync(session.tempPath);
     if (fs.existsSync(session.basePath)) fs.unlinkSync(session.basePath);
   } catch (e) {
     console.error('[编辑] 清理失败:', e.message);
@@ -715,19 +743,37 @@ function setupIPC() {
     return batchDeleteImages(ids);
   });
 
-  // ── 编辑模式 ──
-  // open 准备编辑底图（NEF 配对时取其内嵌全尺寸预览），render 写 -temp 文件，
-  // save 用 temp 原子替代原图（数据库同步更新），cancel 清理临时文件
+  // ── 编辑模式（非破坏）──
+  // open 准备编辑底图（NEF 配对时取其内嵌全尺寸预览）；
+  // 保存 = 只写 edits.params_json（参数化，像素不动）；
+  // bake 烘焙替代 = 渲染到 原名-temp 原子替代原图（唯一写原图路径，显式动作）；
+  // export 导出 = 渲染到用户选的目标目录，绝不覆盖原图
   ipcMain.handle('fs:edit-open', async (_event, id) => {
     return openEditSession(id);
   });
 
-  ipcMain.handle('fs:edit-render', async (_event, id, ops) => {
-    return renderEditSession(id, ops || {});
+  ipcMain.handle('edits:get', async (_event, id) => {
+    return getEdits(id);
   });
 
-  ipcMain.handle('fs:edit-save', async (_event, id) => {
-    return saveEditSession(id);
+  ipcMain.handle('edits:save', async (_event, id, params, command) => {
+    return saveEdits(id, params, command);
+  });
+
+  ipcMain.handle('edit-history:get', async (_event, id) => {
+    return getEditHistory(id);
+  });
+
+  ipcMain.handle('presets:list', async () => getPresets());
+  ipcMain.handle('presets:create', async (_event, name, params) => createPreset(name, params));
+  ipcMain.handle('presets:delete', async (_event, id) => deletePreset(id));
+
+  ipcMain.handle('fs:edit-bake', async (_event, id, edits) => {
+    return bakeEditSession(id, edits);
+  });
+
+  ipcMain.handle('fs:edit-export', async (_event, id, edits, destDir) => {
+    return exportEditSession(id, edits, destDir);
   });
 
   ipcMain.handle('fs:edit-cancel', async (_event, id) => {

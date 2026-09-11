@@ -30,10 +30,17 @@ contextBridge.exposeInMainWorld('pixyang', {
 
   // 重建缩略图
   rebuildThumbnails: () => ipcRenderer.invoke('db:rebuild-thumbnails'),
+  // 非破坏编辑：保存 = 只写参数 JSON；bake = 烘焙替代原图（显式动作）；export = 导出新文件
   editOpen: (id) => ipcRenderer.invoke('fs:edit-open', id),
-  editRender: (id, ops) => ipcRenderer.invoke('fs:edit-render', id, ops),
-  editSave: (id) => ipcRenderer.invoke('fs:edit-save', id),
-  editCancel: (id) => ipcRenderer.invoke('fs:edit-cancel', id),  onRebuildProgress: (callback) => {
+  getEdits: (id) => ipcRenderer.invoke('edits:get', id),
+  saveEdits: (id, params, command) => ipcRenderer.invoke('edits:save', id, params, command),
+  getEditHistory: (id) => ipcRenderer.invoke('edit-history:get', id),
+  editBake: (id, edits) => ipcRenderer.invoke('fs:edit-bake', id, edits),
+  editExport: (id, edits, destDir) => ipcRenderer.invoke('fs:edit-export', id, edits, destDir),
+  editCancel: (id) => ipcRenderer.invoke('fs:edit-cancel', id),
+  getPresets: () => ipcRenderer.invoke('presets:list'),
+  createPreset: (name, params) => ipcRenderer.invoke('presets:create', name, params),
+  deletePreset: (id) => ipcRenderer.invoke('presets:delete', id),  onRebuildProgress: (callback) => {
     const handler = (_event, progress) => callback(progress);
     ipcRenderer.on('rebuild-progress', handler);
     return () => ipcRenderer.removeListener('rebuild-progress', handler);

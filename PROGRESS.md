@@ -202,3 +202,31 @@
 
 - **279 passed / 0 failed**（+3 文件：editParams 单测 8 例、crop 合入/undo/跳过渲染等组件用例）；覆盖保持 76%+。
 - 真实冒烟：裁剪 800×600+旋转+翻转+四项调参组合 → 600×800 ✓；渲染失败时 temp 不被破坏 ✓；无 .part 残留 ✓。
+
+---
+
+# 2026-09-12 LR-like 非破坏性编辑改造（M1 数据模型 + M2 保存工作流重构）
+
+### M1：数据模型与 schema
+
+- `shared/editSchema.cjs`（CJS，前后端同构，zod@4）：EditParams v1 全字段（orientation/crop/basic 九参数/curves/hsl/colorGrading/detail/lens/masks/output），字段级 catch 宽容回退；normalizeEdits 先与默认结构深合并再校验（zod4 的 catch 不处理缺失字段）；版本迁移链 upgrades + fromLegacyImage（images 行 → 初始参数）；isDefaultEdits（output 是导出设置不算编辑）；stripOutput（预设/同步用）。
+- 数据库迁移（migrateSchema 增量式，老库无损）：新增 edits（image_id PK、version 递增、params_json）、edit_history（每图上限 50 步裁剪）、presets；images 补 hash/flag 列。
+- database CRUD：getEdits/saveEdits（upsert version+1 + 历史入栈）/clearEdits/getEditHistory/getPresets/createPreset（重名拒绝）/deletePreset；saveEditedImage 烘焙后联动 edits.orientation 归零（其余参数保留）。
+
+### M2：保存工作流重构（temp 替代 → 参数保存 + 导出/烘焙）
+
+- **默认保存只写参数**：edits:save 仅 upsert params_json（version+1），原图字节级不变；撤销/重做历史持久化 edit_history（跨会话）。
+- 三条写文件路径语义分离：保存参数（默认）/ 导出（渲染到所选目录 `原名-edited.jpg`，重名加序号，绝不覆盖原图）/ 烘焙替代（显式危险动作，渲染到 原名-temp 原子替代原图 + DB 宽高更新 + orientation 双归零 + 缩略图重生成 + EXIF 保留）。
+- worker renderEdit 改消费 EditParams v1（orientation/crop/basic 全参数），新增高光/阴影（gamma 近似）/白场/黑场（线性系数）/色调（G 通道增益）与 detail.sharpness、output.quality/format（jpeg/tiff/png）；修复 imageWorker→thumbWorker 字段名不一致导致烘焙参数丢失的 bug（ops vs edits，端到端冒烟暴露）。
+- 查看态旋转/翻转双写策略：edits.orientation 为参数真源，images.rotation 列保留兼容列表 CSS 显示。
+- preload/api：editOpen/getEdits/saveEdits/getEditHistory/editBake/editExport/editCancel/getPresets/createPreset/deletePreset（移除 editRender/editSave 旧语义）。
+- ImageViewer 接线：主按钮「保存参数」（dirty 判定 + 保存后复位）、「导出…」、「烘焙替代…」（danger + ConfirmDialog）；打开会话时 savedEdits 回读（fromEditParams）优先于 legacy 初始化；退出确认文案改参数语义。
+
+### 测试与验证
+
+- **295 passed / 0 failed**（+16：editSchema 6 例、迁移/持久化 6 例、编辑会话 IPC 重写 7 例、组件参数化保存 5 例重写）。
+- 端到端验收（真实库+worker）：参数保存后原图字节不变 ✓；NEF 配对保持 ✓；烘焙 temp→原子替代、宽高与渲染输出一致、edits.orientation 归零而影调保留 ✓；裁剪 600x400+旋转 90 → 400x600 ✓。
+
+### 遗留（后续模块）
+
+- M3 统一 RenderSpec + golden 像素测试；M4 编辑预览缩略图缓存；M5 预设/复制粘贴/批量同步 UI；M6 预览对齐量化；M7 WebGL2 预览；M8 libraw RAW。
