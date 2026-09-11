@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll, afterEach } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import os from 'os';
 import path from 'path';
 import fs from 'fs';
@@ -48,12 +48,8 @@ function tmpDir(tag) {
 
 let hostId = null;
 
-afterEach(() => {
-  fs.rmSync(TMP_ROOT, { recursive: true, force: true });
-});
-
-afterAll(async () => {
-  await new Promise((r) => setTimeout(r, 700));
+afterAll(() => {
+  db.closeDatabase();
   fs.rmSync(TMP_ROOT, { recursive: true, force: true });
   delete nodeRequire.cache[electronId];
   delete globalThis.__PIXYANG_TEST_TMP_ROOT__;
@@ -111,7 +107,7 @@ describe('标签操作', () => {
     const [y] = await db.importImages([makeImage('bt-y.jpg', dir, 'y')]);
     const tag = db.createTag('batch-tag');
     expect(db.addTagToImages([x.id, y.id], tag.id)).toBe(2);
-    expect(db.addTagToImages([x.id, y.id], tag.id)).toBe(2);
+    expect(db.addTagToImages([x.id, y.id], tag.id)).toBe(0);
     expect(db.getImageTags(x.id).filter((t) => t.id === tag.id)).toHaveLength(1);
     expect(db.getImageTags(y.id).filter((t) => t.id === tag.id)).toHaveLength(1);
     expect(db.addTagToImages([], tag.id)).toBe(0);

@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll, afterEach } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import os from 'os';
 import path from 'path';
 import fs from 'fs';
@@ -23,12 +23,8 @@ globalThis.__PIXYANG_TEST_TMP_ROOT__ = TMP_ROOT;
 
 const db = (await import('../../../electron/database.js')).default;
 
-afterEach(() => {
-  fs.rmSync(TMP_ROOT, { recursive: true, force: true });
-});
-
 afterAll(async () => {
-  await new Promise((r) => setTimeout(r, 700));
+  db.closeDatabase();
   fs.rmSync(TMP_ROOT, { recursive: true, force: true });
   delete nodeRequire.cache[electronId];
   delete globalThis.__PIXYANG_TEST_TMP_ROOT__;
@@ -124,10 +120,8 @@ describe('initDatabase 初始化与基础路径', () => {
     expect(db.getStats()).toEqual({ totalImages: 0, totalTags: 0, totalAlbums: 0, favorites: 0 });
   });
 
-  it('saveDatabase 防抖后落盘到数据库文件', async () => {
-    fs.mkdirSync(path.dirname(db.getDatabasePath()), { recursive: true });
+  it('数据库文件在初始化时即时创建（WAL 模式）', () => {
     db.saveDatabase();
-    await new Promise((r) => setTimeout(r, 700));
     expect(fs.existsSync(db.getDatabasePath())).toBe(true);
   });
 });

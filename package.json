@@ -4,10 +4,12 @@
   "description": "Local image management and browsing application",
   "main": "electron/main.js",
   "scripts": {
-    "dev": "concurrently \"vite\" \"wait-on http://localhost:5173 && electron .\"",
+    "dev": "npm run -s rebuild:electron && concurrently \"vite\" \"wait-on http://localhost:5173 && electron .\"",
     "build": "vite build && electron-builder",
-    "test": "vitest run",
-    "test:coverage": "vitest run --coverage",
+    "test": "npm run -s rebuild:node && vitest run",
+    "test:coverage": "npm run -s rebuild:node && vitest run --coverage",
+    "rebuild:electron": "node scripts/native.js electron",
+    "rebuild:node": "node scripts/native.js node",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "format:check": "prettier --check .",
@@ -15,6 +17,7 @@
     "electron:dev": "electron ."
   },
   "dependencies": {
+    "better-sqlite3": "^11.10.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "lucide-react": "^1.31.0",
@@ -23,7 +26,6 @@
     "react-dom": "^18.3.1",
     "react-router-dom": "^6.26.0",
     "sonner": "^2.0.8",
-    "sql.js": "^1.11.0",
     "tailwind-merge": "^3.6.0"
   },
   "devDependencies": {

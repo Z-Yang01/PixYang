@@ -2,8 +2,8 @@ const crypto = require('crypto');
 const path = require('path');
 const { app } = require('electron');
 const fs = require('fs');
+const Database = require('better-sqlite3');
 
-let SQL;
 let db;
 
 const DB_PATH = path.join(app.getPath('userData'), 'pixyang.db');
@@ -49,47 +49,26 @@ function deleteThumbnailFile(id) {
 }
 
 function getObject(sql, params = []) {
-  const stmt = db.prepare(sql);
-  stmt.bind(params);
-  let row = null;
-  if (stmt.step()) {
-    row = stmt.getAsObject();
-  }
-  stmt.free();
-  return row;
+  return db.prepare(sql).get(...params) || null;
 }
 
-// Write sql.js WASM file to disk so it can be loaded
-function getWasmPath() {
-  const wasmDir = path.join(app.getPath('userData'), 'sqljs');
-  if (!fs.existsSync(wasmDir)) {
-    fs.mkdirSync(wasmDir, { recursive: true });
+// 批量 IN 查询的 id 分块，避免超出 SQLite 变量数上限
+function chunkIds(ids, size = 900) {
+  const chunks = [];
+  for (let i = 0; i < ids.length; i += size) {
+    chunks.push(ids.slice(i, i + size));
   }
-  const sqljsPath = path.dirname(require.resolve('sql.js'));
-  const wasmSource = path.join(sqljsPath, 'sql-wasm.wasm');
-  const wasmDest = path.join(wasmDir, 'sql-wasm.wasm');
-  if (!fs.existsSync(wasmDest) && fs.existsSync(wasmSource)) {
-    fs.copyFileSync(wasmSource, wasmDest);
-  }
-  return wasmDest;
+  return chunks;
 }
+
 
 async function initDatabase() {
-  const initSqlJs = require('sql.js');
-  const wasmPath = getWasmPath();
+  fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
+  db = new Database(DB_PATH);
 
-  const SQLModule = await initSqlJs({ locateFile: () => wasmPath });
-  SQL = SQLModule;
-
-  if (fs.existsSync(DB_PATH)) {
-    const buffer = fs.readFileSync(DB_PATH);
-    db = new SQL.Database(buffer);
-  } else {
-    db = new SQL.Database();
-  }
-
-  db.run('PRAGMA journal_mode=WAL');
-  db.run('PRAGMA foreign_keys=ON');
+  // WAL 模式：写操作即时持久化并具备崩溃恢复能力，不再整库序列化落盘
+  db.pragma('journal_mode = WAL');
+  db.pragma('foreign_keys = ON');
 
   // ── 数据模型 v2 ──
   // images: 核心图片表
@@ -105,7 +84,7 @@ async function initDatabase() {
   // albums + album_images: 相册与图片的多对多关联
   //   - 一张图片可以属于多个相册
 
-  db.run(`
+  db.exec(`
     CREATE TABLE IF NOT EXISTS images (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       filename TEXT NOT NULL,
@@ -135,7 +114,7 @@ async function initDatabase() {
     )
   `);
 
-  db.run(`
+  db.exec(`
     CREATE TABLE IF NOT EXISTS tags (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT NOT NULL UNIQUE,
@@ -143,7 +122,7 @@ async function initDatabase() {
     )
   `);
 
-  db.run(`
+  db.exec(`
     CREATE TABLE IF NOT EXISTS image_tags (
       image_id INTEGER NOT NULL,
       tag_id INTEGER NOT NULL,
@@ -153,7 +132,7 @@ async function initDatabase() {
     )
   `);
 
-  db.run(`
+  db.exec(`
     CREATE TABLE IF NOT EXISTS albums (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT NOT NULL,
@@ -163,7 +142,7 @@ async function initDatabase() {
     )
   `);
 
-  db.run(`
+  db.exec(`
     CREATE TABLE IF NOT EXISTS album_images (
       album_id INTEGER NOT NULL,
       image_id INTEGER NOT NULL,
@@ -175,7 +154,7 @@ async function initDatabase() {
   `);
 
   // ── 设置表 (key-value) ──
-  db.run(`
+  db.exec(`
     CREATE TABLE IF NOT EXISTS settings (
       key TEXT PRIMARY KEY,
       value TEXT NOT NULL
@@ -197,7 +176,7 @@ async function initDatabase() {
     sort_order: 'DESC',
   };
   for (const [k, v] of Object.entries(defaults)) {
-    db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)').run([k, v]);
+    db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)').run(k, v);
   }
 
   // 迁移旧表：如果不存在 import_date 列则添加
@@ -207,16 +186,21 @@ async function initDatabase() {
   migrateThumbnailsToFiles();
 
   // 常用查询索引：隐藏过滤 + 排序/筛选字段组合，避免大库全表扫描
-  db.run('CREATE INDEX IF NOT EXISTS idx_images_hidden ON images(hidden)');
-  db.run('CREATE INDEX IF NOT EXISTS idx_images_import_date ON images(import_date)');
-  db.run('CREATE INDEX IF NOT EXISTS idx_images_favorite ON images(favorite)');
-  db.run('CREATE INDEX IF NOT EXISTS idx_images_taken_at ON images(taken_at)');
-  db.run('CREATE INDEX IF NOT EXISTS idx_images_filename ON images(filename)');
-  db.run('CREATE INDEX IF NOT EXISTS idx_images_original_path ON images(original_path)');
-  db.run('CREATE INDEX IF NOT EXISTS idx_images_original_raw_path ON images(original_raw_path)');
-  db.run('CREATE INDEX IF NOT EXISTS idx_images_hidden_import_date ON images(hidden, import_date)');
-  db.run('CREATE INDEX IF NOT EXISTS idx_images_hidden_taken_at ON images(hidden, taken_at)');
-  db.run('CREATE INDEX IF NOT EXISTS idx_images_hidden_favorite ON images(hidden, favorite)');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_images_hidden ON images(hidden)');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_images_import_date ON images(import_date)');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_images_favorite ON images(favorite)');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_images_taken_at ON images(taken_at)');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_images_filename ON images(filename)');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_images_original_path ON images(original_path)');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_images_original_raw_path ON images(original_raw_path)');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_images_hidden_import_date ON images(hidden, import_date)');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_images_hidden_taken_at ON images(hidden, taken_at)');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_images_hidden_favorite ON images(hidden, favorite)');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_image_tags_tag_id ON image_tags(tag_id)');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_album_images_image_id ON album_images(image_id)');
+  db.exec(
+    'CREATE INDEX IF NOT EXISTS idx_images_visible_sort_date ON images(hidden, CASE WHEN taken_at != \'\' THEN taken_at ELSE import_date END, id)'
+  );
 
   // 从设置中读取自定义路径（如果有的话）
   const customImagesRoot = getSetting('images_root');
@@ -233,47 +217,47 @@ async function initDatabase() {
 function migrateSchema() {
   try {
     // 检查是否需要添加新列
-    const cols = db.exec('PRAGMA table_info(images)');
+    const cols = db.pragma('table_info(images)');
     if (cols.length > 0) {
-      const colNames = cols[0].values.map(v => v[1]);
+      const colNames = cols.map(v => v.name);
       if (!colNames.includes('import_date')) {
-        db.run('ALTER TABLE images ADD COLUMN import_date TEXT DEFAULT ""');
+        db.exec('ALTER TABLE images ADD COLUMN import_date TEXT DEFAULT ""');
       }
       if (!colNames.includes('taken_at')) {
-        db.run('ALTER TABLE images ADD COLUMN taken_at TEXT DEFAULT ""');
+        db.exec('ALTER TABLE images ADD COLUMN taken_at TEXT DEFAULT ""');
       }
       if (!colNames.includes('original_path')) {
-        db.run('ALTER TABLE images ADD COLUMN original_path TEXT DEFAULT ""');
+        db.exec('ALTER TABLE images ADD COLUMN original_path TEXT DEFAULT ""');
       }
       if (!colNames.includes('raw_path')) {
-        db.run('ALTER TABLE images ADD COLUMN raw_path TEXT DEFAULT ""');
+        db.exec('ALTER TABLE images ADD COLUMN raw_path TEXT DEFAULT ""');
       }
       if (!colNames.includes('original_raw_path')) {
-        db.run('ALTER TABLE images ADD COLUMN original_raw_path TEXT DEFAULT ""');
+        db.exec('ALTER TABLE images ADD COLUMN original_raw_path TEXT DEFAULT ""');
       }
       if (!colNames.includes('hidden')) {
-        db.run('ALTER TABLE images ADD COLUMN hidden INTEGER DEFAULT 0');
+        db.exec('ALTER TABLE images ADD COLUMN hidden INTEGER DEFAULT 0');
       }
       if (!colNames.includes('orientation')) {
-        db.run('ALTER TABLE images ADD COLUMN orientation INTEGER DEFAULT 1');
+        db.exec('ALTER TABLE images ADD COLUMN orientation INTEGER DEFAULT 1');
       }
       if (!colNames.includes('rotation')) {
-        db.run('ALTER TABLE images ADD COLUMN rotation INTEGER DEFAULT 0');
+        db.exec('ALTER TABLE images ADD COLUMN rotation INTEGER DEFAULT 0');
       }
       if (!colNames.includes('flip_h')) {
-        db.run('ALTER TABLE images ADD COLUMN flip_h INTEGER DEFAULT 0');
+        db.exec('ALTER TABLE images ADD COLUMN flip_h INTEGER DEFAULT 0');
       }
       if (!colNames.includes('flip_v')) {
-        db.run('ALTER TABLE images ADD COLUMN flip_v INTEGER DEFAULT 0');
+        db.exec('ALTER TABLE images ADD COLUMN flip_v INTEGER DEFAULT 0');
       }
       if (!colNames.includes('updated_at')) {
-        db.run('ALTER TABLE images ADD COLUMN updated_at DATETIME DEFAULT CURRENT_TIMESTAMP');
+        db.exec('ALTER TABLE images ADD COLUMN updated_at DATETIME DEFAULT CURRENT_TIMESTAMP');
       }
       if (!colNames.includes('thumbnail_path')) {
-        db.run('ALTER TABLE images ADD COLUMN thumbnail_path TEXT DEFAULT ""');
+        db.exec('ALTER TABLE images ADD COLUMN thumbnail_path TEXT DEFAULT ""');
       }
       if (!colNames.includes('thumbnail_small_path')) {
-        db.run('ALTER TABLE images ADD COLUMN thumbnail_small_path TEXT DEFAULT ""');
+        db.exec('ALTER TABLE images ADD COLUMN thumbnail_small_path TEXT DEFAULT ""');
       }
     }
   } catch (e) {
@@ -284,52 +268,36 @@ function migrateSchema() {
 // 一次性迁移：把 thumbnail 列中的 base64 缩略图写入文件并清空该列
 function migrateThumbnailsToFiles() {
   try {
-    const rows = [];
-    const stmt = db.prepare("SELECT id, thumbnail FROM images WHERE thumbnail != ''");
-    while (stmt.step()) rows.push(stmt.getAsObject());
-    stmt.free();
+    const rows = db.prepare("SELECT id, thumbnail FROM images WHERE thumbnail != ''").all();
     if (rows.length === 0) return;
 
     const dir = getThumbnailsDir();
+    const updateStmt = db.prepare('UPDATE images SET thumbnail_path = ?, thumbnail = "" WHERE id = ?');
+    const clearStmt = db.prepare('UPDATE images SET thumbnail = "" WHERE id = ?');
     for (const r of rows) {
       try {
         const raw = String(r.thumbnail || '');
         const base64 = raw.includes(',') ? raw.slice(raw.indexOf(',') + 1) : raw;
         const buf = Buffer.from(base64, 'base64');
         if (buf.length === 0) {
-          db.prepare('UPDATE images SET thumbnail = "" WHERE id = ?').run([r.id]);
+          clearStmt.run(r.id);
           continue;
         }
         const thumbPath = path.join(dir, `${r.id}.jpg`);
         fs.writeFileSync(thumbPath, buf);
-        db.prepare('UPDATE images SET thumbnail_path = ?, thumbnail = "" WHERE id = ?').run([thumbPath, r.id]);
+        updateStmt.run(thumbPath, r.id);
       } catch (e) {
         console.error('[迁移] 缩略图写文件失败:', r.id, e.message);
       }
     }
-    saveDatabase();
     console.log(`[迁移] 已将 ${rows.length} 张缩略图迁移为文件存储`);
   } catch (e) {
     console.error('[迁移] 缩略图迁移失败:', e.message);
   }
 }
 
-let saveTimer = null;
-// 防抖批量写入：大量连续操作（批量删除/回填/导入）只最终写盘一次，避免重复序列化整个数据库
-function saveDatabase() {
-  if (!db) return;
-  if (saveTimer) clearTimeout(saveTimer);
-  saveTimer = setTimeout(() => {
-    saveTimer = null;
-    try {
-      const data = db.export();
-      const buffer = Buffer.from(data);
-      fs.writeFileSync(DB_PATH, buffer);
-    } catch (e) {
-      console.error('[数据库] 写入失败:', e.message);
-    }
-  }, 500);
-}
+// WAL 模式下写操作即时持久化；保留入口以兼容既有调用点与测试
+function saveDatabase() {}
 
 // ── 图片存储路径生成 ──
 
@@ -374,11 +342,6 @@ async function importImages(imageFiles) {
   // 同目录同主名的 jpg + nef 视为一对：jpg 作为可见记录，nef 复制到同目录并记入 raw_path
   const root = getImagesRoot();
 
-  const insertStmt = db.prepare(`
-    INSERT OR IGNORE INTO images (filename, filepath, original_path, raw_path, original_raw_path, hidden, orientation, rotation, flip_h, flip_v, import_date, taken_at, size, width, height, format, thumbnail)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `);
-
   const imported = [];
 
   // 按「源目录 + 主名」分组，找出 jpg/nef 配对
@@ -408,23 +371,22 @@ async function importImages(imageFiles) {
         }
         continue;
       }
-      const row = await importOne(insertStmt, root, group.jpg, { pair: group.nef || null, hidden: false });
+      const row = await importOne(root, group.jpg, { pair: group.nef || null, hidden: false });
       if (row) imported.push(row);
     } else if (group.nef) {
       const asHidden = getObject('SELECT id FROM images WHERE original_path = ?', [group.nef.filepath]);
       const asPair = getObject('SELECT id FROM images WHERE original_raw_path = ?', [group.nef.filepath]);
       if (asHidden || asPair) continue;
-      const row = await importOne(insertStmt, root, group.nef, { pair: null, hidden: true });
+      const row = await importOne(root, group.nef, { pair: null, hidden: true });
       if (row) imported.push(row);
     }
   }
 
-  insertStmt.free();
   saveDatabase();
   return imported;
 }
 
-async function importOne(insertStmt, root, img, { pair, hidden }) {
+async function importOne(root, img, { pair, hidden }) {
   const dateStr = img.importDate || (() => {
     const today = new Date();
     return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
@@ -463,7 +425,10 @@ async function importOne(insertStmt, root, img, { pair, hidden }) {
     rawSourcePath = pair.filepath;
   }
 
-  insertStmt.run([
+  db.prepare(`
+    INSERT OR IGNORE INTO images (filename, filepath, original_path, raw_path, original_raw_path, hidden, orientation, rotation, flip_h, flip_v, import_date, taken_at, size, width, height, format, thumbnail)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
     uniqueName,
     destPath,
     img.filepath,
@@ -480,10 +445,10 @@ async function importOne(insertStmt, root, img, { pair, hidden }) {
     img.width || 0,
     img.height || 0,
     img.format || '',
-    hidden ? '' : (img.thumbnail || ''),
-  ]);
+    hidden ? '' : (img.thumbnail || '')
+  );
 
-  return db.prepare('SELECT * FROM images WHERE filepath = ?').getAsObject([destPath]);
+  return db.prepare('SELECT * FROM images WHERE filepath = ?').get(destPath) || null;
 }
 
 function getImages(options = {}) {
@@ -567,13 +532,7 @@ function getImages(options = {}) {
   query += ' LIMIT ? OFFSET ?';
   params.push(limit, offset);
 
-  const images = [];
-  const stmt = db.prepare(query);
-  stmt.bind(params);
-  while (stmt.step()) {
-    images.push(stmt.getAsObject());
-  }
-  stmt.free();
+  const images = db.prepare(query).all(...params);
 
   return { images, total };
 }
@@ -584,11 +543,7 @@ function getImageById(id) {
 
 // 返回所有图片的 id 与 filepath（用于方向回填）
 function getAllImagePaths() {
-  const stmt = db.prepare('SELECT id, filepath FROM images');
-  const rows = [];
-  while (stmt.step()) rows.push(stmt.getAsObject());
-  stmt.free();
-  return rows;
+  return db.prepare('SELECT id, filepath FROM images').all();
 }
 
 // 返回可见图片的 id 与 filepath；all=true 重建全部，否则只取缺失缩略图的
@@ -597,16 +552,12 @@ function getImagesForRebuild(all = false) {
   const where = all
     ? 'hidden = 0'
     : "hidden = 0 AND orientation = 1 AND (thumbnail_path = '' OR thumbnail_small_path = '')";
-  const stmt = db.prepare(`SELECT id, filepath, filename FROM images WHERE ${where}`);
-  const rows = [];
-  while (stmt.step()) rows.push(stmt.getAsObject());
-  stmt.free();
-  return rows;
+  return db.prepare(`SELECT id, filepath, filename FROM images WHERE ${where}`).all();
 }
 
 // 更新单张图片的方向标记
 function updateImageOrientation(id, orientation) {
-  db.prepare('UPDATE images SET orientation = ? WHERE id = ?').run([orientation, id]);
+  db.prepare('UPDATE images SET orientation = ? WHERE id = ?').run(orientation, id);
   saveDatabase();
 }
 
@@ -651,13 +602,7 @@ function getAllVisibleIds(options = {}) {
 
   query += ` ${joins.join(' ')} WHERE ${conditions.join(' AND ')}`;
 
-  const stmt = db.prepare(query);
-  stmt.bind(params);
-  const ids = [];
-  while (stmt.step()) {
-    ids.push(stmt.getAsObject().id);
-  }
-  stmt.free();
+  const ids = db.prepare(query).all(...params).map(r => r.id);
   return ids;
 }
 
@@ -693,7 +638,7 @@ async function updateImage(id, updates) {
         }
 
         db.prepare('UPDATE images SET filename = ?, filepath = ?, raw_path = ? WHERE id = ?')
-          .run([path.basename(newPath), newPath, newRawPath, id]);
+          .run(path.basename(newPath), newPath, newRawPath, id);
       }
     }
   }
@@ -714,7 +659,7 @@ async function updateImage(id, updates) {
   if (sets.length === 0) return true;
 
   params.push(id);
-  db.prepare(`UPDATE images SET ${sets.join(', ')} WHERE id = ?`).run(params);
+  db.prepare(`UPDATE images SET ${sets.join(', ')} WHERE id = ?`).run(...params);
   saveDatabase();
   return true;
 }
@@ -756,7 +701,7 @@ function renameImage(id, newFilename) {
   }
 
   db.prepare('UPDATE images SET filename = ?, filepath = ?, raw_path = ? WHERE id = ?')
-    .run([newFilename, newPath, newRawPath, id]);
+    .run(newFilename, newPath, newRawPath, id);
   saveDatabase();
   return { success: true, newFilename, newPath };
 }
@@ -769,6 +714,17 @@ async function moveFileSafe(oldPath, newPath) {
     if (err.code !== 'EXDEV') throw err;
     await fs.promises.copyFile(oldPath, newPath);
     await fs.promises.unlink(oldPath);
+  }
+}
+
+function moveFileSafeSync(oldPath, newPath) {
+  ensureDir(path.dirname(newPath));
+  try {
+    fs.renameSync(oldPath, newPath);
+  } catch (err) {
+    if (err.code !== 'EXDEV') throw err;
+    fs.copyFileSync(oldPath, newPath);
+    fs.unlinkSync(oldPath);
   }
 }
 
@@ -787,31 +743,29 @@ async function setImagesRoot(newRoot) {
     return { success: true, path: resolvedNewRoot, moved: 0 };
   }
 
-  const stmt = db.prepare('SELECT id, filename, filepath, raw_path, import_date FROM images');
-  const images = [];
-  while (stmt.step()) images.push(stmt.getAsObject());
-  stmt.free();
+  const images = db.prepare('SELECT id, filename, filepath, raw_path, import_date FROM images').all();
 
   let moved = 0;
-  for (const img of images) {
-    let relativePath = '';
-    const normalizedOldRoot = path.resolve(oldRoot);
-    const normalizedFile = path.resolve(img.filepath);
+  // 整个迁移包在一个事务里：任何一步失败即回滚全部 DB 更新，避免半迁移状态
+  const tx = db.transaction(() => {
+    for (const img of images) {
+      let relativePath = '';
+      const normalizedOldRoot = path.resolve(oldRoot);
+      const normalizedFile = path.resolve(img.filepath);
 
-    if (normalizedFile.startsWith(normalizedOldRoot)) {
-      relativePath = path.relative(normalizedOldRoot, normalizedFile);
-    } else {
-      relativePath = path.join(getImageSubDir(img.import_date || ''), img.filename);
-    }
+      if (normalizedFile.startsWith(normalizedOldRoot)) {
+        relativePath = path.relative(normalizedOldRoot, normalizedFile);
+      } else {
+        relativePath = path.join(getImageSubDir(img.import_date || ''), img.filename);
+      }
 
-    let targetPath = path.join(resolvedNewRoot, relativePath);
-    const targetDir = path.dirname(targetPath);
-    const uniqueName = generateUniqueFilename(targetDir, path.basename(targetPath));
-    targetPath = path.join(targetDir, uniqueName);
+      let targetPath = path.join(resolvedNewRoot, relativePath);
+      const targetDir = path.dirname(targetPath);
+      const uniqueName = generateUniqueFilename(targetDir, path.basename(targetPath));
+      targetPath = path.join(targetDir, uniqueName);
 
-    try {
       if (fs.existsSync(img.filepath)) {
-        await moveFileSafe(img.filepath, targetPath);
+        moveFileSafeSync(img.filepath, targetPath);
         moved++;
       }
 
@@ -822,17 +776,21 @@ async function setImagesRoot(newRoot) {
         const rawExt = path.extname(img.raw_path);
         newRawPath = path.join(targetDir, `${targetBase}${rawExt}`);
         if (fs.existsSync(img.raw_path)) {
-          await moveFileSafe(img.raw_path, newRawPath);
+          moveFileSafeSync(img.raw_path, newRawPath);
         } else {
           newRawPath = '';
         }
       }
 
       db.prepare('UPDATE images SET filename = ?, filepath = ?, raw_path = ? WHERE id = ?')
-        .run([path.basename(targetPath), targetPath, newRawPath, img.id]);
-    } catch (err) {
-      return { error: `移动失败：${img.filename} - ${err.message}` };
+        .run(path.basename(targetPath), targetPath, newRawPath, img.id);
     }
+  });
+
+  try {
+    tx();
+  } catch (err) {
+    return { error: `移动失败：${err.message}` };
   }
 
   IMAGES_ROOT = resolvedNewRoot;
@@ -909,7 +867,7 @@ async function scanImageFiles(dirPath, includeRaw = false) {
 }
 
 // 收集拖拽导入的文件/目录：目录递归扫描，文件按扩展名过滤（含同目录 NEF 配对检测）
-function collectImportFiles(paths) {
+async function collectImportFiles(paths) {
   const files = [];
   const dirs = [];
   for (const p of paths || []) {
@@ -929,7 +887,7 @@ function collectImportFiles(paths) {
     }
   }
   for (const d of dirs) {
-    files.push(...scanImageFiles(d, false));
+    files.push(...(await scanImageFiles(d, false)));
   }
   return files;
 }
@@ -995,16 +953,22 @@ async function attachRawToImage(imageId, nefSource, nefFilename) {
     return false;
   }
 
-  db.prepare('UPDATE images SET raw_path = ?, original_raw_path = ? WHERE id = ?')
-    .run([rawDest, nefSource, imageId]);
+  db.prepare('UPDATE images SET raw_path = ?, original_raw_path = ? WHERE id = ?').run(rawDest, nefSource, imageId);
   saveDatabase();
   return true;
 }
 
-// 删除图片：硬删除（删除本地文件含配对 NEF + 清理 DB 关联）
+// 删除图片：硬删除。先在事务内删除记录（保证 DB 一致），再清理磁盘文件与缩略图；
+// 文件删除失败仅告警（残留文件无碍图库，失效记录扫描可兜底）
 function deleteImage(id) {
   const img = getImageById(id);
   if (!img) return false;
+
+  db.transaction(() => {
+    db.prepare('DELETE FROM image_tags WHERE image_id = ?').run(id);
+    db.prepare('DELETE FROM album_images WHERE image_id = ?').run(id);
+    db.prepare('DELETE FROM images WHERE id = ?').run(id);
+  })();
 
   const targets = [img.filepath, img.raw_path].filter(Boolean);
   for (const p of targets) {
@@ -1017,9 +981,6 @@ function deleteImage(id) {
     }
   }
 
-  db.prepare('DELETE FROM image_tags WHERE image_id = ?').run([id]);
-  db.prepare('DELETE FROM album_images WHERE image_id = ?').run([id]);
-  db.prepare('DELETE FROM images WHERE id = ?').run([id]);
   deleteThumbnailFile(id);
   saveDatabase();
   return img;
@@ -1029,38 +990,36 @@ function deleteImage(id) {
 
 function getImportDates() {
   // 返回所有有图片的导入日期（用于日期筛选器）
-  const rows = db.exec(`
-    SELECT import_date, COUNT(*) as count
+  return db
+    .prepare(
+      `
+    SELECT import_date AS date, COUNT(*) as count
     FROM images
     WHERE hidden = 0 AND import_date != ''
     GROUP BY import_date
     ORDER BY import_date DESC
-  `);
-  if (!rows.length || !rows[0].values.length) return [];
-  return rows[0].values.map(v => ({ date: v[0], count: v[1] }));
+  `
+    )
+    .all();
 }
 
 // ── Tag Operations ──
 
 function getTags() {
-  const stmt = db.prepare(`
+  return db
+    .prepare(`
     SELECT t.*, COUNT(it.image_id) as image_count
     FROM tags t
     LEFT JOIN image_tags it ON t.id = it.tag_id
     GROUP BY t.id
     ORDER BY t.name
-  `);
-  const tags = [];
-  while (stmt.step()) {
-    tags.push(stmt.getAsObject());
-  }
-  stmt.free();
-  return tags;
+  `)
+    .all();
 }
 
 function createTag(name, color = '#6366f1') {
   try {
-    db.prepare('INSERT INTO tags (name, color) VALUES (?, ?)').run([name, color]);
+    db.prepare('INSERT INTO tags (name, color) VALUES (?, ?)').run(name, color);
     saveDatabase();
     return getObject('SELECT * FROM tags WHERE name = ?', [name]);
   } catch {
@@ -1069,14 +1028,14 @@ function createTag(name, color = '#6366f1') {
 }
 
 function deleteTag(id) {
-  db.prepare('DELETE FROM image_tags WHERE tag_id = ?').run([id]);
-  db.prepare('DELETE FROM tags WHERE id = ?').run([id]);
+  db.prepare('DELETE FROM image_tags WHERE tag_id = ?').run(id);
+  db.prepare('DELETE FROM tags WHERE id = ?').run(id);
   saveDatabase();
 }
 
 function addTagToImage(imageId, tagId) {
   try {
-    db.prepare('INSERT OR IGNORE INTO image_tags (image_id, tag_id) VALUES (?, ?)').run([imageId, tagId]);
+    db.prepare('INSERT OR IGNORE INTO image_tags (image_id, tag_id) VALUES (?, ?)').run(imageId, tagId);
     saveDatabase();
     return true;
   } catch {
@@ -1085,7 +1044,7 @@ function addTagToImage(imageId, tagId) {
 }
 
 function removeTagFromImage(imageId, tagId) {
-  db.prepare('DELETE FROM image_tags WHERE image_id = ? AND tag_id = ?').run([imageId, tagId]);
+  db.prepare('DELETE FROM image_tags WHERE image_id = ? AND tag_id = ?').run(imageId, tagId);
   saveDatabase();
 }
 
@@ -1094,58 +1053,50 @@ function addTagToImages(imageIds, tagId) {
   if (!Array.isArray(imageIds) || imageIds.length === 0) return 0;
   const stmt = db.prepare('INSERT OR IGNORE INTO image_tags (image_id, tag_id) VALUES (?, ?)');
   let added = 0;
-  for (const id of imageIds) {
-    try {
-      stmt.run([id, tagId]);
-      added++;
-    } catch (e) {
-      console.error('[标签] 批量添加失败:', id, e.message);
+  const tx = db.transaction(() => {
+    for (const id of imageIds) {
+      const info = stmt.run(id, tagId);
+      added += info.changes;
     }
-  }
-  stmt.free();
+  });
+  tx();
   saveDatabase();
   return added;
 }
 
 function getImageTags(imageId) {
-  const stmt = db.prepare(`
+  return db
+    .prepare(`
     SELECT t.* FROM tags t
     JOIN image_tags it ON t.id = it.tag_id
     WHERE it.image_id = ?
-  `);
-  stmt.bind([imageId]);
-  const tags = [];
-  while (stmt.step()) {
-    tags.push(stmt.getAsObject());
-  }
-  stmt.free();
-  return tags;
+  `)
+    .all(imageId);
 }
 
-// 批量查询多张图片的标签，返回 { [imageId]: [tag, ...] }（单次 SQL）
+// 批量查询多张图片的标签，返回 { [imageId]: [tag, ...] }（分块单次 SQL）
 function getBatchImageTags(imageIds) {
   const result = {};
   if (!imageIds || imageIds.length === 0) return result;
-  const placeholders = imageIds.map(() => '?').join(',');
   const stmt = db.prepare(`
     SELECT it.image_id, t.* FROM tags t
     JOIN image_tags it ON t.id = it.tag_id
-    WHERE it.image_id IN (${placeholders})
+    WHERE it.image_id IN (${imageIds.map(() => '?').join(',')})
   `);
-  stmt.bind(imageIds);
-  while (stmt.step()) {
-    const row = stmt.getAsObject();
-    if (!result[row.image_id]) result[row.image_id] = [];
-    result[row.image_id].push(row);
+  for (const chunk of chunkIds(imageIds)) {
+    for (const row of stmt.all(...chunk)) {
+      if (!result[row.image_id]) result[row.image_id] = [];
+      result[row.image_id].push(row);
+    }
   }
-  stmt.free();
   return result;
 }
 
 // ── Album Operations ──
 
 function getAlbums() {
-  const stmt = db.prepare(`
+  return db
+    .prepare(`
     SELECT a.*,
       (SELECT i.thumbnail_path
          FROM images i
@@ -1157,53 +1108,46 @@ function getAlbums() {
     LEFT JOIN album_images ai ON ai.album_id = a.id
     GROUP BY a.id
     ORDER BY a.created_at DESC
-  `);
-  const albums = [];
-  while (stmt.step()) {
-    albums.push(stmt.getAsObject());
-  }
-  stmt.free();
-  return albums;
+  `)
+    .all();
 }
 
 function createAlbum(name, description = '') {
-  db.prepare('INSERT INTO albums (name, description) VALUES (?, ?)').run([name, description]);
+  db.prepare('INSERT INTO albums (name, description) VALUES (?, ?)').run(name, description);
   saveDatabase();
   return getObject('SELECT * FROM albums WHERE name = ? ORDER BY id DESC LIMIT 1', [name]);
 }
 
 function renameAlbum(id, newName) {
-  db.prepare('UPDATE albums SET name = ? WHERE id = ?').run([newName, id]);
+  db.prepare('UPDATE albums SET name = ? WHERE id = ?').run(newName, id);
   saveDatabase();
   return true;
 }
 
 function getAlbumImages(albumId) {
-  const stmt = db.prepare('SELECT i.* FROM images i JOIN album_images ai ON i.id = ai.image_id WHERE ai.album_id = ? AND i.hidden = 0');
-  stmt.bind([albumId]);
-  const images = [];
-  while (stmt.step()) images.push(stmt.getAsObject());
-  stmt.free();
-  return images;
+  return db
+    .prepare('SELECT i.* FROM images i JOIN album_images ai ON i.id = ai.image_id WHERE ai.album_id = ? AND i.hidden = 0')
+    .all(albumId);
 }
 
 function deleteAlbum(id) {
-  db.prepare('DELETE FROM album_images WHERE album_id = ?').run([id]);
-  db.prepare('DELETE FROM albums WHERE id = ?').run([id]);
+  db.prepare('DELETE FROM album_images WHERE album_id = ?').run(id);
+  db.prepare('DELETE FROM albums WHERE id = ?').run(id);
   saveDatabase();
 }
 
 function addToAlbum(albumId, imageIds) {
   const stmt = db.prepare('INSERT OR IGNORE INTO album_images (album_id, image_id) VALUES (?, ?)');
-  for (const imageId of imageIds) {
-    stmt.run([albumId, imageId]);
-  }
-  stmt.free();
+  db.transaction(() => {
+    for (const imageId of imageIds) {
+      stmt.run(albumId, imageId);
+    }
+  })();
   saveDatabase();
 }
 
 function removeFromAlbum(albumId, imageId) {
-  db.prepare('DELETE FROM album_images WHERE album_id = ? AND image_id = ?').run([albumId, imageId]);
+  db.prepare('DELETE FROM album_images WHERE album_id = ? AND image_id = ?').run(albumId, imageId);
   saveDatabase();
 }
 
@@ -1215,18 +1159,15 @@ function getSetting(key) {
 }
 
 function setSetting(key, value) {
-  db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run([key, value]);
+  db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run(key, value);
   saveDatabase();
 }
 
 function getAllSettings() {
-  const stmt = db.prepare('SELECT key, value FROM settings');
   const settings = {};
-  while (stmt.step()) {
-    const row = stmt.getAsObject();
+  for (const row of db.prepare('SELECT key, value FROM settings').all()) {
     settings[row.key] = row.value;
   }
-  stmt.free();
   return settings;
 }
 
@@ -1234,10 +1175,13 @@ function getAllSettings() {
 
 function batchDeleteImages(ids) {
   const results = [];
-  for (const id of ids) {
-    const r = deleteImage(id);
-    if (r) results.push(r);
-  }
+  const tx = db.transaction(() => {
+    for (const id of ids) {
+      const r = deleteImage(id);
+      if (r) results.push(r);
+    }
+  });
+  tx();
   return results;
 }
 
@@ -1253,20 +1197,22 @@ function updateImages(imageIds, updates) {
     }
   }
   if (sets.length === 0 || !Array.isArray(imageIds) || imageIds.length === 0) return 0;
-  const placeholders = imageIds.map(() => '?').join(',');
-  db.prepare(`UPDATE images SET ${sets.join(', ')} WHERE id IN (${placeholders})`).run([...params, ...imageIds]);
+
+  let changed = 0;
+  const stmt = db.prepare(`UPDATE images SET ${sets.join(', ')} WHERE id IN (${imageIds.map(() => '?').join(',')})`);
+  for (const chunk of chunkIds(imageIds)) {
+    const info = stmt.run(...params, ...chunk);
+    changed += info.changes;
+  }
   saveDatabase();
-  return imageIds.length;
+  return changed;
 }
 
 // ── 失效记录维护 ──
 
 // 找出文件已不存在的图片记录（主文件或配对 NEF 丢失都算）
 function findBrokenRecords() {
-  const rows = [];
-  const stmt = db.prepare('SELECT id, filename, filepath, raw_path FROM images');
-  while (stmt.step()) rows.push(stmt.getAsObject());
-  stmt.free();
+  const rows = db.prepare('SELECT id, filename, filepath, raw_path FROM images').all();
   return rows.filter(r => !fs.existsSync(r.filepath) || (r.raw_path && !fs.existsSync(r.raw_path)));
 }
 
@@ -1274,25 +1220,25 @@ function findBrokenRecords() {
 function deleteBrokenRecords(ids) {
   if (!Array.isArray(ids)) return 0;
   let removed = 0;
-  for (const id of ids) {
-    const img = getImageById(id);
-    if (!img) continue;
-    db.prepare('DELETE FROM image_tags WHERE image_id = ?').run([id]);
-    db.prepare('DELETE FROM album_images WHERE image_id = ?').run([id]);
-    db.prepare('DELETE FROM images WHERE id = ?').run([id]);
-    deleteThumbnailFile(id);
-    removed++;
-  }
+  const tx = db.transaction(() => {
+    for (const id of ids) {
+      const img = getImageById(id);
+      if (!img) continue;
+      db.prepare('DELETE FROM image_tags WHERE image_id = ?').run(id);
+      db.prepare('DELETE FROM album_images WHERE image_id = ?').run(id);
+      db.prepare('DELETE FROM images WHERE id = ?').run(id);
+      deleteThumbnailFile(id);
+      removed++;
+    }
+  });
+  tx();
   saveDatabase();
   return removed;
 }
 
 // 重复图片检测：按 (大小, 尺寸) 粗分组，组内用首尾 64KB 快速哈希精确验证
 function findDuplicates() {
-  const rows = [];
-  const stmt = db.prepare('SELECT id, filename, filepath, size, width, height, format, thumbnail_path FROM images WHERE hidden = 0');
-  while (stmt.step()) rows.push(stmt.getAsObject());
-  stmt.free();
+  const rows = db.prepare('SELECT id, filename, filepath, size, width, height, format, thumbnail_path FROM images WHERE hidden = 0').all();
 
   // 第一步：元数据粗分组
   const coarse = new Map();
@@ -1368,10 +1314,23 @@ function getStats() {
   return { totalImages, totalTags, totalAlbums, favorites };
 }
 
+// 退出前关闭数据库，确保 WAL 检查点完整落盘
+function closeDatabase() {
+  try {
+    if (db) {
+      db.close();
+      db = null;
+    }
+  } catch (e) {
+    console.error('[数据库] 关闭失败:', e.message);
+  }
+}
+
 module.exports = {
   getThumbnailSmallFilePath,
   initDatabase,
   saveDatabase,
+  closeDatabase,
   getImagesRoot,
   getDatabasePath,
   getThumbnailFilePath,

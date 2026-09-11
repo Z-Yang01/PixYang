@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll, afterEach } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import os from 'os';
 import path from 'path';
 import fs from 'fs';
@@ -54,12 +54,8 @@ function tmpDir(tag) {
 let brokenIds = [];
 let healthyId = null;
 
-afterEach(() => {
-  fs.rmSync(TMP_ROOT, { recursive: true, force: true });
-});
-
-afterAll(async () => {
-  await new Promise((r) => setTimeout(r, 700));
+afterAll(() => {
+  db.closeDatabase();
   fs.rmSync(TMP_ROOT, { recursive: true, force: true });
   delete nodeRequire.cache[electronId];
   delete globalThis.__PIXYANG_TEST_TMP_ROOT__;
@@ -104,25 +100,27 @@ describe('scanImageFiles / collectImportFiles', () => {
     expect(files).toEqual([]);
   });
 
-  it('collectImportFiles 过滤文件扩展名并跳过无效路径', () => {
+  it('collectImportFiles 过滤文件扩展名并跳过无效路径', async () => {
     const dir = tmpDir('collect');
     const jpg = path.join(dir, 'cf.jpg');
     const txt = path.join(dir, 'cf.txt');
     writeFile(jpg, 'imgdata');
     writeFile(txt, 'textdata');
-    const files = db.collectImportFiles([jpg, txt, path.join(dir, 'missing.jpg'), null, 42]);
+    const files = await db.collectImportFiles([jpg, txt, path.join(dir, 'missing.jpg'), null, 42]);
     expect(files).toHaveLength(1);
     expect(files[0].filename).toBe('cf.jpg');
     expect(files[0].filepath).toBe(jpg);
     expect(files[0].format).toBe('.jpg');
     expect(files[0].size).toBe(7);
-    expect(db.collectImportFiles(null)).toEqual([]);
+    expect(await db.collectImportFiles(null)).toEqual([]);
   });
 
-  it('collectImportFiles 目录分支当前实现会抛错（疑似 bug）', () => {
+  it('collectImportFiles 目录分支递归扫描（修复后不再抛错）', async () => {
     const dir = tmpDir('collect2');
     writeFile(path.join(dir, 'x.jpg'), 'x');
-    expect(() => db.collectImportFiles([dir])).toThrow();
+    const files = await db.collectImportFiles([dir]);
+    expect(files).toHaveLength(1);
+    expect(files[0].filename).toBe('x.jpg');
   });
 });
 

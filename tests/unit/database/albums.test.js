@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll, afterEach } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import os from 'os';
 import path from 'path';
 import fs from 'fs';
@@ -43,12 +43,8 @@ let a3 = null;
 let hiddenRec = null;
 let albumX = null;
 
-afterEach(() => {
-  fs.rmSync(TMP_ROOT, { recursive: true, force: true });
-});
-
-afterAll(async () => {
-  await new Promise((r) => setTimeout(r, 700));
+afterAll(() => {
+  db.closeDatabase();
   fs.rmSync(TMP_ROOT, { recursive: true, force: true });
   delete nodeRequire.cache[electronId];
   delete globalThis.__PIXYANG_TEST_TMP_ROOT__;

@@ -9,7 +9,7 @@ PixYang 是一个本地桌面图片管理应用，技术栈：
 - 桌面框架：Electron 32（主进程在 `electron/main.js`，无 TypeScript）
 - 前端：React 18 + React Router v6（源码在 `src/`）
 - 构建：Vite 5（`vite.config.js`）
-- 数据库：sql.js（SQLite WASM），所有数据库操作在 `electron/database.js`，仅通过 IPC 调用
+- 数据库：better-sqlite3（WAL 模式，写操作即时持久化），所有数据库操作在 `electron/database.js`，仅通过 IPC 调用
 - 桥接：contextBridge + ipcRenderer/ipcMain，渲染进程不能直接访问文件系统
 
 ## 目录结构
@@ -71,6 +71,7 @@ src/
 - 类型检查：`npm run typecheck`（tsc --noEmit，覆盖 src 下 TS/TSX）。
 - 格式检查：`npm run format:check`（Prettier 仅检查，禁止全量重排产生巨 diff）。
 - CI：GitHub Actions（`.github/workflows/ci.yml`），push/PR 时在 Windows + Ubuntu 跑 lint/typecheck/test。
+- better-sqlite3 原生二进制双 ABI：`npm run dev` 前自动执行 `rebuild:electron`，`npm test` 前自动执行 `rebuild:node`（脚本 `scripts/native.js`，electron 预编译缓存在 `scripts/.prebuilds/`，gitignore）。
 - 前端编译验证：`npx vite build`。
 - 修改 Electron 端代码后，运行 `npm run dev` 手动验证（Vite + Electron 并行）。
 - 修改 opencode 配置后需重启 opencode 生效。

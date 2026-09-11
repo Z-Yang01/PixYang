@@ -3,6 +3,7 @@ const path = require('path');
 const fs = require('fs');
 const {
   initDatabase,
+  closeDatabase,
   getImagesRoot,
   getDatabasePath,
   getThumbnailFilePath,
@@ -986,4 +987,8 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
     app.quit();
   }
+});
+
+app.on('before-quit', () => {
+  closeDatabase();
 });
