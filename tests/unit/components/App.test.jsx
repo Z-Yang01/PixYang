@@ -11,6 +11,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import App from '@/App';
+import useGalleryStore from '@/store/galleryStore';
 
 const testImage = {
   id: 1,
@@ -84,6 +85,7 @@ function renderApp(route = '/') {
 
 describe('App 组合根冒烟', () => {
   beforeEach(() => {
+    useGalleryStore.setState(useGalleryStore.getInitialState(), true);
     window.pixyang = createPixyangMock();
   });
 

@@ -24,28 +24,13 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Star, Heart, Check, ImageOff, ChevronLeft, ChevronRight, FolderPlus, Eye, Pencil, Trash2, Images } from 'lucide-react';
-import { groupImagesByDate, pageSizeOf, totalPagesOf, addRangeToSet, toggleIdInSet, createLoadSequencer } from '@/lib/gallery';
+import { groupImagesByDate, pageSizeOf, totalPagesOf, addRangeToSet, toggleIdInSet, createLoadSequencer, hasActiveFilters as computeHasActiveFilters } from '@/lib/gallery';
+import useGalleryStore from '@/store/galleryStore';
+import StarRating from '@/components/common/StarRating';
 import { matchGridShortcut, GRID_ACTIONS } from '@/lib/shortcuts';
 import ConfirmDialog from '../Layout/ConfirmDialog';
 
 const EMPTY_TAGS = [];
-
-function StarRating({ rating, onChange }) {
-  return (
-    <div className="star-rating" onClick={(e) => e.stopPropagation()}>
-      {[1, 2, 3, 4, 5].map(n => (
-        <span
-          key={n}
-          className={n <= rating ? 'star' : 'star-empty'}
-          onClick={() => onChange?.(n === rating ? 0 : n)}
-          style={{ cursor: 'pointer' }}
-        >
-          <Star className="size-3.5" fill={n <= rating ? 'currentColor' : 'none'} strokeWidth={1.75} />
-        </span>
-      ))}
-    </div>
-  );
-}
 
 const ImageCard = memo(function ImageCard({
   image, index, selected, highlighted, tags, allTags, thumbSrc, originalSrc, thumbBroken,
@@ -146,7 +131,7 @@ const ImageCard = memo(function ImageCard({
             </div>
           </div>
           <div className="card-stars">
-            <StarRating rating={image.rating || 0} onChange={(r) => onRate(image, r)} />
+            <StarRating rating={image.rating || 0} interactive stopPropagation onChange={(r) => onRate(image, r)} />
           </div>
         </div>
       </ContextMenuTrigger>
@@ -178,11 +163,30 @@ const ImageCard = memo(function ImageCard({
 });
 
 export default function ImageGrid({
-  images, loading, selectedIds, onSelect, onView, onInfo, onImageUpdated, albums,
-  gridSettings = { rows: 3, columns: 5 }, page = 1, totalImages = 0, onPageChange, onImport,
-  thumbVersion = 0, hasActiveFilters = false, onClearFilters,
-  onColumnsChange, viewerActive = false,
+  onView, onInfo, onImageUpdated, onImport,
+  onClearFilters, onColumnsChange, viewerActive = false,
 }) {
+  // 数据与筛选/勾选/网格设置从 galleryStore 订阅，消除 App → ImageGrid 的逐层透传
+  const images = useGalleryStore(s => s.images);
+  const loading = useGalleryStore(s => s.loading);
+  const selectedIds = useGalleryStore(s => s.selectedIds);
+  const gridSettings = useGalleryStore(s => s.gridSettings);
+  const page = useGalleryStore(s => s.page);
+  const totalImages = useGalleryStore(s => s.totalImages);
+  const thumbVersion = useGalleryStore(s => s.thumbVersion);
+  const albums = useGalleryStore(s => s.albums);
+  const setSelectedIds = useGalleryStore(s => s.setSelectedIds);
+  const setPage = useGalleryStore(s => s.setPage);
+  const search = useGalleryStore(s => s.search);
+  const filterTag = useGalleryStore(s => s.filterTag);
+  const filterAlbum = useGalleryStore(s => s.filterAlbum);
+  const filterDate = useGalleryStore(s => s.filterDate);
+  const dateRange = useGalleryStore(s => s.dateRange);
+  const filterFavorites = useGalleryStore(s => s.filterFavorites);
+
+  const hasActiveFilters = computeHasActiveFilters({
+    search, filterTag, filterAlbum, filterDate, dateRange, filterFavorites,
+  });
   const [allTags, setAllTags] = useState([]);
   const [imageTags, setImageTags] = useState({});
   const [brokenThumbnails, setBrokenThumbnails] = useState(new Set());
@@ -231,7 +235,7 @@ export default function ImageGrid({
   const handlePageInputJump = () => {
     const n = parseInt(pageInput, 10);
     if (!Number.isNaN(n) && n >= 1 && n <= totalPages) {
-      onPageChange?.(n);
+      setPage(n);
     } else {
       setPageInput(String(page));
     }
@@ -325,9 +329,9 @@ export default function ImageGrid({
   // 键盘导航依赖本回调，必须先于下方 useEffect 定义（此前定义在其后，
   // useEffect 依赖数组引用未初始化的 const，每次渲染抛 TDZ ReferenceError，网格整体白屏）
   const handleCheckboxClick = useCallback((image) => {
-    onSelect(toggleIdInSet(selectedIdsRef.current, image.id));
+    setSelectedIds(toggleIdInSet(selectedIdsRef.current, image.id));
     lastSelectedRef.current = image.id;
-  }, [onSelect]);
+  }, [setSelectedIds]);
 
   useEffect(() => {
     if (viewerActive || dialogsOpen) return;
@@ -435,18 +439,18 @@ export default function ImageGrid({
 
   const handleCardClick = useCallback((image, index, e) => {
     if (e.shiftKey && lastSelectedRef.current !== null) {
-      onSelect(addRangeToSet(selectedIdsRef.current, imagesRef.current, lastSelectedRef.current, index));
+      setSelectedIds(addRangeToSet(selectedIdsRef.current, imagesRef.current, lastSelectedRef.current, index));
       lastSelectedRef.current = image.id;
       return;
     }
     if (e.ctrlKey || e.metaKey) {
-      onSelect(toggleIdInSet(selectedIdsRef.current, image.id));
+      setSelectedIds(toggleIdInSet(selectedIdsRef.current, image.id));
       lastSelectedRef.current = image.id;
     } else {
       onView(image, index);
       lastSelectedRef.current = image.id;
     }
-  }, [onSelect, onView]);
+  }, [setSelectedIds, onView]);
 
   // 空白区拖拽框选；未拖动时点击空白清除选择
   const handleGridMouseDown = (e) => {
@@ -487,7 +491,7 @@ export default function ImageGrid({
       // 未形成框选：点击空白区清空选择
       if (!box) {
         if (!selectAppendRef.current && selectedIdsRef.current.size > 0) {
-          onSelect(new Set());
+          setSelectedIds(new Set());
         }
         return;
       }
@@ -502,7 +506,7 @@ export default function ImageGrid({
           hit.push(id);
         }
       });
-      onSelect(next);
+      setSelectedIds(next);
       if (hit.length > 0) lastSelectedRef.current = hit[hit.length - 1];
     };
     window.addEventListener('mousemove', onMove);
@@ -511,7 +515,7 @@ export default function ImageGrid({
       window.removeEventListener('mousemove', onMove);
       window.removeEventListener('mouseup', onUp);
     };
-  }, [onSelect]);
+  }, [setSelectedIds]);
 
   const handleRatingChange = useCallback(async (image, rating) => {
     if (!window.pixyang) return;
@@ -692,7 +696,7 @@ export default function ImageGrid({
       </div>
 
       <div className="pagination-bar">
-        <Button variant="secondary" size="sm" disabled={page <= 1} onClick={() => onPageChange?.(page - 1)}>
+        <Button variant="secondary" size="sm" disabled={page <= 1} onClick={() => setPage(page - 1)}>
           <ChevronLeft className="size-4" /> 上一页
         </Button>
         <div className="pagination-info">
@@ -709,7 +713,7 @@ export default function ImageGrid({
           />
           <span>/ {totalPages} 页</span>
         </div>
-        <Button variant="secondary" size="sm" disabled={page >= totalPages} onClick={() => onPageChange?.(page + 1)}>
+        <Button variant="secondary" size="sm" disabled={page >= totalPages} onClick={() => setPage(page + 1)}>
           下一页 <ChevronRight className="size-4" />
         </Button>
       </div>

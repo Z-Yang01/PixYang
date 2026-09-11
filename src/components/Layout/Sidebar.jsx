@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { NavLink } from 'react-router-dom';
+import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import {
   LayoutGrid,
@@ -16,21 +16,50 @@ import {
   ChevronRight,
   Keyboard,
 } from 'lucide-react';
+import useGalleryStore from '@/store/galleryStore';
 
 export default function Sidebar({
-  stats, tags, albums, importDates, onImport,
-  filterTag, onFilterTag,
-  filterAlbum, onFilterAlbum,
-  filterDate, onFilterDate,
-  dateRange, onDateRange,
-  filterFavorites, onFilterFavorites,
-  onClearFilters,
   collapsed, onToggleCollapse,
-  onShowShortcuts,
+  onImport, onShowShortcuts,
 }) {
+  const stats = useGalleryStore(s => s.stats);
+  const tags = useGalleryStore(s => s.tags);
+  const albums = useGalleryStore(s => s.albums);
+  const importDates = useGalleryStore(s => s.importDates);
+  const filterTag = useGalleryStore(s => s.filterTag);
+  const filterAlbum = useGalleryStore(s => s.filterAlbum);
+  const filterDate = useGalleryStore(s => s.filterDate);
+  const filterFavorites = useGalleryStore(s => s.filterFavorites);
+  const dateRange = useGalleryStore(s => s.dateRange);
+  const setFilterTag = useGalleryStore(s => s.setFilterTag);
+  const setFilterAlbum = useGalleryStore(s => s.setFilterAlbum);
+  const setFilterDate = useGalleryStore(s => s.setFilterDate);
+  const setFilterFavorites = useGalleryStore(s => s.setFilterFavorites);
+  const clearFilters = useGalleryStore(s => s.clearFilters);
+  const navigate = useNavigate();
+  const location = useLocation();
+
   const [dateExpand, setDateExpand] = useState(false);
 
   const hasActiveFilter = filterTag || filterAlbum || filterDate || filterFavorites || dateRange.from || dateRange.to;
+  const isGallery = location.pathname === '/' || location.pathname === '/favorites';
+
+  const handleFilterTag = (id) => {
+    setFilterTag(id);
+    if (id !== null && !isGallery) navigate('/');
+  };
+  const handleFilterAlbum = (id) => {
+    setFilterAlbum(id);
+    if (id !== null && !isGallery) navigate('/');
+  };
+  const handleFilterDate = (date) => {
+    setFilterDate(date);
+    if (date && !isGallery) navigate('/');
+  };
+  const handleClearFilters = () => {
+    clearFilters();
+    navigate('/');
+  };
 
   return (
     <aside className="sidebar">
@@ -53,7 +82,7 @@ export default function Sidebar({
         <div className="nav-section">
           {!collapsed && <div className="nav-section-title">图库</div>}
           <NavLink to="/" end className={({ isActive }) => `nav-item ${isActive && !filterFavorites ? 'active' : ''}`}
-            onClick={() => onFilterFavorites(false)} title="全部图片">
+            onClick={() => setFilterFavorites(false)} title="全部图片">
             <LayoutGrid strokeWidth={1.75} />
             {!collapsed && <span>全部图片</span>}
             {!collapsed && <span className="nav-badge">{stats.totalImages}</span>}
@@ -77,7 +106,7 @@ export default function Sidebar({
               <div className="nav-section-title">
                 按相册筛选
                 {filterAlbum && (
-                  <Button variant="ghost" size="xs" onClick={() => onFilterAlbum(null)}
+                  <Button variant="ghost" size="xs" onClick={() => handleFilterAlbum(null)}
                     className="ml-1.5 text-[10px] h-5 px-1.5">
                     清除
                   </Button>
@@ -88,7 +117,7 @@ export default function Sidebar({
               <button
                 key={album.id}
                 className={`nav-item ${filterAlbum === album.id ? 'active' : ''}`}
-                onClick={() => onFilterAlbum(filterAlbum === album.id ? null : album.id)}
+                onClick={() => handleFilterAlbum(filterAlbum === album.id ? null : album.id)}
                 title={album.name}
               >
                 <FolderOpen strokeWidth={1.5} />
@@ -115,7 +144,7 @@ export default function Sidebar({
                   <button
                     key={date}
                     className={`nav-item ${filterDate === date ? 'active' : ''}`}
-                    onClick={() => onFilterDate(filterDate === date ? '' : date)}
+                    onClick={() => handleFilterDate(filterDate === date ? '' : date)}
                     style={{ fontSize: 12 }}
                     title={date}
                   >
@@ -139,7 +168,7 @@ export default function Sidebar({
               <div className="nav-section-title">
                 按标签筛选
                 {filterTag && (
-                  <Button variant="ghost" size="xs" onClick={() => onFilterTag(null)}
+                  <Button variant="ghost" size="xs" onClick={() => handleFilterTag(null)}
                     className="ml-1.5 text-[10px] h-5 px-1.5">
                     清除
                   </Button>
@@ -150,7 +179,7 @@ export default function Sidebar({
               <button
                 key={tag.id}
                 className={`nav-item ${filterTag === tag.id ? 'active' : ''}`}
-                onClick={() => onFilterTag(filterTag === tag.id ? null : tag.id)}
+                onClick={() => handleFilterTag(filterTag === tag.id ? null : tag.id)}
                 title={tag.name}
               >
                 <span className="tag-dot" style={{ background: tag.color, margin: '0 4px 0 3px' }} />
@@ -186,7 +215,7 @@ export default function Sidebar({
       {/* 底部 */}
       <div className="sidebar-footer">
         {hasActiveFilter && !collapsed && (
-          <Button variant="ghost" size="xs" className="w-full mb-2" onClick={onClearFilters}>
+          <Button variant="ghost" size="xs" className="w-full mb-2" onClick={handleClearFilters}>
             清除所有筛选
           </Button>
         )}

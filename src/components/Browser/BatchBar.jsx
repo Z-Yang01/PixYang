@@ -10,12 +10,17 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import useGalleryStore from '@/store/galleryStore';
 
 export default function BatchBar({
-  selectedIds, onClear, onBatchDelete,
-  onSelectAllPage, onSelectAllAll, totalCount = 0, onExport,
-  tags = [], onBatchTag, onBatchUpdate,
+  onClear, onBatchDelete,
+  onSelectAllPage, onSelectAllAll, onExport,
+  onBatchTag, onBatchUpdate,
 }) {
+  const selectedIds = useGalleryStore(s => s.selectedIds);
+  const totalCount = useGalleryStore(s => s.totalImages);
+  const tags = useGalleryStore(s => s.tags);
+
   if (selectedIds.size === 0) return null;
 
   return (

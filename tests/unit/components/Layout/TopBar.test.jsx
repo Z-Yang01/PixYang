@@ -1,45 +1,53 @@
 // @vitest-environment happy-dom
+// TopBar 冒烟：搜索/排序/筛选/总数来自 galleryStore，渲染前用 setState 预置。
 import React from 'react';
-import { describe, it, expect, vi } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { render, screen, fireEvent, cleanup } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import TopBar from '@/components/Layout/TopBar';
+import useGalleryStore from '@/store/galleryStore';
 
-const baseProps = {
-  showFilters: true,
-  search: '',
-  onSearch: vi.fn(),
-  sortBy: 'import_date',
-  sortOrder: 'DESC',
-  onSort: vi.fn(),
-  selectedCount: 0,
-  onImport: vi.fn(),
-  totalImages: 42,
-  filterTag: null,
-  filterAlbum: null,
-  filterDate: '',
-  dateRange: { from: '', to: '' },
-  filterFavorites: false,
-  getTagName: (id) => ({ 5: '风景' }[id] || ''),
-  getAlbumName: (id) => ({ 2: '旅行' }[id] || ''),
-  onClearFilter: vi.fn(),
-  tags: [{ id: 5, name: '风景', color: '#818cf8' }],
-  onFilterTag: vi.fn(),
-  dateFrom: '',
-  dateTo: '',
-  onDateRange: vi.fn(),
-  searchInputRef: React.createRef(),
-};
+const initialSnapshot = useGalleryStore.getState();
 
-function renderTopBar(props = {}) {
+function seedStore(over = {}) {
+  useGalleryStore.setState({
+    search: '',
+    sortBy: 'import_date',
+    sortOrder: 'DESC',
+    filterTag: null,
+    filterAlbum: null,
+    filterDate: '',
+    dateRange: { from: '', to: '' },
+    filterFavorites: false,
+    totalImages: 42,
+    selectedIds: new Set(),
+    tags: [{ id: 5, name: '风景', color: '#818cf8' }],
+    albums: [{ id: 2, name: '旅行', image_count: 8 }],
+    ...over,
+  });
+}
+
+function renderTopBar(over = {}) {
   return render(
-    <TooltipProvider>
-      <TopBar {...baseProps} {...props} />
-    </TooltipProvider>
+    <MemoryRouter>
+      <TooltipProvider>
+        <TopBar showFilters onImport={vi.fn()} searchInputRef={React.createRef()} {...over} />
+      </TooltipProvider>
+    </MemoryRouter>
   );
 }
 
 describe('TopBar', () => {
+  beforeEach(() => {
+    useGalleryStore.setState(initialSnapshot, true);
+    seedStore();
+  });
+
+  afterEach(() => {
+    cleanup();
+  });
+
   it('默认渲染搜索框、总数、排序按钮与导入按钮', () => {
     renderTopBar();
     expect(screen.getByPlaceholderText(/搜索图片名称/)).toBeInTheDocument();
@@ -54,40 +62,39 @@ describe('TopBar', () => {
     expect(select).toBeInTheDocument();
   });
 
-  it('输入搜索词回调 onSearch', () => {
-    const onSearch = vi.fn();
-    renderTopBar({ onSearch });
+  it('输入搜索词写入 store 的 search', () => {
+    renderTopBar();
     fireEvent.change(screen.getByPlaceholderText(/搜索图片名称/), { target: { value: 'sun' } });
-    expect(onSearch).toHaveBeenCalledWith('sun');
+    expect(useGalleryStore.getState().search).toBe('sun');
   });
 
   it('有搜索词时显示清除按钮，点击清空搜索', () => {
-    const onSearch = vi.fn();
-    renderTopBar({ search: 'sun', onSearch });
+    seedStore({ search: 'sun' });
+    renderTopBar();
     fireEvent.click(screen.getByTitle('清除搜索'));
-    expect(onSearch).toHaveBeenCalledWith('');
+    expect(useGalleryStore.getState().search).toBe('');
   });
 
   it('选中数量大于 0 时显示已选计数', () => {
-    renderTopBar({ selectedCount: 3 });
+    seedStore({ selectedIds: new Set([1, 2, 3]) });
+    renderTopBar();
     expect(screen.getByText('已选 3 张')).toBeInTheDocument();
   });
 
   it('激活的排序列显示方向箭头（DESC 为向下）', () => {
-    const { container } = renderTopBar({ sortBy: 'import_date', sortOrder: 'DESC' });
+    const { container } = renderTopBar();
     expect(container.querySelector('.sort-group .is-active')).toBeInTheDocument();
     expect(container.querySelector('.sort-group .is-active svg')).toBeInTheDocument();
   });
 
-  it('渲染筛选 chips，点 X 触发 onClearFilter 对应类型', () => {
-    const onClearFilter = vi.fn();
-    renderTopBar({
+  it('渲染筛选 chips，点 X 清除 store 对应筛选', () => {
+    seedStore({
       filterTag: 5,
       filterAlbum: 2,
       filterFavorites: true,
       filterDate: '2026-01-02',
-      onClearFilter,
     });
+    renderTopBar();
     expect(screen.getByText('标签 风景')).toBeInTheDocument();
     expect(screen.getByText('相册 旅行')).toBeInTheDocument();
     expect(screen.getByText('收藏')).toBeInTheDocument();
@@ -96,10 +103,10 @@ describe('TopBar', () => {
     // 每个 chip 自身的移除按钮
     const tagChip = screen.getByText('标签 风景');
     fireEvent.click(tagChip.querySelector('.filter-chip-remove'));
-    expect(onClearFilter).toHaveBeenCalledWith('tag');
+    expect(useGalleryStore.getState().filterTag).toBeNull();
     const favChip = screen.getByText('收藏');
     fireEvent.click(favChip.querySelector('.filter-chip-remove'));
-    expect(onClearFilter).toHaveBeenCalledWith('favorites');
+    expect(useGalleryStore.getState().filterFavorites).toBe(false);
   });
 
   it('showFilters=false 时只保留导入按钮', () => {
@@ -109,10 +116,11 @@ describe('TopBar', () => {
     expect(screen.getByText('导入')).toBeInTheDocument();
   });
 
-  it('点击排序按钮回调 onSort(排序键)', () => {
-    const onSort = vi.fn();
-    renderTopBar({ onSort });
+  it('点击排序按钮切换 store 的排序键', () => {
+    renderTopBar();
     fireEvent.click(screen.getByText('名称'));
-    expect(onSort).toHaveBeenCalledWith('filename');
+    const s = useGalleryStore.getState();
+    expect(s.sortBy).toBe('filename');
+    expect(s.sortOrder).toBe('ASC');
   });
 });

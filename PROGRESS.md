@@ -85,3 +85,65 @@
 
 - **完成**：262 测试全绿；修复 2 致命 + 1 中等级 Bug（修复前应用白屏不可用）；组件测试从 0 到 79 例。
 - **红线遵守**：未触真实用户数据（window.pixyang 全 mock）、未启动 Electron、未 push。
+
+---
+
+# 2026-09-11 架构优化轮（optimize/architecture 分支）
+
+四阶段优化：工程化补齐 → 存储引擎 → 图片性能 → 前端架构。
+
+### 阶段 0：工程化补齐
+
+- GitHub Actions CI（`.github/workflows/ci.yml`）：Win + Ubuntu 跑 lint/typecheck/test --coverage，coverage 报告 artifact 化。
+- coverage 持久化（html/json-summary）+ thresholds（statements/lines 75、branches 70、functions 50）。
+- ESLint 9 flat config（`eslint.config.mjs`）：react-hooks 规则、TS parser（shadcn .tsx）；0 error 基线（43 warnings 为既有 exhaustive-deps）。
+- Prettier（仅配置 + format:check，不做全量重排）；TypeScript 落地 `npm run typecheck`（tsconfig 原本无法运行：未装 typescript、TS7 与 typescript-eslint 不兼容降至 5.9、移除已废弃的 baseUrl）。
+- AGENTS.md 验证章节同步（原「无 lint/typecheck/测试脚本」已过时）。
+
+### 阶段 1：better-sqlite3 存储改造
+
+- sql.js（WASM 内存库 + 防抖整库 export 落盘 + 无原子性）→ better-sqlite3 真 WAL：写操作即时持久化、崩溃可恢复；`before-quit` closeDatabase 确保 checkpoint，消灭退出丢 500ms 数据。
+- 版本选择：v13 无 electron 预编译（ABI 对齐需本机 VS 编译），v12.11.1 npm 无源，**v11.10.0** 有完整 node-v127/electron-v128 预编译。`scripts/native.js` 管理 node/electron 双 ABI 切换（tar.gz 用 Node zlib 解包跨平台提取，预编译缓存 `scripts/.prebuilds/`，gitignore）；`npm run dev`/`npm test` 自动切换。
+- 事务化：删除图片（先事务删记录再删文件）、batchDeleteImages、deleteBrokenRecords、addTagToImages、addToAlbum、setImagesRoot（整体事务防半迁移）；IN 查询分块（chunkIds，SQLite 999 变量上限）。
+- 修复 collectImportFiles spread Promise 崩溃 bug（拖拽导入文件夹必崩，原被测试固化为"疑似 bug"回归，现反转为正向断言）。
+- 索引：image_tags(tag_id)、album_images(image_id)、(hidden, CASE taken_at||import_date, id) 排序表达式索引。
+- sql.js 卸载。旧库文件无缝兼容（标准 SQLite 格式直接打开，已验证）。
+
+### 阶段 2：图片性能
+
+- 缩略图生成移入 worker_threads（`electron/imageWorker.js` + `thumbWorker.js`，sharp）：主进程不再被图片解码阻塞 IPC。
+- 竖图（EXIF orientation≠1）缩略图重做：sharp `.rotate()` 按 EXIF 转正后产出，`getImagesForRebuild` 放开 orientation 过滤，存量竖图自动补生成；前端 ImageCard/ImageViewer/加载逻辑同步移除竖图回退原图的门。
+- EXIF：190 行手写 TIFF 解析器 + 64KB buffer 正则误判方案 → exifr（readExifInfo/getExifOrientation/parseFullExif）；相机同步/导入 EXIF 批量并发提取（8 并发/批）+ `import-progress` 进度事件（preload `onImportProgress`，ImportDialog 接入显示）。
+- 删除前端无调用点的 `fs:get-thumbnail`/`fs:get-image-data` base64 通道；`pathToFileUrl` 改 Node 内置 `pathToFileURL`（修复中文/#/空格坏链）。
+
+### 阶段 3：前端架构
+
+- 引入 zustand：`src/store/galleryStore.js` 集中筛选/排序/分页/勾选集/网格设置/图片页数据/共享数据（stats/tags/albums/dates）+ loadImages（竞态 sequencer）/loadStats/loadAppData/批量 actions。
+- App.jsx 869 → 602 行：`useGalleryData`（防抖加载 wiring）、`useGlobalShortcuts`（键盘依赖收敛 ref，仅注册一次）、`useDragImport` 三个 hook 外移；viewer/弹层局部 state 保留。
+- Props drilling 消除：Sidebar 18 props → 4、TopBar 22 → 3、BatchBar 10 → 7、ImageGrid 17 → 7、SettingsPage -2；内联 lambda 击穿 memo 问题随 store 稳定引用一并消除。
+- `src/lib/api.js`：window.pixyang 统一守卫封装（新代码全部走 api 层）。
+- 统一重复实现：`common/StarRating`（ImageCard 内嵌版并入，类名 star/star-empty 兼容）、`lib/format`（4 处 formatSize → 2 个语义化函数）；InfoPanel/ImageViewer 评分形态不同（表单控件/工具栏按钮）保留个性。
+- 顶层 ErrorBoundary（防渲染异常白屏，提供重载入口）。
+- 死代码清理：fetchImages/useEscapeHandler 未用导出。
+
+### 测试与覆盖率
+
+- **266 passed / 0 failed**；总覆盖 **76.57%**（≥ 基线 76.52%）。
+- 测试适配：Sidebar/TopBar/BatchBar/ImageGrid/SettingsPage 改 store 预置模式（setState + initialSnapshot 重置）；App 测试补 store 重置。
+- 新增 `tests/unit/hooks/hooks.test.jsx`（9 例）：快捷键分发/模态屏蔽/Escape 分层、防抖加载、thumbVersion bump、format 工具。
+- ImageGrid 勾选/翻页断言从回调 spy 改为 store 状态断言（接口即 store）。
+
+### 遗留与下一步
+
+- ImageGrid.jsx 仍 798 行（弹窗组/PaginationBar/框选未拆出）——纯机械搬移，后续可做；
+- App.jsx 602 行（批量操作 handler 密集）；
+- InfoPanel/ImageViewer 的 window.pixyang 直调未迁 api 层（152 处中高频文件已迁）；
+- e2e（Electron 真实链路）缺失：better-sqlite3/sharp 的 ABI 打包产物未在本轮验证（`npm run build` 走 electron-builder 时原生模块打包待人工验证）。
+
+### Git Commit
+
+- `chore: 工程化补齐`（阶段 0）
+- `feat: 存储引擎换 better-sqlite3`（阶段 1）
+- `perf: 图片处理移 worker 线程 + exifr`（阶段 2）
+- `refactor: 前端架构 zustand store + hooks 拆分`（阶段 3）
+- （未 push）

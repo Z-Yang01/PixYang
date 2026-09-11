@@ -3,13 +3,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { FolderOpen, Trash2, X, Heart, HeartOff, Star } from 'lucide-react';
 import ConfirmDialog from '../Layout/ConfirmDialog';
-
-function formatSize(bytes) {
-  if (!bytes) return '未知';
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1048576) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / 1048576).toFixed(1)} MB`;
-}
+import { formatSizeDisplay as formatSize } from '@/lib/format';
 
 function dirname(p) {
   if (!p) return '';

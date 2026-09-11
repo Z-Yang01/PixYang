@@ -1,16 +1,12 @@
 // @vitest-environment happy-dom
-// ⚠️ 冒烟结论（2026-09-11）：src/components/Browser/ImageGrid.jsx 存在致命 TDZ Bug，
-// 第 325 行的 useEffect 依赖数组引用了第 445 行才声明的 `handleCheckboxClick`（const + useCallback），
-// 每次渲染抛 ReferenceError: Cannot access 'handleCheckboxClick' before initialization，
-// 组件完全无法挂载（真实 App 图库页同样会崩）。
-// 按红线约定只记录不修：下面第 1 个用例固化崩溃现状，其余用例 skip，
-// 待 src 修复后请取消 skip 并恢复完整断言（见各用例内注释）。
+// ImageGrid 冒烟：数据/筛选/勾选来自 galleryStore（zustand），渲染前用 setState 预置。
 import React from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, cleanup } from '@testing-library/react';
 import ImageGrid from '@/components/Browser/ImageGrid';
+import useGalleryStore from '@/store/galleryStore';
 
-const noop = () => {};
+const initialSnapshot = useGalleryStore.getState();
 
 function makeImage(over = {}) {
   return {
@@ -36,34 +32,29 @@ function makeImage(over = {}) {
   };
 }
 
-const gridSettings = { rows: 3, columns: 5, gap: 12, padding: 16 };
-
-function baseProps(over = {}) {
-  return {
+function seedStore(over = {}) {
+  useGalleryStore.setState({
     images: [],
     loading: false,
     selectedIds: new Set(),
-    onSelect: noop,
-    onView: noop,
-    onInfo: noop,
-    onImageUpdated: noop,
-    albums: [],
-    gridSettings,
+    gridSettings: { rows: 3, columns: 5, gap: 12, padding: 16 },
     page: 1,
     totalImages: 0,
-    onPageChange: noop,
-    onImport: noop,
     thumbVersion: 0,
-    hasActiveFilters: false,
-    onClearFilters: noop,
-    onColumnsChange: noop,
-    viewerActive: false,
+    albums: [],
+    search: '',
+    filterTag: null,
+    filterAlbum: null,
+    filterDate: '',
+    dateRange: { from: '', to: '' },
+    filterFavorites: false,
     ...over,
-  };
+  });
 }
 
 describe('ImageGrid', () => {
   beforeEach(() => {
+    useGalleryStore.setState(initialSnapshot, true);
     window.pixyang = {
       getTags: vi.fn().mockResolvedValue([]),
       getBatchImageTags: vi.fn().mockResolvedValue({}),
@@ -86,17 +77,21 @@ describe('ImageGrid', () => {
 
   it('回归：正常渲染不再抛 TDZ ReferenceError（历史上 useEffect 依赖引用后置声明的 handleCheckboxClick）', () => {
     const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
-    expect(() => render(<ImageGrid {...baseProps({ loading: true })} />)).not.toThrow();
+    seedStore({ loading: true });
+    expect(() => render(<ImageGrid />)).not.toThrow();
     errSpy.mockRestore();
   });
+
   it('loading 且无图时渲染骨架屏（rows*columns 张）', () => {
-    const { container } = render(<ImageGrid {...baseProps({ loading: true })} />);
+    seedStore({ loading: true });
+    const { container } = render(<ImageGrid />);
     expect(container.querySelectorAll('.image-card.skeleton').length).toBe(15);
   });
 
   it('空态（无筛选）显示导入引导，点击回调 onImport', () => {
     const onImport = vi.fn();
-    render(<ImageGrid {...baseProps({ onImport })} />);
+    seedStore({});
+    render(<ImageGrid onImport={onImport} />);
     expect(screen.getByText('没有找到图片')).toBeInTheDocument();
     fireEvent.click(screen.getByText('导入图片'));
     expect(onImport).toHaveBeenCalledTimes(1);
@@ -104,21 +99,19 @@ describe('ImageGrid', () => {
 
   it('空态（有筛选）显示清除筛选引导，点击回调 onClearFilters', () => {
     const onClearFilters = vi.fn();
-    render(<ImageGrid {...baseProps({ hasActiveFilters: true, onClearFilters })} />);
+    seedStore({ search: 'x' });
+    render(<ImageGrid onClearFilters={onClearFilters} />);
     expect(screen.getByText('没有符合条件的图片')).toBeInTheDocument();
     fireEvent.click(screen.getByText('清除筛选'));
     expect(onClearFilters).toHaveBeenCalledTimes(1);
   });
 
   it('有图时渲染卡片、时间线表头与分页条', async () => {
-    const { container } = render(
-      <ImageGrid
-        {...baseProps({
-          images: [makeImage({ id: 1, filename: 'sunset.jpg' }), makeImage({ id: 2, filename: 'sunrise.png', format: 'png' })],
-          totalImages: 2,
-        })}
-      />
-    );
+    seedStore({
+      images: [makeImage({ id: 1, filename: 'sunset.jpg' }), makeImage({ id: 2, filename: 'sunrise.png', format: 'png' })],
+      totalImages: 2,
+    });
+    const { container } = render(<ImageGrid />);
     expect(await screen.findByText('sunset')).toBeInTheDocument();
     expect(screen.getByText('sunrise')).toBeInTheDocument();
     expect(screen.getByText('2026-01-02')).toBeInTheDocument(); // 时间线分组表头
@@ -128,28 +121,24 @@ describe('ImageGrid', () => {
   });
 
   it('选中的卡片带 selected 样式类', async () => {
-    const { container } = render(
-      <ImageGrid {...baseProps({ images: [makeImage()], totalImages: 1, selectedIds: new Set([1]) })} />
-    );
+    seedStore({ images: [makeImage()], totalImages: 1, selectedIds: new Set([1]) });
+    const { container } = render(<ImageGrid />);
     await screen.findByText('sunset');
     expect(container.querySelector('.image-card.selected[data-id="1"]')).toBeInTheDocument();
   });
 
-  it('点击卡片勾选框触发 onSelect（toggle 集合）', async () => {
-    const onSelect = vi.fn();
-    const { container } = render(
-      <ImageGrid {...baseProps({ images: [makeImage()], totalImages: 1, onSelect })} />
-    );
+  it('点击卡片勾选框更新 store 的勾选集（toggle）', async () => {
+    seedStore({ images: [makeImage()], totalImages: 1 });
+    const { container } = render(<ImageGrid />);
     await screen.findByText('sunset');
     fireEvent.click(container.querySelector('.card-checkbox'));
-    const next = onSelect.mock.calls[0][0];
-    expect(next).toBeInstanceOf(Set);
-    expect(next.has(1)).toBe(true);
+    expect(useGalleryStore.getState().selectedIds.has(1)).toBe(true);
   });
 
   it('点击星级触发 updateImage 并回调 onImageUpdated', async () => {
     const onImageUpdated = vi.fn();
-    render(<ImageGrid {...baseProps({ images: [makeImage()], totalImages: 1, onImageUpdated })} />);
+    seedStore({ images: [makeImage()], totalImages: 1 });
+    render(<ImageGrid onImageUpdated={onImageUpdated} />);
     await screen.findByText('sunset');
     const stars = document.querySelectorAll('.star-rating .star-empty');
     expect(stars.length).toBe(5);
@@ -160,20 +149,15 @@ describe('ImageGrid', () => {
     });
   });
 
-  it('点击下一页回调 onPageChange(2)', async () => {
-    const onPageChange = vi.fn();
-    render(
-      <ImageGrid
-        {...baseProps({
-          images: [makeImage()],
-          totalImages: 20,
-          onPageChange,
-          gridSettings: { rows: 1, columns: 1, gap: 12, padding: 16 },
-        })}
-      />
-    );
+  it('点击下一页更新 store 的 page 为 2', async () => {
+    seedStore({
+      images: [makeImage()],
+      totalImages: 20,
+      gridSettings: { rows: 1, columns: 1, gap: 12, padding: 16 },
+    });
+    render(<ImageGrid />);
     await screen.findByText('sunset');
     fireEvent.click(screen.getByText('下一页'));
-    expect(onPageChange).toHaveBeenCalledWith(2);
+    expect(useGalleryStore.getState().page).toBe(2);
   });
 });

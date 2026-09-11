@@ -7,20 +7,28 @@
 PixYang 是一个本地桌面图片管理应用，技术栈：
 
 - 桌面框架：Electron 32（主进程在 `electron/main.js`，无 TypeScript）
-- 前端：React 18 + React Router v6（源码在 `src/`）
+- 前端：React 18 + React Router v6 + zustand（`src/store/galleryStore.js` 集中筛选/勾选/网格/共享数据）（源码在 `src/`）
 - 构建：Vite 5（`vite.config.js`）
 - 数据库：better-sqlite3（WAL 模式，写操作即时持久化），所有数据库操作在 `electron/database.js`，仅通过 IPC 调用
-- 桥接：contextBridge + ipcRenderer/ipcMain，渲染进程不能直接访问文件系统
+- 图片处理：缩略图用 sharp 在 worker_threads 生成（`electron/imageWorker.js`/`thumbWorker.js`），EXIF 用 exifr 解析
+- 桥接：contextBridge + ipcRenderer/ipcMain，渲染进程不能直接访问文件系统；前端统一经 `src/lib/api.js` 访问 `window.pixyang`
 
 ## 目录结构
 
 ```
 electron/
-  main.js         主进程：窗口、图片处理、IPC 处理器、扫描
+  main.js         主进程：窗口、IPC 处理器、扫描、进度事件
   database.js     数据库：schema、图片/标签/相册/设置操作、导入/删除/移动/重命名
+  imageWorker.js  缩略图 worker 调度（worker_threads）
+  thumbWorker.js  worker 内 sharp 缩略图生成（竖图按 EXIF 转正）
   preload.js      contextBridge 暴露 window.pixyang API
+scripts/
+  native.js       better-sqlite3 的 node/electron 双 ABI 切换（dev/test 前自动执行）
 src/
-  App.jsx         顶层状态与路由
+  App.jsx         组合根：路由、弹层状态、批量操作、快捷键接线
+  store/          zustand store（galleryStore：筛选/勾选/网格设置/图片页数据/共享数据）
+  hooks/          useGalleryData（加载 wiring）/ useGlobalShortcuts / useDragImport
+  lib/            api.js（IPC 封装）/ gallery.js / shortcuts.js / format.js / utils.ts
   components/
     Browser/      图片网格、全屏查看器、批量操作栏
     Explorer/     导入对话框、相册视图
@@ -28,7 +36,10 @@ src/
     Layout/       侧边栏、顶栏、确认对话框、右键菜单、Toast
     Settings/     设置页
     Tags/         标签管理
+    common/       StarRating 等跨模块通用小组件
+    ErrorBoundary.jsx  顶层错误边界
   styles/index.css
+tests/            vitest（node 环境 + per-file happy-dom pragma）
 ```
 
 ## 编码约定

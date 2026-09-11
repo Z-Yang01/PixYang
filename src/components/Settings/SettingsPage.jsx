@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import ConfirmDialog from '../Layout/ConfirmDialog';
+import useGalleryStore from '@/store/galleryStore';
 
 const DEFAULT_SETTINGS = { theme: 'dark', rows: 3, columns: 5, gap: 12, padding: 16 };
 
@@ -9,7 +10,8 @@ const clamp = (v, min, max, fallback) => {
   return Number.isNaN(n) ? fallback : Math.max(min, Math.min(max, n));
 };
 
-export default function SettingsPage({ stats, onSettingsChanged, onImagesChanged, onGridSettingsChange }) {
+export default function SettingsPage({ onSettingsChanged, onImagesChanged }) {
+  const stats = useGalleryStore(st => st.stats);
   const [draft, setDraft] = useState(DEFAULT_SETTINGS);
   const savedRef = useRef(DEFAULT_SETTINGS);
   const [storagePath, setStoragePath] = useState('');
@@ -54,8 +56,8 @@ export default function SettingsPage({ stats, onSettingsChanged, onImagesChanged
   };
 
   const applyPreview = (d) => {
+    useGalleryStore.getState().setGridSettings({ rows: d.rows, columns: d.columns, gap: d.gap, padding: d.padding });
     document.documentElement.setAttribute('data-theme', d.theme);
-    onGridSettingsChange?.({ rows: d.rows, columns: d.columns, gap: d.gap, padding: d.padding });
   };
 
   const loadSettings = async () => {

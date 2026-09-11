@@ -9,19 +9,9 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Loader2, FileImage, CheckCircle2, Check, FolderOpen } from 'lucide-react';
+import { formatFileSize, todayStr } from '@/lib/format';
 
 const PREVIEWABLE = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp'];
-
-function todayStr() {
-  const t = new Date();
-  return `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, '0')}-${String(t.getDate()).padStart(2, '0')}`;
-}
-
-function formatFileSize(bytes) {
-  if (!bytes || bytes <= 0) return '0KB';
-  if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))}KB`;
-  return `${(bytes / 1024 / 1024).toFixed(1)}MB`;
-}
 
 export default function ImportDialog({ onClose, onDone, initialFiles = null }) {
   const [selectedDir, setSelectedDir] = useState(null);

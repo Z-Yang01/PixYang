@@ -1,41 +1,50 @@
 // @vitest-environment happy-dom
+// Sidebar 冒烟：筛选/共享数据来自 galleryStore，渲染前用 setState 预置。
 import React from 'react';
-import { describe, it, expect, vi } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { render, screen, fireEvent, cleanup } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import Sidebar from '@/components/Layout/Sidebar';
+import useGalleryStore from '@/store/galleryStore';
 
-const baseProps = {
-  stats: { totalImages: 12, totalTags: 3, totalAlbums: 2, favorites: 4 },
-  tags: [
-    { id: 5, name: '风景', color: '#818cf8', image_count: 6 },
-    { id: 7, name: '人像', color: '#f472b6', image_count: 3 },
-  ],
-  albums: [{ id: 2, name: '旅行', image_count: 8 }],
-  importDates: [{ date: '2026-01-02', count: 5 }],
-  onImport: vi.fn(),
-  filterTag: null,
-  onFilterTag: vi.fn(),
-  filterAlbum: null,
-  onFilterAlbum: vi.fn(),
-  filterDate: '',
-  onFilterDate: vi.fn(),
-  dateRange: { from: '', to: '' },
-  onDateRange: vi.fn(),
-  filterFavorites: false,
-  onFilterFavorites: vi.fn(),
-  onClearFilters: vi.fn(),
-  collapsed: false,
-  onToggleCollapse: vi.fn(),
-  onShowShortcuts: vi.fn(),
-};
+const initialSnapshot = useGalleryStore.getState();
 
-function renderSidebar(props = {}, { router = true } = {}) {
-  const ui = <Sidebar {...baseProps} {...props} />;
-  return router ? render(<MemoryRouter>{ui}</MemoryRouter>) : render(ui);
+function seedStore(over = {}) {
+  useGalleryStore.setState({
+    stats: { totalImages: 12, totalTags: 3, totalAlbums: 2, favorites: 4 },
+    tags: [
+      { id: 5, name: '风景', color: '#818cf8', image_count: 6 },
+      { id: 7, name: '人像', color: '#f472b6', image_count: 3 },
+    ],
+    albums: [{ id: 2, name: '旅行', image_count: 8 }],
+    importDates: [{ date: '2026-01-02', count: 5 }],
+    filterTag: null,
+    filterAlbum: null,
+    filterDate: '',
+    filterFavorites: false,
+    dateRange: { from: '', to: '' },
+    ...over,
+  });
+}
+
+function renderSidebar(over = {}) {
+  return render(
+    <MemoryRouter>
+      <Sidebar collapsed={false} onToggleCollapse={vi.fn()} onImport={vi.fn()} onShowShortcuts={vi.fn()} {...over} />
+    </MemoryRouter>
+  );
 }
 
 describe('Sidebar', () => {
+  beforeEach(() => {
+    useGalleryStore.setState(initialSnapshot, true);
+    seedStore();
+  });
+
+  afterEach(() => {
+    cleanup();
+  });
+
   it('展开态渲染导航、徽标计数与相册/标签/日期筛选区', () => {
     renderSidebar();
     expect(screen.getByText('PixYang')).toBeInTheDocument();
@@ -65,27 +74,29 @@ describe('Sidebar', () => {
     expect(screen.getByText('5')).toBeInTheDocument();
   });
 
-  it('点击相册条目触发 onFilterAlbum(选中 id)', () => {
-    const onFilterAlbum = vi.fn();
-    renderSidebar({ onFilterAlbum });
+  it('点击相册条目写入 store 的 filterAlbum（选中 id）', () => {
+    renderSidebar();
     fireEvent.click(screen.getByTitle('旅行'));
-    expect(onFilterAlbum).toHaveBeenCalledWith(2);
+    expect(useGalleryStore.getState().filterAlbum).toBe(2);
   });
 
   it('collapsed 态隐藏文字标签，仅保留图标按钮', () => {
-    renderSidebar({ collapsed: true });
+    renderSidebar({ collapsed: true, onToggleCollapse: vi.fn() });
     expect(screen.queryByText('PixYang')).not.toBeInTheDocument();
     expect(screen.queryByText('全部图片')).not.toBeInTheDocument();
     expect(screen.queryByText('导入图片')).not.toBeInTheDocument();
     expect(screen.getByTitle('全部图片')).toBeInTheDocument();
   });
 
-  it('存在筛选时显示「清除所有筛选」按钮并回调', () => {
-    const onClearFilters = vi.fn();
-    renderSidebar({ filterTag: 5, onClearFilters });
-    const btn = screen.getByText('清除所有筛选');
-    fireEvent.click(btn);
-    expect(onClearFilters).toHaveBeenCalledTimes(1);
+  it('存在筛选时显示「清除所有筛选」按钮并清空 store 筛选', () => {
+    seedStore({ filterTag: 5 });
+    renderSidebar();
+    fireEvent.click(screen.getByText('清除所有筛选'));
+    const s = useGalleryStore.getState();
+    expect(s.filterTag).toBeNull();
+    expect(s.filterAlbum).toBeNull();
+    expect(s.filterFavorites).toBe(false);
+    expect(s.search).toBe('');
   });
 
   it('无筛选时不显示「清除所有筛选」', () => {

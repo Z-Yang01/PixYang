@@ -3,23 +3,26 @@ import React from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, cleanup } from '@testing-library/react';
 import SettingsPage from '@/components/Settings/SettingsPage';
+import useGalleryStore from '@/store/galleryStore';
 
 const statsFixture = { totalImages: 123, totalTags: 4, totalAlbums: 2, favorites: 10 };
+const initialSnapshot = useGalleryStore.getState();
 
 function renderPage(props = {}) {
+  useGalleryStore.setState({ stats: props.stats || statsFixture });
+  const { stats: _stats, ...rest } = props;
   return render(
     <SettingsPage
-      stats={statsFixture}
       onSettingsChanged={vi.fn()}
       onImagesChanged={vi.fn()}
-      onGridSettingsChange={vi.fn()}
-      {...props}
+      {...rest}
     />
   );
 }
 
 describe('SettingsPage', () => {
   beforeEach(() => {
+    useGalleryStore.setState(initialSnapshot, true);
     window.pixyang = {
       getSettings: vi.fn().mockResolvedValue({
         theme: 'dark', grid_rows: 3, grid_columns: 5, grid_gap: 12, content_padding: 16,
