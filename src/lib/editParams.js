@@ -49,30 +49,22 @@ export function hasEdits(ops) {
     || s.exposure !== 0 || s.contrast !== 0 || s.saturation !== 0 || s.temperature !== 0);
 }
 
-// CSS filter（预览）——与 sharp 管线保持同一数学语义
-// 曝光：2^EV 倍亮度；对比度：线性斜率 f=1+c/50（灰轴对齐）；饱和度：1+s/100
+// 色温预览：SVG feColorMatrix 逐通道增益，与 sharp 管线的 RGB 增益同数学语义
+// （sharp linearA = [g*(1+tk*0.1), g, g*(1-tk*0.1)]，预览端只取色温比例因子）
+export function tintMatrixValues(ops) {
+  const s = sanitizeEditOps(ops);
+  const k = s.temperature / 100 * 0.1;
+  const r = (1 + k).toFixed(4);
+  const b = (1 - k).toFixed(4);
+  return `${r} 0 0 0 0  0 1 0 0 0  0 0 ${b} 0 0  0 0 0 1 0`;
+}
+
+// 组合 CSS filter（含色温矩阵引用）
 export function cssFilter(ops) {
   const s = sanitizeEditOps(ops);
   const brightness = Math.pow(2, s.exposure);
   const contrastF = 1 + s.contrast / 50;
   const saturate = 1 + s.saturation / 100;
-  return `brightness(${brightness.toFixed(4)}) contrast(${contrastF.toFixed(4)}) saturate(${saturate.toFixed(4)})`;
-}
-
-// 色温预览叠加层颜色（近似；sharp 端为 RGB 通道增益）
-export function temperatureOverlay(ops) {
-  const s = sanitizeEditOps(ops);
-  if (s.temperature === 0) return null;
-  const alpha = Math.abs(s.temperature) / 100 * 0.22;
-  return s.temperature > 0
-    ? `rgba(255, 158, 60, ${alpha.toFixed(3)})`
-    : `rgba(70, 150, 255, ${alpha.toFixed(3)})`;
-}
-
-// CSS transform（预览）：裁剪前展示用；旋转方向与 sharp .rotate() 一致（顺时针）
-export function cssTransform(ops, { zoom = 1, posX = 0, posY = 0 } = {}) {
-  const s = sanitizeEditOps(ops);
-  const scaleX = (s.flipH ? -1 : 1) * zoom;
-  const scaleY = (s.flipV ? -1 : 1) * zoom;
-  return `translate(${posX}px, ${posY}px) rotate(${s.rotation}deg) scale(${scaleX}, ${scaleY})`;
+  const tint = s.temperature !== 0 ? 'url(#pixyang-tint) ' : '';
+  return `${tint}brightness(${brightness.toFixed(4)}) contrast(${contrastF.toFixed(4)}) saturate(${saturate.toFixed(4)})`;
 }

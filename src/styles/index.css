@@ -2231,3 +2231,57 @@ body {
   color: #f87171;
   font-size: 14px;
 }
+
+/* ── 编辑模式增强 ── */
+
+.editor-transform-layer {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.editor-transform-layer .viewer-image {
+  animation: none;
+}
+
+.editor-crop-box {
+  position: absolute;
+  border: 2px solid #fff;
+  box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.55);
+  cursor: move;
+  z-index: 5;
+}
+
+.editor-crop-handle {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  background: #fff;
+  border: 1px solid rgba(0, 0, 0, 0.6);
+  border-radius: 2px;
+}
+.handle-nw { top: -6px; left: -6px; cursor: nwse-resize; }
+.handle-n { top: -6px; left: calc(50% - 6px); cursor: ns-resize; }
+.handle-ne { top: -6px; right: -6px; cursor: nesw-resize; }
+.handle-e { top: calc(50% - 6px); right: -6px; cursor: ew-resize; }
+.handle-se { bottom: -6px; right: -6px; cursor: nwse-resize; }
+.handle-s { bottom: -6px; left: calc(50% - 6px); cursor: ns-resize; }
+.handle-sw { bottom: -6px; left: -6px; cursor: nesw-resize; }
+.handle-w { top: calc(50% - 6px); left: -6px; cursor: ew-resize; }
+
+.editor-rendering-spinner {
+  position: absolute;
+  top: 16px;
+  left: 16px;
+  width: 22px;
+  height: 22px;
+  color: #fff;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.6));
+  pointer-events: none;
+}
+
+.editor-footer-row {
+  display: flex;
+  gap: 8px;
+}

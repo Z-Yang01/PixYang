@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import React from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, fireEvent, cleanup } from '@testing-library/react';
+import { render, screen, fireEvent, cleanup, act } from '@testing-library/react';
 import ImageViewer from '@/components/Browser/ImageViewer';
 
 const testImage = {
@@ -185,6 +185,92 @@ describe('ImageViewer', () => {
     expect(await screen.findByText('放弃未保存的编辑？')).toBeInTheDocument();
     fireEvent.click(screen.getByText('放弃编辑'));
     await vi.waitFor(() => expect(window.pixyang.editCancel).toHaveBeenCalledWith(3));
+  });
+
+  it('编辑模式：撤销/重做回退与恢复旋转状态', async () => {
+    window.pixyang.editOpen = vi.fn().mockResolvedValue({
+      id: 3, source: 'jpg', basePath: 'C:/cache/3-base.jpg', tempPath: 'C:/pics/sunset-temp.jpg',
+      width: 1920, height: 1080, hasNef: false,
+    });
+    window.pixyang.toFileUrl.mockImplementation((p) => Promise.resolve(p ? `file:///${p}` : null));
+    window.pixyang.editRender = vi.fn().mockResolvedValue({ ok: true, width: 100, height: 100 });
+    render(<ImageViewer {...baseProps()} />);
+    fireEvent.click(screen.getByTitle(/编辑模式/));
+    await screen.findByText('编辑');
+    fireEvent.click(screen.getByTitle('右旋 90° (R)'));
+    const layer = () => document.querySelector('.editor-transform-layer');
+    expect(layer().style.transform).toContain('rotate(90deg)');
+    // Ctrl+Z 撤销
+    fireEvent.keyDown(window, { key: 'z', ctrlKey: true });
+    expect(layer().style.transform).not.toContain('rotate(90deg)');
+    // Ctrl+Shift+Z 重做
+    fireEvent.keyDown(window, { key: 'z', ctrlKey: true, shiftKey: true });
+    expect(layer().style.transform).toContain('rotate(90deg)');
+  });
+
+  it('编辑模式：拖拽框选的 crop 合入渲染参数', async () => {
+    window.pixyang.editOpen = vi.fn().mockResolvedValue({
+      id: 3, source: 'jpg', basePath: 'C:/cache/3-base.jpg', tempPath: 'C:/pics/sunset-temp.jpg',
+      width: 1920, height: 1080, hasNef: false,
+    });
+    window.pixyang.toFileUrl.mockImplementation((p) => Promise.resolve(p ? `file:///${p}` : null));
+    window.pixyang.editRender = vi.fn().mockResolvedValue({ ok: true, width: 100, height: 100 });
+    window.pixyang.editSave = vi.fn().mockResolvedValue({ ok: true, image: { id: 3 } });
+    // 图像显示区域固定为 1000x1000 @ (0,0)，便于坐标换算
+    const rectSpy = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({
+      left: 0, top: 0, right: 1000, bottom: 1000, width: 1000, height: 1000, x: 0, y: 0,
+      toJSON: () => {},
+    });
+    const onImageUpdated = vi.fn();
+    const { container } = render(<ImageViewer {...baseProps({ onImageUpdated })} />);
+    fireEvent.click(screen.getByTitle(/编辑模式/));
+    await screen.findByText('编辑');
+    fireEvent.click(screen.getByTitle('裁剪'));
+    const content = container.querySelector('.viewer-content');
+    fireEvent.mouseDown(content, { clientX: 200, clientY: 200 });
+    fireEvent.mouseMove(window, { clientX: 600, clientY: 500 });
+    fireEvent.mouseUp(window);
+    // 裁剪框渲染
+    expect(container.querySelector('.editor-crop-box')).toBeInTheDocument();
+    // 保存时 crop 合入渲染参数（save 前的强制渲染）
+    fireEvent.click(screen.getByText('保存并替代'));
+    await vi.waitFor(() => {
+      expect(window.pixyang.editRender).toHaveBeenCalled();
+      const ops = window.pixyang.editRender.mock.calls.at(-1)[1];
+      expect(ops.crop).toBeTruthy();
+      expect(ops.crop.width).toBeGreaterThan(0);
+    });
+    rectSpy.mockRestore();
+  });
+
+  it('编辑模式：参数与上次渲染一致时保存不再重复渲染', async () => {
+    vi.useFakeTimers();
+    const flush = async (ms) => { await act(async () => { await vi.advanceTimersByTimeAsync(ms); }); };
+    try {
+      window.pixyang.editOpen = vi.fn().mockResolvedValue({
+        id: 3, source: 'jpg', basePath: 'C:/cache/3-base.jpg', tempPath: 'C:/pics/sunset-temp.jpg',
+        width: 1920, height: 1080, hasNef: false,
+      });
+      window.pixyang.toFileUrl.mockImplementation((p) => Promise.resolve(p ? `file:///${p}` : null));
+      window.pixyang.editRender = vi.fn().mockResolvedValue({ ok: true, width: 100, height: 100 });
+      window.pixyang.editSave = vi.fn().mockResolvedValue({ ok: true, image: { id: 3 } });
+      render(<ImageViewer {...baseProps()} />);
+      fireEvent.click(screen.getByTitle(/编辑模式/));
+      await flush(0);
+      expect(screen.getByText('保存并替代')).toBeInTheDocument();
+      const sliders = document.querySelectorAll('.editor-slider-row input[type="range"]');
+      fireEvent.change(sliders[0], { target: { value: '0.5' } });
+      // 防抖渲染完成
+      await flush(800);
+      expect(window.pixyang.editRender).toHaveBeenCalledTimes(1);
+      // 立即保存：参数未变，不再渲染
+      fireEvent.click(screen.getByText('保存并替代'));
+      await flush(100);
+      expect(window.pixyang.editSave).toHaveBeenCalledWith(3);
+      expect(window.pixyang.editRender).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

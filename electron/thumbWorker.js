@@ -114,10 +114,20 @@ async function renderEdit(srcPath, outPath, ops) {
   // 保留底图 EXIF（拍摄时间等）；方向标记已在底图规范化时去除
   pipeline = pipeline.keepExif();
 
-  if (format === '.png') {
-    await pipeline.png({ compressionLevel: 8 }).toFile(outPath);
-  } else {
-    await pipeline.jpeg({ quality: 92 }).toFile(outPath);
+  // 原子写盘：先写 .part 再 rename，渲染失败不会把半写文件留在 temp 路径上
+  const partPath = `${outPath}.part`;
+  try {
+    if (format === '.png') {
+      await pipeline.png({ compressionLevel: 8 }).toFile(partPath);
+    } else {
+      await pipeline.jpeg({ quality: 92 }).toFile(partPath);
+    }
+    fs.renameSync(partPath, outPath);
+  } catch (e) {
+    try {
+      if (fs.existsSync(partPath)) fs.unlinkSync(partPath);
+    } catch { /* 清理失败无碍 */ }
+    throw e;
   }
   const outMeta = await sharp(outPath).metadata();
   return { ok: true, width: outMeta.width, height: outMeta.height };

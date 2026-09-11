@@ -4,14 +4,16 @@ import { Button } from '@/components/ui/button';
 import {
   RotateCw, RotateCcw, FlipHorizontal2, FlipVertical2, Save, Heart, HeartOff,
   Star, X, ChevronLeft, ChevronRight, Camera, Calendar, Info, Pencil,
-  Crop, RotateCcwSquare, Loader2, SlidersHorizontal,
+  Crop, RotateCcwSquare, Loader2, SlidersHorizontal, Undo2, Redo2,
 } from 'lucide-react';
 import { matchViewerShortcut, VIEWER_ACTIONS, ratingFromViewerAction } from '@/lib/shortcuts';
 import api from '@/lib/api';
 import {
-  EDIT_DEFAULTS, CROP_RATIOS, sanitizeEditOps, hasEdits, cssFilter, temperatureOverlay,
+  EDIT_DEFAULTS, CROP_RATIOS, sanitizeEditOps, hasEdits, cssFilter, tintMatrixValues,
 } from '@/lib/editParams';
 import ConfirmDialog from '@/components/Layout/ConfirmDialog';
+
+const clamp = (v, min, max) => Math.min(max, Math.max(min, v));
 
 export default function ImageViewer({
   image, imageIndex = 0, totalCount = 0, onClose, onPrev, onNext, hasPrev, hasNext, onImageUpdated,
@@ -26,7 +28,7 @@ export default function ImageViewer({
   // 本地状态：评分和收藏突变，用于即时视觉反馈
   const [localRating, setLocalRating] = useState(image?.rating || 0);
   const [localFavorite, setLocalFavorite] = useState(image?.favorite || 0);
-  // 旋转与翻转（仅查看画面，不写盘）
+  // 旋转与翻转（查看态：仅查看画面，不写盘）
   const [rotation, setRotation] = useState(0);
   const [flipH, setFlipH] = useState(false);
   const [flipV, setFlipV] = useState(false);
@@ -42,16 +44,17 @@ export default function ImageViewer({
   localFavoriteRef.current = localFavorite;
 
   // ── 编辑模式 ──
+  // crop 是 editOps 的一部分（渲染/保存的正式参数），拖拽过程实时写入
   const [editing, setEditing] = useState(false);
   const [editSession, setEditSession] = useState(null); // { basePath, source, width, height, hasNef }
   const [editBaseSrc, setEditBaseSrc] = useState(null);
   const [editOps, setEditOps] = useState(EDIT_DEFAULTS);
-  const [editBusy, setEditBusy] = useState(false); // open/render/saving 进行中
+  const [editBusy, setEditBusy] = useState(false);
   const [editError, setEditError] = useState('');
   const [cropMode, setCropMode] = useState(false);
   const [cropRatioKey, setCropRatioKey] = useState('free');
-  const [cropRect, setCropRect] = useState(null); // 底图像素坐标 { left, top, width, height }
   const [exitConfirm, setExitConfirm] = useState(false);
+  const [histInfo, setHistInfo] = useState({ canUndo: false, canRedo: false });
   const editImgRef = useRef(null);
   const contentRef = useRef(null);
   const cropDragRef = useRef(null);
@@ -60,6 +63,8 @@ export default function ImageViewer({
   const editingRef = useRef(false);
   editingRef.current = editing;
   const renderTimerRef = useRef(null);
+  const historyRef = useRef(null); // { stack: [ops], index }
+  const lastRenderedRef = useRef(null); // 最近一次已渲染的 ops JSON（跳过重复渲染）
 
   // 同步图片切换
   useEffect(() => {
@@ -110,9 +115,11 @@ export default function ImageViewer({
     setEditBaseSrc(null);
     setEditOps({ ...EDIT_DEFAULTS });
     setCropMode(false);
-    setCropRect(null);
     setEditError('');
     setEditBusy(false);
+    setHistInfo({ canUndo: false, canRedo: false });
+    historyRef.current = null;
+    lastRenderedRef.current = null;
   }, []);
 
   const enterEdit = useCallback(async () => {
@@ -129,12 +136,15 @@ export default function ImageViewer({
       setEditSession(session);
       setEditBaseSrc(url);
       // 已有 CSS 变换作为初始编辑角度（保存后烘焙归零）
-      setEditOps({
+      const initial = {
         ...EDIT_DEFAULTS,
         rotation: Number(image.rotation) || 0,
         flipH: !!image.flip_h,
         flipV: !!image.flip_v,
-      });
+      };
+      setEditOps(initial);
+      historyRef.current = { stack: [initial], index: 0 };
+      lastRenderedRef.current = null;
       setEditing(true);
       setZoom(1);
       setPos({ x: 0, y: 0 });
@@ -143,31 +153,71 @@ export default function ImageViewer({
     }
   }, [image, editBusy]);
 
-  // 参数变化防抖渲染到 temp（不保存时磁盘上只有 -temp，原图不动）
+  // ── 撤销/重做：历史栈存完整 ops 快照 ──
+  const syncHistInfo = useCallback(() => {
+    const h = historyRef.current;
+    setHistInfo({ canUndo: !!h && h.index > 0, canRedo: !!h && h.index < h.stack.length - 1 });
+  }, []);
+
+  const pushHistory = useCallback((snapshot) => {
+    const h = historyRef.current;
+    if (!h) return;
+    const json = JSON.stringify(snapshot);
+    if (json === JSON.stringify(h.stack[h.index])) return;
+    h.stack = h.stack.slice(0, h.index + 1);
+    h.stack.push(snapshot);
+    h.index = h.stack.length - 1;
+    syncHistInfo();
+  }, [syncHistInfo]);
+
+  const applyHistory = useCallback((dir) => {
+    const h = historyRef.current;
+    if (!h) return;
+    const next = dir === 'undo' ? h.index - 1 : h.index + 1;
+    if (next < 0 || next >= h.stack.length) return;
+    h.index = next;
+    setEditOps(h.stack[next]);
+    syncHistInfo();
+  }, [syncHistInfo]);
+
+  // 当前渲染参数（含裁剪框）
+  const composeOps = useCallback(() => (
+    sanitizeEditOps({
+      ...editOpsRef.current,
+      crop: editOpsRef.current.crop && editOpsRef.current.crop.width > 0 ? editOpsRef.current.crop : null,
+    })
+  ), []);
+
+  // 参数变化防抖渲染到 temp；与上次渲染参数一致时跳过
   useEffect(() => {
     if (!editing || !editSession) return undefined;
-    if (!hasEdits(editOps) && !editSession._renderedEmpty) {
-      return undefined;
-    }
+    const ops = composeOps();
+    const json = JSON.stringify(ops);
+    if (json === lastRenderedRef.current) return undefined;
     if (renderTimerRef.current) clearTimeout(renderTimerRef.current);
     renderTimerRef.current = setTimeout(async () => {
+      lastRenderedRef.current = json;
       setEditBusy(true);
-      const result = await api.editRender(image.id, sanitizeEditOps(editOps));
+      const result = await api.editRender(image.id, ops);
       setEditBusy(false);
       if (result?.error) setEditError(result.error);
     }, 800);
     return () => clearTimeout(renderTimerRef.current);
-  }, [editOps, editing, editSession, image?.id]);
+  }, [editOps, editing, editSession, image?.id, composeOps]);
 
   const saveEdit = useCallback(async () => {
     if (!image || editBusy) return;
     setEditBusy(true);
     try {
-      // 先强制渲染一次（防抖窗口内点保存时 temp 可能尚未生成）
-      const rendered = await api.editRender(image.id, sanitizeEditOps(editOpsRef.current));
-      if (rendered?.error) {
-        setEditError(rendered.error);
-        return;
+      // 防抖窗口内点保存时 temp 可能尚未生成：仅当参数与上次渲染不一致才强制渲染
+      const ops = composeOps();
+      if (JSON.stringify(ops) !== lastRenderedRef.current) {
+        const rendered = await api.editRender(image.id, ops);
+        if (rendered?.error) {
+          setEditError(rendered.error);
+          return;
+        }
+        lastRenderedRef.current = JSON.stringify(ops);
       }
       const result = await api.editSave(image.id);
       if (result?.error) {
@@ -181,18 +231,18 @@ export default function ImageViewer({
     } finally {
       setEditBusy(false);
     }
-  }, [image, editBusy, onImageUpdated, cleanupEditSession]);
+  }, [image, editBusy, onImageUpdated, cleanupEditSession, composeOps]);
 
   // 退出编辑：有未保存编辑时先确认（放弃即删除 -temp，原图不受影响）
   const requestExitEdit = useCallback(() => {
-    if (hasEdits(editOps)) {
+    if (hasEdits(editOpsRef.current)) {
       setExitConfirm(true);
       return;
     }
     api.editCancel(image?.id);
     setEditing(false);
     cleanupEditSession();
-  }, [editOps, image?.id, cleanupEditSession]);
+  }, [image?.id, cleanupEditSession]);
 
   const discardEditAndExit = useCallback(async () => {
     setExitConfirm(false);
@@ -205,98 +255,150 @@ export default function ImageViewer({
     setFlipV(!!image?.flip_v);
   }, [image, cleanupEditSession]);
 
-  // 编辑参数统一应用入口（查看态操作 rotation/flip state，编辑态操作 editOps）
+  // 编辑参数统一应用入口（查看态操作 rotation/flip state，编辑态操作 editOps + 历史）
   const applyRotate = useCallback((delta) => {
     if (editingRef.current) {
-      setEditOps(o => ({ ...o, rotation: (o.rotation + delta + 360) % 360 }));
+      setEditOps(o => {
+        const next = { ...o, rotation: (o.rotation + delta + 360) % 360 };
+        pushHistory(next);
+        return next;
+      });
     } else {
       setRotation(r => (r + delta + 360) % 360);
     }
-  }, []);
+  }, [pushHistory]);
+
   const applyFlip = useCallback((axis) => {
     if (editingRef.current) {
-      setEditOps(o => (axis === 'H' ? { ...o, flipH: !o.flipH } : { ...o, flipV: !o.flipV }));
+      setEditOps(o => {
+        const next = axis === 'H' ? { ...o, flipH: !o.flipH } : { ...o, flipV: !o.flipV };
+        pushHistory(next);
+        return next;
+      });
     } else if (axis === 'H') {
       setFlipH(f => !f);
     } else {
       setFlipV(f => !f);
     }
-  }, []);
+  }, [pushHistory]);
 
-  // ── 裁剪框（坐标基于规范化底图的原始像素）──
-  // 返回图像显示区域相对 viewer-content 的几何信息，用于拖拽换算与裁剪框定位
-  const imageDisplayRect = useCallback(() => {
+  const resetEdits = useCallback(() => {
+    const next = { ...EDIT_DEFAULTS };
+    pushHistory(next);
+    setEditOps(next);
+  }, [pushHistory]);
+
+  // ── 裁剪交互 ──
+  // 鼠标坐标 → 底图像素坐标：归一化（基于变换后包围盒）→ 逆旋转 → 逆翻转
+  const toImageCoords = useCallback((clientX, clientY) => {
     const el = editImgRef.current;
-    const container = contentRef.current;
     const w = editSession?.width;
     const h = editSession?.height;
-    if (!el || !container || !w || !h) return null;
-    const ir = el.getBoundingClientRect();
-    const cr = container.getBoundingClientRect();
-    const scale = Math.min(ir.width / w, ir.height / h);
-    const dispW = w * scale;
-    const dispH = h * scale;
-    return {
-      // 图像显示区左上角相对 viewer-content 的偏移
-      offX: ir.left + (ir.width - dispW) / 2 - cr.left,
-      offY: ir.top + (ir.height - dispH) / 2 - cr.top,
-      scale,
-      dispW,
-      dispH,
-    };
+    if (!el || !w || !h) return null;
+    const r = el.getBoundingClientRect();
+    if (!r.width || !r.height) return null;
+    let nx = clamp((clientX - r.left) / r.width, 0, 1);
+    let ny = clamp((clientY - r.top) / r.height, 0, 1);
+    const rot = ((editOpsRef.current.rotation % 360) + 360) % 360;
+    let x; let y;
+    if (rot === 90) { x = ny; y = 1 - nx; } else if (rot === 180) { x = 1 - nx; y = 1 - ny; } else if (rot === 270) { x = 1 - ny; y = nx; } else { x = nx; y = ny; }
+    if (editOpsRef.current.flipH) x = 1 - x;
+    if (editOpsRef.current.flipV) y = 1 - y;
+    return { x: x * w, y: y * h };
   }, [editSession]);
+
+  // 按 mode 更新裁剪框（new/move/八向手柄），clamp 到图像边界，角手柄支持比例锁定
+  const applyCropDrag = useCallback((mode, start, orig, cur) => {
+    const w = editSession?.width;
+    const h = editSession?.height;
+    if (!w || !h) return;
+    const ratio = mode.startsWith('new') || /^[ns][ew]$/.test(mode)
+      ? (CROP_RATIOS.find(r => r.key === cropRatioKey)?.value || null)
+      : null;
+    let rect;
+    if (mode === 'new') {
+      let width = cur.x - start.x;
+      let height = cur.y - start.y;
+      let left = start.x;
+      let top = start.y;
+      if (width < 0) { width = -width; left -= width; }
+      if (height < 0) { height = -height; top -= height; }
+      if (ratio) {
+        height = width / ratio;
+        if (top + height > h) { height = h - top; width = height * ratio; }
+        if (left + width > w) { width = w - left; height = width / ratio; }
+      }
+      rect = { left, top, width, height };
+    } else if (mode === 'move') {
+      const dx = cur.x - start.x;
+      const dy = cur.y - start.y;
+      rect = {
+        ...orig,
+        left: clamp(orig.left + dx, 0, w - orig.width),
+        top: clamp(orig.top + dy, 0, h - orig.height),
+      };
+    } else {
+      // 八向手柄：基于对角固定点重算
+      const anchors = {
+        n: [orig.left + orig.width / 2, orig.top + orig.height], s: [orig.left + orig.width / 2, orig.top],
+        e: [orig.left, orig.top + orig.height / 2], w: [orig.left + orig.width, orig.top + orig.height / 2],
+        ne: [orig.left, orig.top + orig.height], nw: [orig.left + orig.width, orig.top + orig.height],
+        se: [orig.left, orig.top], sw: [orig.left + orig.width, orig.top],
+      };
+      const [ax, ay] = anchors[mode];
+      let left = Math.min(ax, cur.x);
+      let top = Math.min(ay, cur.y);
+      let width = Math.abs(cur.x - ax);
+      let height = Math.abs(cur.y - ay);
+      if (/^[ns][ew]$/.test(mode) && ratio) {
+        height = width / ratio;
+        if (ay !== orig.top) { top = ay - height; }
+        if (top < 0) { height += top; top = 0; width = height * ratio; }
+        if (left + width > w) { width = w - left; height = width / ratio; if (ay !== orig.top) top = ay - height; }
+      }
+      rect = { left, top, width, height };
+    }
+    rect.left = clamp(rect.left, 0, w);
+    rect.top = clamp(rect.top, 0, h);
+    rect.width = clamp(rect.width, 0, w - rect.left);
+    rect.height = clamp(rect.height, 0, h - rect.top);
+    setEditOps(o => ({ ...o, crop: rect }));
+  }, [editSession, cropRatioKey]);
 
   const handleCropMouseDown = useCallback((e) => {
     if (!cropMode || !editSession) return;
-    const rect = imageDisplayRect();
-    if (!rect) return;
-    const px = (e.clientX - rect.offX) / rect.scale;
-    const py = (e.clientY - rect.offY) / rect.scale;
-    if (px < 0 || py < 0 || px > editSession.width || py > editSession.height) {
-      setCropRect(null);
-      return;
+    const handle = e.target.closest?.('[data-crop-handle]')?.getAttribute('data-crop-handle');
+    const inBox = e.target.closest?.('.editor-crop-box');
+    const cur = toImageCoords(e.clientX, e.clientY);
+    if (!cur) return;
+    const ops = editOpsRef.current;
+    if (handle && ops.crop) {
+      cropDragRef.current = { mode: handle, start: cur, orig: { ...ops.crop } };
+    } else if (inBox && ops.crop) {
+      cropDragRef.current = { mode: 'move', start: cur, orig: { ...ops.crop } };
+    } else {
+      cropDragRef.current = { mode: 'new', start: cur, orig: null };
+      setEditOps(o => ({ ...o, crop: { left: cur.x, top: cur.y, width: 0, height: 0 } }));
     }
-    cropDragRef.current = { startX: px, startY: py };
-    setCropRect({ left: px, top: py, width: 0, height: 0 });
-  }, [cropMode, editSession, imageDisplayRect]);
+  }, [cropMode, editSession, toImageCoords]);
 
   useEffect(() => {
     if (!cropMode) return undefined;
-    const ratio = CROP_RATIOS.find(r => r.key === cropRatioKey)?.value || null;
     const onMove = (e) => {
       const drag = cropDragRef.current;
-      const rect = imageDisplayRect();
-      if (!drag || !rect || !editSession) return;
-      const px = (e.clientX - rect.offX) / rect.scale;
-      const py = (e.clientY - rect.offY) / rect.scale;
-      let width = Math.min(Math.max(px, 0), editSession.width) - drag.startX;
-      let height = Math.min(Math.max(py, 0), editSession.height) - drag.startY;
-      let left = drag.startX;
-      let top = drag.startY;
-      if (width < 0) { width = -width; left -= width; }
-      if (height < 0) { height = -height; top -= height; }
-      // 比例锁定：以宽为基准约束高，越界时反向约束宽
-      if (ratio) {
-        height = width / ratio;
-        if (top + height > editSession.height) {
-          height = editSession.height - top;
-          width = height * ratio;
-        }
-        if (left + width > editSession.width) {
-          width = editSession.width - left;
-          height = width / ratio;
-        }
-      }
-      setCropRect({
-        left: Math.max(0, left),
-        top: Math.max(0, top),
-        width: Math.max(0, width),
-        height: Math.max(0, height),
-      });
+      if (!drag) return;
+      const cur = toImageCoords(e.clientX, e.clientY);
+      if (cur) applyCropDrag(drag.mode, drag.start, drag.orig, cur);
     };
     const onUp = () => {
+      const drag = cropDragRef.current;
       cropDragRef.current = null;
-      setCropRect(prev => (prev && (prev.width < 8 || prev.height < 8) ? null : prev));
+      if (!drag) return;
+      setEditOps(o => {
+        const c = o.crop;
+        if (c && (c.width < 8 || c.height < 8)) return { ...o, crop: null };
+        return o;
+      });
     };
     window.addEventListener('mousemove', onMove);
     window.addEventListener('mouseup', onUp);
@@ -304,11 +406,27 @@ export default function ImageViewer({
       window.removeEventListener('mousemove', onMove);
       window.removeEventListener('mouseup', onUp);
     };
-  }, [cropMode, cropRatioKey, editSession, imageDisplayRect]);
+  }, [cropMode, toImageCoords, applyCropDrag]);
 
   // 键盘
   useEffect(() => {
     const handleKey = (e) => {
+      // 滑杆等表单元素聚焦时不触发查看器快捷键（方向键留给滑杆）
+      if (e.target?.tagName === 'INPUT' || e.target?.tagName === 'SELECT') return;
+      // 编辑态：撤销/重做
+      if (editingRef.current && (e.ctrlKey || e.metaKey) && !e.altKey) {
+        const k = e.key.toLowerCase();
+        if (k === 'z') {
+          e.preventDefault();
+          applyHistory(e.shiftKey ? 'redo' : 'undo');
+          return;
+        }
+        if (k === 'y') {
+          e.preventDefault();
+          applyHistory('redo');
+          return;
+        }
+      }
       const action = matchViewerShortcut(e);
       if (!action) return;
       e.preventDefault();
@@ -336,7 +454,7 @@ export default function ImageViewer({
     };
     window.addEventListener('keydown', handleKey);
     return () => window.removeEventListener('keydown', handleKey);
-  }, [hasPrev, hasNext, image, onClose, onPrev, onNext, toggleFavorite, setRating, onOpenInfo, applyRotate, applyFlip, requestExitEdit]);
+  }, [hasPrev, hasNext, image, onClose, onPrev, onNext, toggleFavorite, setRating, onOpenInfo, applyRotate, applyFlip, requestExitEdit, applyHistory]);
 
   // 加载策略：中图占位，原图异步替换；列表小图不用于查看器
   const loadImage = async () => {
@@ -353,9 +471,9 @@ export default function ImageViewer({
     if (image.id === loadId) setFullSrc(url || null);
   };
 
-  // 鼠标拖拽平移
+  // 鼠标拖拽平移（裁剪模式时转为框选/移动裁剪框）
   const handleMouseDown = (e) => {
-    if (cropMode) {
+    if (editing && cropMode) {
       handleCropMouseDown(e);
       return;
     }
@@ -427,15 +545,31 @@ export default function ImageViewer({
 
   if (!image) return null;
 
-  // 编辑态显示规范化底图；裁剪模式下不做预览变换（裁剪框基于原始方向坐标）
-  const editingTransform = editing && !cropMode
-    ? `rotate(${editOps.rotation}deg) scale(${editOps.flipH ? -1 : 1}, ${editOps.flipV ? -1 : 1})`
+  // 编辑态：变换（旋转/翻转/缩放/平移）应用于包裹层，图像自身无变换，裁剪框百分比定位自动跟随
+  const editTransform = editing
+    ? `translate(${pos.x}px, ${pos.y}px) rotate(${editOps.rotation}deg) scale(${zoom * (editOps.flipH ? -1 : 1)}, ${zoom * (editOps.flipV ? -1 : 1)})`
     : undefined;
-  const tempOverlay = editing ? temperatureOverlay(editOps) : null;
-  const cropRatioValue = CROP_RATIOS.find(r => r.key === cropRatioKey)?.value || null;
+  const crop = editing ? editOps.crop : null;
+  const cropPct = crop && editSession
+    ? {
+        left: `${(crop.left / editSession.width) * 100}%`,
+        top: `${(crop.top / editSession.height) * 100}%`,
+        width: `${(crop.width / editSession.width) * 100}%`,
+        height: `${(crop.height / editSession.height) * 100}%`,
+      }
+    : null;
 
   return (
     <div className="viewer-overlay" onClick={editing ? undefined : onClose}>
+      {/* 色温精确预览滤镜（与 sharp 通道增益同语义） */}
+      {editing && editOps.temperature !== 0 && (
+        <svg width="0" height="0" style={{ position: 'absolute' }} aria-hidden="true">
+          <filter id="pixyang-tint" colorInterpolationFilters="sRGB">
+            <feColorMatrix type="matrix" values={tintMatrixValues(editOps)} />
+          </filter>
+        </svg>
+      )}
+
       {/* 顶部操作栏 */}
       <div className="viewer-actions" onClick={(e) => e.stopPropagation()}>
         {!editing && (
@@ -469,16 +603,31 @@ export default function ImageViewer({
         <Button variant="ghost" size="icon" onClick={() => applyFlip('V')} title="垂直翻转 (V)">
           <FlipVertical2 className="size-5" />
         </Button>
-        {editing ? (
-          <Button
-            variant="ghost" size="icon"
-            onClick={() => { setCropMode(m => !m); setCropRect(null); }}
-            className={cropMode ? 'is-active' : ''}
-            title="裁剪"
-          >
-            <Crop className="size-5" />
-          </Button>
-        ) : (
+        {editing && (
+          <>
+            <Button
+              variant="ghost" size="icon" disabled={!histInfo.canUndo}
+              onClick={() => applyHistory('undo')} title="撤销 (Ctrl+Z)"
+            >
+              <Undo2 className="size-5" />
+            </Button>
+            <Button
+              variant="ghost" size="icon" disabled={!histInfo.canRedo}
+              onClick={() => applyHistory('redo')} title="重做 (Ctrl+Shift+Z)"
+            >
+              <Redo2 className="size-5" />
+            </Button>
+            <Button
+              variant="ghost" size="icon"
+              onClick={() => { setCropMode(m => !m); setEditOps(o => ({ ...o, crop: null })); }}
+              className={cropMode ? 'is-active' : ''}
+              title="裁剪"
+            >
+              <Crop className="size-5" />
+            </Button>
+          </>
+        )}
+        {!editing && (
           <>
             <Button
               variant="ghost" size="icon" onClick={enterEdit}
@@ -533,47 +682,43 @@ export default function ImageViewer({
           </div>
         ) : editing && editError ? (
           <div className="editor-error">{editError}</div>
-        ) : (
-          <>
+        ) : editing ? (
+          <div className="editor-transform-layer" style={{ transform: editTransform }}>
             <img
-              key={editing ? 'edit' : image.id}
               ref={editImgRef}
               className="viewer-image"
-              src={editing ? (editBaseSrc || displaySrc) : displaySrc}
+              src={editBaseSrc || displaySrc}
               alt={image.filename?.replace(/\.\w+$/, '') || image.filename}
               draggable={false}
               style={{
-                transform: editing
-                  ? editingTransform
-                  : `translate(${pos.x}px, ${pos.y}px) rotate(${rotation}deg) scale(${zoom * (flipH ? -1 : 1)}, ${zoom * (flipV ? -1 : 1)})`,
-                filter: editing ? cssFilter(editOps) : undefined,
-                cursor: zoom > 1 && !cropMode ? (dragging.current ? 'grabbing' : 'grab') : undefined,
+                filter: cssFilter(editOps),
+                opacity: editBusy ? 0.75 : 1,
                 transition: dragging.current ? 'none' : undefined,
               }}
             />
-            {editing && tempOverlay && !cropMode && (
-              <div className="editor-temp-overlay" style={{ background: tempOverlay }} />
+            {crop && cropPct && (
+              <div className="editor-crop-box" style={cropPct} data-crop-box="1">
+                {['n', 's', 'e', 'w', 'ne', 'nw', 'se', 'sw'].map(h => (
+                  <span key={h} data-crop-handle={h} className={`editor-crop-handle handle-${h}`} />
+                ))}
+                <span className="editor-crop-size">{Math.round(crop.width)}×{Math.round(crop.height)}</span>
+              </div>
             )}
-            {editing && cropMode && cropRect && cropRect.width > 0 && (() => {
-              const rect = imageDisplayRect();
-              if (!rect) return null;
-              return (
-                <>
-                  <div
-                    className="editor-crop-box"
-                    style={{
-                      left: rect.offX + cropRect.left * rect.scale,
-                      top: rect.offY + cropRect.top * rect.scale,
-                      width: cropRect.width * rect.scale,
-                      height: cropRect.height * rect.scale,
-                    }}
-                  >
-                    <span className="editor-crop-size">{Math.round(cropRect.width)}×{Math.round(cropRect.height)}</span>
-                  </div>
-                </>
-              );
-            })()}
-          </>
+            {editBusy && <Loader2 className="editor-rendering-spinner animate-spin" />}
+          </div>
+        ) : (
+          <img
+            key={image.id}
+            className="viewer-image"
+            src={displaySrc}
+            alt={image.filename?.replace(/\.\w+$/, '') || image.filename}
+            draggable={false}
+            style={{
+              transform: `translate(${pos.x}px, ${pos.y}px) rotate(${rotation}deg) scale(${zoom * (flipH ? -1 : 1)}, ${zoom * (flipV ? -1 : 1)})`,
+              cursor: zoom > 1 ? (dragging.current ? 'grabbing' : 'grab') : 'default',
+              transition: dragging.current ? 'none' : undefined,
+            }}
+          />
         )}
       </div>
 
@@ -588,48 +733,44 @@ export default function ImageViewer({
             </span>
           </div>
 
-          <label className="editor-slider-row">
-            <span>曝光</span>
-            <input
-              type="range" min={-2} max={2} step={0.05}
-              value={editOps.exposure}
-              onChange={(e) => setEditOps(o => ({ ...o, exposure: Number(e.target.value) }))}
-            />
-            <em>{editOps.exposure > 0 ? '+' : ''}{editOps.exposure.toFixed(2)}</em>
-          </label>
-          <label className="editor-slider-row">
-            <span>对比度</span>
-            <input
-              type="range" min={-50} max={50} step={1}
-              value={editOps.contrast}
-              onChange={(e) => setEditOps(o => ({ ...o, contrast: Number(e.target.value) }))}
-            />
-            <em>{editOps.contrast > 0 ? '+' : ''}{editOps.contrast}</em>
-          </label>
-          <label className="editor-slider-row">
-            <span>饱和度</span>
-            <input
-              type="range" min={-100} max={100} step={1}
-              value={editOps.saturation}
-              onChange={(e) => setEditOps(o => ({ ...o, saturation: Number(e.target.value) }))}
-            />
-            <em>{editOps.saturation > 0 ? '+' : ''}{editOps.saturation}</em>
-          </label>
-          <label className="editor-slider-row">
-            <span>色温</span>
-            <input
-              type="range" min={-100} max={100} step={1}
-              value={editOps.temperature}
-              onChange={(e) => setEditOps(o => ({ ...o, temperature: Number(e.target.value) }))}
-            />
-            <em>{editOps.temperature > 0 ? '+' : ''}{editOps.temperature}</em>
-          </label>
+          {[
+            { key: 'exposure', label: '曝光', min: -2, max: 2, step: 0.05, fmt: v => `${v > 0 ? '+' : ''}${v.toFixed(2)}` },
+            { key: 'contrast', label: '对比度', min: -50, max: 50, step: 1, fmt: v => `${v > 0 ? '+' : ''}${v}` },
+            { key: 'saturation', label: '饱和度', min: -100, max: 100, step: 1, fmt: v => `${v > 0 ? '+' : ''}${v}` },
+            { key: 'temperature', label: '色温', min: -100, max: 100, step: 1, fmt: v => `${v > 0 ? '+' : ''}${v}` },
+          ].map(({ key, label, min, max, step, fmt }) => (
+            <label className="editor-slider-row" key={key}>
+              <span
+                title="双击重置"
+                onDoubleClick={() => {
+                  const next = { ...editOpsRef.current, [key]: EDIT_DEFAULTS[key] };
+                  pushHistory(next);
+                  setEditOps(next);
+                }}
+              >
+                {label}
+              </span>
+              <input
+                type="range" min={min} max={max} step={step}
+                value={editOps[key]}
+                onPointerDown={() => pushHistory(editOpsRef.current)}
+                onChange={(e) => setEditOps(o => ({ ...o, [key]: Number(e.target.value) }))}
+              />
+              <em>{fmt(editOps[key])}</em>
+            </label>
+          ))}
 
           <div className="editor-crop-section">
             <div className="editor-crop-header">
               <span>裁剪比例</span>
-              {cropRect && (
-                <Button variant="ghost" size="xs" onClick={() => setCropRect(null)}>清除</Button>
+              {crop && (
+                <Button variant="ghost" size="xs" onClick={() => setEditOps(o => {
+                  const next = { ...o, crop: null };
+                  pushHistory(next);
+                  return next;
+                })}>
+                  清除
+                </Button>
               )}
             </div>
             <div className="editor-ratio-row">
@@ -648,21 +789,36 @@ export default function ImageViewer({
                 <Crop className="size-4" /> 框选裁剪区域
               </Button>
             )}
-            {cropMode && cropRatioValue && (
-              <p className="editor-crop-hint">按 {CROP_RATIOS.find(r => r.key === cropRatioKey)?.label} 锁定比例拖拽</p>
+            {cropMode && (
+              <p className="editor-crop-hint">
+                {cropRatioValueLabel(cropRatioKey) ? `按 ${cropRatioValueLabel(cropRatioKey)} 锁定比例拖拽` : '在图上拖拽框选，可拖动/调整框'}
+              </p>
             )}
           </div>
 
           <div className="editor-panel-footer">
+            <div className="editor-footer-row">
+              <Button
+                variant="secondary" size="sm" className="w-full"
+                disabled={!histInfo.canUndo}
+                onClick={() => applyHistory('undo')}
+              >
+                <Undo2 className="size-4" /> 撤销
+              </Button>
+              <Button
+                variant="secondary" size="sm" className="w-full"
+                disabled={!histInfo.canRedo}
+                onClick={() => applyHistory('redo')}
+              >
+                <Redo2 className="size-4" /> 重做
+              </Button>
+            </div>
             <Button
               variant="secondary" size="sm" className="w-full"
               disabled={editBusy}
-              onClick={() => {
-                setEditOps({ ...EDIT_DEFAULTS });
-                setCropRect(null);
-              }}
+              onClick={resetEdits}
             >
-              <RotateCcwSquare className="size-4" /> 重置
+              <RotateCcwSquare className="size-4" /> 重置全部
             </Button>
             <Button
               variant="default" size="sm" className="w-full"
@@ -735,4 +891,8 @@ export default function ImageViewer({
       )}
     </div>
   );
+}
+
+function cropRatioValueLabel(key) {
+  return CROP_RATIOS.find(r => r.key === key)?.label === '自由' ? '' : CROP_RATIOS.find(r => r.key === key)?.label;
 }
