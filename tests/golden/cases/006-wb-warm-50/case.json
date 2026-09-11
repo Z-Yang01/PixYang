@@ -1,0 +1,8 @@
+{
+  "fixture": "wide.jpg",
+  "tolerance": {
+    "maxDelta": 3,
+    "meanDelta": 0.5
+  },
+  "description": "006-wb-warm-50"
+}

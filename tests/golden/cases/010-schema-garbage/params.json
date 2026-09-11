@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 99,
+  "orientation": {
+    "rotate": 45
+  },
+  "basic": {
+    "exposure": 99,
+    "contrast": "x"
+  },
+  "foo": "bar",
+  "output": {
+    "format": "png"
+  }
+}

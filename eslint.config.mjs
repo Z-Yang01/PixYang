@@ -31,8 +31,8 @@ export default [
     },
   },
   {
-    // Electron 端与构建辅助脚本为 CommonJS
-    files: ['electron/**/*.js', 'scripts/**/*.js'],
+    // Electron 端、共享渲染模块与构建辅助脚本均为 CommonJS（含 .cjs）
+    files: ['electron/**/*.js', 'electron/**/*.cjs', 'scripts/**/*.js', 'shared/**/*.cjs', 'tests/**/*.cjs', '*.cjs'],
     languageOptions: {
       ecmaVersion: 'latest',
       sourceType: 'commonjs',

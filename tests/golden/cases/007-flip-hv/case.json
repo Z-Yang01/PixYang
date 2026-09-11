@@ -1,0 +1,8 @@
+{
+  "fixture": "checker.jpg",
+  "tolerance": {
+    "maxDelta": 0,
+    "meanDelta": 0
+  },
+  "description": "007-flip-hv"
+}

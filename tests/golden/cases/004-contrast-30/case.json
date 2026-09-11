@@ -1,0 +1,8 @@
+{
+  "fixture": "gray.jpg",
+  "tolerance": {
+    "maxDelta": 2,
+    "meanDelta": 0.5
+  },
+  "description": "004-contrast-30"
+}

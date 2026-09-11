@@ -1,0 +1,106 @@
+import { describe, it, expect } from 'vitest';
+import editSchema from '../../../shared/editSchema.cjs';
+import * as renderSpec from '../../../shared/renderSpec.cjs';
+import * as pipelineOrder from '../../../shared/pipelineOrder.cjs';
+
+describe('pipelineOrder（渲染阶段顺序铁律）', () => {
+  it('阶段顺序锁定：像素操作在几何之前，encode 永远最后', () => {
+    const order = pipelineOrder.PIPELINE_ORDER;
+    expect(order[0]).toBe('decode');
+    expect(order.indexOf('whiteBalance')).toBeLessThan(order.indexOf('exposure'));
+    expect(order.indexOf('exposure')).toBeLessThan(order.indexOf('tone'));
+    expect(order.indexOf('geometry')).toBeLessThan(order.indexOf('crop'));
+    expect(order[order.length - 1]).toBe('encode');
+  });
+
+  it('未实现阶段清单：curves/hsl/colorGrading/masks/lens', () => {
+    expect([...pipelineOrder.UNSUPPORTED_STAGES].sort()).toEqual(
+      ['colorGrading', 'curves', 'hsl', 'lens', 'masks']
+    );
+  });
+});
+
+describe('editParamsToRenderSpec（纯函数转换）', () => {
+  const build = (params, opts) => renderSpec.editParamsToRenderSpec(params, { sourceHash: 'golden', ...opts });
+
+  it('1. identity：默认参数产出完整 14 阶段 spec', () => {
+    const spec = build({});
+    expect(spec.specVersion).toBe(1);
+    expect(spec.stages.map((s) => s.kind)).toEqual(pipelineOrder.PIPELINE_ORDER);
+    expect(renderSpec.listUnsupported(spec)).toEqual(['curves', 'hsl', 'colorGrading', 'masks', 'lens']);
+  });
+
+  it('2. 纯函数：同输入两次调用 stages 深相等', () => {
+    const p = { basic: { exposure: 1, temperature: 30 } };
+    expect(JSON.stringify(build(p).stages)).toBe(JSON.stringify(build(p).stages));
+  });
+
+  it('3. sourceHash 必填（防底图更换后 spec 失效）', () => {
+    expect(() => renderSpec.editParamsToRenderSpec({})).toThrow(/sourceHash/);
+  });
+
+  it('4. 色温 ±100 UI 值进入 whiteBalance stage', () => {
+    const by = (spec, k) => spec.stages.find((s) => s.kind === k).params;
+    expect(by(build({ basic: { temperature: 50 } }), 'whiteBalance')).toEqual({ temp: 50, tint: 0, mode: 'custom' });
+  });
+
+  it('5. 饱和度 -100 显式 mono:true（不靠下游猜）', () => {
+    const sat = build({ basic: { saturation: -100 } }).stages.find((s) => s.kind === 'saturation').params;
+    expect(sat).toEqual({ value: -100, mono: true });
+    expect(build({ basic: { saturation: 0 } }).stages.find((s) => s.kind === 'saturation').params.mono).toBe(false);
+  });
+
+  it('6. 锁定 rotate→crop 顺序，crop 坐标为旋转后坐标系', () => {
+    const spec = build({ orientation: { rotate: 90 }, crop: { x: 100, y: 200, w: 400, h: 600 } });
+    const kinds = spec.stages.map((s) => s.kind);
+    expect(kinds.indexOf('geometry')).toBeLessThan(kinds.indexOf('crop'));
+    expect(spec.stages.find((s) => s.kind === 'crop').params).toEqual({
+      x: 100, y: 200, w: 400, h: 600, ratio: 'free', angle: 0,
+    });
+  });
+
+  it('7. crop.angle != 0 抛 not_implemented', () => {
+    expect(() => build({ crop: { x: 0, y: 0, w: 10, h: 10, angle: 15 } })).toThrow();
+    try {
+      build({ crop: { x: 0, y: 0, w: 10, h: 10, angle: 15 } });
+    } catch (e) {
+      expect(e.code).toBe('not_implemented');
+    }
+  });
+
+  it('8. 未实现字段（curves/hsl）标记 unsupported 且数据透传', () => {
+    const spec = build({ curves: { rgb: [0, 128, 255] }, hsl: { hue: [10] } });
+    const curves = spec.stages.find((s) => s.kind === 'curves');
+    expect(curves.unsupported).toBe(true);
+    expect(curves.params.rgb).toEqual([0, 128, 255]);
+  });
+
+  it('9. 非法值混合（schemaVersion 缺失/越界值）归一化后不抛错', () => {
+    const spec = build({ orientation: { rotate: 45 }, basic: { exposure: 99 } });
+    const geom = spec.stages.find((s) => s.kind === 'geometry').params;
+    expect(geom.rotate).toBe(0);
+    expect(spec.stages.find((s) => s.kind === 'exposure').params.ev).toBe(0);
+  });
+
+  it('10. working 色彩空间 M3 仅支持 srgb', () => {
+    expect(build({}, { working: 'srgb' }).colorSpace.working).toBe('srgb');
+    expect(() => build({}, { working: 'linear-prophoto' })).toThrow(/尚未支持/);
+  });
+
+  it('specToPreviewTweaks：预览端从同一份 stages 提取数值', () => {
+    const spec = build({ basic: { exposure: 1, temperature: 50, saturation: -100 } });
+    const t = renderSpec.specToPreviewTweaks(spec);
+    expect(t.exposure).toBe(1);
+    expect(t.temperature).toBe(50);
+    expect(t.saturation).toBe(-100);
+  });
+});
+
+describe('editSchema 深合并行为锁死', () => {
+  it('deepMerge({a:{b:1}}, {a:null}) → a 回退默认（显式 null 覆盖为默认值，不抛错）', () => {
+    // 行为锁死：crop 默认 null，输入 null 时保持 null；输入对象时完整保留
+    const n = editSchema.normalizeEdits({ crop: { x: 1, y: 2, w: 10, h: 10 } });
+    expect(n.crop).toEqual({ x: 1, y: 2, w: 10, h: 10, ratio: 'free' });
+    expect(editSchema.normalizeEdits({ crop: null }).crop).toBeNull();
+  });
+});

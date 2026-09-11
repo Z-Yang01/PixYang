@@ -3,7 +3,8 @@ const { pathToFileURL } = require('url');
 const path = require('path');
 const fs = require('fs');
 const exifr = require('exifr');
-const { generateThumbnailTiers, extractNefPreview, normalizeEditBase, renderEdit, closeWorker } = require('./imageWorker');
+const { generateThumbnailTiers, extractNefPreview, normalizeEditBase, closeWorker } = require('./imageWorker');
+const { renderFromEditParams, computeSourceHash } = require('./render/index.cjs');
 const {
   initDatabase,
   closeDatabase,
@@ -357,10 +358,10 @@ async function bakeEditSession(id, edits) {
   const tempPath = editTempPathFor(session.filepath);
   let dims;
   try {
-    dims = await renderEdit({
-      srcPath: session.basePath,
-      outPath: tempPath,
-      edits: { ...edits, output: { ...edits?.output, format: session.format === '.png' ? 'png' : 'jpeg' } },
+    dims = await renderFromEditParams(edits, {
+      inputPath: session.basePath,
+      outputPath: tempPath,
+      sourceHash: computeSourceHash(session.basePath),
     });
   } catch (e) {
     return { error: `渲染失败：${e.message}` };
@@ -394,10 +395,10 @@ async function exportEditSession(id, edits, destDir) {
   }
 
   try {
-    const dims = await renderEdit({
-      srcPath: session.basePath,
-      outPath: dest,
-      edits: { ...edits, output: { ...edits?.output, format: session.format === '.png' ? 'png' : 'jpeg' } },
+    const dims = await renderFromEditParams(edits, {
+      inputPath: session.basePath,
+      outputPath: dest,
+      sourceHash: computeSourceHash(session.basePath),
     });
     return { ok: true, path: dest, width: dims.width, height: dims.height };
   } catch (e) {

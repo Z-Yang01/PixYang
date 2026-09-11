@@ -11,6 +11,7 @@ const ROOT = path.resolve(HERE, '..', '..', '..');
 const MAIN_JS = path.join(ROOT, 'electron', 'main.js');
 const DB_JS = path.join(ROOT, 'electron', 'database.js');
 const IMAGE_WORKER_JS = path.join(ROOT, 'electron', 'imageWorker.js');
+const RENDER_INDEX_JS = path.join(ROOT, 'electron', 'render', 'index.cjs');
 const TMP_BASE = path.join(os.tmpdir(), `pixyang-main-test-${process.pid}`);
 const FIXTURES = path.join(TMP_BASE, 'fixtures');
 const THUMBS = path.join(TMP_BASE, 'thumbs');
@@ -254,8 +255,15 @@ const workerStub = {
   generateThumbnailTiers: vi.fn(async () => null),
   extractNefPreview: vi.fn(async () => null),
   normalizeEditBase: vi.fn(async () => ({ width: 2000, height: 1200 })),
-  renderEdit: vi.fn(async () => ({ ok: true, width: 800, height: 600 })),
   closeWorker: vi.fn(async () => {}),
+};
+
+// 渲染入口（electron/render/index.cjs）：bake/export 经 RenderSpec 走 worker
+const renderModuleStub = {
+  renderFromEditParams: vi.fn(async () => ({ ok: true, width: 800, height: 600 })),
+  renderFromSpec: vi.fn(async () => ({ ok: true })),
+  computeSourceHash: vi.fn(() => 'hash-stub'),
+  closeRenderWorker: vi.fn(async () => {}),
 };
 
 require.cache[require.resolve('electron')] = {
@@ -266,6 +274,7 @@ require.cache[require.resolve('electron')] = {
 };
 require.cache[DB_JS] = { id: DB_JS, filename: DB_JS, loaded: true, exports: dbStub };
 require.cache[IMAGE_WORKER_JS] = { id: IMAGE_WORKER_JS, filename: IMAGE_WORKER_JS, loaded: true, exports: workerStub };
+require.cache[RENDER_INDEX_JS] = { id: RENDER_INDEX_JS, filename: RENDER_INDEX_JS, loaded: true, exports: renderModuleStub };
 
 const call = (channel, ...args) => handlers.get(channel)({ sender: { id: 1 } }, ...args);
 const randomJpg = path.join(FIXTURES, 'random.jpg');
@@ -357,8 +366,8 @@ function setDefaultMocks() {
   workerStub.extractNefPreview.mockImplementation(async () => null);
   workerStub.normalizeEditBase.mockReset();
   workerStub.normalizeEditBase.mockImplementation(async () => ({ width: 2000, height: 1200 }));
-  workerStub.renderEdit.mockReset();
-  workerStub.renderEdit.mockImplementation(async () => ({ ok: true, width: 800, height: 600 }));
+  renderModuleStub.renderFromEditParams.mockReset();
+  renderModuleStub.renderFromEditParams.mockImplementation(async () => ({ ok: true, width: 800, height: 600 }));
   dbStub.getEdits.mockReset();
   dbStub.getEdits.mockImplementation(() => null);
   dbStub.saveEdits.mockReset();
@@ -826,16 +835,17 @@ describe('编辑会话（非破坏保存）', () => {
     dbStub.getImageById.mockReturnValue(editImage());
     await call('fs:edit-open', 77);
 
-    workerStub.renderEdit.mockResolvedValueOnce({ ok: true, width: 800, height: 600 });
+    renderModuleStub.renderFromEditParams.mockResolvedValueOnce({ ok: true, width: 800, height: 600 });
     const baked = { id: 77, filename: 'editme.jpg', filepath: path.join(FIXTURES, 'editme.jpg') };
     dbStub.saveEditedImage.mockReturnValueOnce(baked);
     const result = await call('fs:edit-bake', 77, sampleEdits);
     expect(result.ok).toBe(true);
     expect(result.image).toBe(baked);
-    expect(workerStub.renderEdit).toHaveBeenCalledWith(
+    expect(renderModuleStub.renderFromEditParams).toHaveBeenCalledWith(
+      expect.objectContaining({ basic: expect.objectContaining({ exposure: 0.5 }) }),
       expect.objectContaining({
-        outPath: path.join(FIXTURES, 'editme-temp.jpg'),
-        edits: expect.objectContaining({ basic: expect.objectContaining({ exposure: 0.5 }) }),
+        inputPath: expect.stringContaining('77-base.jpg'),
+        outputPath: path.join(FIXTURES, 'editme-temp.jpg'),
       })
     );
     expect(dbStub.saveEditedImage).toHaveBeenCalledWith(77, path.join(FIXTURES, 'editme-temp.jpg'), { width: 800, height: 600 });
@@ -850,14 +860,14 @@ describe('编辑会话（非破坏保存）', () => {
 
     const destDir = path.join(TMP_BASE, 'export-dir');
     fs.mkdirSync(destDir, { recursive: true });
-    workerStub.renderEdit.mockResolvedValue({ ok: true, width: 800, height: 600 });
+    renderModuleStub.renderFromEditParams.mockResolvedValue({ ok: true, width: 800, height: 600 });
     const r1 = await call('fs:edit-export', 77, sampleEdits, destDir);
     expect(r1.ok).toBe(true);
     expect(r1.path).toBe(path.join(destDir, 'editme-edited.jpg'));
     fs.writeFileSync(r1.path, 'rendered'); // 模拟渲染产物（stub 不真写盘），触发第二次重名
     const r2 = await call('fs:edit-export', 77, sampleEdits, destDir);
     expect(r2.path).toBe(path.join(destDir, 'editme-edited_1.jpg'));
-    expect(workerStub.renderEdit).toHaveBeenCalledTimes(2);
+    expect(renderModuleStub.renderFromEditParams).toHaveBeenCalledTimes(2);
     await call('fs:edit-cancel', 77);
   });
 

@@ -42,19 +42,26 @@ export function sanitizeEditOps(input = {}) {
           top: Math.max(0, Math.round(ops.crop.top)),
           width: Math.round(ops.crop.width),
           height: Math.round(ops.crop.height),
+          ratio: ops.crop.ratio || 'free',
         }
       : null,
     exposure: clamp(Number(ops.exposure) || 0, -2, 2),
     contrast: clamp(Number(ops.contrast) || 0, -50, 50),
+    highlights: clamp(Number(ops.highlights) || 0, -100, 100),
+    shadows: clamp(Number(ops.shadows) || 0, -100, 100),
+    whites: clamp(Number(ops.whites) || 0, -100, 100),
+    blacks: clamp(Number(ops.blacks) || 0, -100, 100),
     saturation: clamp(Number(ops.saturation) || 0, -100, 100),
     temperature: clamp(Number(ops.temperature) || 0, -100, 100),
+    tint: clamp(Number(ops.tint) || 0, -100, 100),
   };
 }
 
 export function hasEdits(ops) {
   const s = sanitizeEditOps(ops);
   return !!(s.rotation !== 0 || s.flipH || s.flipV || s.crop
-    || s.exposure !== 0 || s.contrast !== 0 || s.saturation !== 0 || s.temperature !== 0);
+    || s.exposure !== 0 || s.contrast !== 0 || s.saturation !== 0 || s.temperature !== 0
+    || s.highlights !== 0 || s.shadows !== 0 || s.whites !== 0 || s.blacks !== 0 || s.tint !== 0);
 }
 
 // 色温预览：SVG feColorMatrix 逐通道增益，与 sharp 管线的 RGB 增益同数学语义

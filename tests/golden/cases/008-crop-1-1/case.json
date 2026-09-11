@@ -1,0 +1,8 @@
+{
+  "fixture": "portrait.jpg",
+  "tolerance": {
+    "maxDelta": 0,
+    "meanDelta": 0
+  },
+  "description": "008-crop-1-1"
+}

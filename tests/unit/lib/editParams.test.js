@@ -6,10 +6,12 @@ import {
   cssFilter,
   tintMatrixValues,
   CROP_RATIOS,
-} from '../../src/lib/editParams';
+} from '@/lib/editParams';
 
 describe('sanitizeEditOps', () => {
   it('默认值与非法值回退', () => {
+    // 新增 highlights/shadows/whites/blacks/tint 后默认集为 13 字段
+    expect(Object.keys(sanitizeEditOps({}))).toHaveLength(Object.keys(EDIT_DEFAULTS).length);
     expect(sanitizeEditOps({})).toEqual(EDIT_DEFAULTS);
     expect(sanitizeEditOps({ rotation: 45 }).rotation).toBe(0);
     expect(sanitizeEditOps({ exposure: 99 }).exposure).toBe(2);
@@ -19,7 +21,7 @@ describe('sanitizeEditOps', () => {
 
   it('crop 取整并过滤无效框', () => {
     expect(sanitizeEditOps({ crop: { left: 1.6, top: 2.2, width: 10.4, height: 20.5 } }).crop).toEqual({
-      left: 2, top: 2, width: 10, height: 21,
+      left: 2, top: 2, width: 10, height: 21, ratio: 'free',
     });
     expect(sanitizeEditOps({ crop: { left: 0, top: 0, width: 0, height: 5 } }).crop).toBeNull();
     expect(sanitizeEditOps({ crop: null }).crop).toBeNull();

@@ -14,7 +14,10 @@
     "typecheck": "tsc --noEmit",
     "format:check": "prettier --check .",
     "vite:dev": "vite",
-    "electron:dev": "electron ."
+    "electron:dev": "electron .",
+    "golden": "node tests/golden/runner.cjs",
+    "golden:update": "node tests/golden/runner.cjs --update",
+    "golden:preview": "node tests/golden/previewBaseline.cjs"
   },
   "dependencies": {
     "better-sqlite3": "^11.10.0",

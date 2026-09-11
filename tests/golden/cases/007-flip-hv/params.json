@@ -1,0 +1,10 @@
+{
+  "orientation": {
+    "rotate": 0,
+    "flipH": true,
+    "flipV": true
+  },
+  "output": {
+    "format": "png"
+  }
+}

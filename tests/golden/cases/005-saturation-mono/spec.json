@@ -1,0 +1,124 @@
+{
+  "specVersion": 1,
+  "sourceHash": "golden",
+  "colorSpace": {
+    "working": "srgb",
+    "output": "srgb"
+  },
+  "stages": [
+    {
+      "kind": "decode",
+      "params": {
+        "raw": false,
+        "halfSize": 0
+      }
+    },
+    {
+      "kind": "whiteBalance",
+      "params": {
+        "temp": 0,
+        "tint": 0,
+        "mode": "custom"
+      }
+    },
+    {
+      "kind": "exposure",
+      "params": {
+        "ev": 0
+      }
+    },
+    {
+      "kind": "tone",
+      "params": {
+        "contrast": 0,
+        "highlights": 0,
+        "shadows": 0,
+        "whites": 0,
+        "blacks": 0
+      }
+    },
+    {
+      "kind": "curves",
+      "params": {
+        "rgb": [],
+        "r": [],
+        "g": [],
+        "b": []
+      },
+      "unsupported": true
+    },
+    {
+      "kind": "hsl",
+      "params": {
+        "hue": [],
+        "sat": [],
+        "lum": []
+      },
+      "unsupported": true
+    },
+    {
+      "kind": "colorGrading",
+      "params": {
+        "shadows": [],
+        "midtones": [],
+        "highlights": []
+      },
+      "unsupported": true
+    },
+    {
+      "kind": "saturation",
+      "params": {
+        "value": -100,
+        "mono": true
+      }
+    },
+    {
+      "kind": "masks",
+      "params": {
+        "list": []
+      },
+      "unsupported": true
+    },
+    {
+      "kind": "detail",
+      "params": {
+        "sharpness": 0,
+        "noise": 0
+      }
+    },
+    {
+      "kind": "lens",
+      "params": {
+        "profile": "",
+        "distortion": 0,
+        "vignette": 0,
+        "chromatic": 0
+      },
+      "unsupported": true
+    },
+    {
+      "kind": "geometry",
+      "params": {
+        "rotate": 0,
+        "flipH": false,
+        "flipV": false
+      }
+    },
+    {
+      "kind": "crop",
+      "params": null
+    },
+    {
+      "kind": "encode",
+      "params": {
+        "format": "jpeg",
+        "quality": 92,
+        "resize": null
+      }
+    }
+  ],
+  "meta": {
+    "fromEditParamsVersion": 0,
+    "generatedAt": "2026-09-11T17:39:33.855Z"
+  }
+}

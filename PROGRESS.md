@@ -230,3 +230,34 @@
 ### 遗留（后续模块）
 
 - M3 统一 RenderSpec + golden 像素测试；M4 编辑预览缩略图缓存；M5 预设/复制粘贴/批量同步 UI；M6 预览对齐量化；M7 WebGL2 预览；M8 libraw RAW。
+
+---
+
+# 2026-09-12 M3：统一 RenderSpec + golden 像素测试
+
+### 核心交付
+
+- **shared/renderSpec.cjs**：EditParams → RenderSpec 纯函数（无 IO）。14 个固定阶段（decode→whiteBalance→exposure→tone→curves→hsl→colorGrading→saturation→masks→detail→lens→geometry→crop→encode）；未实现阶段（curves/hsl/colorGrading/masks/lens）显式 unsupported: true 且参数透传（渲染时警告跳过，grep unsupported 可盘点 M4~M8 缺口）；饱和度 -100 显式 mono；crop.angle ≠ 0 抛 not_implemented；sourceHash 必填防底图失效；specToPreviewTweaks 供预览端从同一份 stages 取值。
+- **shared/pipelineOrder.cjs**：阶段顺序铁律常量 + 顺序校验（renderSpec 构造后自检）。锁定语义：像素操作先于几何；geometry 先于 crop；crop 坐标为旋转后坐标系；encode 最后。
+- **electron/render/renderSpecToSharp.cjs**：RenderSpec → sharp 执行器，只依赖 spec+inputPath（不读 EditParams/DB）；applyStage 按 kind 分发；.part 原子写；灰度输入（bands<3）自动降级为标量 linear。
+- **electron/render/index.cjs**：主进程封装 renderFromEditParams/renderFromSpec（发 worker 执行，不阻塞 UI）；computeSourceHash（md5 内容哈希进 spec）。
+- **golden 体系**（tests/golden/）：fixtures 程序化生成（portrait/landscape/gray/checker/wide，强制 3 通道 sRGB）；11 个 case（identity/裁剪+旋转/曝光/对比度/黑白/暖色温/冷色温/翻转/1:1 裁剪/unsupported 透传/schema 垃圾容错）；runner --update 生成 baseline（spec.json 快照 + expect.png/jpg + meta）入仓；CI 比对模式输出 maxΔ/meanΔ。
+
+### 修复的数学 bug
+
+- **对比度 b 项错误复合**（M2 沿袭）：linear 的偏移项被多乘了对比度系数，绕灰轴语义错误。修正后预览近似基线 004-contrast 的 meanΔ 从 36.25 → **0.0953**。
+
+### 预览一致性基线（preview-baseline.json）
+
+曝光 meanΔ=0.097 / 对比度 0.095 / 黑白 0.048 / 暖色温 0.16 / 冷色温 0.16（maxΔ≤11）——CSS 近似与导出管线在 M3 已高度一致；基线入仓，M7 WebGL2 由此继续收紧。
+
+### 测试
+
+- **329 passed / 0 failed**（+27：renderSpec 纯函数 11 例含 deepMerge 锁死、golden vitest 集成 13 例、editParams 适配）。
+- npm scripts：golden / golden:update / golden:preview。
+
+### 遗留
+
+- 前端预览仍为 CSS 近似消费（specToPreviewTweaks 已备好同源取值），M7 切 WebGL2 shader 直读 stages；
+- 真实浏览器 canvas 截图比对（Playwright）在 M6；
+- 高光/阴影为 gamma 近似、无损 TIFF 编码参数待 M8 线性空间统一。

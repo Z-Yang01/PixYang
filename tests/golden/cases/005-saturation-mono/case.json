@@ -1,0 +1,8 @@
+{
+  "fixture": "wide.jpg",
+  "tolerance": {
+    "maxDelta": 2,
+    "meanDelta": 0.5
+  },
+  "description": "005-saturation-mono"
+}

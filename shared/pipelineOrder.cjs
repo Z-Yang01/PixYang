@@ -1,0 +1,36 @@
+// 渲染阶段固定顺序：预览（前端）与导出（sharp/libvips）都必须按此顺序消费，
+// 任何一端不得重排。新增 stage 必须在此登记，否则 renderSpec 校验拒绝。
+//
+// 顺序语义（锁定，写测试用例防止回归）：
+// - 白平衡/影调/颜色等像素操作在几何（旋转/裁剪）之前；
+// - geometry（rotate/flip）先于 crop；
+// - crop 的 x/y/w/h 坐标是 geometry 应用之后图像坐标系（即旋转后坐标系）；
+// - encode 永远最后。
+const PIPELINE_ORDER = [
+  'decode',        // 解码/RAW 显影（M8 前：常规格式直读）
+  'whiteBalance',  // 色温/色调（M3：RGB 通道增益近似；M8 RAW 接真实白平衡）
+  'exposure',      // 曝光 EV
+  'tone',          // 对比度/高光/阴影/白场/黑场
+  'curves',        // 曲线（未实现，unsupported）
+  'hsl',           // HSL（未实现，unsupported）
+  'colorGrading',  // 颜色分级（未实现，unsupported）
+  'saturation',    // 饱和度（-100 = 黑白，mono 显式）
+  'masks',         // 局部蒙版（未实现，unsupported）
+  'detail',        // 锐化/降噪（锐化已实现，降噪未实现时按参数内警告）
+  'lens',          // 镜头校正（未实现，unsupported）
+  'geometry',      // 旋转/翻转（90° 倍数）
+  'crop',          // 裁剪（geometry 之后坐标系）
+  'encode',        // 编码输出
+];
+
+// 整个 stage 尚未实现的 kind（渲染时跳过并记录警告，而非静默丢弃）
+const UNSUPPORTED_STAGES = new Set(['curves', 'hsl', 'colorGrading', 'masks', 'lens']);
+
+function isSupportedStage(kind) {
+  if (!PIPELINE_ORDER.includes(kind)) {
+    throw new Error(`[pipeline] 未知渲染阶段: ${kind}`);
+  }
+  return !UNSUPPORTED_STAGES.has(kind);
+}
+
+module.exports = { PIPELINE_ORDER, UNSUPPORTED_STAGES, isSupportedStage };
