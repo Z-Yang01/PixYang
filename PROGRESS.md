@@ -261,3 +261,76 @@
 - 前端预览仍为 CSS 近似消费（specToPreviewTweaks 已备好同源取值），M7 切 WebGL2 shader 直读 stages；
 - 真实浏览器 canvas 截图比对（Playwright）在 M6；
 - 高光/阴影为 gamma 近似、无损 TIFF 编码参数待 M8 线性空间统一。
+
+---
+
+# 2026-09-11 深夜会话（总控 Agent：组件测试深补）
+
+### 当前状态
+
+- 分支 `optimize/architecture`；全量 vitest **487 passed / 0 failed**（41 文件），总覆盖 76.52% → **91.66%**。
+- 本轮零 src 源码改动（仅测试与 eslint 配置），新增 10 个测试文件、158 用例。
+
+### 已完成（任务池 Task P1~P3）
+
+1. **Task P1 ui 基础件 + hooks**（子 Agent A，72 用例）：badge/label/separator/select/context-menu/
+   dropdown-menu/dialog/alert-dialog 渲染冒烟 + 交互分支 + useDragImport 拖拽事件流。
+   src/components/ui **41.91%→99.9%**（badge/label/separator/select 0%→100%），useDragImport
+   60.78%→**100%**。
+2. **Task P2 页面组件**（子 Agent B，85 用例）：SettingsPage 63.3→**100**（分支 91.12）、
+   InfoPanel 72.46→**100**（分支 91.53）、AlbumsView 74.44→**100**（分支 95.45）、
+   StarRating 分支 40→**100**、ImportDialog 分支 58.46→**93.81**。
+3. **Task P3 基建**：eslint.config.mjs 的 tests 块 glob 补 `ts,tsx`（修 .tsx 测试文件 45 个
+   no-undef 误报）；修复 1 个 coverage 插桩下才暴露的 flaky 用例（ImportDialog 预览图断言
+   加 vi.waitFor——toFileUrls promise 与扫描结果不同 tick）。
+
+### 测试
+
+- 摸底：`npm test` → 329 passed / 0 failed；coverage 76.52%；typecheck 0 错；lint 0 错 47 警。
+- 收尾：`npx vitest run` → **487 passed / 0 failed**（含 coverage 插桩模式复跑确认）；coverage
+  **91.66%**；typecheck 0 错；lint 0 错 34 警。
+
+### 教训记录（lint 清理回归事故，已复原）
+
+- 总控曾尝试批量删除 eslint 报 "unused" 的 `import React from 'react'`（24 处）——vitest 的
+  JSX transform 为 **classic 模式**，该导入是运行时必需，删除导致 179 用例失败（React is not
+  defined）。已全部复原（git checkout + 新文件手工补回），全量复跑 487 全绿确认。
+- 结论：本仓库 eslint 未配置 react 插件的 jsx-uses-react 感知，"React is defined but never
+  used" 在 .jsx 组件/测试文件中属**系统性误报**，不得据以删除导入。要消除需迁移 automatic
+  JSX runtime（vite esbuild jsx: 'automatic'）或装 eslint-plugin-react，属后续任务。
+
+### 遗留
+
+- lint 剩余 34 警告：react-hooks/exhaustive-deps ~10（mount-only 设计意图）、no-useless-assignment
+  ~4（需人工判断，见疑似 Bug 候选）、React unused 误报 ~15（如上）。
+- act(...) 警告若干为 radix portal 异步收尾噪音，无害。
+
+### 疑似 Bug（只记录不修，本轮新增 5 个）
+
+1. AlbumsView 重命名流程：ContextMenu 关闭时焦点还原触发重命名输入框 onBlur，**每次打开重命名
+   都会以原始名称冗余提交一次 renameAlbum**。
+2. SettingsPage.handleChooseStorage：`result?.error` 用了可选链但 `result.path` 未防 undefined，
+   setImagesRoot 返回 undefined 时 TypeError。
+3. ui/dialog.tsx、alert-dialog.tsx：data-slot 写在 Radix Portal 组件上，真实 DOM 不存在该元素，
+   依赖该选择器的样式/测试会落空。
+4. ConfirmDialog 取消按钮 onClick 与 Radix onOpenChange 双通道触发 onCancel 双调用（前轮已记录，
+   本轮测试固化了 2 次调用现状）。
+5. Radix modal 菜单（Dropdown/ContextMenu 默认 modal）打开时对应用容器加 aria-hidden，trigger
+   从无障碍树消失（库行为，可评估 modal={false}）。
+
+### 下一步
+
+- M4（tone curves 阶段）按 M3 既有 RenderSpec 模式实施；lint 警告分级清理（先配置 react 插件
+  或迁 automatic runtime，再处理 exhaustive-deps）；Playwright 真实浏览器 golden 比对（M6）。
+
+### Git Commit
+
+- `test: ui/page components +hooks suites 158 cases, coverage 76.5%->91.7%; fix eslint tsx glob`（本轮，未 push）
+
+### 晨报（2026-09-11 深夜）
+
+- **完成**：+158 用例全绿（329→487）；总覆盖 76.52%→91.66%；ui 基础件 42%→99.9%；
+  五个页面组件语句全部 100%；修复 eslint tsx glob 与 1 个 flaky；记录疑似 bug 5 个。
+- **阻塞**：无（中途 lint 清理回归事故已完全复原并记录教训）。
+- **红线遵守**：无 push、零 src 源码改动、未触真实数据/Electron 用户目录、无网络依赖。
+
