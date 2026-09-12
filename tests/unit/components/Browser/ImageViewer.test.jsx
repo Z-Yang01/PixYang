@@ -283,3 +283,54 @@ describe('ImageViewer', () => {
 function container_close() {
   return document.querySelector('.viewer-close');
 }
+
+describe('内置风格预设', () => {
+  function mockBridgeForPresets() {
+    window.pixyang = {
+      getImageTags: vi.fn().mockResolvedValue([]),
+      toFileUrl: vi.fn().mockImplementation((p) => Promise.resolve(p ? `file:///${p}` : null)),
+      editOpen: vi.fn().mockResolvedValue({
+        id: 3, source: 'jpg', basePath: 'C:/cache/3-base.jpg',
+        width: 1920, height: 1080, hasNef: false, savedEdits: null,
+      }),
+      getPresets: vi.fn().mockResolvedValue([]),
+      createPreset: vi.fn().mockResolvedValue({ id: 1, name: 'x' }),
+      deletePreset: vi.fn().mockResolvedValue(undefined),
+      editCancel: vi.fn().mockResolvedValue({ ok: true }),
+      saveEdits: vi.fn().mockResolvedValue({ version: 1, params: {} }),
+    };
+  }
+
+  beforeEach(() => {
+    window.pixyang = window.pixyang || {};
+    mockBridgeForPresets();
+  });
+
+  afterEach(() => {
+    cleanup();
+    delete window.pixyang;
+  });
+
+  it('编辑面板渲染内置预设 chips，点击应用黑白（saturate=0 矩阵出现）', async () => {
+    render(<ImageViewer {...baseProps()} />);
+    fireEvent.click(screen.getByTitle(/编辑模式/));
+    await vi.waitFor(() => expect(document.querySelector('.editor-panel')).not.toBeNull());
+    const chip = await screen.findByText('经典黑白');
+    // 应用了黑白预设后 filter 链出现 saturate 0 矩阵
+    fireEvent.click(chip);
+    await vi.waitFor(() => {
+      const sat = document.querySelector('#pixyang-basic feColorMatrix[type="saturate"]');
+      expect(sat).not.toBeNull();
+      expect(sat.getAttribute('values')).toBe('0');
+    });
+  });
+
+  it('内置 chips 完整渲染且带描述 tooltip', async () => {
+    render(<ImageViewer {...baseProps()} />);
+    fireEvent.click(screen.getByTitle(/编辑模式/));
+    const 电影 = await screen.findByTitle(/青橙分离/);
+    expect(电影).toBeInTheDocument();
+    expect(screen.getByText('日系清新')).toBeInTheDocument();
+    expect(screen.getByText('复古胶片')).toBeInTheDocument();
+  });
+});

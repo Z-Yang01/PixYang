@@ -533,3 +533,12 @@
 - Phase 7 深化：输入 profile → working space 转换（libvips icc_transform）
 - Phase 9：requestRequestId 全链贯通
 - M8：libraw RAW 解码（前置：LGPL 许可证确认）
+
+---
+
+# 2026-09-12 内置风格预设（黑白/电影/唯美等 10 款）
+
+- `shared/builtinPresets.cjs`：10 款出厂风格预设（经典黑白/黑白胶片/柔和黑白/电影青橙/唯美柔光/日系清新/复古胶片/港风霓虹/清透人像/风光艳丽），参数为 EditParams.basic 子集，名称唯一 + validateBuiltinPresets 自校验。
+- 编辑面板预设区分区：内置 chips（悬浮即用 accent 色高亮，tooltip 显示风格描述）+「我的预设」用户区（保存/应用/删除，既有功能不变）。应用走历史栈可撤销，非破坏只写参数。
+- 修复：CJS 具名导出经 Vite interop 不可靠 → 改 default 导入解构（同 editSchema 模式）；此前 node 脚本对 JSX 的替换为静默 no-op，由「探针 chips:0」定位后用 Edit 工具精确插入。
+- 测试 +6：内置预设 schema 合法性/唯一性/核心风格覆盖（shared 4 例）+ UI chips 渲染与黑白应用（saturate=0 矩阵断言，组件 2 例）。**516 passed / 0 failed**，覆盖率 90.1%。

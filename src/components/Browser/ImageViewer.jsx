@@ -15,6 +15,8 @@ import {
   toEditParams, fromEditParams, opsChanged,
 } from '@/lib/editParams';
 import useGalleryStore from '@/store/galleryStore';
+import builtinPresetsModule from '../../../shared/builtinPresets.cjs';
+const { BUILTIN_PRESETS } = builtinPresetsModule;
 import CompareView from './CompareView';
 import ConfirmDialog from '@/components/Layout/ConfirmDialog';
 
@@ -1051,7 +1053,15 @@ export default function ImageViewer({
                 <Button variant="ghost" size="xs" onClick={pasteSettings} title="粘贴已复制的参数">粘贴</Button>
               </div>
             </div>
-            {presets.length === 0 && <p className="editor-crop-hint">暂无预设，调整参数后可保存为预设。</p>}
+            <div className="editor-builtin-row">
+              {BUILTIN_PRESETS.map(bp => (
+                <button key={bp.name} className="editor-builtin-chip" title={bp.desc} onClick={() => applyPreset({ name: bp.name, basic: bp.basic })}>
+                  {bp.name}
+                </button>
+              ))}
+            </div>
+            {presets.length > 0 && <p className="editor-crop-hint" style={{ marginTop: 8 }}>我的预设</p>}
+            {presets.length === 0 && <p className="editor-crop-hint" style={{ marginTop: 8 }}>暂无自定义预设，调整参数后可保存为预设。</p>}
             {presets.map(pr => (
               <div className="editor-preset-row" key={pr.id}>
                 <button className="editor-preset-name" onClick={() => applyPreset(pr.params)} title="应用预设">

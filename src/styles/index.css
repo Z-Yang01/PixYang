@@ -2358,3 +2358,25 @@ body {
 .editor-phase-tag.phase-saving,
 .editor-phase-tag.phase-exporting,
 .editor-phase-tag.phase-baking { background: rgba(99, 102, 241, 0.25); color: #a5b4fc; }
+
+/* 内置风格预设 chips */
+.editor-builtin-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.editor-builtin-chip {
+  padding: 3px 9px;
+  font-size: 11px;
+  border-radius: 999px;
+  border: 1px solid var(--border-color, rgba(255, 255, 255, 0.15));
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+.editor-builtin-chip:hover {
+  background: var(--accent-color, #6366f1);
+  border-color: var(--accent-color, #6366f1);
+  color: #fff;
+}
