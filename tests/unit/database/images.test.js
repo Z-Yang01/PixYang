@@ -509,3 +509,56 @@ describe('查询辅助函数', () => {
     expect(stats.totalAlbums).toBeGreaterThan(0);
   });
 });
+
+describe('NEF 配对关系保持（任务书第 26 节 metadata 测试）', () => {
+  it('参数保存与烘焙替代全程 raw_path/original_raw_path/NEF 文件字节不变', async () => {
+    const dir = tmpDir('nef-relation');
+    const jpgSrc = path.join(dir, 'pair-src.jpg');
+    const nefSrc = path.join(dir, 'pair-src.nef');
+    fs.writeFileSync(jpgSrc, 'jpg-original-bytes');
+    fs.writeFileSync(nefSrc, 'nef-negative-bytes-never-touched');
+    const nefBytesBefore = fs.readFileSync(nefSrc);
+
+    const [img] = await db.importImages([
+      { filename: 'pair.jpg', filepath: jpgSrc, size: 18, format: '.jpg', raw_source: nefSrc, raw_filename: 'pair.nef' },
+    ]);
+    const rec = db.getImageById(img.id);
+    expect(rec.raw_path).toBeTruthy();
+    expect(rec.original_raw_path).toBe(nefSrc);
+    const rawPathAfterImport = rec.raw_path;
+    const originalRawAfterImport = rec.original_raw_path;
+
+    // 非破坏保存参数：NEF 配对不动
+    db.saveEdits(img.id, { basic: { exposure: 0.8 } }, { label: '曝光' });
+    expect(db.getImageById(img.id).raw_path).toBe(rawPathAfterImport);
+    expect(db.getImageById(img.id).original_raw_path).toBe(originalRawAfterImport);
+    expect(fs.readFileSync(nefSrc).equals(nefBytesBefore)).toBe(true);
+
+    // 烘焙替代：JPG 被替代但 NEF 底片与配对关系保持
+    const temp = path.join(dir, 'pair-temp.jpg');
+    fs.writeFileSync(temp, 'baked-bytes');
+    db.saveEditedImage(img.id, temp, { width: 100, height: 80 });
+    const after = db.getImageById(img.id);
+    expect(after.raw_path).toBe(rawPathAfterImport);
+    expect(after.original_raw_path).toBe(originalRawAfterImport);
+    expect(fs.existsSync(rawPathAfterImport)).toBe(true);
+    expect(fs.readFileSync(nefSrc).equals(nefBytesBefore)).toBe(true);
+    expect(fs.statSync(nefSrc).mtimeMs > 0).toBe(true);
+  });
+
+  it('删除带配对 NEF 的图片：JPG 与 NEF 一并清理（既有约定回归）', async () => {
+    const dir = tmpDir('nef-del');
+    const jpgSrc = path.join(dir, 'del-src.jpg');
+    const nefSrc = path.join(dir, 'del-src.nef');
+    fs.writeFileSync(jpgSrc, 'jpg');
+    fs.writeFileSync(nefSrc, 'nef');
+    const [img] = await db.importImages([
+      { filename: 'del.jpg', filepath: jpgSrc, size: 3, format: '.jpg', raw_source: nefSrc, raw_filename: 'del.nef' },
+    ]);
+    const rec = db.getImageById(img.id);
+    db.deleteImage(img.id);
+    expect(fs.existsSync(rec.filepath)).toBe(false);
+    expect(fs.existsSync(rec.raw_path)).toBe(false); // 删除约定：NEF 跟随删除
+    expect(db.getImageById(img.id)).toBeNull();
+  });
+});

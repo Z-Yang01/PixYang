@@ -602,3 +602,15 @@ node -e 模板字符串批量替换连续三次静默 no-op（字符串匹配不
 ### 任务书最终状态
 
 Phase 1-6、8、10-14、16-17 全量落地；Phase 7（sRGB 工作空间转换 + ICC 保留 + 三类输入测试）、Phase 13（toggle/split/side 三模式）核心子集完成。**未做**（均需独立大块窗口或外部决策）：Phase 9 全链 requestRequestId（现有去重+世代令牌覆盖主要风险）、M7 WebGL2 预览、M8 libraw RAW（前置：LGPL 许可证确认）。
+
+---
+
+# 2026-09-12 任务书实施批 9：NEF 关系保持测试 + libvips 折叠建档
+
+- 新增 NEF 配对关系自动化测试（任务书第 26 节 metadata 缺口）：参数保存与烘焙替代全程 raw_path/original_raw_path/NEF 文件字节不变；删除带配对图片时 JPG+NEF 一并清理（既有约定回归锁定）。
+- /error 建档第四篇：`libvips-pipeline-folding.md`——三次折叠事故合并归档（linear↔gamma、镜像域、composite↔resize），确立检查点模式为执行器架构约束，沉淀"顺序探针"预防规则。
+- **521 passed / 0 failed**；golden 15/15；build/lint/typecheck 干净。
+
+### 任务书全部可独立交付批次已完成
+
+剩余三项均需外部决策或独立大块窗口：M8 libraw（LGPL-2.1/CDDL 许可证确认）、M7 WebGL2 预览、Phase 9 全链 requestRequestId（现有机动已覆盖主要风险）。上下文与验收路径均在 PROGRESS.md 与 /error 文档中。
