@@ -455,3 +455,37 @@
 - Phase 12 Export/Bake 安全增强（fsync、verify、.bak 策略）
 - Phase 13 对比视图扩展（side-by-side/split）
 - Phase 14 golden 补 EXIF 保留/缓存命中 case
+
+---
+
+# 2026-09-12 任务书实施批 2：Bake 安全增强 + 批量同步分组 + 安全集成测试
+
+### Phase 12：Bake/Export 安全增强
+
+- renderSpecToSharp 落盘流程补 fsync（.part 落盘→fsync→原子 rename），掉电不留半文件；
+- bakeEditSession 新增渲染产物验证：temp 必须可解码且尺寸与渲染返回一致，异常产物删除 temp 并放弃替代（原图绝不被坏文件覆盖）。
+
+### Phase 11：批量同步分组
+
+- 剪贴板升级 copiedEdits = { basic, orientation }；BatchBar「同步参数到所选」下拉分组：
+  - 仅同步影调（默认推荐）；
+  - 同步全部（含旋转/翻转；**裁剪坐标跨图不同步**——像素坐标跨尺寸无意义，显式排除）；
+- 逐张 getEdits→合并→saveEdits（保留目标图已有的其他参数），单张失败不中断批次。
+
+### Phase 14：渲染管线安全集成测试（真实 sharp，无 mock）
+
+- EXIF DateTimeOriginal 渲染后保留（手工构造 EXIF JPEG → composite 回接验证）；
+- 导出写新文件、源字节不变；
+- 渲染失败（缺输入）不留 .part/输出残留；
+- rotate 90 + crop 组合输出 30×60（旋转后坐标系语义锁定）。
+
+### 验证
+
+- **501 passed / 0 failed**（+4 安全集成测试）；覆盖率 **90.02%**（本会话测试扩充后大幅提升）；golden 15/15；build/lint 干净。
+
+### 剩余批次
+
+- Phase 7 色彩管理（ICC profile 输入/输出与 4 类输入测试）
+- Phase 9 渲染取消 requestRequestId 贯通
+- Phase 13 side-by-side/split 对比视图
+- 缩略图缓存键升级（editVersion:renderVersion:size）

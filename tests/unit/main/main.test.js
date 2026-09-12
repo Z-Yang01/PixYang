@@ -850,6 +850,9 @@ describe('编辑会话（非破坏保存）', () => {
     fs.writeFileSync(path.join(USER_DATA, 'edit-cache', '77-base.jpg'), 'base');
 
     renderModuleStub.renderFromEditParams.mockResolvedValueOnce({ ok: true, width: 800, height: 600 });
+    // 产物验证需要真实可解码且尺寸匹配的 temp（sharp 可用）
+    const sharpMod = require('sharp');
+    await sharpMod({ create: { width: 800, height: 600, channels: 3, background: '#3366aa' } }).jpeg().toFile(path.join(FIXTURES, 'editme-temp.jpg'));
     const baked = { id: 77, filename: 'editme.jpg', filepath: path.join(FIXTURES, 'editme.jpg') };
     dbStub.saveEditedImage.mockReturnValueOnce(baked);
     const result = await call('fs:edit-bake', 77, sampleEdits);

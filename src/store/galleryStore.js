@@ -43,8 +43,8 @@ const useGalleryStore = create((set, get) => ({
   loading: false,
   thumbVersion: 0,
 
-  // 参数剪贴板（编辑器「复制参数」写入；BatchBar「同步到所选」消费）
-  copiedEditsBasic: null,
+  // 参数剪贴板（编辑器「复制参数」写入；BatchBar「同步到所选」消费；geometry 同步需显式选择）
+  copiedEdits: null,
 
   setSearch: (value) => set({ search: value, page: 1 }),
 
@@ -168,7 +168,7 @@ const useGalleryStore = create((set, get) => ({
 
   setImages: (updater) => set(state => ({ images: typeof updater === 'function' ? updater(state.images) : updater })),
   setTotalImages: (total) => set({ totalImages: total }),
-  setCopiedEditsBasic: (basic) => set({ copiedEditsBasic: basic }),
+  setCopiedEdits: (edits) => set({ copiedEdits: edits }),
 
   loadAppData: async () => {
     if (!window.pixyang) return;

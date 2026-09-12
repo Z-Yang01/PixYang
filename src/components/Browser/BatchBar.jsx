@@ -20,7 +20,7 @@ export default function BatchBar({
   const selectedIds = useGalleryStore(s => s.selectedIds);
   const totalCount = useGalleryStore(s => s.totalImages);
   const tags = useGalleryStore(s => s.tags);
-  const hasCopiedEdits = useGalleryStore(s => !!s.copiedEditsBasic);
+  const hasCopiedEdits = useGalleryStore(s => !!s.copiedEdits);
 
   if (selectedIds.size === 0) return null;
 

@@ -236,6 +236,13 @@ async function encodeAndWrite(pixels, inputPath, outputPath, encodeStage, spec, 
   const partPath = `${outputPath}.part`;
   try {
     await out.toFile(partPath);
+    // fsync 确保数据落盘后才原子 rename（烘焙/导出都是不可逆替换，掉电不留半文件）
+    const fd = fs.openSync(partPath, 'r+');
+    try {
+      fs.fsyncSync(fd);
+    } finally {
+      fs.closeSync(fd);
+    }
     fs.renameSync(partPath, outputPath);
   } catch (e) {
     try {

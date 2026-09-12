@@ -433,6 +433,19 @@ async function bakeEditSession(id, edits) {
     return { error: `渲染失败：${e.message}` };
   }
 
+  // 渲染产物验证：尺寸与渲染返回一致且文件可解码，异常产物绝不替代原图
+  try {
+    const sharpCheck = require('sharp');
+    const meta = await sharpCheck(tempPath).metadata();
+    if (!meta.width || meta.width !== dims.width || meta.height !== dims.height) {
+      fs.unlinkSync(tempPath);
+      return { error: `渲染产物校验失败（${meta.width || 0}x${meta.height || 0}，期望 ${dims.width}x${dims.height}），已放弃替代` };
+    }
+  } catch (e) {
+    try { if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath); } catch { /* 清理失败无碍 */ }
+    return { error: `渲染产物校验失败：${e.message}` };
+  }
+
   let saved;
   try {
     saved = saveEditedImage(id, tempPath, { width: dims.width, height: dims.height });

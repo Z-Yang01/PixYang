@@ -360,16 +360,19 @@ export default function ImageViewer({
 
   const copySettings = useCallback(() => {
     copiedBasicRef.current = { ...editOpsRef.current };
-    useGalleryStore.getState().setCopiedEditsBasic({
-      exposure: editOpsRef.current.exposure,
-      contrast: editOpsRef.current.contrast,
-      highlights: editOpsRef.current.highlights,
-      shadows: editOpsRef.current.shadows,
-      whites: editOpsRef.current.whites,
-      blacks: editOpsRef.current.blacks,
-      saturation: editOpsRef.current.saturation,
-      temperature: editOpsRef.current.temperature,
-      tint: editOpsRef.current.tint,
+    useGalleryStore.getState().setCopiedEdits({
+      basic: {
+        exposure: editOpsRef.current.exposure,
+        contrast: editOpsRef.current.contrast,
+        highlights: editOpsRef.current.highlights,
+        shadows: editOpsRef.current.shadows,
+        whites: editOpsRef.current.whites,
+        blacks: editOpsRef.current.blacks,
+        saturation: editOpsRef.current.saturation,
+        temperature: editOpsRef.current.temperature,
+        tint: editOpsRef.current.tint,
+      },
+      orientation: { rotate: editOpsRef.current.rotation, flipH: editOpsRef.current.flipH, flipV: editOpsRef.current.flipV },
     });
     toast.success('已复制当前调整参数');
   }, []);
@@ -1022,7 +1025,7 @@ export default function ImageViewer({
             <div className="editor-crop-header">
               <span>预设</span>
               <div style={{ display: 'flex', gap: 4 }}>
-                <Button variant="ghost" size="xs" onClick={copySettings} title="复制当前调整参数">复制</Button>
+                <Button variant="ghost" size="xs" onClick={copySettings} title="复制当前调整参数（影调 + 几何，同步时可选择范围）">复制</Button>
                 <Button variant="ghost" size="xs" onClick={pasteSettings} title="粘贴已复制的参数">粘贴</Button>
               </div>
             </div>
