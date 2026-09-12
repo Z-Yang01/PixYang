@@ -2285,3 +2285,23 @@ body {
   display: flex;
   gap: 8px;
 }
+
+.editor-preset-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.editor-preset-name {
+  flex: 1;
+  padding: 4px 8px;
+  font-size: 12px;
+  text-align: left;
+  border-radius: 6px;
+  border: 1px solid var(--border-color, rgba(255, 255, 255, 0.12));
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+.editor-preset-name:hover {
+  background: rgba(255, 255, 255, 0.08);
+}

@@ -64,3 +64,38 @@ describe('CROP_RATIOS', () => {
     expect(CROP_RATIOS.find(r => r.key === '16:9').value).toBeCloseTo(16 / 9);
   });
 });
+
+describe('previewFilterChain（M5 预览滤镜链）', () => {
+  it('默认参数返回 null（无滤镜）', async () => {
+    const { previewFilterChain } = await import('@/lib/editParams');
+    expect(previewFilterChain(EDIT_DEFAULTS)).toBeNull();
+  });
+
+  it('线性段合并为单一矩阵，斜率与偏移与 sharp 管线一致', async () => {
+    const { previewFilterChain } = await import('@/lib/editParams');
+    const chain = previewFilterChain({ exposure: 1, contrast: 30 });
+    // slope = 2^(1) * 1 * (1+30/50) = 3.2；offset = 127.5*(1-1.6) = -76.5
+    expect(chain.matrix[0]).toBeCloseTo(3.2 / 255, 4);
+    expect(chain.matrix[4]).toBeCloseTo(-76.5 / 255, 4);
+    expect(chain.shadows).toBeNull();
+    expect(chain.highlightsSlope).toBeNull();
+    expect(chain.saturate).toBeNull();
+  });
+
+  it('正/负阴影产生 gamma 原语，负值带镜像域标记', async () => {
+    const { previewFilterChain } = await import('@/lib/editParams');
+    const lift = previewFilterChain({ shadows: 80 });
+    expect(lift.shadows.invert).toBe(false);
+    expect(lift.shadows.exponent).toBeLessThan(1);
+    const crush = previewFilterChain({ shadows: -80 });
+    expect(crush.shadows.invert).toBe(true);
+    expect(crush.shadows.exponent).toBeGreaterThan(1);
+  });
+
+  it('高光与饱和度独立原语', async () => {
+    const { previewFilterChain } = await import('@/lib/editParams');
+    const chain = previewFilterChain({ highlights: -60, saturation: -50 });
+    expect(chain.highlightsSlope).toBeCloseTo(1.15, 3);
+    expect(chain.saturate).toBeCloseTo(0.5, 3);
+  });
+});

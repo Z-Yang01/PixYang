@@ -134,3 +134,51 @@ export function fromEditParams(params) {
 export function opsChanged(a, b) {
   return JSON.stringify(sanitizeEditOps(a)) !== JSON.stringify(sanitizeEditOps(b));
 }
+
+// ── 预览滤镜链（M5）：与分段渲染管线同序同数学的 SVG primitives ──
+// sharp 管线顺序：whiteBalance(通道增益) → exposure(gain) → tone[线性(whites/blacks/contrast)
+// → 阴影 gamma(±镜像域) → 高光线性] → saturation(saturate 矩阵)。
+// 全线性段合并为一个 feColorMatrix；阴影 gamma 与饱和度单独原语，顺序严格对应。
+
+export function previewFilterChain(ops) {
+  const s = sanitizeEditOps(ops);
+  if (!hasEdits(s)) return null;
+
+  // 线性段合并：slope_ch = wb_ch * gain * whitesF * cf；offset = cf*blacksOff + 127.5*(1-cf)
+  const tk = s.temperature / 100;
+  const gk = s.tint / 100;
+  const wb = [1 + tk * 0.1, 1 - gk * 0.06, 1 - tk * 0.1];
+  const gain = Math.pow(2, s.exposure);
+  const whitesF = 1 + s.whites / 250;
+  const blacksOff = -s.blacks * 0.35;
+  const cf = 1 + s.contrast / 50;
+  const offset255 = cf * blacksOff + 127.5 * (1 - cf);
+  const slope = wb.map(w => w * gain * whitesF * cf);
+  const n = (v) => Number(v.toFixed(5));
+  const matrix = [
+    n(slope[0] / 255), 0, 0, 0, n(offset255 / 255),
+    0, n(slope[1] / 255), 0, 0, n(offset255 / 255),
+    0, 0, n(slope[2] / 255), 0, n(offset255 / 255),
+    0, 0, 0, 1, 0,
+  ];
+
+  // 阴影 gamma：+用正域指数 e<1；-用镜像域（negate 矩阵 → gamma(e) → negate 矩阵）
+  let shadows = null;
+  if (s.shadows > 0) {
+    shadows = { exponent: clamp(1 - s.shadows / 220, 0.55, 1), invert: false };
+  } else if (s.shadows < 0) {
+    shadows = { exponent: clamp(1 + (-s.shadows) / 220, 1, 1.45), invert: true };
+  }
+
+  // 高光线性回收（sharp 端在阴影之后，单独原语保持顺序）
+  const highlightsSlope = s.highlights !== 0 ? clamp(1 - s.highlights / 400, 0.75, 1.15) : null;
+  const saturate = s.saturation !== 0 ? 1 + s.saturation / 100 : null;
+
+  return { matrix, shadows, highlightsSlope, saturate };
+}
+
+// 线性段（白场/黑场/对比度/曝光/色温/色调）是否需要主矩阵原语
+export function needsMatrix(ops) {
+  const s = sanitizeEditOps(ops);
+  return !!(s.exposure || s.contrast || s.whites || s.blacks || s.temperature || s.tint);
+}

@@ -1,0 +1,12 @@
+{
+  "width": 1200,
+  "height": 800,
+  "format": "jpeg",
+  "unsupported": [
+    "curves",
+    "hsl",
+    "colorGrading",
+    "masks",
+    "lens"
+  ]
+}

@@ -1,7 +1,7 @@
 import React from 'react';
 import { Button } from '@/components/ui/button';
 import {
-  ListChecks, Download, Trash2, Tag, Star, Heart, X,
+  ListChecks, Download, Trash2, Tag, Star, Heart, X, SlidersHorizontal,
 } from 'lucide-react';
 import {
   DropdownMenu,
@@ -15,11 +15,12 @@ import useGalleryStore from '@/store/galleryStore';
 export default function BatchBar({
   onClear, onBatchDelete,
   onSelectAllPage, onSelectAllAll, onExport,
-  onBatchTag, onBatchUpdate,
+  onBatchTag, onBatchUpdate, onSyncEdits,
 }) {
   const selectedIds = useGalleryStore(s => s.selectedIds);
   const totalCount = useGalleryStore(s => s.totalImages);
   const tags = useGalleryStore(s => s.tags);
+  const hasCopiedEdits = useGalleryStore(s => !!s.copiedEditsBasic);
 
   if (selectedIds.size === 0) return null;
 
@@ -76,6 +77,12 @@ export default function BatchBar({
       <div className="batch-bar-divider" />
 
       <Button variant="secondary" size="sm" onClick={onExport}><Download className="size-4" /> 导出</Button>
+
+      {hasCopiedEdits && onSyncEdits && (
+        <Button variant="secondary" size="sm" onClick={() => onSyncEdits()} title="把复制的影调参数同步到所选图片（只写参数，不写像素）">
+          <SlidersHorizontal className="size-4" /> 同步参数到所选
+        </Button>
+      )}
 
       <div className="batch-bar-divider" />
 

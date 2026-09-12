@@ -11,6 +11,7 @@ import {
 } from './lib/gallery';
 import api from './lib/api';
 import useGalleryStore from './store/galleryStore';
+import { toEditParams } from './lib/editParams';
 import useGalleryData from './hooks/useGalleryData';
 import useGlobalShortcuts from './hooks/useGlobalShortcuts';
 import useDragImport from './hooks/useDragImport';
@@ -371,6 +372,19 @@ export default function App() {
     showToast(`${desc}（${ids.length} 张）`, 'success');
   }, [showToast]);
 
+  // 批量同步编辑参数：把复制的影调参数写到所选图片（非破坏，只写参数 JSON）
+  const handleSyncEdits = useCallback(async () => {
+    if (!api.isBridgeAvailable()) return;
+    const basic = useGalleryStore.getState().copiedEditsBasic;
+    const ids = [...useGalleryStore.getState().selectedIds];
+    if (!basic || ids.length === 0) return;
+    const params = toEditParams({ ...basic });
+    for (const id of ids) {
+      await api.saveEdits(id, params, { label: '批量同步参数' });
+    }
+    showToast(`已同步参数到 ${ids.length} 张图片`, 'success');
+  }, [showToast]);
+
   const executeBatchDelete = useCallback(async () => {
     if (!api.isBridgeAvailable()) return;
     const store = useGalleryStore.getState();
@@ -496,6 +510,7 @@ export default function App() {
               onExport={handleExportSelected}
               onBatchTag={handleBatchTag}
               onBatchUpdate={handleBatchUpdate}
+              onSyncEdits={handleSyncEdits}
             />
           )}
           <Routes>

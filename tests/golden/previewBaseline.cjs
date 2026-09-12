@@ -9,7 +9,7 @@ const sharp = require('sharp');
 const HERE = __dirname;
 const OUT_FILE = path.join(HERE, 'preview-baseline.json');
 // 参与基线的色彩类 case（几何类无色彩差异，不参与）
-const TARGET_CASES = ['003-exposure-1ev', '004-contrast-30', '005-saturation-mono', '006-wb-warm-50', '011-wb-cool-50'];
+const TARGET_CASES = ['003-exposure-1ev', '004-contrast-30', '005-saturation-mono', '006-wb-warm-50', '011-wb-cool-50', '012-shadows-lift', '013-shadows-crush', '014-highlights-recover', '015-full-basic-combo'];
 
 // cssFilter 换算语义的 sharp 模拟（前端 CSS 预览的等价数值实现）
 // CSS 顺序 brightness → contrast → saturate，色温矩阵同步复合：

@@ -1,0 +1,13 @@
+{
+  "basic": {
+    "exposure": 0.5,
+    "contrast": 20,
+    "highlights": -30,
+    "shadows": 40,
+    "whites": 10,
+    "blacks": -10,
+    "saturation": -20,
+    "temperature": 25,
+    "tint": -5
+  }
+}

@@ -32,7 +32,7 @@
       "params": {
         "contrast": 0,
         "highlights": 0,
-        "shadows": 0,
+        "shadows": 80,
         "whites": 0,
         "blacks": 0
       }
@@ -111,7 +111,7 @@
     {
       "kind": "encode",
       "params": {
-        "format": "png",
+        "format": "jpeg",
         "quality": 92,
         "resize": null
       }
@@ -119,6 +119,6 @@
   ],
   "meta": {
     "fromEditParamsVersion": 0,
-    "generatedAt": "2026-09-12T07:31:16.156Z"
+    "generatedAt": "2026-09-12T07:31:16.718Z"
   }
 }

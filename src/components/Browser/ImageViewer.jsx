@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { formatSizeDisplay as formatSize } from '@/lib/format';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import {
   RotateCw, RotateCcw, FlipHorizontal2, FlipVertical2, Save, Heart, HeartOff,
   Star, X, ChevronLeft, ChevronRight, Camera, Calendar, Info, Pencil,
@@ -10,9 +11,10 @@ import { toast } from 'sonner';
 import { matchViewerShortcut, VIEWER_ACTIONS, ratingFromViewerAction } from '@/lib/shortcuts';
 import api from '@/lib/api';
 import {
-  EDIT_DEFAULTS, CROP_RATIOS, sanitizeEditOps, cssFilter, tintMatrixValues,
+  EDIT_DEFAULTS, CROP_RATIOS, sanitizeEditOps, previewFilterChain, needsMatrix,
   toEditParams, fromEditParams, opsChanged,
 } from '@/lib/editParams';
+import useGalleryStore from '@/store/galleryStore';
 import ConfirmDialog from '@/components/Layout/ConfirmDialog';
 
 const clamp = (v, min, max) => Math.min(max, Math.max(min, v));
@@ -75,6 +77,7 @@ export default function ImageViewer({
   bustRef.current = bust;
   const historyRef = useRef(null); // { stack: [ops], index }
   const savedBaselineRef = useRef(null); // 最近一次保存的参数快照（dirty 判定基线）
+  const copiedBasicRef = useRef(null); // 复制/粘贴的 basic 参数（应用内会话级剪贴板）
 
   // 同步图片切换
   useEffect(() => {
@@ -304,6 +307,86 @@ export default function ImageViewer({
     setFlipH(!!image?.flip_h);
     setFlipV(!!image?.flip_v);
   }, [image, cleanupEditSession]);
+
+  // ── 预设 / 复制粘贴 ──
+  const [presets, setPresets] = useState([]);
+  const [presetName, setPresetName] = useState('');
+
+  const loadPresets = useCallback(async () => {
+    const list = await api.getPresets();
+    setPresets(list || []);
+  }, []);
+
+  useEffect(() => {
+    if (editing) loadPresets();
+  }, [editing, loadPresets]);
+
+  const applyPreset = useCallback((presetParams) => {
+    const p = presetParams?.basic;
+    if (!p) return;
+    const next = {
+      ...EDIT_DEFAULTS,
+      rotation: editOpsRef.current.rotation,
+      flipH: editOpsRef.current.flipH,
+      flipV: editOpsRef.current.flipV,
+      crop: editOpsRef.current.crop,
+      ...p,
+    };
+    pushHistory(next);
+    setEditOps(next);
+    toast.success(`已应用预设`);
+  }, [pushHistory]);
+
+  const savePreset = useCallback(async () => {
+    const name = presetName.trim();
+    if (!name) return;
+    const result = await api.createPreset(name, toEditParams(composeOps()));
+    if (result?.error) {
+      toast.error(result.error);
+      return;
+    }
+    setPresetName('');
+    await loadPresets();
+    toast.success(`预设「${name}」已保存`);
+  }, [presetName, composeOps, loadPresets]);
+
+  const removePreset = useCallback(async (id) => {
+    await api.deletePreset(id);
+    await loadPresets();
+  }, [loadPresets]);
+
+  const copySettings = useCallback(() => {
+    copiedBasicRef.current = { ...editOpsRef.current };
+    useGalleryStore.getState().setCopiedEditsBasic({
+      exposure: editOpsRef.current.exposure,
+      contrast: editOpsRef.current.contrast,
+      highlights: editOpsRef.current.highlights,
+      shadows: editOpsRef.current.shadows,
+      whites: editOpsRef.current.whites,
+      blacks: editOpsRef.current.blacks,
+      saturation: editOpsRef.current.saturation,
+      temperature: editOpsRef.current.temperature,
+      tint: editOpsRef.current.tint,
+    });
+    toast.success('已复制当前调整参数');
+  }, []);
+
+  const pasteSettings = useCallback(() => {
+    const c = copiedBasicRef.current;
+    if (!c) {
+      toast.info('暂无已复制的参数');
+      return;
+    }
+    const next = {
+      ...editOpsRef.current,
+      exposure: c.exposure, contrast: c.contrast, highlights: c.highlights,
+      shadows: c.shadows, whites: c.whites, blacks: c.blacks,
+      saturation: c.saturation, temperature: c.temperature, tint: c.tint,
+    };
+    pushHistory(next);
+    setEditOps(next);
+    toast.success('已粘贴参数');
+  }, [pushHistory]);
 
   // 编辑参数统一应用入口（查看态操作 rotation/flip state，编辑态操作 editOps + 历史）
   const applyRotate = useCallback((delta) => {
@@ -628,6 +711,10 @@ export default function ImageViewer({
 
   if (!image) return null;
 
+  // 影调预览滤镜链（与分段渲染管线同序同数学）；needsMatrix 决定主矩阵原语是否渲染
+  const previewChainRaw = editing ? previewFilterChain(editOps) : null;
+  const previewChain = previewChainRaw ? { ...previewChainRaw, needsMatrix: needsMatrix(editOps) } : null;
+
   // 编辑态：变换（旋转/翻转/缩放/平移）应用于包裹层，图像自身无变换，裁剪框百分比定位自动跟随
   const editTransform = editing
     ? `translate(${pos.x}px, ${pos.y}px) rotate(${editOps.rotation}deg) scale(${zoom * (editOps.flipH ? -1 : 1)}, ${zoom * (editOps.flipV ? -1 : 1)})`
@@ -644,11 +731,34 @@ export default function ImageViewer({
 
   return (
     <div className="viewer-overlay" onClick={editing ? undefined : onClose}>
-      {/* 色温精确预览滤镜（与 sharp 通道增益同语义） */}
-      {editing && editOps.temperature !== 0 && (
+      {/* 影调预览滤镜链：与分段渲染管线同序同数学（线性矩阵 → 阴影 gamma → 高光线性 → 饱和度） */}
+      {editing && previewChain && (
         <svg width="0" height="0" style={{ position: 'absolute' }} aria-hidden="true">
-          <filter id="pixyang-tint" colorInterpolationFilters="sRGB">
-            <feColorMatrix type="matrix" values={tintMatrixValues(editOps)} />
+          <filter id="pixyang-basic" colorInterpolationFilters="sRGB">
+            {previewChain.needsMatrix && <feColorMatrix type="matrix" values={previewChain.matrix} />}
+            {previewChain.shadows && previewChain.shadows.invert && (
+              <feColorMatrix type="matrix" values="-1 0 0 0 1  0 -1 0 0 1  0 0 -1 0 1  0 0 0 1 0" />
+            )}
+            {previewChain.shadows && (
+              <feComponentTransfer>
+                <feFuncR type="gamma" amplitude="1" exponent={previewChain.shadows.exponent} offset="0" />
+                <feFuncG type="gamma" amplitude="1" exponent={previewChain.shadows.exponent} offset="0" />
+                <feFuncB type="gamma" amplitude="1" exponent={previewChain.shadows.exponent} offset="0" />
+              </feComponentTransfer>
+            )}
+            {previewChain.shadows && previewChain.shadows.invert && (
+              <feColorMatrix type="matrix" values="-1 0 0 0 1  0 -1 0 0 1  0 0 -1 0 1  0 0 0 1 0" />
+            )}
+            {previewChain.highlightsSlope != null && (
+              <feComponentTransfer>
+                <feFuncR type="linear" slope={previewChain.highlightsSlope} intercept="0" />
+                <feFuncG type="linear" slope={previewChain.highlightsSlope} intercept="0" />
+                <feFuncB type="linear" slope={previewChain.highlightsSlope} intercept="0" />
+              </feComponentTransfer>
+            )}
+            {previewChain.saturate != null && (
+              <feColorMatrix type="saturate" values={previewChain.saturate} />
+            )}
           </filter>
         </svg>
       )}
@@ -774,7 +884,7 @@ export default function ImageViewer({
               alt={image.filename?.replace(/\.\w+$/, '') || image.filename}
               draggable={false}
               style={{
-                filter: cssFilter(editOps),
+                filter: previewChain ? 'url(#pixyang-basic)' : undefined,
                 opacity: editBusy ? 0.75 : 1,
                 transition: dragging.current ? 'none' : undefined,
               }}
@@ -819,8 +929,13 @@ export default function ImageViewer({
           {[
             { key: 'exposure', label: '曝光', min: -2, max: 2, step: 0.05, fmt: v => `${v > 0 ? '+' : ''}${v.toFixed(2)}` },
             { key: 'contrast', label: '对比度', min: -50, max: 50, step: 1, fmt: v => `${v > 0 ? '+' : ''}${v}` },
+            { key: 'highlights', label: '高光', min: -100, max: 100, step: 1, fmt: v => `${v > 0 ? '+' : ''}${v}` },
+            { key: 'shadows', label: '阴影', min: -100, max: 100, step: 1, fmt: v => `${v > 0 ? '+' : ''}${v}` },
+            { key: 'whites', label: '白色色阶', min: -100, max: 100, step: 1, fmt: v => `${v > 0 ? '+' : ''}${v}` },
+            { key: 'blacks', label: '黑色色阶', min: -100, max: 100, step: 1, fmt: v => `${v > 0 ? '+' : ''}${v}` },
             { key: 'saturation', label: '饱和度', min: -100, max: 100, step: 1, fmt: v => `${v > 0 ? '+' : ''}${v}` },
             { key: 'temperature', label: '色温', min: -100, max: 100, step: 1, fmt: v => `${v > 0 ? '+' : ''}${v}` },
+            { key: 'tint', label: '色调', min: -100, max: 100, step: 1, fmt: v => `${v > 0 ? '+' : ''}${v}` },
           ].map(({ key, label, min, max, step, fmt }) => (
             <label className="editor-slider-row" key={key}>
               <span
@@ -877,6 +992,40 @@ export default function ImageViewer({
                 {cropRatioValueLabel(cropRatioKey) ? `按 ${cropRatioValueLabel(cropRatioKey)} 锁定比例拖拽` : '在图上拖拽框选，可拖动/调整框'}
               </p>
             )}
+          </div>
+
+          {/* 预设与参数剪贴板 */}
+          <div className="editor-crop-section">
+            <div className="editor-crop-header">
+              <span>预设</span>
+              <div style={{ display: 'flex', gap: 4 }}>
+                <Button variant="ghost" size="xs" onClick={copySettings} title="复制当前调整参数">复制</Button>
+                <Button variant="ghost" size="xs" onClick={pasteSettings} title="粘贴已复制的参数">粘贴</Button>
+              </div>
+            </div>
+            {presets.length === 0 && <p className="editor-crop-hint">暂无预设，调整参数后可保存为预设。</p>}
+            {presets.map(pr => (
+              <div className="editor-preset-row" key={pr.id}>
+                <button className="editor-preset-name" onClick={() => applyPreset(pr.params)} title="应用预设">
+                  {pr.name}
+                </button>
+                <Button variant="ghost" size="icon-xs" onClick={() => removePreset(pr.id)} title="删除预设">
+                  <X className="size-3" />
+                </Button>
+              </div>
+            ))}
+            <div className="inline-create-row">
+              <Input
+                className="h-8 text-xs"
+                value={presetName}
+                onChange={(e) => setPresetName(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') savePreset(); }}
+                placeholder="预设名称（保存当前影调）"
+              />
+              <Button size="sm" onClick={savePreset} disabled={!presetName.trim() || editBusy}>
+                保存
+              </Button>
+            </div>
           </div>
 
           <div className="editor-panel-footer">

@@ -1,0 +1,8 @@
+{
+  "fixture": "landscape.jpg",
+  "tolerance": {
+    "maxDelta": 2,
+    "meanDelta": 0.5
+  },
+  "description": "014-highlights-recover"
+}

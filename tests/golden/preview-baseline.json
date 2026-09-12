@@ -1,26 +1,42 @@
 {
-  "generatedAt": "2026-09-12T06:04:04.645Z",
+  "generatedAt": "2026-09-12T07:31:31.880Z",
   "note": "前端预览近似（CSS 语义 sharp 模拟）与渲染管线输出的像素差异基线；不设通过阈值，用于 M6/M7 对齐追踪",
   "cases": {
     "003-exposure-1ev": {
-      "maxDelta": 5,
-      "meanDelta": 0.0969
+      "maxDelta": 0,
+      "meanDelta": 0
     },
     "004-contrast-30": {
-      "maxDelta": 3,
-      "meanDelta": 0.0953
+      "maxDelta": 0,
+      "meanDelta": 0
     },
     "005-saturation-mono": {
-      "maxDelta": 4,
-      "meanDelta": 0.0475
+      "maxDelta": 0,
+      "meanDelta": 0
     },
     "006-wb-warm-50": {
-      "maxDelta": 11,
-      "meanDelta": 0.16
+      "maxDelta": 0,
+      "meanDelta": 0
     },
     "011-wb-cool-50": {
-      "maxDelta": 8,
-      "meanDelta": 0.1602
+      "maxDelta": 0,
+      "meanDelta": 0
+    },
+    "012-shadows-lift": {
+      "maxDelta": 42,
+      "meanDelta": 24.5625
+    },
+    "013-shadows-crush": {
+      "maxDelta": 29,
+      "meanDelta": 16.8641
+    },
+    "014-highlights-recover": {
+      "maxDelta": 51,
+      "meanDelta": 17.7002
+    },
+    "015-full-basic-combo": {
+      "maxDelta": 61,
+      "meanDelta": 21.5855
     }
   }
 }

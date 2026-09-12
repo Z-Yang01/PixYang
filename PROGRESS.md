@@ -381,3 +381,30 @@
 - 489 例全绿（bake/export 用例补真实底图文件、烘焙重置断言更新、LRU 用例改按 edits.updated_at）；golden 11/11（baseline 因 Q80→Q92 显式化刷新）；预览近似基线重算。
 - 端到端：alpha PNG 底图 hasAlpha ✓ → 烘焙产物 png+alpha ✓ → 参数整体重置 ✓ → 原图透明通道保留 ✓。
 - 修复过程中抓到并修正自身笔误：normalizeBase 返回字段 alphaBase/basePath 不一致（消费方读不到 alpha 底图路径）。
+
+---
+
+# 2026-09-12 M5：影调面板全参数 + 预设 / 复制粘贴 / 批量同步
+
+### 影调面板（basic 九参数全量）
+
+- 新增高光/阴影/白色色阶/黑色色阶/色调 5 个滑杆（标签双击重置、拖动合并为一步历史的既有交互全继承）。
+- **渲染端阴影算子重做**：sharp.gamma 参数限 [1,3]（总指数=1/(gIn·gOut) ≤1），原实现对 +shadows 直接抛错崩溃；+方向 gamma(1,1/e)，−方向镜像域 linear(-1,255)→gamma→linear(-1,255)（黑端保持纯黑已验证）。
+- **执行器架构升级：逐算子检查点**。实测 libvips 单管线内 linear/gamma（甚至 linear/linear）存在求值顺序不保证的操作折叠（三种声明顺序输出全同），跨算子顺序语义无法依赖管线声明。每个像素算子后 raw 物化，stage 间与 tone 内部子步骤均强制顺序；EXIF/ICC 在 encode 阶段以原图（同样应用几何/裁剪）为底 composite 回接，raw 化不再丢元数据。
+- **预览滤镜链**（previewFilterChain）：与分段管线同序同数学的 SVG primitives——线性段合并 feColorMatrix → 阴影 gamma（负值镜像域 feColorMatrix 包夹）→ 高光 feComponentTransfer → 饱和度 saturate 矩阵，替换旧 CSS filter。
+
+### 预设 / 复制粘贴 / 批量同步
+
+- 编辑面板预设区：列表/应用（只覆盖 basic，不动 orientation/crop）/保存（createPreset，重名拒绝）/删除；数据走 M2 的 presets 表。
+- 复制/粘贴设置：应用内参数剪贴板（copiedBasicRef + galleryStore.copiedEditsBasic），只复制 basic 九参数。
+- BatchBar「同步参数到所选」：复制参数后多选图片一键同步（逐张 saveEdits，只写参数），未复制时按钮不显示。
+
+### 测试与验证
+
+- **497 passed / 0 failed**（+8：previewFilterChain 4 例等）；golden **15/15**（+4：shadows±、highlights、九参数全组合）。
+- 预览近似基线更新：shadows-crush 16.9 / highlights 17.7 / 全组合 21.6（已知 CSS 近似偏差，M7 WebGL2 对齐目标）。
+
+### 过程中修复
+
+- encode composite 方案首版缺陷：裁剪后 edited 尺寸 ≠ 底图尺寸，composite 撑大画布破坏裁剪 → 几何/裁剪同样应用到元数据底图后再 composite。
+- bash 转义事故导致的 import 残骸、重复 clamp 声明、Input 漏导入、previewFilter 变量名笔误——全部由编译/测试/探针逐层抓出。
