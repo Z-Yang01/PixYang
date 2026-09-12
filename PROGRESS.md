@@ -624,3 +624,14 @@ Phase 1-6、8、10-14、16-17 全量落地；Phase 7（sRGB 工作空间转换 +
 - main.js：renderEditPreviewOnce 分配请求序号并透传；bumpEditPreviewGeneration（烘焙/取消会话）同时 sendToWorker 中止在途渲染 + 完成端 cancelled 判定（不写路径不发 ready）——烘焙后缩略图重建即刻获得 worker，省去过期渲染空跑；
 - 测试 +2：isCancelled 命中（cancelled 返回、无文件残留）/ 未命中（正常渲染）。
 - **523 passed / 0 failed**；golden 15/15。Phase 9 架构项完成：requestRequestId（请求序号）+ 阶段边界取消 + 世代令牌 + 去重，全链贯通。
+
+### 逻辑自查补丁（同日）：Phase 9 取消链路两个串扰 bug
+
+自查取消集合生命周期发现两个真实 bug（均已在修复后用 worker 冒烟验证）：
+
+1. **跨图取消串扰**：requestSeq 按 id 独立计数（每图从 1 开始），worker 取消集合全局共享——A 图预览渲染（seq=1）进行中，烘焙 B 图发 cancel seq=1（B 首次也是 1），**A 的渲染被误杀**、缩略图静默缺失。修复：全局唯一序号计数器（nextEditPreviewSeq++），per-id map 仅保留"当前在途 seq"用于取消定位。
+2. **取消晚到 + seq 复用叠加**：渲染完成后 map 条目删除导致序号回到 1，与集合中晚到的 cancel 残留值碰撞。全局唯一后序号永不复用，残留无无害（worker 完成路径已 delete）。
+
+另修 Phase 17 命名瑕疵：原图未超 maxEdge（resize 未生效）时文件名不再带 `-Npx` 标记。
+
+冒烟（6000×4000 大图，A 启动后立即 cancel seq=1，B 随后）：A cancelled=true ✓，B ok=true 完整渲染 ✓——取消隔离确认。

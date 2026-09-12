@@ -487,7 +487,8 @@ async function exportEditSession(id, edits, destDir, output = null) {
     : null;
 
   const base = path.basename(session.filepath, path.extname(session.filepath));
-  const sizeTag = maxEdge ? `-${maxEdge}px` : '';
+  // 尺寸标记仅在实际发生缩放时加入（原图未超长边时 resize 不生效，名字不应撒谎）
+  const sizeTag = resize ? `-${maxEdge}px` : '';
   let dest = path.join(destDir, `${base}-edited${sizeTag}${ext}`);
   let n = 1;
   while (fs.existsSync(dest)) {
@@ -538,7 +539,8 @@ function cancelEditSession(id) {
 // 世代令牌：烘焙/取消会递增世代，在途渲染完成后校验，不符则丢弃（不写路径不发事件）。
 const editPreviewStates = new Map(); // id -> { running, dirty }
 const editPreviewGeneration = new Map(); // id -> number
-const editPreviewRenderSeq = new Map(); // id -> 最近一次预览渲染请求序号（取消用）
+const editPreviewRenderSeq = new Map(); // id -> 当前在途预览渲染的全局唯一序号（取消定位用）
+let nextEditPreviewSeq = 1; // 全局唯一：跨图共 worker 取消集合，per-id 计数会互相误杀
 
 function bumpEditPreviewGeneration(id) {
   editPreviewGeneration.set(id, (editPreviewGeneration.get(id) || 0) + 1);
@@ -579,8 +581,8 @@ async function renderEditPreviewOnce(id, params, generation) {
     basePath = dims.basePath || fallback;
   }
   const previewPath = getEditPreviewPath(id);
-  // Phase 9 渲染取消：分配请求序号，烘焙/取消时中止在途渲染
-  const requestSeq = (editPreviewRenderSeq.get(id) || 0) + 1;
+  // Phase 9 渲染取消：全局唯一请求序号（跨图共 worker 取消集合，per-id 计数会互相误杀）
+  const requestSeq = nextEditPreviewSeq++;
   editPreviewRenderSeq.set(id, requestSeq);
   // 缓存键校验：同一 edits.version 且预览文件存在 → 跳过重渲染
   const version = getEdits(id)?.version || 0;
