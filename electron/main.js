@@ -584,12 +584,15 @@ async function renderEditPreviewOnce(id, params, generation) {
   // Phase 9 渲染取消：全局唯一请求序号（跨图共 worker 取消集合，per-id 计数会互相误杀）
   const requestSeq = nextEditPreviewSeq++;
   editPreviewRenderSeq.set(id, requestSeq);
-  // 缓存键校验：同一 edits.version 且预览文件存在 → 跳过重渲染
+  // 缓存键校验：edits.version 与 renderVersion 均一致且预览文件存在 → 跳过重渲染
+  // （renderer 版本升级后旧缓存必须失效，否则算子语义变化不会反映到缩略图）
   const version = getEdits(id)?.version || 0;
   const previewMetaPath = `${previewPath}.meta.json`;
   try {
     const prevMeta = JSON.parse(fs.readFileSync(previewMetaPath, 'utf8'));
-    if (prevMeta.editVersion === version && fs.existsSync(previewPath)) return previewPath;
+    if (prevMeta.editVersion === version && prevMeta.renderVersion === RENDER_VERSION && fs.existsSync(previewPath)) {
+      return previewPath;
+    }
   } catch { /* 无缓存元数据，继续渲染 */ }
   const spec = editParamsToRenderSpec(params, { sourceHash: await computeSourceHashCached(basePath) });
   const renderResult = await callWorker({ type: 'edit-preview', srcPath: basePath, outPath: previewPath, spec, requestSeq });

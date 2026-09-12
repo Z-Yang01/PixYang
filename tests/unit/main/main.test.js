@@ -269,6 +269,8 @@ const renderModuleStub = {
   renderFromEditParams: vi.fn(async () => ({ ok: true, width: 800, height: 600 })),
   renderFromSpec: vi.fn(async () => ({ ok: true })),
   computeSourceHash: vi.fn(() => 'hash-stub'),
+  callWorker: vi.fn(async () => ({ ok: true, width: 400, height: 300 })),
+  sendToWorker: vi.fn(),
   closeRenderWorker: vi.fn(async () => {}),
 };
 
@@ -374,6 +376,10 @@ function setDefaultMocks() {
   workerStub.normalizeEditBase.mockImplementation(async () => ({ width: 2000, height: 1200 }));
   renderModuleStub.renderFromEditParams.mockReset();
   renderModuleStub.renderFromEditParams.mockImplementation(async () => ({ ok: true, width: 800, height: 600 }));
+  renderModuleStub.callWorker.mockReset();
+  renderModuleStub.callWorker.mockImplementation(async () => ({ ok: true, width: 400, height: 300 }));
+  renderModuleStub.sendToWorker.mockReset();
+  renderModuleStub.sendToWorker.mockImplementation(() => {});
   dbStub.getEdits.mockReset();
   dbStub.getEdits.mockImplementation(() => null);
   dbStub.saveEdits.mockReset();
@@ -1045,5 +1051,69 @@ describe('对话框与 shell', () => {
   it('shell:open-path 委托 shell.openPath', async () => {
     await expect(call('shell:open-path', 'C:/some/dir')).resolves.toBe('');
     expect(electronStub.shell.openPath).toHaveBeenCalledWith('C:/some/dir');
+  });
+});
+
+describe('编辑预览缓存键（任务书第 26 节 cache 行为）', () => {
+  const previewPath = () => path.join(THUMBS, 'edit-77.jpg');
+  const metaPath = () => path.join(THUMBS, 'edit-77.jpg.meta.json');
+  const editImage = () => ({
+    id: 77, filename: 'editme.jpg', filepath: path.join(FIXTURES, 'editme.jpg'),
+    hidden: 0, raw_path: '', width: 2000, height: 1200,
+  });
+
+  beforeEach(() => {
+    fs.writeFileSync(path.join(FIXTURES, 'editme.jpg'), 'img');
+    fs.mkdirSync(path.join(USER_DATA, 'edit-cache'), { recursive: true });
+    fs.writeFileSync(path.join(USER_DATA, 'edit-cache', '77-base.jpg'), 'base'); // hash statSync 需要
+    // edits:save 触发 refreshEditPreview 的前置：保存成功 + 图存在 + 有版本
+    dbStub.saveEdits.mockReturnValue({ version: 5, params: {} });
+    dbStub.getImageById.mockReturnValue(editImage());
+    dbStub.getEdits.mockReturnValue({ version: 5, params: {} });
+    dbStub.setEditPreviewPath.mockImplementation(() => {});
+    dbStub.enforceEditPreviewLimit.mockImplementation(() => 0);
+  });
+
+  it('首次保存：无缓存元数据 → 渲染并写入 editVersion/renderVersion', async () => {
+    dbStub.getImageById.mockReturnValue(editImage());
+    dbStub.getEdits.mockReturnValue({ version: 5, params: {} });
+    renderModuleStub.callWorker.mockResolvedValueOnce({ ok: true, width: 400, height: 300 });
+    await call('edits:save', 77, { basic: { exposure: 1 } }, { label: 'x' });
+    await vi.waitFor(() => {
+      expect(renderModuleStub.callWorker).toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'edit-preview', requestSeq: expect.any(Number) })
+      );
+      const meta = JSON.parse(fs.readFileSync(metaPath(), 'utf8'));
+      expect(meta.editVersion).toBe(5);
+      expect(meta.renderVersion).toBe('render-1');
+    });
+    expect(fs.existsSync(previewPath())).toBe(false); // stub 不真写盘，但元数据已记录
+  });
+
+  it('同版本且预览文件存在 → 缓存命中，跳过渲染且路径不重复写回', async () => {
+    dbStub.getImageById.mockReturnValue(editImage());
+    dbStub.getEdits.mockReturnValue({ version: 5, params: {} });
+    // 预置：预览文件与同版本元数据
+    fs.writeFileSync(previewPath(), 'preview');
+    fs.writeFileSync(metaPath(), JSON.stringify({ editVersion: 5, renderVersion: 'render-1' }));
+    const callsBefore = renderModuleStub.callWorker.mock.calls.length;
+    await call('edits:save', 77, { basic: { exposure: 1 } }, { label: 'x' });
+    await new Promise((r) => setTimeout(r, 30));
+    expect(renderModuleStub.callWorker.mock.calls.length).toBe(callsBefore); // 未重渲染
+    expect(dbStub.setEditPreviewPath).not.toHaveBeenCalled(); // 命中路径直接返回，不重复写回
+  });
+
+  it('renderer 版本变更 → 缓存失效重新渲染', async () => {
+    dbStub.getImageById.mockReturnValue(editImage());
+    dbStub.getEdits.mockReturnValue({ version: 5, params: {} });
+    fs.writeFileSync(previewPath(), 'preview');
+    fs.writeFileSync(metaPath(), JSON.stringify({ editVersion: 5, renderVersion: 'render-OLD' }));
+    renderModuleStub.callWorker.mockResolvedValueOnce({ ok: true, width: 400, height: 300 });
+    await call('edits:save', 77, { basic: { exposure: 1 } }, { label: 'x' });
+    await vi.waitFor(() => {
+      expect(renderModuleStub.callWorker).toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'edit-preview' })
+      );
+    });
   });
 });

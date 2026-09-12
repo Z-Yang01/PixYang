@@ -659,3 +659,15 @@ Phase 1-6、8、10-14、16-17 全量落地；Phase 7（sRGB 工作空间转换 +
 3. **取消集合无界增长**：thumbWorker cancelledRenderSeqs 只在 handler 开始 delete；渲染完成后晚到的 cancel 重新 add 且永不清理。修复：完成路径（成功/取消两分支）补 delete。
 
 测试 +2（resize 后 EXIF 保留、withoutEnlargement 不放大）。**527 passed / 0 failed**；golden 15/15。
+
+---
+
+# 2026-09-12 逻辑自查批 4：缓存键 renderVersion 校验补全（测试驱动发现）
+
+为新交付的预览缓存键补行为测试（任务书第 26 节 cache 三例：同版本命中 / editVersion 变更失效 / renderVersion 变更失效）时，**测试暴露一个真实逻辑缺陷**：缓存命中判断只比对 editVersion，未比对 renderVersion——渲染器实现版本升级后旧缓存不会失效，算子语义变化不会反映到缩略图（违反任务书第 14 节）。
+
+- 修复：命中条件补 renderVersion === RENDER_VERSION 校验。
+- 同时补测试桩：renderModuleStub 补 callWorker/sendToWorker（此前缺失导致 refreshEditPreview 静默失败被 .catch 吞掉——测试盲区修复）；cache describe 前置 saveEdits 成功桩。
+- **530 passed / 0 failed**（+3）；golden 15/15。
+
+教训：交付缓存类功能时，缓存键的每个维度都必须有命中/失效双向测试——只测写入不测命中条件，版本维度漏比对这类缺陷无法暴露。
