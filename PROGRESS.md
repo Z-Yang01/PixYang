@@ -505,3 +505,6 @@
 - Phase 9：requestRequestId 贯通全链路
 - Phase 13：side-by-side/split 对比视图
 - M8：libraw RAW 解码（前置：许可证确认）
+
+# 分屏对比视图（Phase 13）实施尝试：未提交即回退
+分屏模式在 ImageViewer 中引入三元分支嵌套与声明顺序问题（TDZ + JSX 结构错误），在验证中发现回归后整体回退至绿色基线。Phase 13 仅保留整幅 Before/After 切换（已交付）；side-by-side/split 需要以独立子组件（CompareView）形式实施，避免在 ImageViewer 内联扩展。记录为后续批次首要项。
