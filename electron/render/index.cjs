@@ -4,7 +4,7 @@ const path = require('path');
 const crypto = require('crypto');
 const fs = require('fs');
 const { editParamsToRenderSpec } = require('../../shared/renderSpec.cjs');
-const { callWorker, closeWorker: closeImageWorker } = require('../imageWorker');
+const { callWorker, sendToWorker, closeWorker: closeImageWorker } = require('../imageWorker');
 
 
 // 输入图内容哈希：底图更换后 spec 失效防护（sourceHash）
@@ -38,4 +38,4 @@ function closeRenderWorker() {
   return closeImageWorker();
 }
 
-module.exports = { renderFromEditParams, renderFromSpec, computeSourceHash, callWorker, closeRenderWorker };
+module.exports = { renderFromEditParams, renderFromSpec, computeSourceHash, callWorker, sendToWorker, closeRenderWorker };

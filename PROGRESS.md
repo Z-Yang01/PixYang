@@ -614,3 +614,13 @@ Phase 1-6、8、10-14、16-17 全量落地；Phase 7（sRGB 工作空间转换 +
 ### 任务书全部可独立交付批次已完成
 
 剩余三项均需外部决策或独立大块窗口：M8 libraw（LGPL-2.1/CDDL 许可证确认）、M7 WebGL2 预览、Phase 9 全链 requestRequestId（现有机动已覆盖主要风险）。上下文与验收路径均在 PROGRESS.md 与 /error 文档中。
+
+---
+
+# 2026-09-12 任务书实施批 10：Phase 9 渲染取消（架构收尾）
+
+- renderSpecToSharp 新增 opts.isCancelled：每个 stage 边界检查，命中即返回 {cancelled:true} 且不写输出/.part；
+- worker 取消通道：imageWorker.sendToWorker（无回复消息），thumbWorker 'render-cancel' 维护取消序号集合，'edit-preview'/'render-spec' 消息携带 requestSeq 并在渲染入口/完成时登记与清除；
+- main.js：renderEditPreviewOnce 分配请求序号并透传；bumpEditPreviewGeneration（烘焙/取消会话）同时 sendToWorker 中止在途渲染 + 完成端 cancelled 判定（不写路径不发 ready）——烘焙后缩略图重建即刻获得 worker，省去过期渲染空跑；
+- 测试 +2：isCancelled 命中（cancelled 返回、无文件残留）/ 未命中（正常渲染）。
+- **523 passed / 0 failed**；golden 15/15。Phase 9 架构项完成：requestRequestId（请求序号）+ 阶段边界取消 + 世代令牌 + 去重，全链贯通。

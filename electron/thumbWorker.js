@@ -98,11 +98,15 @@ function fsWrite(p, buf) { return fs.promises.writeFile(p, buf); }
 // 编辑渲染：RenderSpec → sharp（执行器在 electron/render/，与 golden 测试共用同一实现）
 const { renderSpecToSharp } = require('./render/renderSpecToSharp.cjs');
 
+// Phase 9 渲染取消：被取消的渲染序号（主进程烘焙/取消会话时通知）
+const cancelledRenderSeqs = new Set();
+
 // 编辑预览缩略图：按 RenderSpec 渲染后缩到 400px（非破坏保存后列表显示参数效果）
-async function generateEditPreview(srcPath, outPath, spec) {
+async function generateEditPreview(srcPath, outPath, spec, isCancelled) {
   const tmp = `${outPath}.render.jpg`;
   try {
-    await renderSpecToSharp(spec, srcPath, tmp);
+    const r = await renderSpecToSharp(spec, srcPath, tmp, { isCancelled });
+    if (r && r.cancelled) return { cancelled: true };
     await sharp(tmp)
       .resize({ width: 400, height: 400, fit: 'inside' })
       .jpeg({ quality: 85 })
@@ -116,7 +120,11 @@ async function generateEditPreview(srcPath, outPath, spec) {
   return { ok: true, width: meta.width, height: meta.height };
 }
 
-parentPort.on('message', async ({ id, type, filepath, nefPath, srcPath, outPath, edits, spec }) => {
+parentPort.on('message', async ({ id, type, filepath, nefPath, srcPath, outPath, edits, spec, requestSeq }) => {
+  if (type === 'render-cancel') {
+    cancelledRenderSeqs.add(requestSeq);
+    return;
+  }
   try {
     if (type === 'tiers') {
       const result = await generateTiers(filepath);
@@ -131,10 +139,16 @@ parentPort.on('message', async ({ id, type, filepath, nefPath, srcPath, outPath,
       const result = await normalizeBase(srcPath, outPath);
       parentPort.postMessage({ id, result });
     } else if (type === 'edit-preview') {
-      const result = await generateEditPreview(srcPath, outPath, spec);
+      if (requestSeq) cancelledRenderSeqs.delete(requestSeq);
+      const result = await generateEditPreview(srcPath, outPath, spec, requestSeq ? () => cancelledRenderSeqs.has(requestSeq) : null);
       parentPort.postMessage({ id, result });
     } else if (type === 'render-spec') {
-      await renderSpecToSharp(spec, srcPath, outPath);
+      if (requestSeq) cancelledRenderSeqs.delete(requestSeq);
+      const r = await renderSpecToSharp(spec, srcPath, outPath, requestSeq ? { isCancelled: () => cancelledRenderSeqs.has(requestSeq) } : {});
+      if (r && r.cancelled) {
+        parentPort.postMessage({ id, result: { cancelled: true } });
+        return;
+      }
       const meta = await sharp(outPath).metadata();
       parentPort.postMessage({ id, result: { ok: true, width: meta.width, height: meta.height } });
     }

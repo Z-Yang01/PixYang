@@ -24,10 +24,13 @@ const mulAffine = (affine, a, b) => ({
   offset: affine.offset.map(o => a * o + b),
 });
 
-async function renderSpecToSharp(spec, inputPath, outputPath) {
+async function renderSpecToSharp(spec, inputPath, outputPath, opts = {}) {
   if (!spec || spec.specVersion !== 1) {
     throw new Error('[render] spec 或 specVersion 非法');
   }
+  // Phase 9 渲染取消：阶段边界检查取消标记，过期渲染在下一个阶段前中止
+  // （返回 { cancelled: true }，不写输出文件；调用方负责丢弃）
+  const isCancelled = () => !!(opts.isCancelled && opts.isCancelled());
 
   const srcMeta = await sharp(inputPath).metadata();
   const ctx = {
@@ -50,6 +53,7 @@ async function renderSpecToSharp(spec, inputPath, outputPath) {
   };
 
   for (const stage of spec.stages) {
+    if (isCancelled()) return { cancelled: true };
     if (stage.unsupported || UNSUPPORTED_STAGES.has(stage.kind)) {
       console.warn(`[render] 跳过未实现阶段: ${stage.kind}（参数已保留在 spec 中）`);
       continue;

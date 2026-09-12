@@ -34,6 +34,11 @@ function callWorker(message) {
   });
 }
 
+// 无回复消息（渲染取消通知等 fire-and-forget）
+function sendToWorker(message) {
+  ensureWorker().postMessage(message);
+}
+
 // 生成失败/文件不存在均返回 null，调用方按"无法生成"处理
 async function generateThumbnailTiers(filepath) {
   if (!filepath || !fs.existsSync(filepath)) return null;
@@ -73,4 +78,4 @@ async function closeWorker() {
   }
 }
 
-module.exports = { generateThumbnailTiers, extractNefPreview, normalizeEditBase, getImageMeta, callWorker, closeWorker };
+module.exports = { generateThumbnailTiers, extractNefPreview, normalizeEditBase, getImageMeta, callWorker, sendToWorker, closeWorker };

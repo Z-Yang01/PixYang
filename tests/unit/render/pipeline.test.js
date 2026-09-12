@@ -130,3 +130,24 @@ describe('渲染管线安全（真实 sharp）', () => {
     expect(meta.height).toBe(60);
   });
 });
+
+describe('渲染取消（Phase 9）', () => {
+  it('isCancelled 命中时返回 cancelled 且不写输出文件', async () => {
+    const input = path.join(TMP, 'cancel-src.jpg');
+    await sharp({ create: { width: 40, height: 40, channels: 3, background: '#3366aa' } }).jpeg().toFile(input);
+    const out = path.join(TMP, 'never-cancelled.jpg');
+    const result = await renderSpecToSharp({ specVersion: 1, sourceHash: "t", colorSpace: { working: "srgb", output: "srgb" }, stages: baseSpecStages(), meta: {} }, input, out, { isCancelled: () => true });
+    expect(result).toEqual({ cancelled: true });
+    expect(fs.existsSync(out)).toBe(false);
+    expect(fs.existsSync(`${out}.part`)).toBe(false);
+  });
+
+  it('isCancelled 未命中时正常渲染', async () => {
+    const input = path.join(TMP, 'nc-src.jpg');
+    await sharp({ create: { width: 40, height: 40, channels: 3, background: "#3366aa" } }).jpeg().toFile(input);
+    const out = path.join(TMP, 'not-cancelled.jpg');
+    const result = await renderSpecToSharp({ specVersion: 1, sourceHash: "t", colorSpace: { working: "srgb", output: "srgb" }, stages: baseSpecStages(), meta: {} }, input, out, { isCancelled: () => false });
+    expect(result).toBe(out);
+    expect(fs.existsSync(out)).toBe(true);
+  });
+});

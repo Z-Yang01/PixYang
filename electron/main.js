@@ -4,7 +4,7 @@ const path = require('path');
 const fs = require('fs');
 const exifr = require('exifr');
 const { generateThumbnailTiers, extractNefPreview, normalizeEditBase, getImageMeta, closeWorker } = require('./imageWorker');
-const { renderFromEditParams, renderFromSpec, computeSourceHash, callWorker, closeRenderWorker } = require('./render/index.cjs');
+const { renderFromEditParams, renderFromSpec, computeSourceHash, callWorker, sendToWorker, closeRenderWorker } = require('./render/index.cjs');
 const {
   getEditPreviewPath, getEditPreviewPathFor, setEditPreviewPath, clearEditPreview, enforceEditPreviewLimit,
 } = require('./database');
@@ -538,9 +538,16 @@ function cancelEditSession(id) {
 // 世代令牌：烘焙/取消会递增世代，在途渲染完成后校验，不符则丢弃（不写路径不发事件）。
 const editPreviewStates = new Map(); // id -> { running, dirty }
 const editPreviewGeneration = new Map(); // id -> number
+const editPreviewRenderSeq = new Map(); // id -> 最近一次预览渲染请求序号（取消用）
 
 function bumpEditPreviewGeneration(id) {
   editPreviewGeneration.set(id, (editPreviewGeneration.get(id) || 0) + 1);
+  // 中止该图在途的预览渲染（worker 收到后于阶段边界退出，立即让出给缩略图重建）
+  const seq = editPreviewRenderSeq.get(id);
+  if (seq) {
+    sendToWorker({ type: 'render-cancel', requestSeq: seq });
+    editPreviewRenderSeq.delete(id);
+  }
 }
 
 // 底图内容哈希缓存（key 含 mtime/size，路径复用时自动失效；避免每次保存同步读整图卡主进程）
@@ -572,6 +579,9 @@ async function renderEditPreviewOnce(id, params, generation) {
     basePath = dims.basePath || fallback;
   }
   const previewPath = getEditPreviewPath(id);
+  // Phase 9 渲染取消：分配请求序号，烘焙/取消时中止在途渲染
+  const requestSeq = (editPreviewRenderSeq.get(id) || 0) + 1;
+  editPreviewRenderSeq.set(id, requestSeq);
   // 缓存键校验：同一 edits.version 且预览文件存在 → 跳过重渲染
   const version = getEdits(id)?.version || 0;
   const previewMetaPath = `${previewPath}.meta.json`;
@@ -580,7 +590,15 @@ async function renderEditPreviewOnce(id, params, generation) {
     if (prevMeta.editVersion === version && fs.existsSync(previewPath)) return previewPath;
   } catch { /* 无缓存元数据，继续渲染 */ }
   const spec = editParamsToRenderSpec(params, { sourceHash: await computeSourceHashCached(basePath) });
-  await callWorker({ type: 'edit-preview', srcPath: basePath, outPath: previewPath, spec });
+  const renderResult = await callWorker({ type: 'edit-preview', srcPath: basePath, outPath: previewPath, spec, requestSeq });
+  editPreviewRenderSeq.delete(id);
+  // Phase 9：被取消的渲染（烘焙/取消会话触发）不写路径不发事件
+  if (renderResult && renderResult.cancelled) {
+    try {
+      if (fs.existsSync(previewPath)) fs.unlinkSync(previewPath);
+    } catch { /* 清理失败无碍 */ }
+    return null;
+  }
   try {
     fs.writeFileSync(previewMetaPath, JSON.stringify({ editVersion: version, renderVersion: RENDER_VERSION }));
   } catch (e) { console.error('[编辑预览] 缓存元数据写入失败:', e.message); }
