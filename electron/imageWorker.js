@@ -68,4 +68,4 @@ async function closeWorker() {
   }
 }
 
-module.exports = { generateThumbnailTiers, extractNefPreview, normalizeEditBase, closeWorker };
+module.exports = { generateThumbnailTiers, extractNefPreview, normalizeEditBase, callWorker, closeWorker };

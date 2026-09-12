@@ -1,4 +1,4 @@
-// RenderSpec → sharp/libvips 执行器（逐 stage 检查点模式）。
+// RenderSpec → sharp/libvips 执行器（仿射累积 + 检查点模式）。
 // 只依赖 spec + inputPath（不读 EditParams、不读 DB、不碰 Electron API），
 // 可在 worker_threads（应用烘焙/导出）与测试进程（golden runner）中运行。
 //
@@ -7,14 +7,22 @@
 // - stage.unsupported 为 true 时记录警告并跳过（不静默丢弃）；
 // - geometry 先于 crop，crop 坐标是旋转后图像坐标系（pipelineOrder.cjs 锁定）。
 //
-// 【为何逐 stage 检查点】实测 libvips 在单管线内对 linear/gamma/linear 存在操作合并与
-// 求值顺序不保证（linear→gamma 与 gamma→linear 输出相同），跨 stage 的像素算子顺序无法
-// 依赖管线声明顺序。每个 stage 后用 raw buffer 物化像素，保证 stage 间严格顺序、行为确定，
-// 且每个 stage 成为可独立 golden 的纯函数（M7 WebGL 按 stage 对齐的基石）。
-// EXIF/元数据在 encode 阶段以原图为底 composite 回接（raw 化不丢元数据）。
+// 【仿射累积】白平衡/曝光/影调线性/高光全部是逐通道仿射映射，在 JS 端精确复合成
+// 单次 linear，到非线性边界（阴影 gamma/饱和度/锐化/几何/编码）才物化一次——
+// 既规避 libvips 单管线多算子的折叠重排问题（实测 linear↔gamma 顺序不保证），
+// 又把常见路径的 raw 往返降到 0~1 次。
+// 【EXIF 回接】encode 以原图（同几何/裁剪）为底 composite 编辑像素，保留元数据。
 const sharp = require('sharp');
 const { UNSUPPORTED_STAGES } = require('../../shared/pipelineOrder.cjs');
 const fs = require('fs');
+
+const IDENTITY = () => ({ slope: [1, 1, 1], offset: [0, 0, 0] });
+const isIdentity = (a) => !a || (a.slope.every(s => s === 1) && a.offset.every(o => o === 0));
+// a 乘 pending：slope'=a*slope；offset'=a*offset+b
+const mulAffine = (affine, a, b) => ({
+  slope: affine.slope.map(s => a * s),
+  offset: affine.offset.map(o => a * o + b),
+});
 
 async function renderSpecToSharp(spec, inputPath, outputPath) {
   if (!spec || spec.specVersion !== 1) {
@@ -25,24 +33,153 @@ async function renderSpecToSharp(spec, inputPath, outputPath) {
   const ctx = {
     bands: srcMeta.channels || 3,
     exifOrientation: srcMeta.orientation || 1,
-    width: srcMeta.width,
-    height: srcMeta.height,
   };
 
-  let pixels = null; // { data, info } raw 像素（stage 间传递）
+  let pixels = null; // { data, info } raw 像素（检查点传递）
+  let affine = IDENTITY(); // 待应用的累积仿射
+
+  const flushAffine = async () => {
+    if (isIdentity(affine)) { affine = null; return pixels; }
+    let pipe = sourceSharp(pixels, inputPath);
+    if ((ctx.bands || 3) < 3) pipe = pipe.linear(affine.slope[0], affine.offset[0]);
+    else pipe = pipe.linear(affine.slope, affine.offset);
+    pixels = await materialize(pipe);
+    affine = null;
+    return pixels;
+  };
+
   for (const stage of spec.stages) {
     if (stage.unsupported || UNSUPPORTED_STAGES.has(stage.kind)) {
       console.warn(`[render] 跳过未实现阶段: ${stage.kind}（参数已保留在 spec 中）`);
       continue;
     }
-    if (stage.kind === 'encode') {
-      await encodeAndWrite(pixels, inputPath, outputPath, stage, spec, ctx);
-      return outputPath;
+    switch (stage.kind) {
+      case 'decode':
+        // M3：常规格式直读（底图应已经 normalizeBase 规范化转正）；M8 在此替换 libraw 解码。
+        if (ctx.exifOrientation > 1) {
+          console.warn(`[render] 底图含 EXIF 方向标记（orientation=${ctx.exifOrientation}），应先经 normalizeBase 规范化，否则几何操作坐标系错误`);
+        }
+        break;
+
+      case 'whiteBalance': {
+        // 灰度无色彩语义；彩色为对角增益
+        const { temp = 0, tint = 0 } = stage.params || {};
+        if ((temp || tint) && ctx.bands >= 3) {
+          const tk = temp / 100;
+          const gk = tint / 100;
+          const wb = [1 + tk * 0.1, 1 - gk * 0.06, 1 - tk * 0.1];
+          affine = { slope: affine.slope.map((s, i) => s * wb[i]), offset: affine.offset.slice() };
+        }
+        break;
+      }
+
+      case 'exposure': {
+        const ev = stage.params?.ev || 0;
+        if (ev) {
+          const gain = Math.pow(2, ev);
+          affine = { slope: affine.slope.map(s => s * gain), offset: affine.offset.slice() };
+        }
+        break;
+      }
+
+      case 'tone':
+        affine = await applyToneAffine(pixels, inputPath, affine, stage.params || {}, ctx);
+        break;
+
+      case 'saturation':
+        pixels = await flushAffine();
+        if (stage.params && (stage.params.mono || stage.params.value !== 0)) {
+          pixels = await materialize(applySaturation(sourceSharp(pixels, inputPath), stage.params));
+        }
+        break;
+
+      case 'detail': {
+        const { sharpness = 0, noise = 0 } = stage.params || {};
+        if (noise !== 0) console.warn('[render] 降噪（detail.noise）尚未实现，已跳过');
+        if (sharpness > 0) {
+          pixels = await flushAffine();
+          pixels = await materialize(sourceSharp(pixels, inputPath).sharpen({ sigma: 0.8 + sharpness / 50 }));
+        }
+        break;
+      }
+
+      case 'geometry':
+        pixels = await flushAffine();
+        if (hasGeometry(stage.params)) {
+          pixels = await materialize(applyGeometry(sourceSharp(pixels, inputPath), stage.params));
+        }
+        break;
+
+      case 'crop':
+        pixels = await flushAffine();
+        if (stage.params && stage.params.w > 0 && stage.params.h > 0) {
+          pixels = await materialize(applyCrop(sourceSharp(pixels, inputPath), stage.params, ctx));
+        }
+        break;
+
+      case 'encode':
+        pixels = await flushAffine();
+        await encodeAndWrite(pixels, inputPath, outputPath, stage, spec, ctx);
+        return outputPath;
+
+      default:
+        throw new Error(`[render] 未登记的渲染阶段: ${stage.kind}`);
     }
-    pixels = await applyStage(pixels, inputPath, stage, spec.colorSpace, ctx);
   }
   // spec 缺 encode stage（schema 保证存在）——兜底按输入格式落盘
-  return encodeAndWrite(pixels, inputPath, outputPath, { kind: 'encode', params: { format: guessFormat(outputPath), quality: 92 } }, spec, ctx);
+  pixels = await flushAffine();
+  return encodeAndWrite(pixels, inputPath, outputPath, { params: { format: guessFormat(outputPath), quality: 92 } }, spec, ctx);
+}
+
+function hasGeometry({ rotate = 0, flipH = false, flipV = false } = {}) {
+  return rotate % 360 !== 0 || flipH || flipV;
+}
+
+// 阴影 gamma 边界的仿射处理：线性段先行复合，gamma 前物化，gamma 后的高光进入新仿射
+async function applyToneAffine(pixels, inputPath, affine, { contrast = 0, highlights = 0, shadows = 0, whites = 0, blacks = 0 } = {}, ctx) {
+  if (!contrast && !highlights && !shadows && !whites && !blacks) return affine;
+
+  // 线性段：白场/黑场/对比度复合进 pending
+  const cf = 1 + contrast / 50;
+  const whitesF = 1 + whites / 250;
+  const blacksOff = -blacks * 0.35;
+  affine = mulAffine(affine, whitesF * cf, cf * blacksOff + 127.5 * (1 - cf));
+
+  const highlightSlope = highlights !== 0 ? clampNum(1 - highlights / 400, 0.75, 1.15) : 1;
+
+  if (shadows === 0) {
+    // 无 gamma：高光继续并入 pending
+    if (highlightSlope !== 1) affine = mulAffine(affine, highlightSlope, 0);
+    return affine;
+  }
+
+  // gamma 边界：先物化线性段
+  pixels = await flushAffineInternal(pixels, inputPath, affine, ctx);
+  affine = null;
+
+  if (shadows > 0) {
+    // 提亮阴影：总指数 e<1（blacks 端斜率最大，暗部提升最猛）
+    const e = clampNum(1 - shadows / 220, 0.55, 1);
+    pixels = await materialize(sourceSharp(pixels, inputPath).gamma(1, 1 / e));
+    if (highlightSlope !== 1) affine = mulAffine(IDENTITY(), highlightSlope, 0);
+    return affine;
+  }
+
+  // 压暗阴影：镜像域三算子各自独立检查点（同管线内 linear→gamma→linear 会被 libvips 错误折叠）
+  const e = clampNum(1 + (-shadows) / 220, 1, 1.45);
+  pixels = await materialize(sourceSharp(pixels, inputPath).linear(-1, 255));
+  pixels = await materialize(sourceSharp(pixels, inputPath).gamma(1, e));
+  // 镜像回切 linear(-1,255) 与高光 linear 复合为单次：out = -h*x + 255h
+  if (highlightSlope !== 1) return { slope: [-highlightSlope, -highlightSlope, -highlightSlope], offset: [255 * highlightSlope, 255 * highlightSlope, 255 * highlightSlope] };
+  return { slope: [-1, -1, -1], offset: [255, 255, 255] };
+}
+
+async function flushAffineInternal(pixels, inputPath, affine, ctx) {
+  if (!affine || isIdentity(affine)) return pixels;
+  let pipe = sourceSharp(pixels, inputPath);
+  if ((ctx?.bands || 3) < 3) pipe = pipe.linear(affine.slope[0], affine.offset[0]);
+  else pipe = pipe.linear(affine.slope, affine.offset);
+  return materialize(pipe);
 }
 
 // 从当前像素（或原始输入）构建 sharp 实例
@@ -55,45 +192,6 @@ function sourceSharp(pixels, inputPath) {
 
 // raw 检查点：物化像素，杜绝 libvips 单管线内的操作合并/顺序重排
 async function materialize(pipe) {
-  const out = await pipe.raw().toBuffer({ resolveWithObject: true });
-  return { data: out.data, info: out.info };
-}
-
-async function applyStage(pixels, inputPath, stage, colorSpace, ctx) {
-  let pipe = sourceSharp(pixels, inputPath);
-
-  switch (stage.kind) {
-    case 'decode':
-      // M3：常规格式直读（底图应已经 normalizeBase 规范化转正）；M8 在此替换 libraw 解码。
-      if (ctx.exifOrientation > 1) {
-        console.warn(`[render] 底图含 EXIF 方向标记（orientation=${ctx.exifOrientation}），应先经 normalizeBase 规范化，否则几何操作坐标系错误`);
-      }
-      break;
-    case 'whiteBalance':
-      pipe = applyWhiteBalance(pipe, stage.params, ctx);
-      break;
-    case 'exposure':
-      pipe = applyExposure(pipe, stage.params, ctx);
-      break;
-    case 'tone':
-      return applyToneStage(pixels, inputPath, stage.params);
-    case 'saturation':
-      pipe = applySaturation(pipe, stage.params);
-      break;
-    case 'detail':
-      pipe = applyDetail(pipe, stage.params);
-      break;
-    case 'geometry':
-      pipe = applyGeometry(pipe, stage.params);
-      break;
-    case 'crop':
-      pipe = applyCrop(pipe, stage.params, ctx);
-      break;
-    default:
-      throw new Error(`[render] 未登记的渲染阶段: ${stage.kind}`);
-  }
-
-  // 检查点：物化 raw 像素，保证下一 stage 从确定状态开始
   const out = await pipe.raw().toBuffer({ resolveWithObject: true });
   return { data: out.data, info: out.info };
 }
@@ -114,7 +212,7 @@ async function encodeAndWrite(pixels, inputPath, outputPath, encodeStage, spec, 
     }).png({ compressionLevel: 3 }).toBuffer(); // 无损中间层，低压缩级别换取速度
     let metaBase = sharp(inputPath, { failOn: 'none', unlimited: true });
     for (const s of spec?.stages || []) {
-      if (s.kind === 'geometry') metaBase = applyGeometry(metaBase, s.params);
+      if (s.kind === 'geometry' && hasGeometry(s.params)) metaBase = applyGeometry(metaBase, s.params);
       else if (s.kind === 'crop') metaBase = applyCrop(metaBase, s.params, ctx);
     }
     out = metaBase.composite([{ input: editedPng, blend: 'over' }]).keepExif();
@@ -135,7 +233,6 @@ async function encodeAndWrite(pixels, inputPath, outputPath, encodeStage, spec, 
   else if (format === 'tiff') out = out.tiff({ compression: 'lzw' });
   else out = out.jpeg({ quality: clampInt(quality, 1, 100, 92) });
 
-  // alpha 输出（PNG 源）禁 flatten；JPEG 输出时 sharp 自动 flatten（黑底），与旧管线一致
   const partPath = `${outputPath}.part`;
   try {
     await out.toFile(partPath);
@@ -149,80 +246,6 @@ async function encodeAndWrite(pixels, inputPath, outputPath, encodeStage, spec, 
   return outputPath;
 }
 
-// ── 像素算子（纯 stage 函数：吃 sharp 实例返回 sharp 实例，跨 stage 状态只经检查点传递）──
-
-// 色温/色调 → RGB 通道增益（暖+ 冷-，品红+ 绿-）；M8 RAW 时换真实白平衡实现
-// 灰度输入（bands<3）无色彩语义，跳过
-function applyWhiteBalance(pipe, { temp = 0, tint = 0 } = {}, ctx) {
-  if ((!temp && !tint) || (ctx?.bands || 3) < 3) return pipe;
-  const tk = temp / 100;
-  const gk = tint / 100;
-  return pipe.linear([1 + tk * 0.1, 1 - gk * 0.06, 1 - tk * 0.1], [0, 0, 0]);
-}
-
-function applyExposure(pipe, { ev = 0 } = {}, ctx) {
-  if (!ev) return pipe;
-  const gain = Math.pow(2, ev);
-  if ((ctx?.bands || 3) < 3) return pipe.linear(gain, 0);
-  return pipe.linear([gain, gain, gain], [0, 0, 0]);
-}
-
-// 影调：白场→系数、黑场→偏移、对比度→绕输出灰轴的线性；
-// 阴影→gamma（+提亮/-压暗）、高光→线性回收。sRGB 近似实现，M8 引入线性工作空间后换曲线/分区。
-// sharp.gamma 双参数总指数 = 1/(gIn*gOut)，两参数均限 [1,3] → 只能表达指数 ≤1（提亮）；
-// 压暗方向用镜像域（linear(-1,255)→gamma→linear(-1,255)）。
-// 【子步骤检查点】libvips 单管线内 linear/gamma 求值顺序不可靠（实测合并重排），
-// 线性段与 gamma 段之间必须 raw 物化，故 tone 为 async 分段执行。
-async function applyToneStage(pixels, inputPath, { contrast = 0, highlights = 0, shadows = 0, whites = 0, blacks = 0 } = {}) {
-  if (!contrast && !highlights && !shadows && !whites && !blacks) return pixels;
-
-  // 段1：whites/blacks/contrast 线性
-  const whitesF = 1 + whites / 250;
-  const blacksOff = -blacks * 0.35;
-  const cf = 1 + contrast / 50;
-  pixels = await materialize(sourceSharp(pixels, inputPath).linear(whitesF * cf, cf * blacksOff + 127.5 * (1 - cf)));
-
-  // 段2：阴影 gamma（与线性段物理隔离）
-  if (shadows > 0) {
-    const e = clampNum(1 - shadows / 220, 0.55, 1);
-    pixels = await materialize(sourceSharp(pixels, inputPath).gamma(1, 1 / e));
-  } else if (shadows < 0) {
-    // 镜像域三算子各自独立检查点（同管线内 linear→gamma→linear 会被 libvips 错误折叠）
-    const e = clampNum(1 + (-shadows) / 220, 1, 1.45);
-    pixels = await materialize(sourceSharp(pixels, inputPath).linear(-1, 255));
-    pixels = await materialize(sourceSharp(pixels, inputPath).gamma(1, e));
-    pixels = await materialize(sourceSharp(pixels, inputPath).linear(-1, 255));
-  }
-
-  // 段3：高光线性回收
-  if (highlights !== 0) {
-    const mul = clampNum(1 - highlights / 400, 0.75, 1.15);
-    pixels = await materialize(sourceSharp(pixels, inputPath).linear(mul, 0));
-  }
-  return pixels;
-}
-
-function applySaturation(pipe, { value = 0, mono = false } = {}) {
-  if (mono || value === -100) {
-    return pipe.grayscale();
-  }
-  if (value !== 0) {
-    return pipe.modulate({ saturation: 1 + value / 100 });
-  }
-  return pipe;
-}
-
-function applyDetail(pipe, { sharpness = 0, noise = 0 } = {}) {
-  if (noise !== 0) {
-    console.warn('[render] 降噪（detail.noise）尚未实现，已跳过');
-  }
-  if (sharpness > 0) {
-    return pipe.sharpen({ sigma: 0.8 + sharpness / 50 });
-  }
-  return pipe;
-}
-
-// 几何：显式角度旋转（底图已规范化转正，不会与 EXIF 方向双重旋转）
 function applyGeometry(pipe, { rotate = 0, flipH = false, flipV = false } = {}) {
   if (rotate % 360 !== 0) {
     pipe = pipe.rotate(rotate, { background: '#000000' });
@@ -232,8 +255,7 @@ function applyGeometry(pipe, { rotate = 0, flipH = false, flipV = false } = {}) 
   return pipe;
 }
 
-// 裁剪：geometry 之后坐标系（旋转后空间）
-function applyCrop(pipe, params, ctx) {
+function applyCrop(pipe, params) {
   if (!params || !(params.w > 0) || !(params.h > 0)) return pipe;
   return pipe.extract({
     left: Math.max(0, Math.round(params.x)),
@@ -241,6 +263,12 @@ function applyCrop(pipe, params, ctx) {
     width: Math.round(params.w),
     height: Math.round(params.h),
   });
+}
+
+function applySaturation(pipe, { value = 0, mono = false } = {}) {
+  if (mono || value === -100) return pipe.grayscale();
+  if (value !== 0) return pipe.modulate({ saturation: 1 + value / 100 });
+  return pipe;
 }
 
 function guessFormat(outputPath) {
@@ -253,4 +281,4 @@ function guessFormat(outputPath) {
 function clampNum(v, min, max) { return Math.min(max, Math.max(min, v)); }
 function clampInt(v, min, max) { return Math.min(max, Math.max(min, Math.round(v))); }
 
-module.exports = { renderSpecToSharp, applyStage };
+module.exports = { renderSpecToSharp, applyStage: renderSpecToSharp };

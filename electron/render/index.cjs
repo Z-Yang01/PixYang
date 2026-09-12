@@ -4,38 +4,8 @@ const path = require('path');
 const crypto = require('crypto');
 const fs = require('fs');
 const { editParamsToRenderSpec } = require('../../shared/renderSpec.cjs');
+const { callWorker, closeWorker: closeImageWorker } = require('../imageWorker');
 
-let worker = null;
-let seq = 0;
-const pending = new Map();
-
-function ensureWorker() {
-  if (worker) return worker;
-  const { Worker } = require('worker_threads');
-  worker = new Worker(path.join(__dirname, '..', 'thumbWorker.js'));
-  worker.on('message', ({ id, result, error }) => {
-    const entry = pending.get(id);
-    if (!entry) return;
-    pending.delete(id);
-    if (error) entry.reject(new Error(error));
-    else entry.resolve(result);
-  });
-  worker.on('error', (err) => {
-    for (const entry of pending.values()) entry.reject(err);
-    pending.clear();
-    worker = null;
-  });
-  return worker;
-}
-
-function callWorker(message) {
-  const w = ensureWorker();
-  const id = ++seq;
-  return new Promise((resolve, reject) => {
-    pending.set(id, { resolve, reject });
-    w.postMessage({ id, ...message });
-  });
-}
 
 // 输入图内容哈希：底图更换后 spec 失效防护（sourceHash）
 function computeSourceHash(inputPath) {
@@ -63,13 +33,9 @@ async function renderFromSpec(spec, inputPath, outputPath) {
   return { ok: true, path: outputPath, ...result };
 }
 
+// 生命周期与 imageWorker 共用同一 worker（closeRenderWorker 为别名，兼容既有调用）
 function closeRenderWorker() {
-  if (worker) {
-    const w = worker;
-    worker = null;
-    return w.terminate();
-  }
-  return Promise.resolve();
+  return closeImageWorker();
 }
 
 module.exports = { renderFromEditParams, renderFromSpec, computeSourceHash, callWorker, closeRenderWorker };
