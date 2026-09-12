@@ -260,7 +260,7 @@ const workerStub = {
   generateThumbnailTiers: vi.fn(async () => null),
   extractNefPreview: vi.fn(async () => null),
   normalizeEditBase: vi.fn(async () => ({ width: 2000, height: 1200 })),
-  getImageMeta: vi.fn(async () => ({ width: 2000, height: 1200 })),
+  getImageMeta: vi.fn(async () => ({ width: 2000, height: 1200, orientation: 1, hasAlpha: false })),
   closeWorker: vi.fn(async () => {}),
 };
 
@@ -820,7 +820,9 @@ describe('编辑会话（非破坏保存）', () => {
     expect(session.width).toBe(2000);
     expect(session.savedEdits.version).toBe(2);
     expect(fs.existsSync(path.join(FIXTURES, 'editme-temp.jpg'))).toBe(false);
-    expect(workerStub.normalizeEditBase).toHaveBeenCalled();
+    // 零拷贝：方向 1 的源直接引用原图作为底图，无需 normalize 副本
+    expect(session.basePath).toBe(path.join(FIXTURES, 'editme.jpg'));
+    expect(workerStub.normalizeEditBase).not.toHaveBeenCalled();
     await call('fs:edit-cancel', 77);
   });
 
@@ -867,7 +869,7 @@ describe('编辑会话（非破坏保存）', () => {
     expect(renderModuleStub.renderFromEditParams).toHaveBeenCalledWith(
       expect.objectContaining({ basic: expect.objectContaining({ exposure: 0.5 }) }),
       expect.objectContaining({
-        inputPath: expect.stringContaining('77-base.jpg'),
+        inputPath: path.join(FIXTURES, 'editme.jpg'),
         outputPath: path.join(FIXTURES, 'editme-temp.jpg'),
       })
     );
@@ -918,12 +920,30 @@ describe('编辑会话（非破坏保存）', () => {
     expect(dbStub.deletePreset).toHaveBeenCalledWith(1);
   });
 
-  it('fs:edit-cancel 幂等且清理底图缓存', async () => {
+  it('零拷贝会话取消后原图不得被清理（basePath === filepath 护栏）', async () => {
     fs.writeFileSync(path.join(FIXTURES, 'editme.jpg'), 'img');
-    dbStub.getImageById.mockReturnValueOnce(editImage());
+    dbStub.getImageById.mockReturnValue(editImage());
+    await call('fs:edit-open', 77);
+    const original = path.join(FIXTURES, 'editme.jpg');
+    expect(fs.existsSync(original)).toBe(true);
+    await call('fs:edit-cancel', 77);
+    expect(fs.existsSync(original)).toBe(true); // 原图绝不可删
+  });
+
+  it('fs:edit-cancel 幂等；零拷贝会话不触碰原图，非零拷贝底图被清理', async () => {
+    // 零拷贝会话：basePath === filepath，取消只关会话不删文件
+    fs.writeFileSync(path.join(FIXTURES, 'editme.jpg'), 'img');
+    dbStub.getImageById.mockReturnValue(editImage());
     await call('fs:edit-open', 77);
     expect(await call('fs:edit-cancel', 77)).toEqual({ ok: true });
-    expect(fs.existsSync(path.join(USER_DATA, 'edit-cache', '77-base.jpg'))).toBe(false);
+    expect(fs.existsSync(path.join(FIXTURES, 'editme.jpg'))).toBe(true);
+    // 幂等
+    expect(await call('fs:edit-cancel', 77)).toEqual({ ok: true });
+    // 非零拷贝会话（NEF 显影）：base 文件属缓存，取消时清理
+    fs.writeFileSync(path.join(FIXTURES, 'editme.nef'), 'raw');
+    workerStub.extractNefPreview.mockResolvedValueOnce({ ok: true, width: 2000, height: 1200 });
+    dbStub.getImageById.mockReturnValueOnce({ ...editImage(), raw_path: path.join(FIXTURES, 'editme.nef') });
+    await call('fs:edit-open', 77);
     expect(await call('fs:edit-cancel', 77)).toEqual({ ok: true });
   });
 });

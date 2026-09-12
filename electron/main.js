@@ -360,7 +360,24 @@ async function ensureEditBase(id, img) {
     const preview = await extractNefPreview(img.raw_path, basePath);
     if (preview && preview.ok) source = 'nef';
   }
-  const dims = await normalizeEditBase(source === 'nef' ? basePath : img.filepath, basePath);
+  if (source === 'nef') {
+    // NEF 显影预览：normalize 转正（可能含旋转）
+    const dims = await normalizeEditBase(basePath, basePath);
+    const finalBase = dims.basePath || basePath;
+    writeEditBaseCache(id, img, finalBase, source);
+    return { basePath: finalBase, source, cached: false };
+  }
+
+  // 无 NEF：方向 1 的 JPG/PNG 源零拷贝直用原图（烘焙单次编码、无底图文件、alpha/EXIF 天然保留）；
+  // 方向 ≠1 或元数据不可读时才生成转正副本
+  try {
+    const meta = await getImageMeta(img.filepath);
+    if (!meta.orientation || meta.orientation === 1) {
+      writeEditBaseCache(id, img, img.filepath, source);
+      return { basePath: img.filepath, source, cached: false };
+    }
+  } catch { /* 元数据失败走 normalize 兜底 */ }
+  const dims = await normalizeEditBase(img.filepath, basePath);
   const finalBase = dims.basePath || basePath;
   writeEditBaseCache(id, img, finalBase, source);
   return { basePath: finalBase, source, cached: false };
@@ -463,7 +480,8 @@ async function bakeEditSession(id, edits) {
 
   editSessions.delete(id);
   try {
-    if (fs.existsSync(session.basePath)) fs.unlinkSync(session.basePath);
+    // 零拷贝会话的 basePath 就是原图本身——绝不可删
+    if (fs.existsSync(session.basePath) && session.basePath !== session.filepath) fs.unlinkSync(session.basePath);
   } catch { /* 缓存清理失败无碍 */ }
 
   scheduleThumbnailRebuild();
@@ -529,7 +547,8 @@ function cancelEditSession(id) {
   bumpEditPreviewGeneration(id);
   if (session) {
     try {
-      if (fs.existsSync(session.basePath)) fs.unlinkSync(session.basePath);
+      // 零拷贝会话的 basePath 就是原图本身——绝不可删
+      if (fs.existsSync(session.basePath) && session.basePath !== session.filepath) fs.unlinkSync(session.basePath);
     } catch (e) {
       console.error('[编辑] 清理失败:', e.message);
     }

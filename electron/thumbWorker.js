@@ -134,7 +134,7 @@ parentPort.on('message', async ({ id, type, filepath, nefPath, srcPath, outPath,
       parentPort.postMessage({ id, result });
     } else if (type === 'meta') {
       const meta = await sharp(filepath).metadata();
-      parentPort.postMessage({ id, result: { width: meta.width, height: meta.height } });
+      parentPort.postMessage({ id, result: { width: meta.width, height: meta.height, orientation: meta.orientation || 1, hasAlpha: !!meta.hasAlpha } });
     } else if (type === 'normalize') {
       const result = await normalizeBase(srcPath, outPath);
       parentPort.postMessage({ id, result });
