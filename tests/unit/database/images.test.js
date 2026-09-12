@@ -562,3 +562,54 @@ describe('NEF 配对关系保持（任务书第 26 节 metadata 测试）', () =
     expect(db.getImageById(img.id)).toBeNull();
   });
 });
+
+describe('编辑数据删除一致性（edits / edit_history）', () => {
+  it('foreign_keys=ON 生效：直接删除 images 行时 edits 与 edit_history 级联清理', async () => {
+    const dir = tmpDir('fk-cascade');
+    const [img] = await db.importImages([makeImage('fk-a.jpg', dir, 'fk1')]);
+    db.saveEdits(img.id, { basic: { exposure: 0.5 } }, { label: '曝光' });
+    db.saveEdits(img.id, { basic: { exposure: 0.8 } }, { label: '曝光' });
+    expect(db.getEdits(img.id)).not.toBeNull();
+    expect(db.getEditHistory(img.id)).toHaveLength(2);
+    expect(db.__getDb().pragma('foreign_keys', { simple: true })).toBe(1);
+    db.__getDb().prepare('DELETE FROM images WHERE id = ?').run(img.id);
+    expect(db.getEdits(img.id)).toBeNull();
+    expect(db.getEditHistory(img.id)).toEqual([]);
+  });
+
+  it('deleteImage 显式清理 edits 与 edit_history（不依赖级联）', async () => {
+    const dir = tmpDir('del-edit');
+    const [img] = await db.importImages([makeImage('del-ed.jpg', dir, 'd1')]);
+    db.saveEdits(img.id, { basic: { exposure: 0.5 } }, { label: '曝光' });
+    expect(db.getEdits(img.id)).not.toBeNull();
+    db.deleteImage(img.id);
+    expect(db.getEdits(img.id)).toBeNull();
+    expect(db.getEditHistory(img.id)).toEqual([]);
+  });
+
+  it('deleteBrokenRecords 同样清理 edits 与 edit_history', async () => {
+    const dir = tmpDir('del-broken-edit');
+    const [img] = await db.importImages([makeImage('broken-ed.jpg', dir, 'b1')]);
+    db.saveEdits(img.id, { basic: { exposure: 0.5 } }, { label: '曝光' });
+    fs.unlinkSync(img.filepath);
+    expect(db.deleteBrokenRecords([img.id])).toBe(1);
+    expect(db.getEdits(img.id)).toBeNull();
+    expect(db.getEditHistory(img.id)).toEqual([]);
+  });
+});
+
+describe('saveEditedImage 目标冲突护栏', () => {
+  it('烘焙改名（gif→jpg）撞上其他记录的 filepath 时报错且不覆盖任何文件', async () => {
+    const dir = tmpDir('edit-clash');
+    const [gif] = await db.importImages([makeImage('clash.gif', dir, 'gif-bytes')]);
+    const [jpg] = await db.importImages([makeImage('clash.jpg', dir, 'jpg-bytes')]);
+    const temp = path.join(dir, 'clash-temp.jpg');
+    fs.writeFileSync(temp, 'baked-bytes');
+    const res = db.saveEditedImage(gif.id, temp, { width: 10, height: 10 });
+    expect(res.error).toBeTruthy();
+    expect(fs.readFileSync(jpg.filepath, 'utf8')).toBe('jpg-bytes');
+    expect(fs.readFileSync(gif.filepath, 'utf8')).toBe('gif-bytes');
+    expect(db.getImageById(gif.id).filepath).toBe(gif.filepath);
+    expect(db.getImageById(jpg.id).filepath).toBe(jpg.filepath);
+  });
+});

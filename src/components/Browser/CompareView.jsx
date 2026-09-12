@@ -37,7 +37,7 @@ export default function CompareView({ mode = 'split', beforeSrc, afterNode, init
           <span className="editor-split-label left">Before</span>
         </div>
         <div className="editor-side-pane">{afterNode}</div>
-        <span className="editor-split-label right" style={{ left: '50%', transform: 'translateX(-100%)', marginRight: 12 }}>After</span>
+        <span className="editor-split-label right">After</span>
       </div>
     );
   }
@@ -45,7 +45,7 @@ export default function CompareView({ mode = 'split', beforeSrc, afterNode, init
   return (
     <div className="editor-split-wrap" ref={wrapRef}>
       <div className="editor-split-after">{afterNode}</div>
-      <div className="editor-split-before" style={{ width: `${splitPos}%` }}>
+      <div className="editor-split-before" style={{ clipPath: `inset(0 ${100 - splitPos}% 0 0)` }}>
         {beforeImg}
       </div>
       <div

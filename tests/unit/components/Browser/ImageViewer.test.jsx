@@ -282,6 +282,140 @@ describe('ImageViewer', () => {
     });
     rectSpy.mockRestore();
   });
+
+  function mockSquareViewport() {
+    return vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({
+      left: 0, top: 0, right: 1000, bottom: 1000, width: 1000, height: 1000, x: 0, y: 0,
+      toJSON: () => {},
+    });
+  }
+
+  async function enterEdit() {
+    fireEvent.click(screen.getByTitle(/编辑模式/));
+    await screen.findByText('参数已保存');
+  }
+
+  function drawCrop() {
+    fireEvent.click(screen.getByTitle('裁剪'));
+    fireEvent.mouseDown(document.querySelector('.viewer-content'), { clientX: 100, clientY: 100 });
+    fireEvent.mouseMove(window, { clientX: 500, clientY: 400 });
+    fireEvent.mouseUp(window);
+  }
+
+  it('编辑模式：分屏对比进入时重置缩放/平移，并隐藏裁剪框与压暗遮罩', async () => {
+    mockEditBridge();
+    const rectSpy = mockSquareViewport();
+    render(<ImageViewer {...baseProps()} />);
+    await enterEdit();
+    fireEvent.keyDown(window, { key: '+' });
+    expect(screen.getByText('125%')).toBeInTheDocument();
+    drawCrop();
+    expect(document.querySelector('.editor-crop-box')).toBeInTheDocument();
+    fireEvent.click(screen.getByTitle(/分屏对比/));
+    expect(document.querySelector('.editor-split-wrap')).toBeInTheDocument();
+    expect(screen.getByText('100%')).toBeInTheDocument();
+    const beforeImg = document.querySelector('.editor-split-before img');
+    expect(beforeImg?.getAttribute('src')).toContain('3-base.jpg');
+    expect(document.querySelector('.editor-crop-box')).toBeNull();
+    const layer = document.querySelector('.editor-transform-layer');
+    expect(layer.style.transform).toContain('translate(0px, 0px)');
+    rectSpy.mockRestore();
+  });
+
+  it('编辑模式：并排对比渲染左右画布并重置缩放', async () => {
+    mockEditBridge();
+    render(<ImageViewer {...baseProps()} />);
+    await enterEdit();
+    fireEvent.keyDown(window, { key: '+' });
+    fireEvent.click(screen.getByText('并排'));
+    expect(document.querySelector('.editor-side-wrap')).toBeInTheDocument();
+    expect(screen.getByText('100%')).toBeInTheDocument();
+    expect(document.querySelectorAll('.editor-side-pane').length).toBe(2);
+    const beforeImg = document.querySelector('.editor-side-pane img');
+    expect(beforeImg?.getAttribute('src')).toContain('3-base.jpg');
+    expect(document.querySelector('.editor-transform-layer')).toBeInTheDocument();
+  });
+
+  it('编辑模式：分屏时快捷键与滚轮缩放被禁用（Before 层不受缩放影响）', async () => {
+    mockEditBridge();
+    render(<ImageViewer {...baseProps()} />);
+    await enterEdit();
+    fireEvent.click(screen.getByText('分屏'));
+    fireEvent.keyDown(window, { key: '+' });
+    expect(screen.getByText('100%')).toBeInTheDocument();
+    fireEvent.wheel(document.querySelector('.viewer-content'), { deltaY: -100 });
+    expect(screen.getByText('100%')).toBeInTheDocument();
+  });
+
+  it('编辑模式：退出编辑后缩放/平移复位', async () => {
+    mockEditBridge();
+    render(<ImageViewer {...baseProps()} />);
+    await enterEdit();
+    fireEvent.keyDown(window, { key: '+' });
+    expect(screen.getByText('125%')).toBeInTheDocument();
+    fireEvent.click(document.querySelector('.viewer-close'));
+    expect(await screen.findByText('3 / 10')).toBeInTheDocument();
+    expect(screen.getByText('100%')).toBeInTheDocument();
+  });
+
+  it('编辑模式：退出/重进裁剪模式保留已画裁剪框', async () => {
+    mockEditBridge();
+    const rectSpy = mockSquareViewport();
+    render(<ImageViewer {...baseProps()} />);
+    await enterEdit();
+    drawCrop();
+    expect(document.querySelector('.editor-crop-box')).toBeInTheDocument();
+    fireEvent.click(screen.getByTitle('裁剪'));
+    expect(document.querySelector('.editor-crop-box')).toBeInTheDocument();
+    fireEvent.click(screen.getByTitle('裁剪'));
+    expect(document.querySelector('.editor-crop-box')).toBeInTheDocument();
+    rectSpy.mockRestore();
+  });
+
+  it('查看态：点击缩放标签按原图宽切换实际像素（此前引用编辑层元素导致失效）', () => {
+    const rectSpy = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function () {
+      let w = 1000;
+      if (this.tagName === 'IMG') {
+        const m = /scale\((-?[\d.]+)/.exec(this.style?.transform || '');
+        if (m) w = 1000 * Math.abs(parseFloat(m[1]));
+      }
+      return { left: 0, top: 0, right: w, bottom: 1000, width: w, height: 1000, x: 0, y: 0, toJSON: () => {} };
+    });
+    const natSpy = vi.spyOn(HTMLImageElement.prototype, 'naturalWidth', 'get').mockReturnValue(1920);
+    try {
+      render(<ImageViewer {...baseProps()} />);
+      const label = document.querySelector('.viewer-zoom-label');
+      fireEvent.click(label);
+      expect(screen.getByText('192%')).toBeInTheDocument();
+      fireEvent.click(label);
+      expect(screen.getByText('100%')).toBeInTheDocument();
+    } finally {
+      natSpy.mockRestore();
+      rectSpy.mockRestore();
+    }
+  });
+
+  it('导出对话框：JPG 源 auto 显示质量滑杆，切 PNG 后隐藏', async () => {
+    mockEditBridge();
+    render(<ImageViewer {...baseProps()} />);
+    await enterEdit();
+    fireEvent.change(document.querySelectorAll('.editor-slider-row input[type="range"]')[0], { target: { value: '0.5' } });
+    fireEvent.click(screen.getByText('导出…'));
+    expect(await screen.findByText('质量')).toBeInTheDocument();
+    fireEvent.change(screen.getByDisplayValue('跟随原图'), { target: { value: 'png' } });
+    expect(screen.queryByText('质量')).toBeNull();
+    expect(screen.getByText(/无损格式/)).toBeInTheDocument();
+  });
+
+  it('导出对话框：PNG 源 auto（跟随原图）时直接隐藏质量滑杆', async () => {
+    mockEditBridge();
+    render(<ImageViewer {...baseProps({ image: { ...testImage, format: 'png' } })} />);
+    await enterEdit();
+    fireEvent.change(document.querySelectorAll('.editor-slider-row input[type="range"]')[0], { target: { value: '0.5' } });
+    fireEvent.click(screen.getByText('导出…'));
+    expect(await screen.findByText(/无损格式/)).toBeInTheDocument();
+    expect(screen.queryByText('质量')).toBeNull();
+  });
 });
 
 function container_close() {

@@ -518,7 +518,7 @@ async function exportEditSession(id, edits, destDir, output = null) {
   const SUPPORTED_EXPORT = ['jpeg', 'png', 'webp'];
   const outFormat = SUPPORTED_EXPORT.includes(output?.format)
     ? output.format
-    : (session.format === '.png' ? 'png' : 'jpeg');
+    : (session.format === '.png' ? 'png' : (session.format === '.webp' ? 'webp' : 'jpeg'));
   const extMap = { jpeg: '.jpg', png: '.png', webp: '.webp' };
   const ext = extMap[outFormat];
   const maxEdge = Number(output?.maxEdge) > 0 ? Number(output.maxEdge) : null;
@@ -574,6 +574,15 @@ function cancelEditSession(id) {
     editSessions.delete(id);
   }
   return { ok: true };
+}
+
+// 图片改名/移动后同步仍打开的编辑会话：零拷贝会话 basePath 就是原图，跟随新路径；
+// 非零拷贝 basePath 在 edit-cache 内不受影响，仅更新 filepath（temp 路径与零拷贝判定依赖它）
+function reconcileEditSessionPaths(id, img) {
+  const session = editSessions.get(id);
+  if (!session || !img || !img.filepath || session.filepath === img.filepath) return;
+  if (session.basePath === session.filepath) session.basePath = img.filepath;
+  session.filepath = img.filepath;
 }
 
 // ── 编辑预览缩略图（LRU + 去重 + 世代令牌）──
@@ -817,7 +826,10 @@ function setupIPC() {
   });
 
   ipcMain.handle('db:delete-broken-records', async (_event, ids) => {
-    return deleteBrokenRecords(ids || []);
+    const list = ids || [];
+    const removed = await deleteBrokenRecords(list);
+    for (const id of list) cleanupEditDerivedFiles(id);
+    return removed;
   });
 
   // 重复图片检测（元数据粗分组 + 快速哈希验证）
@@ -825,20 +837,31 @@ function setupIPC() {
     return findDuplicates();
   });
 
-  // 更新图片字段
+  // 更新图片字段（import_date 变更会移动文件：打开中的编辑会话路径需同步）
   ipcMain.handle('db:update-image', async (_event, id, updates) => {
-    return updateImage(id, updates);
+    const result = await updateImage(id, updates);
+    if (result && !result.error && updates && updates.import_date) {
+      reconcileEditSessionPaths(id, getImageById(id));
+    }
+    return result;
   });
 
-  // 重命名图片（同时更新文件名和磁盘文件）
+  // 重命名图片（同时更新文件名和磁盘文件；打开中的编辑会话路径同步，避免烘焙报底图丢失）
   ipcMain.handle('db:rename-image', async (_event, id, newFilename) => {
-    return renameImage(id, newFilename);
+    const result = await renameImage(id, newFilename);
+    if (result && result.success) {
+      reconcileEditSessionPaths(id, getImageById(id));
+    }
+    return result;
   });
 
-  // 删除图片（含编辑派生文件清理：预览缩略图、编辑底图缓存）
+  // 删除图片（含编辑派生文件清理：预览缩略图、编辑底图缓存，并取消打开中的编辑会话）
   ipcMain.handle('db:delete-image', async (_event, id) => {
-    const result = deleteImage(id);
-    if (result && !result.error) cleanupEditDerivedFiles(id);
+    const result = await deleteImage(id);
+    if (result && !result.error) {
+      cleanupEditDerivedFiles(id);
+      cancelEditSession(id);
+    }
     return result;
   });
 
@@ -1015,7 +1038,12 @@ function setupIPC() {
   // ── 批量删除 ──
   ipcMain.handle('db:batch-delete-images', async (_event, ids) => {
     const results = (await batchDeleteImages(ids)) || [];
-    for (const r of results) if (r && !r.error) cleanupEditDerivedFiles(r.id);
+    for (const r of results) {
+      if (r && !r.error) {
+        cleanupEditDerivedFiles(r.id);
+        cancelEditSession(r.id);
+      }
+    }
     return results;
   });
 

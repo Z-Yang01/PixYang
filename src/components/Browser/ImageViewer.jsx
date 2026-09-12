@@ -91,6 +91,7 @@ export default function ImageViewer({
   const historyRef = useRef(null); // { stack: [ops], index }
   const savedBaselineRef = useRef(null); // 最近一次保存的参数快照（dirty 判定基线）
   const copiedBasicRef = useRef(null); // 复制/粘贴的 basic 参数（应用内会话级剪贴板）
+  const compareActive = editing && showBefore && compareMode !== 'toggle';
 
   // 同步图片切换
   useEffect(() => {
@@ -147,6 +148,10 @@ export default function ImageViewer({
     setHistInfo({ canUndo: false, canRedo: false });
     historyRef.current = null;
     savedBaselineRef.current = null;
+    setZoom(1);
+    setPos({ x: 0, y: 0 });
+    setShowBefore(false);
+    setCompareMode('toggle');
   }, []);
 
   const enterEdit = useCallback(async () => {
@@ -622,8 +627,8 @@ export default function ImageViewer({
         case VIEWER_ACTIONS.Close: editingRef.current ? requestExitEdit() : onClose(); break;
         case VIEWER_ACTIONS.Prev: if (hasPrev && !editingRef.current && !editPendingRef.current) onPrev(); break;
         case VIEWER_ACTIONS.Next: if (hasNext && !editingRef.current && !editPendingRef.current) onNext(); break;
-        case VIEWER_ACTIONS.ZoomIn: setZoom(z => Math.min(z + 0.25, 5)); break;
-        case VIEWER_ACTIONS.ZoomOut: setZoom(z => Math.max(z - 0.25, 0.25)); break;
+        case VIEWER_ACTIONS.ZoomIn: if (!compareActive) setZoom(z => Math.min(z + 0.25, 5)); break;
+        case VIEWER_ACTIONS.ZoomOut: if (!compareActive) setZoom(z => Math.max(z - 0.25, 0.25)); break;
         case VIEWER_ACTIONS.RotateCw: applyRotate(90); break;
         case VIEWER_ACTIONS.RotateCcw: applyRotate(270); break;
         case VIEWER_ACTIONS.FlipH: applyFlip('H'); break;
@@ -642,7 +647,7 @@ export default function ImageViewer({
     };
     window.addEventListener('keydown', handleKey);
     return () => window.removeEventListener('keydown', handleKey);
-  }, [hasPrev, hasNext, image, onClose, onPrev, onNext, toggleFavorite, setRating, onOpenInfo, applyRotate, applyFlip, requestExitEdit, applyHistory]);
+  }, [hasPrev, hasNext, image, onClose, onPrev, onNext, toggleFavorite, setRating, onOpenInfo, applyRotate, applyFlip, requestExitEdit, applyHistory, compareActive]);
 
   // 加载策略：中图占位，原图异步替换；列表小图不用于查看器
   // bust 版本号：烘焙替代后文件内容已变而路径不变，加版本参数绕过浏览器缓存
@@ -692,12 +697,13 @@ export default function ImageViewer({
     }
   }, [bust]);
 
-  // 鼠标拖拽平移（裁剪模式时转为框选/移动裁剪框）
+  // 鼠标拖拽平移（裁剪模式时转为框选/移动裁剪框；对比模式平移只作用于 After 层，禁用）
   const handleMouseDown = (e) => {
     if (editing && cropMode) {
       handleCropMouseDown(e);
       return;
     }
+    if (compareActive) return;
     if (zoomRef.current <= 1) return;
     e.preventDefault();
     dragging.current = true;
@@ -721,15 +727,16 @@ export default function ImageViewer({
     };
   }, []);
 
-  // 滚轮缩放（以鼠标位置为中心）
+  // 滚轮缩放（以鼠标位置为中心）；分屏/并排对比时缩放只作用于 After 层，统一禁用
   const handleWheel = useCallback((e) => {
     e.preventDefault();
     e.stopPropagation();
+    if (compareActive) return;
     setZoom(z => {
       const delta = e.deltaY < 0 ? 0.15 : -0.15;
       return Math.max(0.25, Math.min(5, z + delta));
     });
-  }, []);
+  }, [compareActive]);
 
   // 点赞
   const handleFavToggle = async (e) => {
@@ -776,6 +783,8 @@ export default function ImageViewer({
     : 'clean';
   const PHASE_LABELS = { clean: '已保存', dirty: '未保存', saving: '保存中…', exporting: '导出中…', baking: '烘焙中…', opening: '准备中…', error: '出错' };
   const showBeforeOn = showBefore && editing;
+  const exportSourceIsPng = (image?.format || '').toLowerCase() === 'png';
+  const exportQualityHidden = exportOpts.format === 'png' || (exportOpts.format === 'auto' && exportSourceIsPng);
 
   // 影调预览滤镜链（与分段渲染管线同序同数学）；needsMatrix 决定主矩阵原语是否渲染
   const previewChainRaw = editing && !showBeforeOn ? previewFilterChain(editOps) : null;
@@ -810,7 +819,7 @@ export default function ImageViewer({
           transition: dragging.current ? 'none' : undefined,
         }}
       />
-      {edited && crop && cropPct && (
+      {edited && compareMode === 'toggle' && crop && cropPct && (
         <div className="editor-crop-box" style={cropPct} data-crop-box="1">
           {['n', 's', 'e', 'w', 'ne', 'nw', 'se', 'sw'].map(h => (
             <span key={h} data-crop-handle={h} className={`editor-crop-handle handle-${h}`} />
@@ -905,7 +914,10 @@ export default function ImageViewer({
             </Button>
             <Button
               variant="ghost" size="icon"
-              onClick={() => { setCropMode(m => !m); setEditOps(o => ({ ...o, crop: null })); }}
+              onClick={() => {
+                if (!cropMode) { setShowBefore(false); setCompareMode('toggle'); }
+                setCropMode(m => !m);
+              }}
               className={cropMode ? 'is-active' : ''}
               title="裁剪"
             >
@@ -936,10 +948,11 @@ export default function ImageViewer({
         <span
           className="viewer-zoom-label"
           style={{ cursor: 'pointer' }}
-          title="点击切换 适应窗口 / 实际像素 (100%)"
+          title={compareActive ? '对比模式下缩放不可用' : '点击切换 适应窗口 / 实际像素 (100%)'}
           onClick={(e) => {
             e.stopPropagation();
-            const el = editImgRef.current;
+            if (compareActive) return;
+            const el = editing ? editImgRef.current : (contentRef.current?.querySelector('img.viewer-image') || null);
             const natW = el?.naturalWidth || 0;
             const dispW = el?.getBoundingClientRect().width || 0;
             if (!natW || !dispW) return;
@@ -986,8 +999,8 @@ export default function ImageViewer({
         ) : editing && editError ? (
           <div className="editor-error">{editError}</div>
         ) : editing ? (
-          showBeforeOn && compareMode === 'split' && editBaseSrc ? (
-            <CompareView beforeSrc={editBaseSrc} afterNode={editLayer(true)} />
+          showBeforeOn && compareMode !== 'toggle' && editBaseSrc ? (
+            <CompareView mode={compareMode} beforeSrc={editBaseSrc} afterNode={editLayer(true)} />
           ) : (
             editLayer(!showBeforeOn)
           )
@@ -1018,7 +1031,7 @@ export default function ImageViewer({
             </span>
             <span className={`editor-phase-tag phase-${editPhase}`}>{PHASE_LABELS[editPhase] || editPhase}</span>
             <Button
-              variant="ghost" size="icon-xs"
+              variant="ghost" size="xs"
               className={showBeforeOn && compareMode === 'toggle' ? 'is-active' : ''}
               onClick={() => { setShowBefore(v => !(v && compareMode === 'toggle')); setCompareMode('toggle'); setCropMode(false); }}
               title="整幅切换 Before/After（Before = NEF 显影/JPG 原图）"
@@ -1026,15 +1039,26 @@ export default function ImageViewer({
               对比
             </Button>
             <Button
-              variant="ghost" size="icon-xs"
+              variant="ghost" size="xs"
               className={showBeforeOn && compareMode === 'split' ? 'is-active' : ''}
               onClick={() => {
                 if (compareMode === 'split') { setShowBefore(false); setCompareMode('toggle'); }
-                else { setShowBefore(true); setCompareMode('split'); }
+                else { setShowBefore(true); setCompareMode('split'); setZoom(1); setPos({ x: 0, y: 0 }); setCropMode(false); }
               }}
               title="分屏对比（拖动分割线，左原始/右编辑）"
             >
               分屏
+            </Button>
+            <Button
+              variant="ghost" size="xs"
+              className={showBeforeOn && compareMode === 'side' ? 'is-active' : ''}
+              onClick={() => {
+                if (compareMode === 'side') { setShowBefore(false); setCompareMode('toggle'); }
+                else { setShowBefore(true); setCompareMode('side'); setZoom(1); setPos({ x: 0, y: 0 }); setCropMode(false); }
+              }}
+              title="并排对比（左原始/右编辑）"
+            >
+              并排
             </Button>
           </div>
 
@@ -1095,7 +1119,10 @@ export default function ImageViewer({
               ))}
             </div>
             {!cropMode && (
-              <Button variant="secondary" size="sm" className="w-full" onClick={() => setCropMode(true)}>
+              <Button
+                variant="secondary" size="sm" className="w-full"
+                onClick={() => { setShowBefore(false); setCompareMode('toggle'); setCropMode(true); }}
+              >
                 <Crop className="size-4" /> 框选裁剪区域
               </Button>
             )}
@@ -1234,7 +1261,7 @@ export default function ImageViewer({
                 </select>
                 <em />
               </label>
-              {exportOpts.format !== 'png' && (
+              {!exportQualityHidden && (
                 <label className="editor-slider-row">
                   <span>质量</span>
                   <input
@@ -1244,6 +1271,9 @@ export default function ImageViewer({
                   />
                   <em>{exportOpts.quality}</em>
                 </label>
+              )}
+              {exportQualityHidden && (
+                <p className="editor-hint">PNG 为无损格式，无需设置质量。</p>
               )}
               <label className="editor-slider-row">
                 <span>最长边</span>

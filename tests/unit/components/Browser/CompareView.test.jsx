@@ -48,6 +48,25 @@ describe('CompareView（Before/After 分屏）', () => {
     expect(divider.style.left).toBe('98%');
     rectSpy.mockRestore();
   });
+
+  it('Before 层与 After 层同位对齐：clipPath 裁切而非压缩宽度（修复分割时 Before 错位）', () => {
+    const rectSpy = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({
+      left: 0, top: 0, width: 1000, height: 500, right: 1000, bottom: 500, x: 0, y: 0,
+      toJSON: () => {},
+    });
+    const { container } = render(
+      <CompareView beforeSrc="b.jpg" afterNode={<div />} initialSplit={50} />
+    );
+    const before = container.querySelector('.editor-split-before');
+    expect(before.style.clipPath).toBe('inset(0 50% 0 0)');
+    expect(before.style.width).toBe('');
+    const divider = container.querySelector('.editor-split-divider');
+    fireEvent.mouseDown(divider);
+    fireEvent.mouseMove(window, { clientX: 400 });
+    expect(before.style.clipPath).toBe('inset(0 60% 0 0)');
+    expect(divider.style.left).toBe('40%');
+    rectSpy.mockRestore();
+  });
 });
 
 describe('CompareView 并排模式', () => {
@@ -66,5 +85,19 @@ describe('CompareView 并排模式', () => {
     expect(screen.getByText('After')).toBeInTheDocument();
     // 并排无分割线
     expect(container.querySelector('.editor-split-divider')).toBeNull();
+  });
+
+  it('side 模式 After 标签定位在右侧（不与 Before 标签重叠）', () => {
+    const { container } = render(
+      <CompareView mode="side" beforeSrc="b.jpg" afterNode={<div />} />
+    );
+    const labels = [...container.querySelectorAll('.editor-split-label')];
+    const afterLabel = labels.find(el => el.textContent === 'After');
+    const beforeLabel = labels.find(el => el.textContent === 'Before');
+    expect(afterLabel).toBeInTheDocument();
+    expect(afterLabel.className).toContain('right');
+    expect(afterLabel.style.left).toBe('');
+    expect(afterLabel.style.transform).toBe('');
+    expect(beforeLabel.className).toContain('left');
   });
 });

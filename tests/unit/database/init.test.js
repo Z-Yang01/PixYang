@@ -243,4 +243,31 @@ describe('非破坏编辑表迁移（edits / edit_history / presets）', () => {
     expect(db.getEditPreviewPathFor(ids[5])).not.toBe('');
     expect(db.getEditPreviewPathFor(ids[504])).not.toBe('');
   });
+
+  it('编辑预览 LRU 淘汰时同步清理 meta 侧车文件', async () => {
+    const rawDb = db.__getDb();
+    const dir = fs.mkdtempSync(path.join(TMP_ROOT, 'lru-meta-'));
+    const src = path.join(dir, 'lru.jpg');
+    fs.writeFileSync(src, 'bytes');
+    const [img] = await db.importImages([{ filename: 'lru.jpg', filepath: src, size: 5, format: '.jpg', width: 0, height: 0 }]);
+    const previewPath = db.getEditPreviewPath(img.id);
+    fs.writeFileSync(previewPath, 'preview-bytes');
+    fs.writeFileSync(`${previewPath}.meta.json`, JSON.stringify({ editVersion: 1, renderVersion: 'render-1' }));
+    db.setEditPreviewPath(img.id, previewPath);
+
+    const insert = rawDb.prepare('INSERT INTO images (filename, filepath, thumbnail_edit_path) VALUES (?, ?, ?)');
+    const insertEdit = rawDb.prepare("INSERT INTO edits (image_id, version, params_json, updated_at) VALUES (?, 1, '{}', ?)");
+    for (let i = 0; i < 501; i++) {
+      insert.run(`lru-filler-${i}`, `lru/${i}.jpg`, `lru/${i}.jpg`);
+      const fid = rawDb.prepare('SELECT id FROM images WHERE filename = ?').get(`lru-filler-${i}`).id;
+      insertEdit.run(fid, '2021-01-01 00:00:00');
+    }
+    insertEdit.run(img.id, '2020-01-01 00:00:00');
+
+    const removed = db.enforceEditPreviewLimit();
+    expect(removed).toBeGreaterThanOrEqual(2);
+    expect(db.getEditPreviewPathFor(img.id)).toBe('');
+    expect(fs.existsSync(previewPath)).toBe(false);
+    expect(fs.existsSync(`${previewPath}.meta.json`)).toBe(false);
+  });
 });

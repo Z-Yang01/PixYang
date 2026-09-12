@@ -946,6 +946,96 @@ describe('编辑会话（非破坏保存）', () => {
     await call('fs:edit-open', 77);
     expect(await call('fs:edit-cancel', 77)).toEqual({ ok: true });
   });
+
+  it('db:rename-image：打开中的零拷贝会话跟随新路径（烘焙使用新 filepath）', async () => {
+    const oldPath = path.join(FIXTURES, 'editme.jpg');
+    const newPath = path.join(FIXTURES, 'renamed.jpg');
+    fs.writeFileSync(oldPath, 'img');
+    dbStub.getImageById.mockReturnValueOnce(editImage());
+    await call('fs:edit-open', 77);
+    fs.writeFileSync(newPath, 'img');
+    dbStub.renameImage.mockResolvedValueOnce({ success: true, newFilename: 'renamed.jpg', newPath });
+    dbStub.getImageById.mockReturnValueOnce({ ...editImage(), filename: 'renamed.jpg', filepath: newPath });
+    await call('db:rename-image', 77, 'renamed.jpg');
+    renderModuleStub.renderFromEditParams.mockResolvedValueOnce({ ok: true, width: 800, height: 600 });
+    const sharpMod = require('sharp');
+    await sharpMod({ create: { width: 800, height: 600, channels: 3, background: '#3366aa' } }).jpeg().toFile(path.join(FIXTURES, 'renamed-temp.jpg'));
+    dbStub.saveEditedImage.mockReturnValueOnce({ id: 77, filepath: newPath });
+    const result = await call('fs:edit-bake', 77, sampleEdits);
+    expect(result.ok).toBe(true);
+    expect(renderModuleStub.renderFromEditParams).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        inputPath: newPath,
+        outputPath: path.join(FIXTURES, 'renamed-temp.jpg'),
+      })
+    );
+    expect(fs.existsSync(newPath)).toBe(true);
+  });
+
+  it('db:update-image：import_date 移动文件后打开中的会话跟随新 filepath', async () => {
+    const oldPath = path.join(FIXTURES, 'editme.jpg');
+    const movedPath = path.join(FIXTURES, '2033', '05', '05', 'editme.jpg');
+    fs.writeFileSync(oldPath, 'img');
+    dbStub.getImageById.mockReturnValueOnce(editImage());
+    await call('fs:edit-open', 77);
+    fs.mkdirSync(path.dirname(movedPath), { recursive: true });
+    fs.writeFileSync(movedPath, 'img');
+    dbStub.updateImage.mockResolvedValueOnce(true);
+    dbStub.getImageById.mockReturnValueOnce({ ...editImage(), filepath: movedPath });
+    await call('db:update-image', 77, { import_date: '2033-05-05' });
+    const destDir = path.join(TMP_BASE, 'export-moved');
+    fs.mkdirSync(destDir, { recursive: true });
+    renderModuleStub.renderFromEditParams.mockResolvedValueOnce({ ok: true, width: 800, height: 600 });
+    const r = await call('fs:edit-export', 77, sampleEdits, destDir);
+    expect(r.ok).toBe(true);
+    const lastCall = renderModuleStub.renderFromEditParams.mock.calls[renderModuleStub.renderFromEditParams.mock.calls.length - 1];
+    expect(lastCall[1].inputPath).toBe(movedPath);
+    await call('fs:edit-cancel', 77);
+  });
+
+  it('db:delete-image：删除后取消打开中的编辑会话并清理派生文件', async () => {
+    fs.writeFileSync(path.join(FIXTURES, 'editme.jpg'), 'img');
+    dbStub.getImageById.mockReturnValueOnce(editImage());
+    await call('fs:edit-open', 77);
+    dbStub.deleteImage.mockResolvedValueOnce({ id: 77 });
+    await call('db:delete-image', 77);
+    expect(dbStub.clearEditPreview).toHaveBeenCalledWith(77);
+    expect(await call('fs:edit-bake', 77, sampleEdits)).toEqual({ error: '编辑会话不存在' });
+  });
+
+  it('db:batch-delete-images：对每个已删除 id 清理派生文件并取消会话', async () => {
+    fs.writeFileSync(path.join(FIXTURES, 'editme.jpg'), 'img');
+    dbStub.getImageById.mockReturnValueOnce(editImage());
+    await call('fs:edit-open', 77);
+    dbStub.batchDeleteImages.mockResolvedValueOnce([{ id: 77 }, { id: 88 }]);
+    await call('db:batch-delete-images', [77, 88]);
+    expect(dbStub.clearEditPreview).toHaveBeenCalledWith(77);
+    expect(dbStub.clearEditPreview).toHaveBeenCalledWith(88);
+    expect(await call('fs:edit-bake', 77, sampleEdits)).toEqual({ error: '编辑会话不存在' });
+  });
+
+  it('db:delete-broken-records：清理被删记录的编辑派生文件', async () => {
+    await call('db:delete-broken-records', [11, 12]);
+    expect(dbStub.clearEditPreview).toHaveBeenCalledWith(11);
+    expect(dbStub.clearEditPreview).toHaveBeenCalledWith(12);
+  });
+
+  it('fs:edit-export：webp 源缺省导出 webp（跟随原图格式，与烘焙一致）', async () => {
+    const webpPath = path.join(FIXTURES, 'editme.webp');
+    fs.writeFileSync(webpPath, 'img');
+    dbStub.getImageById.mockReturnValueOnce({ ...editImage(), filename: 'editme.webp', filepath: webpPath });
+    await call('fs:edit-open', 77);
+    const destDir = path.join(TMP_BASE, 'export-webp');
+    fs.mkdirSync(destDir, { recursive: true });
+    renderModuleStub.renderFromEditParams.mockResolvedValueOnce({ ok: true, width: 800, height: 600 });
+    const r = await call('fs:edit-export', 77, sampleEdits, destDir);
+    expect(r.ok).toBe(true);
+    expect(r.path).toBe(path.join(destDir, 'editme-edited.webp'));
+    const lastCall = renderModuleStub.renderFromEditParams.mock.calls[renderModuleStub.renderFromEditParams.mock.calls.length - 1];
+    expect(lastCall[0].output.format).toBe('webp');
+    await call('fs:edit-cancel', 77);
+  });
 });
 
 describe('缩略图重建、导出与备份', () => {

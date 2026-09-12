@@ -62,4 +62,21 @@ describe('BatchBar', () => {
     fireEvent.click(screen.getByText('取消'));
     expect(props.onClear).toHaveBeenCalledTimes(1);
   });
+
+  it('存在复制的编辑参数且传入 onSyncEdits 时显示同步入口', () => {
+    useGalleryStore.setState({
+      selectedIds: new Set([1]),
+      totalImages: 5,
+      tags: [],
+      copiedEdits: { basic: { exposure: 0.5 }, orientation: { rotate: 0, flipH: false, flipV: false } },
+    });
+    render(<BatchBar onClear={vi.fn()} onBatchDelete={vi.fn()} onSelectAllPage={vi.fn()} onSelectAllAll={vi.fn()} onExport={vi.fn()} onSyncEdits={vi.fn()} />);
+    expect(screen.getByText('同步参数到所选')).toBeInTheDocument();
+  });
+
+  it('无复制参数时不渲染同步入口', () => {
+    useGalleryStore.setState({ selectedIds: new Set([1]), totalImages: 5, tags: [], copiedEdits: null });
+    render(<BatchBar onClear={vi.fn()} onBatchDelete={vi.fn()} onSelectAllPage={vi.fn()} onSelectAllAll={vi.fn()} onExport={vi.fn()} onSyncEdits={vi.fn()} />);
+    expect(screen.queryByText('同步参数到所选')).toBeNull();
+  });
 });

@@ -95,6 +95,9 @@ function enforceEditPreviewLimit() {
     for (const r of rows.slice(EDIT_PREVIEW_LIMIT)) {
       try {
         if (r.thumbnail_edit_path && fs.existsSync(r.thumbnail_edit_path)) fs.unlinkSync(r.thumbnail_edit_path);
+        if (r.thumbnail_edit_path && fs.existsSync(`${r.thumbnail_edit_path}.meta.json`)) {
+          fs.unlinkSync(`${r.thumbnail_edit_path}.meta.json`);
+        }
       } catch { /* 文件清理失败无碍 */ }
       db.prepare("UPDATE images SET thumbnail_edit_path = '' WHERE id = ?").run(r.id);
       removed++;
@@ -1063,6 +1066,8 @@ function deleteImage(id) {
   db.transaction(() => {
     db.prepare('DELETE FROM image_tags WHERE image_id = ?').run(id);
     db.prepare('DELETE FROM album_images WHERE image_id = ?').run(id);
+    db.prepare('DELETE FROM edits WHERE image_id = ?').run(id);
+    db.prepare('DELETE FROM edit_history WHERE image_id = ?').run(id);
     db.prepare('DELETE FROM images WHERE id = ?').run(id);
   })();
 
@@ -1295,6 +1300,9 @@ function saveEditedImage(id, tempPath, { width, height }) {
   if (outExt !== path.extname(img.filepath).toLowerCase()) {
     targetPath = path.join(path.dirname(img.filepath), path.basename(img.filepath, path.extname(img.filepath)) + outExt);
     targetFormat = outExt;
+    const clash = getObject('SELECT id FROM images WHERE filepath = ?', [targetPath]);
+    if (clash) return { error: `目标文件名已被其他图片占用：${path.basename(targetPath)}` };
+    if (fs.existsSync(targetPath)) return { error: `同名文件已存在：${path.basename(targetPath)}` };
   }
 
   const size = fs.statSync(tempPath).size;
@@ -1468,6 +1476,8 @@ function deleteBrokenRecords(ids) {
       if (!img) continue;
       db.prepare('DELETE FROM image_tags WHERE image_id = ?').run(id);
       db.prepare('DELETE FROM album_images WHERE image_id = ?').run(id);
+      db.prepare('DELETE FROM edits WHERE image_id = ?').run(id);
+      db.prepare('DELETE FROM edit_history WHERE image_id = ?').run(id);
       db.prepare('DELETE FROM images WHERE id = ?').run(id);
       deleteThumbnailFile(id);
       removed++;
