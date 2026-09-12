@@ -151,3 +151,38 @@ describe('渲染取消（Phase 9）', () => {
     expect(fs.existsSync(out)).toBe(true);
   });
 });
+
+
+describe('裁剪越界钳制（预设跨尺寸应用防护）', () => {
+  it('crop 超出图像边界时按交集钳制，不崩溃且输出为交集尺寸', async () => {
+    const input = path.join(TMP, 'clamp-src.jpg');
+    await sharp({ create: { width: 800, height: 600, channels: 3, background: 'red' } }).jpeg().toFile(input);
+    const out = path.join(TMP, 'clamp-out.jpg');
+    // 4000x3000 图的右下角裁剪框套到 800x600 图：尺寸保留、位置回拉（left=200, top=200）
+    const stages = baseSpecStages();
+    stages.find((s) => s.kind === 'crop').params = { x: 3000, y: 2000, w: 600, h: 400, ratio: 'free', angle: 0 };
+    await renderSpecToSharp(
+      { specVersion: 1, sourceHash: 't', colorSpace: { working: 'srgb', output: 'srgb' }, stages, meta: {} },
+      input, out
+    );
+    const meta = await sharp(out).metadata();
+    expect(meta.width).toBe(600);
+    expect(meta.height).toBe(400);
+  });
+
+  it('crop 完全越界（x 起点即越界）时钳制为最小有效裁剪', async () => {
+    const input = path.join(TMP, 'clamp2-src.jpg');
+    await sharp({ create: { width: 800, height: 600, channels: 3, background: 'blue' } }).jpeg().toFile(input);
+    const out = path.join(TMP, 'clamp2-out.jpg');
+    const stages = baseSpecStages();
+    stages.find((s) => s.kind === 'crop').params = { x: 5000, y: 4000, w: 600, h: 400, ratio: 'free', angle: 0 };
+    await renderSpecToSharp(
+      { specVersion: 1, sourceHash: 't', colorSpace: { working: 'srgb', output: 'srgb' }, stages, meta: {} },
+      input, out
+    );
+    const meta = await sharp(out).metadata();
+    // 完全越界：位置回拉到边界内，尺寸保留
+    expect(meta.width).toBe(600);
+    expect(meta.height).toBe(400);
+  });
+});

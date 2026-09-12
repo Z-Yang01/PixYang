@@ -371,13 +371,16 @@ export default function ImageViewer({
         next.flipV = !!o.flipV;
       }
       if (presetParams.crop && presetParams.crop.w > 0) {
-        next.crop = {
-          left: presetParams.crop.x,
-          top: presetParams.crop.y,
-          width: presetParams.crop.w,
-          height: presetParams.crop.h,
-          ratio: presetParams.crop.ratio || 'free',
-        };
+        // 裁剪坐标基于保存时的底图尺寸——按当前图尺寸钳制，越界部分收敛到边界内
+        const W = editSessionRef.current?.width || 0;
+        const H = editSessionRef.current?.height || 0;
+        let cx = Math.max(0, presetParams.crop.x);
+        let cy = Math.max(0, presetParams.crop.y);
+        let cw = Math.max(1, Math.min(presetParams.crop.w, W - cx));
+        let ch = Math.max(1, Math.min(presetParams.crop.h, H - cy));
+        if (cw >= 8 && ch >= 8) {
+          next.crop = { left: cx, top: cy, width: cw, height: ch, ratio: presetParams.crop.ratio || 'free' };
+        }
       }
     }
     pushHistory(next);

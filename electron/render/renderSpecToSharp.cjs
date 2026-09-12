@@ -37,6 +37,9 @@ async function renderSpecToSharp(spec, inputPath, outputPath, opts = {}) {
     bands: srcMeta.channels || 3,
     exifOrientation: srcMeta.orientation || 1,
     hasProfile: !!srcMeta.hasProfile,
+    width: srcMeta.width,
+    height: srcMeta.height,
+    effectiveCrop: null, // crop 阶段钳制后的实际裁剪矩形（encode 回接元数据底图时复用）
   };
 
   let pixels = null; // { data, info } raw 像素（检查点传递）
@@ -119,13 +122,22 @@ async function renderSpecToSharp(spec, inputPath, outputPath, opts = {}) {
         pixels = await flushAffine();
         if (hasGeometry(stage.params)) {
           pixels = await materialize(applyGeometry(sourceSharp(pixels, inputPath), stage.params));
+          ctx.width = pixels.info.width;
+          ctx.height = pixels.info.height;
         }
         break;
 
       case 'crop':
         pixels = await flushAffine();
         if (stage.params && stage.params.w > 0 && stage.params.h > 0) {
-          pixels = await materialize(applyCrop(sourceSharp(pixels, inputPath), stage.params, ctx));
+          // 裁剪坐标可能来自其他尺寸图片的预设（含几何应用）——按当前图像尺寸钳制防越界
+          const clipped = clampCrop(stage.params, ctx);
+          if (clipped) {
+            ctx.effectiveCrop = clipped;
+            pixels = await materialize(sourceSharp(pixels, inputPath).extract(clipped));
+            ctx.width = clipped.width;
+            ctx.height = clipped.height;
+          }
         }
         break;
 
@@ -225,7 +237,7 @@ async function encodeAndWrite(pixels, inputPath, outputPath, encodeStage, spec, 
     let metaBase = sharp(inputPath, { failOn: 'none', unlimited: true });
     for (const s of spec?.stages || []) {
       if (s.kind === 'geometry' && hasGeometry(s.params)) metaBase = applyGeometry(metaBase, s.params);
-      else if (s.kind === 'crop') metaBase = applyCrop(metaBase, s.params, ctx);
+      else if (s.kind === 'crop' && ctx.effectiveCrop) metaBase = metaBase.extract(ctx.effectiveCrop);
     }
     out = metaBase.composite([{ input: editedPng, blend: 'over' }]).keepExif().keepIccProfile();
   } else {
@@ -270,6 +282,19 @@ async function encodeAndWrite(pixels, inputPath, outputPath, encodeStage, spec, 
   return outputPath;
 }
 
+// 裁剪矩形按当前图像尺寸钳制（预设跨尺寸应用时防 extract 越界崩溃）：
+// 优先保留裁剪尺寸，把位置拉回边界内；尺寸超过图像时收敛到图像大小
+function clampCrop(params, ctx) {
+  const imgW = ctx?.width || 0;
+  const imgH = ctx?.height || 0;
+  if (imgW < 1 || imgH < 1) return null;
+  const width = Math.max(1, Math.min(Math.round(params.w), imgW));
+  const height = Math.max(1, Math.min(Math.round(params.h), imgH));
+  const left = Math.min(Math.max(0, Math.round(params.x)), imgW - width);
+  const top = Math.min(Math.max(0, Math.round(params.y)), imgH - height);
+  return { left, top, width, height };
+}
+
 function applyGeometry(pipe, { rotate = 0, flipH = false, flipV = false } = {}) {
   if (rotate % 360 !== 0) {
     pipe = pipe.rotate(rotate, { background: '#000000' });
@@ -277,16 +302,6 @@ function applyGeometry(pipe, { rotate = 0, flipH = false, flipV = false } = {}) 
   if (flipV) pipe = pipe.flip();
   if (flipH) pipe = pipe.flop();
   return pipe;
-}
-
-function applyCrop(pipe, params) {
-  if (!params || !(params.w > 0) || !(params.h > 0)) return pipe;
-  return pipe.extract({
-    left: Math.max(0, Math.round(params.x)),
-    top: Math.max(0, Math.round(params.y)),
-    width: Math.round(params.w),
-    height: Math.round(params.h),
-  });
 }
 
 function applySaturation(pipe, { value = 0, mono = false } = {}) {
