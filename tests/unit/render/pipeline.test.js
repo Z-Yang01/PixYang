@@ -1,7 +1,8 @@
 // 渲染管线集成测试（真实 sharp/worker，无 mock）：
 // EXIF 保留、导出不覆盖源文件、NEF 只读、烘焙失败不损坏原图（任务书 Phase 14 File safety / Metadata）。
-import { describe, it, expect, afterAll } from 'vitest';
+import { describe, it, expect, afterAll, beforeAll } from 'vitest';
 import { createRequire } from 'module';
+import { Worker } from 'worker_threads';
 import path from 'path';
 import os from 'os';
 import fs from 'fs';
@@ -237,5 +238,187 @@ describe('代理分辨率渲染（edit-preview 路径）', () => {
     const meta = await sharp(out).metadata();
     expect(meta.width).toBe(200);
     expect(meta.height).toBe(240);
+  });
+
+  it('proxy 无 crop：输出为代理尺寸（不得与全分辨率底图 composite 出全尺寸结果）', async () => {
+    const input = path.join(TMP, 'proxy-nocrop-src.jpg');
+    await sharp({ create: { width: 2000, height: 1200, channels: 3, background: 'red' } }).jpeg().toFile(input);
+    const stages = baseSpecStages();
+    stages.find((st) => st.kind === 'decode').params = { proxyLongEdge: 400 };
+    const out = path.join(TMP, 'proxy-nocrop-out.jpg');
+    await renderSpecToSharp(
+      { specVersion: 1, sourceHash: 't', colorSpace: { working: 'srgb', output: 'srgb' }, stages, meta: {} },
+      input, out
+    );
+    const meta = await sharp(out).metadata();
+    expect(meta.width).toBe(400);
+    expect(meta.height).toBe(240);
+  });
+
+  it('proxy + rotate90 + crop：裁剪区域内容与全分辨率构图一致（下半为蓝）', async () => {
+    const input = path.join(TMP, 'proxy-rot-src.jpg');
+    const red = await sharp({ create: { width: 1000, height: 1200, channels: 3, background: '#ff0000' } }).png().toBuffer();
+    const blue = await sharp({ create: { width: 1000, height: 1200, channels: 3, background: '#0000ff' } }).png().toBuffer();
+    await sharp({ create: { width: 2000, height: 1200, channels: 3, background: '#00ff00' } })
+      .composite([{ input: red, left: 0, top: 0 }, { input: blue, left: 1000, top: 0 }]).jpeg().toFile(input);
+    const stages = baseSpecStages();
+    stages.find((st) => st.kind === 'decode').params = { proxyLongEdge: 400 };
+    stages.find((st) => st.kind === 'geometry').params = { rotate: 90, flipH: false, flipV: false };
+    // rotate 90 顺时针：左半（红）映射到上半，右半（蓝）映射到下半
+    // 全分辨率旋转后坐标 crop {x:0,y:1000,w:1200,h:1000} → 代理坐标 {x:0,y:200,w:240,h:200}
+    stages.find((st) => st.kind === 'crop').params = { x: 0, y: 200, w: 240, h: 200, ratio: 'free', angle: 0 };
+    const out = path.join(TMP, 'proxy-rot-out.jpg');
+    await renderSpecToSharp(
+      { specVersion: 1, sourceHash: 't', colorSpace: { working: 'srgb', output: 'srgb' }, stages, meta: {} },
+      input, out
+    );
+    const meta = await sharp(out).metadata();
+    expect(meta.width).toBe(240);
+    expect(meta.height).toBe(200);
+    const stats = await sharp(out).stats();
+    expect(stats.channels[2].mean).toBeGreaterThan(200);
+    expect(stats.channels[0].mean).toBeLessThan(60);
+  });
+
+  it('proxyLongEdge 不放大小图', async () => {
+    const input = path.join(TMP, 'proxy-small-src.jpg');
+    await sharp({ create: { width: 100, height: 50, channels: 3, background: 'red' } }).jpeg().toFile(input);
+    const stages = baseSpecStages();
+    stages.find((st) => st.kind === 'decode').params = { proxyLongEdge: 400 };
+    const out = path.join(TMP, 'proxy-small-out.jpg');
+    await renderSpecToSharp(
+      { specVersion: 1, sourceHash: 't', colorSpace: { working: 'srgb', output: 'srgb' }, stages, meta: {} },
+      input, out
+    );
+    const meta = await sharp(out).metadata();
+    expect(meta.width).toBe(100);
+    expect(meta.height).toBe(50);
+  });
+});
+
+describe('spec 容错（防御性）', () => {
+  it('spec.stages 非数组抛出明确错误', async () => {
+    const input = path.join(TMP, 'guard-src.jpg');
+    await sharp({ create: { width: 20, height: 20, channels: 3, background: 'red' } }).jpeg().toFile(input);
+    await expect(renderSpecToSharp(
+      { specVersion: 1, sourceHash: 't', colorSpace: { working: 'srgb', output: 'srgb' }, stages: 'nope', meta: {} },
+      input, path.join(TMP, 'guard-out.jpg')
+    )).rejects.toThrow(/spec\.stages/);
+  });
+
+  it('stage.params 为 null 时各阶段不崩溃（decode/geometry/crop 等）', async () => {
+    const input = path.join(TMP, 'guard-null-src.jpg');
+    await sharp({ create: { width: 30, height: 20, channels: 3, background: 'red' } }).jpeg().toFile(input);
+    const out = path.join(TMP, 'guard-null-out.jpg');
+    const stages = [
+      { kind: 'decode', params: null },
+      { kind: 'whiteBalance', params: null },
+      { kind: 'exposure', params: null },
+      { kind: 'tone', params: null },
+      { kind: 'saturation', params: null },
+      { kind: 'detail', params: null },
+      { kind: 'geometry', params: null },
+      { kind: 'crop', params: null },
+      { kind: 'encode', params: { format: 'jpeg', quality: 92, resize: null } },
+    ];
+    await renderSpecToSharp(
+      { specVersion: 1, sourceHash: 't', colorSpace: { working: 'srgb', output: 'srgb' }, stages, meta: {} },
+      input, out
+    );
+    const meta = await sharp(out).metadata();
+    expect(meta.width).toBe(30);
+    expect(meta.height).toBe(20);
+  });
+});
+
+describe('thumbWorker 取消链路（真实 worker_threads）', () => {
+  const SPEC = {
+    specVersion: 1, sourceHash: 't', colorSpace: { working: 'srgb', output: 'srgb' },
+    stages: baseSpecStages(), meta: {},
+  };
+  let hw = null;
+  let workerInput = '';
+
+  function startThumbWorker() {
+    const w = new Worker(new URL('../../../electron/thumbWorker.js', import.meta.url));
+    let nextId = 1;
+    const inflight = new Map();
+    w.on('message', ({ id, result, error }) => {
+      const entry = inflight.get(id);
+      if (!entry) return;
+      inflight.delete(id);
+      if (error) entry.reject(new Error(error));
+      else entry.resolve(result);
+    });
+    w.on('error', (e) => {
+      for (const entry of inflight.values()) entry.reject(e);
+      inflight.clear();
+    });
+    return {
+      call: (msg) => new Promise((resolve, reject) => {
+        const id = nextId++;
+        inflight.set(id, { resolve, reject });
+        w.postMessage({ id, ...msg });
+      }),
+      send: (msg) => w.postMessage(msg),
+      close: () => w.terminate(),
+    };
+  }
+
+  beforeAll(async () => {
+    workerInput = path.join(TMP, 'worker-src.jpg');
+    await sharp({ create: { width: 40, height: 40, channels: 3, background: '#3366aa' } }).jpeg().toFile(workerInput);
+    hw = startThumbWorker();
+  });
+
+  afterAll(async () => {
+    if (hw) {
+      const w = hw;
+      hw = null;
+      await w.close();
+    }
+  });
+
+  it('render-spec 正常渲染返回尺寸', async () => {
+    const out = path.join(TMP, 'worker-spec-out.jpg');
+    const r = await hw.call({ type: 'render-spec', spec: SPEC, srcPath: workerInput, outPath: out });
+    expect(r.ok).toBe(true);
+    expect(r.width).toBe(40);
+    expect(r.height).toBe(40);
+    expect(fs.existsSync(out)).toBe(true);
+  });
+
+  it('edit-preview 正常渲染返回尺寸', async () => {
+    const out = path.join(TMP, 'worker-preview-out.jpg');
+    const r = await hw.call({ type: 'edit-preview', spec: SPEC, srcPath: workerInput, outPath: out });
+    expect(r.ok).toBe(true);
+    expect(fs.existsSync(out)).toBe(true);
+  });
+
+  it('渲染请求发出前收到 cancel：立即中止且不写输出', async () => {
+    const out = path.join(TMP, 'worker-cancel-out.jpg');
+    hw.send({ type: 'render-cancel', requestSeq: 101 });
+    const r = await hw.call({ type: 'render-spec', spec: SPEC, srcPath: workerInput, outPath: out, requestSeq: 101 });
+    expect(r).toEqual({ cancelled: true });
+    expect(fs.existsSync(out)).toBe(false);
+  });
+
+  it('完成后晚到的 cancel 与序号复用不误伤后续渲染', async () => {
+    const out = path.join(TMP, 'worker-late-out.jpg');
+    const first = await hw.call({ type: 'render-spec', spec: SPEC, srcPath: workerInput, outPath: out, requestSeq: 202 });
+    expect(first.ok).toBe(true);
+    hw.send({ type: 'render-cancel', requestSeq: 202 });
+    const second = await hw.call({ type: 'render-spec', spec: SPEC, srcPath: workerInput, outPath: out, requestSeq: 202 });
+    expect(second.ok).toBe(true);
+  });
+
+  it('错误路径后序号不残留（同序号复用可正常渲染）', async () => {
+    const out = path.join(TMP, 'worker-err-out.jpg');
+    await expect(hw.call({
+      type: 'render-spec', spec: SPEC, srcPath: path.join(TMP, 'missing-src.jpg'), outPath: out, requestSeq: 303,
+    })).rejects.toThrow();
+    hw.send({ type: 'render-cancel', requestSeq: 303 });
+    const r = await hw.call({ type: 'render-spec', spec: SPEC, srcPath: workerInput, outPath: out, requestSeq: 303 });
+    expect(r.ok).toBe(true);
   });
 });

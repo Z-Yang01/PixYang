@@ -98,8 +98,21 @@ function fsWrite(p, buf) { return fs.promises.writeFile(p, buf); }
 // 编辑渲染：RenderSpec → sharp（执行器在 electron/render/，与 golden 测试共用同一实现）
 const { renderSpecToSharp } = require('./render/renderSpecToSharp.cjs');
 
-// Phase 9 渲染取消：被取消的渲染序号（主进程烘焙/取消会话时通知）
+// Phase 9 渲染取消：被取消的渲染序号（主进程烘焙/取消会话时通知）。
+// requestSeq 全局唯一且严格递增、不复用：
+// - activeRenderSeqs 记录在途渲染，finally 恒清理（success/cancelled/error 三路都覆盖）；
+// - maxSeenRenderSeq 之后的 cancel 属"尚未开始"的预登记（seq 注册与请求发送之间有 await 窗口）；
+// - 已开始且不在途 = 已结束，其晚到 cancel 直接忽略，集合不残留。
 const cancelledRenderSeqs = new Set();
+const activeRenderSeqs = new Set();
+let maxSeenRenderSeq = 0;
+
+function requestRenderCancel(seq) {
+  if (!seq) return;
+  if (activeRenderSeqs.has(seq) || seq > maxSeenRenderSeq) {
+    cancelledRenderSeqs.add(seq);
+  }
+}
 
 // 编辑预览缩略图：按 RenderSpec 渲染后缩到 400px（非破坏保存后列表显示参数效果）
 async function generateEditPreview(srcPath, outPath, spec, isCancelled) {
@@ -122,7 +135,7 @@ async function generateEditPreview(srcPath, outPath, spec, isCancelled) {
 
 parentPort.on('message', async ({ id, type, filepath, nefPath, srcPath, outPath, edits, spec, requestSeq }) => {
   if (type === 'render-cancel') {
-    cancelledRenderSeqs.add(requestSeq);
+    requestRenderCancel(requestSeq);
     return;
   }
   try {
@@ -138,23 +151,34 @@ parentPort.on('message', async ({ id, type, filepath, nefPath, srcPath, outPath,
     } else if (type === 'normalize') {
       const result = await normalizeBase(srcPath, outPath);
       parentPort.postMessage({ id, result });
-    } else if (type === 'edit-preview') {
-      if (requestSeq) cancelledRenderSeqs.delete(requestSeq);
-      const result = await generateEditPreview(srcPath, outPath, spec, requestSeq ? () => cancelledRenderSeqs.has(requestSeq) : null);
-      if (requestSeq) cancelledRenderSeqs.delete(requestSeq); // 完成清理：晚到的取消不得使集合无界增长
-      parentPort.postMessage({ id, result });
-    } else if (type === 'render-spec') {
-      if (requestSeq) cancelledRenderSeqs.delete(requestSeq);
-      const r = await renderSpecToSharp(spec, srcPath, outPath, requestSeq ? { isCancelled: () => cancelledRenderSeqs.has(requestSeq) } : {});
-      if (requestSeq) cancelledRenderSeqs.delete(requestSeq); // 完成清理
-      if (r && r.cancelled) {
-        parentPort.postMessage({ id, result: { cancelled: true } });
-        return;
+    } else if (type === 'edit-preview' || type === 'render-spec') {
+      if (requestSeq) {
+        activeRenderSeqs.add(requestSeq);
+        maxSeenRenderSeq = Math.max(maxSeenRenderSeq, requestSeq);
       }
-      const meta = await sharp(outPath).metadata();
-      parentPort.postMessage({ id, result: { ok: true, width: meta.width, height: meta.height } });
+      try {
+        let result;
+        if (type === 'edit-preview') {
+          result = await generateEditPreview(srcPath, outPath, spec, requestSeq ? () => cancelledRenderSeqs.has(requestSeq) : null);
+        } else {
+          const r = await renderSpecToSharp(spec, srcPath, outPath, requestSeq ? { isCancelled: () => cancelledRenderSeqs.has(requestSeq) } : {});
+          if (r && r.cancelled) {
+            result = { cancelled: true };
+          } else {
+            const meta = await sharp(outPath).metadata();
+            result = { ok: true, width: meta.width, height: meta.height };
+          }
+        }
+        parentPort.postMessage({ id, result });
+      } finally {
+        if (requestSeq) {
+          activeRenderSeqs.delete(requestSeq);
+          cancelledRenderSeqs.delete(requestSeq);
+        }
+      }
     }
   } catch (e) {
-    parentPort.postMessage({ id, error: e.message });
+    const srcCtx = srcPath || filepath || nefPath;
+    parentPort.postMessage({ id, error: `[${type}] ${e.message}${srcCtx ? ` (src: ${srcCtx})` : ''}` });
   }
 });

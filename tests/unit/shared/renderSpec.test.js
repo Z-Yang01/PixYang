@@ -128,4 +128,31 @@ describe('buildProxySpec（代理分辨率）', () => {
     expect(scale).toBe(1);
     expect(proxy).toBe(spec);
   });
+
+  it('极大图 + 极小裁剪框：w/h 舍入保底 1（归零会被渲染器静默跳过 crop）', () => {
+    const spec = build({ crop: { x: 5000, y: 4000, w: 12, h: 8 } });
+    const { spec: proxy } = renderSpec.buildProxySpec(spec, 20000, 15000, 400);
+    const crop = proxy.stages.find((s) => s.kind === 'crop').params;
+    expect(crop).toEqual({ x: 100, y: 80, w: 1, h: 1, ratio: 'free', angle: 0 });
+  });
+
+  it('targetLongEdge 非法（0/负数）原样返回', () => {
+    const spec = build({ crop: { x: 10, y: 10, w: 50, h: 50 } });
+    expect(renderSpec.buildProxySpec(spec, 6000, 4000, 0).scale).toBe(1);
+    expect(renderSpec.buildProxySpec(spec, 6000, 4000, -5).scale).toBe(1);
+  });
+
+  it('crop stage 无参数（params null）不被触碰', () => {
+    const spec = build({});
+    const { spec: proxy } = renderSpec.buildProxySpec(spec, 6000, 4000, 400);
+    expect(proxy.stages.find((s) => s.kind === 'crop').params).toBeNull();
+  });
+
+  it('几何/影调 stage 原样保留，仅 decode 与 crop 被改写', () => {
+    const spec = build({ orientation: { rotate: 90, flipH: true }, basic: { exposure: 0.5 } });
+    const { spec: proxy } = renderSpec.buildProxySpec(spec, 6000, 4000, 400);
+    expect(proxy.stages.find((s) => s.kind === 'geometry').params).toEqual({ rotate: 90, flipH: true, flipV: false });
+    expect(proxy.stages.find((s) => s.kind === 'exposure').params.ev).toBe(0.5);
+    expect(proxy.stages.find((s) => s.kind === 'encode')).toBe(spec.stages.find((s) => s.kind === 'encode'));
+  });
 });

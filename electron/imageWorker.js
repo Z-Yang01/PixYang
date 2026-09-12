@@ -9,18 +9,25 @@ const pending = new Map();
 // 缩略图/编辑底图/渲染全部在 worker 线程完成，主进程只做调度，不再被图片解码阻塞 IPC
 function ensureWorker() {
   if (worker) return worker;
-  worker = new Worker(path.join(__dirname, 'thumbWorker.js'));
-  worker.on('message', ({ id, result, error }) => {
+  const w = new Worker(path.join(__dirname, 'thumbWorker.js'));
+  worker = w;
+  w.on('message', ({ id, result, error }) => {
     const entry = pending.get(id);
     if (!entry) return;
     pending.delete(id);
     if (error) entry.reject(new Error(error));
     else entry.resolve(result);
   });
-  worker.on('error', (err) => {
+  w.on('error', (err) => {
     for (const entry of pending.values()) entry.reject(err);
     pending.clear();
-    worker = null;
+    if (worker === w) worker = null;
+  });
+  // terminate/崩溃后 exit 不携带 error 参数：未落定的调用必须 reject，否则 promise 永久悬挂
+  w.on('exit', () => {
+    for (const entry of pending.values()) entry.reject(new Error('[imageWorker] 渲染线程已退出'));
+    pending.clear();
+    if (worker === w) worker = null;
   });
   return worker;
 }

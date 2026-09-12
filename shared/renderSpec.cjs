@@ -175,15 +175,17 @@ function specToPreviewTweaks(spec) {
 // 返回 { spec, scale }：scale = 代理尺寸/原尺寸，供调用方换算显示坐标。
 function buildProxySpec(spec, srcWidth, srcHeight, targetLongEdge) {
   const longEdge = Math.max(srcWidth || 0, srcHeight || 0);
-  if (!longEdge || longEdge <= targetLongEdge) return { spec, scale: 1 };
+  if (!longEdge || longEdge <= targetLongEdge || !(targetLongEdge > 0)) return { spec, scale: 1 };
   const scale = targetLongEdge / longEdge;
   const stages = spec.stages.map((s) => {
     if (s.kind === 'decode') {
-      return { ...s, params: { ...s.params, proxyLongEdge: targetLongEdge } };
+      return { ...s, params: { ...(s.params || {}), proxyLongEdge: targetLongEdge } };
     }
-    if (s.kind === 'crop' && s.params) {
-      const n = (v) => Math.round(v * scale);
-      return { ...s, params: { ...s.params, x: n(s.params.x), y: n(s.params.y), w: n(s.params.w), h: n(s.params.h) } };
+    if (s.kind === 'crop' && s.params && s.params.w > 0 && s.params.h > 0) {
+      // 极大图 + 极小裁剪框时 w/h 舍入可能归零，渲染器对 w/h<=0 会静默跳过 crop，
+      // 预览与导出构图不一致——保底 1px
+      const n = (v, floor) => Math.max(floor, Math.round((v || 0) * scale));
+      return { ...s, params: { ...s.params, x: n(s.params.x, 0), y: n(s.params.y, 0), w: n(s.params.w, 1), h: n(s.params.h, 1) } };
     }
     return s;
   });

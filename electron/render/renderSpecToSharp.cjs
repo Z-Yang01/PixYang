@@ -28,17 +28,27 @@ async function renderSpecToSharp(spec, inputPath, outputPath, opts = {}) {
   if (!spec || spec.specVersion !== 1) {
     throw new Error('[render] spec 或 specVersion 非法');
   }
+  if (!Array.isArray(spec.stages)) {
+    throw new Error(`[render] spec.stages 缺失或不是数组（sourceHash: ${spec.sourceHash}）`);
+  }
   // Phase 9 渲染取消：阶段边界检查取消标记，过期渲染在下一个阶段前中止
   // （返回 { cancelled: true }，不写输出文件；调用方负责丢弃）
   const isCancelled = () => !!(opts.isCancelled && opts.isCancelled());
+  if (isCancelled()) return { cancelled: true };
 
-  const srcMeta = await sharp(inputPath).metadata();
+  let srcMeta;
+  try {
+    srcMeta = await sharp(inputPath).metadata();
+  } catch (e) {
+    throw new Error(`[render] 底图读取失败 ${inputPath}: ${e.message}`, { cause: e });
+  }
   const ctx = {
     bands: srcMeta.channels || 3,
     exifOrientation: srcMeta.orientation || 1,
     hasProfile: !!srcMeta.hasProfile,
     width: srcMeta.width,
     height: srcMeta.height,
+    proxyLongEdge: 0,
     effectiveCrop: null, // crop 阶段钳制后的实际裁剪矩形（encode 回接元数据底图时复用）
   };
 
@@ -71,13 +81,18 @@ async function renderSpecToSharp(spec, inputPath, outputPath, opts = {}) {
         // 保证影调数学在一致空间上执行（未转换时按 sRGB 调的曲线/偏移在宽色域会偏移）。
         // libvips 对带 profile 的图像做 icc_transform；untagged 视为已是 sRGB，不动。
         // 代理分辨率（预览/缩略图专用）：decode 后立即缩到目标长边，后续算子在小图上执行。
+        const dp = stage.params || {};
         let decodePipe = sourceSharp(pixels, inputPath);
         if (ctx.hasProfile) decodePipe = decodePipe.toColourspace('srgb');
-        if (stage.params.proxyLongEdge) {
-          decodePipe = decodePipe.resize({ width: stage.params.proxyLongEdge, height: stage.params.proxyLongEdge, fit: 'inside' });
+        if (dp.proxyLongEdge) {
+          decodePipe = decodePipe.resize({ width: dp.proxyLongEdge, height: dp.proxyLongEdge, fit: 'inside', withoutEnlargement: true });
+          ctx.proxyLongEdge = dp.proxyLongEdge;
         }
-        if (ctx.hasProfile || stage.params.proxyLongEdge) {
+        if (ctx.hasProfile || dp.proxyLongEdge) {
           pixels = await materialize(decodePipe);
+          ctx.bands = pixels.info.channels;
+          ctx.width = pixels.info.width;
+          ctx.height = pixels.info.height;
         }
         break;
       }
@@ -161,7 +176,8 @@ async function renderSpecToSharp(spec, inputPath, outputPath, opts = {}) {
   return encodeAndWrite(pixels, inputPath, outputPath, { params: { format: guessFormat(outputPath), quality: 92 } }, spec, ctx);
 }
 
-function hasGeometry({ rotate = 0, flipH = false, flipV = false } = {}) {
+function hasGeometry(params) {
+  const { rotate = 0, flipH = false, flipV = false } = params || {};
   return rotate % 360 !== 0 || flipH || flipV;
 }
 
@@ -235,8 +251,13 @@ async function encodeAndWrite(pixels, inputPath, outputPath, encodeStage, spec, 
 
   // 元数据回接：把几何/裁剪同样应用到原图（携带 EXIF/ICC）得到同尺寸底，再全画布 composite
   // 编辑结果。几何必须与 spec 一致，否则 canvas 尺寸不匹配会破坏裁剪。
+  // 代理分辨率渲染（decode 标记 proxyLongEdge）：编辑像素是代理尺寸，与全分辨率底图
+  // composite 会尺寸失配（无 crop 时输出退化为全尺寸底图+中央小块编辑补丁）——直接编码
+  // 代理像素（预览产物无元数据需求）。
   let out;
-  if (pixels) {
+  if (pixels && ctx.proxyLongEdge) {
+    out = sourceSharp(pixels, inputPath);
+  } else if (pixels) {
     const editedPng = await sharp(pixels.data, {
       raw: { width: pixels.info.width, height: pixels.info.height, channels: pixels.info.channels },
     }).png({ compressionLevel: 3 }).toBuffer(); // 无损中间层，低压缩级别换取速度
@@ -253,8 +274,8 @@ async function encodeAndWrite(pixels, inputPath, outputPath, encodeStage, spec, 
   // encode：composite 与 resize 不可同管线（libvips 把 resize 折叠到 composite 之前会导致
   // composite 层尺寸大于底图报错），有 resize 时先物化 composite 结果再独立缩放。
   const encodeWith = (pipe2) => {
-    // 元数据贯穿：中间物化/二次缩放都会丢 EXIF，每段管线显式保留
-    let p = pipe2.keepExif();
+    // 元数据贯穿：中间物化/二次缩放都会丢 EXIF/ICC，每段管线显式保留
+    let p = pipe2.keepExif().keepIccProfile();
     if (format === 'png') return p.png({ compressionLevel: 6 });
     if (format === 'webp') return p.webp({ quality: clampInt(quality, 1, 100, 92) });
     if (format === 'tiff') return p.tiff({ compression: 'lzw' });
@@ -305,7 +326,8 @@ function clampCrop(params, ctx) {
   return { left, top, width, height };
 }
 
-function applyGeometry(pipe, { rotate = 0, flipH = false, flipV = false } = {}) {
+function applyGeometry(pipe, params) {
+  const { rotate = 0, flipH = false, flipV = false } = params || {};
   if (rotate % 360 !== 0) {
     pipe = pipe.rotate(rotate, { background: '#000000' });
   }
