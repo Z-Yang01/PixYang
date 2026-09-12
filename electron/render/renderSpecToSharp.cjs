@@ -256,6 +256,7 @@ async function encodeAndWrite(pixels, inputPath, outputPath, encodeStage, spec, 
     // 元数据贯穿：中间物化/二次缩放都会丢 EXIF，每段管线显式保留
     let p = pipe2.keepExif();
     if (format === 'png') return p.png({ compressionLevel: 6 });
+    if (format === 'webp') return p.webp({ quality: clampInt(quality, 1, 100, 92) });
     if (format === 'tiff') return p.tiff({ compression: 'lzw' });
     return p.jpeg({ quality: clampInt(quality, 1, 100, 92) });
   };

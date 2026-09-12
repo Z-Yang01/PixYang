@@ -689,3 +689,12 @@ Phase 1-6、8、10-14、16-17 全量落地；Phase 7（sRGB 工作空间转换 +
 ### 验证
 
 - **533 passed / 0 failed**（+6：buildProxySpec 2 例、proxyLongEdge 渲染 1 例、色彩回归 3 例保持）；golden 15/15。
+
+---
+
+# 2026-09-12 优化批 2：WebP 导出（任务书第 17 节格式矩阵扩展）
+
+- editSchema Output format 枚举 + webp（向后兼容：旧数据 jpeg/png/tiff 不受影响）；
+- encodeWith webp 分支（quality 生效）；exportEditSession 扩展名映射（-edited.webp）；
+- 导出对话框加 WebP 选项（质量滑杆对 webp 同样生效）。
+- 验证：WebP 800×600 同参比 JPEG 小 65%；533 例全绿；golden 15/15。

@@ -471,15 +471,19 @@ async function bakeEditSession(id, edits) {
 }
 
 // 导出：渲染到目标目录（原名-edited[-Npx].ext，重名自动加序号），绝不覆盖原图。
-// output 可选 { format: 'jpeg'|'png', quality, maxEdge }——缺省跟随原图格式全尺寸。
+// output 可选 { format: 'jpeg'|'png'|'webp', quality, maxEdge }——缺省跟随原图格式全尺寸。
 async function exportEditSession(id, edits, destDir, output = null) {
   const session = editSessions.get(id);
   if (!session) return { error: '编辑会话不存在' };
   if (!destDir || !fs.existsSync(destDir)) return { error: '导出目录不存在' };
 
-  // 输出选项：format 覆盖；maxEdge 可选长边缩放（仅原图超长边时生效）
-  const outFormat = output?.format === 'png' ? 'png' : (output?.format === 'jpeg' ? 'jpeg' : (session.format === '.png' ? 'png' : 'jpeg'));
-  const ext = outFormat === 'png' ? '.png' : '.jpg';
+  // 输出选项：format 覆盖（jpeg/png/webp）；maxEdge 可选长边缩放（仅原图超长边时生效）
+  const SUPPORTED_EXPORT = ['jpeg', 'png', 'webp'];
+  const outFormat = SUPPORTED_EXPORT.includes(output?.format)
+    ? output.format
+    : (session.format === '.png' ? 'png' : 'jpeg');
+  const extMap = { jpeg: '.jpg', png: '.png', webp: '.webp' };
+  const ext = extMap[outFormat];
   const maxEdge = Number(output?.maxEdge) > 0 ? Number(output.maxEdge) : null;
   const meta = await getImageMeta(session.basePath);
   const resize = maxEdge && meta.width && Math.max(meta.width, meta.height) > maxEdge

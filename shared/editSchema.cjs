@@ -72,7 +72,7 @@ const MaskSchema = z.object({
 });
 
 const OutputSchema = z.object({
-  format: z.enum(['jpeg', 'tiff', 'png']).catch('jpeg'),
+  format: z.enum(['jpeg', 'tiff', 'png', 'webp']).catch('jpeg'),
   quality: z.number().min(1).max(100).catch(92),
   icc: z.string().catch(''),
   resize: z.object({
