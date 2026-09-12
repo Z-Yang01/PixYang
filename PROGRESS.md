@@ -334,3 +334,14 @@
 - **阻塞**：无（中途 lint 清理回归事故已完全复原并记录教训）。
 - **红线遵守**：无 push、零 src 源码改动、未触真实数据/Electron 用户目录、无网络依赖。
 
+
+---
+
+# 2026-09-12 M4：编辑预览缩略图缓存
+
+- **数据库**：images 新增 thumbnail_edit_path 列（migrateSchema 增量）；getEditPreviewPath/getEditPreviewPathFor/setEditPreviewPath/clearEditPreview/enforceEditPreviewLimit（LRU 上限 500，按 updated_at 清最旧）；saveEditedImage 烘焙联动清空编辑预览（原图已是参数效果）。
+- **worker**：thumbWorker 新增 edit-preview 消息——复用同一 RenderSpec 渲染后缩到 400px（长边 ≤400，q85），与导出/golden 共用 renderSpecToSharp，保证列表缩略图与保存参数一致。
+- **主进程**：edits:save 保存成功后异步生成编辑预览（不阻塞保存返回，失败仅告警）；复用编辑底图缓存（edit-cache/{id}-base.jpg）；完成后发 edit-preview-ready 事件；enforceEditPreviewLimit 在每次生成后执行。
+- **前端**：ImageGrid 两处 preferredThumb 改为 thumbnail_edit_path 优先（编辑预览 > 小图 > 中图）；useGalleryData 监听 edit-preview-ready bump thumbVersion 刷新 URL 缓存。
+- **顺带修复**：database.js 残留的 SQL 双引号字符串（`SET thumbnail = ""`）在 better-sqlite3 下报 "no such column"——迁移到单引号（sql.js 容忍、bs3 严格）。
+- 测试：+3（编辑预览读写/清理/LRU 505 行裁剪验证）；489 例全绿；端到端验证 1200×800 旋转 90° 保存 → 267×400 预览生成 ✓、DB 路径写入 ✓、clear 文件+记录双清 ✓。

@@ -72,4 +72,4 @@ function closeRenderWorker() {
   return Promise.resolve();
 }
 
-module.exports = { renderFromEditParams, renderFromSpec, computeSourceHash, closeRenderWorker };
+module.exports = { renderFromEditParams, renderFromSpec, computeSourceHash, callWorker, closeRenderWorker };

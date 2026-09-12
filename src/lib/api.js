@@ -75,6 +75,7 @@ for (const name of [
   'setSetting',
   'onOrientationBackfill',
   'onThumbnailsReady',
+  'onEditPreviewReady',
 ]) {
   api[name] = passthrough(name);
 }

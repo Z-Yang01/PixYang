@@ -80,6 +80,24 @@ function fsWrite(p, buf) { return fs.promises.writeFile(p, buf); }
 // 编辑渲染：RenderSpec → sharp（执行器在 electron/render/，与 golden 测试共用同一实现）
 const { renderSpecToSharp } = require('./render/renderSpecToSharp.cjs');
 
+// 编辑预览缩略图：按 RenderSpec 渲染后缩到 400px（非破坏保存后列表显示参数效果）
+async function generateEditPreview(srcPath, outPath, spec) {
+  const tmp = `${outPath}.render.jpg`;
+  try {
+    await renderSpecToSharp(spec, srcPath, tmp);
+    await sharp(tmp)
+      .resize({ width: 400, height: 400, fit: 'inside' })
+      .jpeg({ quality: 85 })
+      .toFile(outPath);
+  } finally {
+    try {
+      if (fs.existsSync(tmp)) fs.unlinkSync(tmp);
+    } catch { /* 清理失败无碍 */ }
+  }
+  const meta = await sharp(outPath).metadata();
+  return { ok: true, width: meta.width, height: meta.height };
+}
+
 parentPort.on('message', async ({ id, type, filepath, nefPath, srcPath, outPath, edits, spec }) => {
   try {
     if (type === 'tiers') {
@@ -90,6 +108,9 @@ parentPort.on('message', async ({ id, type, filepath, nefPath, srcPath, outPath,
       parentPort.postMessage({ id, result });
     } else if (type === 'normalize') {
       const result = await normalizeBase(srcPath, outPath);
+      parentPort.postMessage({ id, result });
+    } else if (type === 'edit-preview') {
+      const result = await generateEditPreview(srcPath, outPath, spec);
       parentPort.postMessage({ id, result });
     } else if (type === 'render-spec') {
       await renderSpecToSharp(spec, srcPath, outPath);

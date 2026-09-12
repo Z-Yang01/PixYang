@@ -221,6 +221,11 @@ const dbDefaults = {
   getPresets: () => [],
   createPreset: () => ({ error: 'not stubbed' }),
   deletePreset: () => {},
+  getEditPreviewPath: (id) => path.join(THUMBS, `edit-${id}.jpg`),
+  getEditPreviewPathFor: () => '',
+  setEditPreviewPath: () => {},
+  clearEditPreview: () => {},
+  enforceEditPreviewLimit: () => 0,
   findBrokenRecords: () => [],
   deleteBrokenRecords: async () => [],
   findDuplicates: () => [],
@@ -378,6 +383,12 @@ function setDefaultMocks() {
   dbStub.getPresets.mockImplementation(() => []);
   dbStub.createPreset.mockReset();
   dbStub.createPreset.mockImplementation(() => ({ error: 'not stubbed' }));
+  dbStub.clearEditPreview.mockReset();
+  dbStub.clearEditPreview.mockImplementation(() => {});
+  dbStub.setEditPreviewPath.mockReset();
+  dbStub.setEditPreviewPath.mockImplementation(() => {});
+  dbStub.enforceEditPreviewLimit.mockReset();
+  dbStub.enforceEditPreviewLimit.mockImplementation(() => 0);
 }
 
 beforeAll(async () => {

@@ -199,5 +199,45 @@ describe('非破坏编辑表迁移（edits / edit_history / presets）', () => {
     expect(after.params.orientation.rotate).toBe(0);
     expect(after.params.basic.exposure).toBe(0.4);
     expect(saved.width).toBe(800);
+    // 烘焙后编辑预览缩略图记录一并清空（原图已是参数效果）
+    expect(saved.thumbnail_edit_path).toBe('');
+  });
+
+  it('编辑预览缩略图：路径读写 + clearEditPreview 清文件与记录 + 烘焙联动清理', async () => {
+    const dir = fs.mkdtempSync(path.join(TMP_ROOT, 'editp-'));
+    const src = path.join(dir, 'e.jpg');
+    fs.writeFileSync(src, 'v1');
+    const [img] = await db.importImages([{ filename: 'e.jpg', filepath: src, size: 2, format: '.jpg', width: 0, height: 0 }]);
+
+    const previewPath = db.getEditPreviewPath(img.id);
+    expect(path.basename(previewPath)).toBe(`edit-${img.id}.jpg`);
+    fs.writeFileSync(previewPath, 'preview-bytes');
+    db.setEditPreviewPath(img.id, previewPath);
+    expect(db.getEditPreviewPathFor(img.id)).toBe(previewPath);
+
+    db.clearEditPreview(img.id);
+    expect(fs.existsSync(previewPath)).toBe(false);
+    expect(db.getEditPreviewPathFor(img.id)).toBe('');
+  });
+
+  it('编辑预览 LRU：超过上限清最旧（按 updated_at）', async () => {
+    // 直接构造多行记录验证裁剪逻辑（上限 500，生成 505 条轻量记录）
+    const rawDb = db.__getDb();
+    const insert = rawDb.prepare('INSERT INTO images (filename, filepath, thumbnail_edit_path, updated_at) VALUES (?, ?, ?, ?)');
+    const ids = [];
+    for (let i = 0; i < 505; i++) {
+      // 严格递增时间戳保证 LRU 排序确定性（i=0 最旧）
+      insert.run(String(i), `x/${i}.jpg`, `p/${i}.jpg`, `2020-01-01 00:00:${String(i % 60).padStart(2, '0')}:0${Math.floor(i / 60)}`);
+      ids.push(rawDb.prepare('SELECT id FROM images WHERE filename = ?').get(String(i)).id);
+    }
+    const removed = db.enforceEditPreviewLimit();
+    expect(removed).toBe(5);
+    // updated_at 最小的 5 条（i=0,60,120,180,240）被清空路径；相邻的保留
+    expect(db.getEditPreviewPathFor(ids[0])).toBe('');
+    expect(db.getEditPreviewPathFor(ids[60])).toBe('');
+    expect(db.getEditPreviewPathFor(ids[240])).toBe('');
+    expect(db.getEditPreviewPathFor(ids[1])).not.toBe('');
+    expect(db.getEditPreviewPathFor(ids[61])).not.toBe('');
+    expect(db.getEditPreviewPathFor(ids[504])).not.toBe('');
   });
 });

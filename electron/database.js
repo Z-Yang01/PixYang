@@ -49,6 +49,59 @@ function deleteThumbnailFile(id) {
   }
 }
 
+// ── 编辑预览缩略图（非破坏保存后的列表显示，LRU 上限）──
+
+const EDIT_PREVIEW_LIMIT = 500; // 磁盘上限（LRU）；超出按 updated_at 清最旧
+
+function getEditPreviewPath(id) {
+  return path.join(getThumbnailsDir(), `edit-${id}.jpg`);
+}
+
+// 写入编辑预览路径到记录（文件由渲染侧生成）
+function setEditPreviewPath(id, filePath) {
+  db.prepare('UPDATE images SET thumbnail_edit_path = ? WHERE id = ?').run(filePath || '', id);
+  saveDatabase();
+}
+
+function getEditPreviewPathFor(id) {
+  return getObject('SELECT thumbnail_edit_path FROM images WHERE id = ?', [id])?.thumbnail_edit_path || '';
+}
+
+function clearEditPreview(id) {
+  const p = getEditPreviewPath(id);
+  try {
+    if (fs.existsSync(p)) fs.unlinkSync(p);
+  } catch (e) {
+    console.error('[编辑预览] 删除失败:', e.message);
+  }
+  setEditPreviewPath(id, '');
+}
+
+// LRU：编辑预览文件数超过上限时，按记录 updated_at 清最旧（含文件与路径列）
+function enforceEditPreviewLimit() {
+  try {
+    const rows = db.prepare(`
+      SELECT id, thumbnail_edit_path FROM images
+      WHERE thumbnail_edit_path != ''
+      ORDER BY updated_at DESC
+    `).all();
+    if (rows.length <= EDIT_PREVIEW_LIMIT) return 0;
+    let removed = 0;
+    for (const r of rows.slice(EDIT_PREVIEW_LIMIT)) {
+      try {
+        if (r.thumbnail_edit_path && fs.existsSync(r.thumbnail_edit_path)) fs.unlinkSync(r.thumbnail_edit_path);
+      } catch { /* 文件清理失败无碍 */ }
+      db.prepare("UPDATE images SET thumbnail_edit_path = '' WHERE id = ?").run(r.id);
+      removed++;
+    }
+    if (removed > 0) saveDatabase();
+    return removed;
+  } catch (e) {
+    console.error('[编辑预览] LRU 清理失败:', e.message);
+    return 0;
+  }
+}
+
 function getObject(sql, params = []) {
   return db.prepare(sql).get(...params) || null;
 }
@@ -293,6 +346,10 @@ function migrateSchema() {
       if (!colNames.includes('flag')) {
         db.exec('ALTER TABLE images ADD COLUMN flag INTEGER DEFAULT 0');
       }
+      // 编辑预览缩略图（非破坏保存后反映参数效果；原图像素不动）
+      if (!colNames.includes('thumbnail_edit_path')) {
+        db.exec('ALTER TABLE images ADD COLUMN thumbnail_edit_path TEXT DEFAULT ""');
+      }
     }
   } catch (e) {
     console.log('[迁移] 可能是旧版数据库，尝试添加列:', e.message);
@@ -306,8 +363,8 @@ function migrateThumbnailsToFiles() {
     if (rows.length === 0) return;
 
     const dir = getThumbnailsDir();
-    const updateStmt = db.prepare('UPDATE images SET thumbnail_path = ?, thumbnail = "" WHERE id = ?');
-    const clearStmt = db.prepare('UPDATE images SET thumbnail = "" WHERE id = ?');
+    const updateStmt = db.prepare("UPDATE images SET thumbnail_path = ?, thumbnail = '' WHERE id = ?");
+    const clearStmt = db.prepare("UPDATE images SET thumbnail = '' WHERE id = ?");
     for (const r of rows) {
       try {
         const raw = String(r.thumbnail || '');
@@ -1238,7 +1295,7 @@ function saveEditedImage(id, tempPath, { width, height }) {
       UPDATE images
       SET width = ?, height = ?, size = ?,
           rotation = 0, flip_h = 0, flip_v = 0,
-          thumbnail = '', thumbnail_path = '', thumbnail_small_path = '',
+          thumbnail = '', thumbnail_path = '', thumbnail_small_path = '', thumbnail_edit_path = '',
           updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
     `).run(width || img.width, height || img.height, size, id);
@@ -1501,6 +1558,8 @@ function closeDatabase() {
 
 module.exports = {
   getThumbnailSmallFilePath,
+  // 测试专用：只读访问内部 db 句柄（构造批量数据用），运行时功能一律走导出函数
+  __getDb: () => db,
   initDatabase,
   saveDatabase,
   closeDatabase,
@@ -1535,6 +1594,11 @@ module.exports = {
   getPresets,
   createPreset,
   deletePreset,
+  getEditPreviewPath,
+  getEditPreviewPathFor,
+  setEditPreviewPath,
+  clearEditPreview,
+  enforceEditPreviewLimit,
   findBrokenRecords,
   deleteBrokenRecords,
   findDuplicates,

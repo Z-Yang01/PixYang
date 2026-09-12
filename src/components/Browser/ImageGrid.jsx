@@ -401,7 +401,7 @@ export default function ImageGrid({
     const needThumbPaths = [];
     const needOrigPaths = [];
     for (const img of imgs) {
-      const preferredThumb = img.thumbnail_small_path || img.thumbnail_path;
+      const preferredThumb = img.thumbnail_edit_path || img.thumbnail_small_path || img.thumbnail_path;
       if (preferredThumb && thumbUrlsRef.current[img.id] === undefined) {
         needThumbPaths.push(preferredThumb);
       }
@@ -418,7 +418,7 @@ export default function ImageGrid({
     const thumbById = {};
     const origById = {};
     for (const img of imgs) {
-      const preferredThumb = img.thumbnail_small_path || img.thumbnail_path;
+      const preferredThumb = img.thumbnail_edit_path || img.thumbnail_small_path || img.thumbnail_path;
       if (preferredThumb && thumbSet.has(preferredThumb) && urlMap[preferredThumb]) {
         thumbById[img.id] = urlMap[preferredThumb];
       }

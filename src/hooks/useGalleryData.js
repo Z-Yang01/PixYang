@@ -48,5 +48,14 @@ export default function useGalleryData({ onThumbnailsReady } = {}) {
     });
     return off;
   }, [loadImages, onThumbnailsReady]);
+
+  // 编辑预览缩略图生成完成（参数保存后异步渲染）：bump 版本刷新该图 URL
+  useEffect(() => {
+    if (!api.onEditPreviewReady) return;
+    const off = api.onEditPreviewReady(() => {
+      useGalleryStore.setState(s => ({ thumbVersion: s.thumbVersion + 1 }));
+    });
+    return off;
+  }, []);
 }
 

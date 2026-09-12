@@ -107,4 +107,11 @@ contextBridge.exposeInMainWorld('pixyang', {
     ipcRenderer.on('thumbnails-ready', handler);
     return () => ipcRenderer.removeListener('thumbnails-ready', handler);
   },
+
+  // 编辑预览缩略图生成完成（携带图片 id，用于刷新列表缩略图 URL 缓存）
+  onEditPreviewReady: (callback) => {
+    const handler = (_event, payload) => callback(payload);
+    ipcRenderer.on('edit-preview-ready', handler);
+    return () => ipcRenderer.removeListener('edit-preview-ready', handler);
+  },
 });

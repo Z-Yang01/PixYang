@@ -4,7 +4,11 @@ const path = require('path');
 const fs = require('fs');
 const exifr = require('exifr');
 const { generateThumbnailTiers, extractNefPreview, normalizeEditBase, closeWorker } = require('./imageWorker');
-const { renderFromEditParams, computeSourceHash } = require('./render/index.cjs');
+const { renderFromEditParams, renderFromSpec, computeSourceHash, callWorker } = require('./render/index.cjs');
+const {
+  getEditPreviewPath, getEditPreviewPathFor, setEditPreviewPath, clearEditPreview, enforceEditPreviewLimit,
+} = require('./database');
+const { editParamsToRenderSpec } = require('../shared/renderSpec.cjs');
 const {
   initDatabase,
   closeDatabase,
@@ -370,6 +374,9 @@ async function bakeEditSession(id, edits) {
   const saved = saveEditedImage(id, tempPath, { width: dims.width, height: dims.height });
   if (saved.error) return saved;
 
+  // 烘焙后原图已是参数效果：编辑预览缩略图失去意义，清掉（缩略图由 rebuild 重生成）
+  clearEditPreview(id);
+
   editSessions.delete(id);
   try {
     if (fs.existsSync(session.basePath)) fs.unlinkSync(session.basePath);
@@ -416,6 +423,29 @@ function cancelEditSession(id) {
   }
   editSessions.delete(id);
   return { ok: true };
+}
+
+// 编辑预览缩略图：按当前参数渲染 400px 存 thumbnails/edit-{id}.jpg（LR 同款列表显示）。
+// 复用编辑底图缓存（edit-cache/{id}-base.jpg）；无缓存时异步重建底图。
+async function refreshEditPreview(id, params) {
+  const img = getImageById(id);
+  if (!img || img.hidden) return null;
+  const basePath = path.join(getEditCacheDir(), `${id}-base.jpg`);
+  if (!fs.existsSync(basePath)) {
+    let source = img.filepath;
+    if (img.raw_path && fs.existsSync(img.raw_path)) {
+      const preview = await extractNefPreview(img.raw_path, basePath);
+      if (preview && preview.ok) source = basePath;
+    }
+    await normalizeEditBase(source, basePath);
+  }
+  const previewPath = getEditPreviewPath(id);
+  const spec = editParamsToRenderSpec(params, { sourceHash: computeSourceHash(basePath) });
+  await callWorker({ type: 'edit-preview', srcPath: basePath, outPath: previewPath, spec });
+  setEditPreviewPath(id, previewPath);
+  enforceEditPreviewLimit();
+  sendProgress('edit-preview-ready', { id, path: previewPath });
+  return previewPath;
 }
 
 // 后台为缺失缩略图的图片补生成（防抖，分批让出事件循环避免阻塞主进程）
@@ -758,7 +788,14 @@ function setupIPC() {
   });
 
   ipcMain.handle('edits:save', async (_event, id, params, command) => {
-    return saveEdits(id, params, command);
+    const result = saveEdits(id, params, command);
+    // 参数保存成功后异步刷新编辑预览缩略图（不阻塞保存返回；失败仅告警）
+    if (result && !result.error) {
+      refreshEditPreview(id, params).catch((e) => {
+        console.error('[编辑预览] 生成失败:', e.message);
+      });
+    }
+    return result;
   });
 
   ipcMain.handle('edit-history:get', async (_event, id) => {
