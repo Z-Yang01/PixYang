@@ -508,3 +508,28 @@
 
 # 分屏对比视图（Phase 13）实施尝试：未提交即回退
 分屏模式在 ImageViewer 中引入三元分支嵌套与声明顺序问题（TDZ + JSX 结构错误），在验证中发现回归后整体回退至绿色基线。Phase 13 仅保留整幅 Before/After 切换（已交付）；side-by-side/split 需要以独立子组件（CompareView）形式实施，避免在 ImageViewer 内联扩展。记录为后续批次首要项。
+
+---
+
+# 2026-09-12 任务书实施批 4：分屏对比（CompareView）+ 色彩输入测试
+
+### Phase 13：Before/After 分屏对比（独立子组件方案）
+
+- 新增 `src/components/Browser/CompareView.jsx`：完全自包含的分屏对比组件——分割位置状态与拖动交互内聚，调用方只传 `beforeSrc` / `afterNode`（After 渲染层 JSX）。上一轮内联实施的教训落地：不在 ImageViewer 内联扩展结构。
+- ImageViewer 接线最小化：编辑渲染层提取为 `editLayer(edited)` 渲染函数（edited=true 应用变换/滤镜/裁剪框，false 为原始编辑源）；工具栏「对比」（整幅切换）/「分屏」（拖动分割线）双按钮。
+- Before 语义与任务书一致：NEF 图 = NEF embedded preview，JPG 图 = original JPG。
+
+### Phase 7：色彩输入处理测试（真实 sharp）
+
+- 新增 `tests/unit/render/color.test.js`：untagged / sRGB tagged / P3 tagged 三类输入——渲染不崩溃、tagged 输入 ICC profile 被 keepIccProfile 保留、P3 identity 像素无 NaN/越界。
+- AdobeRGB 输入留待 M8（libvips 不内置该 profile，需随应用分发或生成）。
+
+### 验证
+
+- **510 passed / 0 failed**（+9：CompareView 2 例 + 色彩 7 例）；覆盖率 90.01%；golden 15/15；build/lint/typecheck 干净。
+
+### 剩余批次
+
+- Phase 7 深化：输入 profile → working space 转换（libvips icc_transform）
+- Phase 9：requestRequestId 全链贯通
+- M8：libraw RAW 解码（前置：LGPL 许可证确认）

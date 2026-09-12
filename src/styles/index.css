@@ -2305,3 +2305,56 @@ body {
 .editor-preset-name:hover {
   background: rgba(255, 255, 255, 0.08);
 }
+
+/* 分屏对比（CompareView） */
+.editor-split-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.editor-split-after,
+.editor-split-before {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.editor-split-before {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+.editor-split-divider {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: #fff;
+  cursor: ew-resize;
+  z-index: 6;
+}
+.editor-split-label {
+  position: absolute;
+  top: 12px;
+  padding: 2px 8px;
+  font-size: 11px;
+  background: rgba(0, 0, 0, 0.65);
+  color: #fff;
+  border-radius: 4px;
+  z-index: 7;
+}
+.editor-split-label.left { left: 12px; }
+.editor-split-label.right { right: 12px; }
+
+.editor-phase-tag {
+  padding: 2px 8px;
+  font-size: 11px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-muted, #aaa);
+}
+.editor-phase-tag.phase-dirty { background: rgba(250, 204, 21, 0.2); color: #fde047; }
+.editor-phase-tag.phase-error { background: rgba(248, 113, 113, 0.25); color: #f87171; }
+.editor-phase-tag.phase-saving,
+.editor-phase-tag.phase-exporting,
+.editor-phase-tag.phase-baking { background: rgba(99, 102, 241, 0.25); color: #a5b4fc; }

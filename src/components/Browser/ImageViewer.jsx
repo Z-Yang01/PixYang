@@ -15,6 +15,7 @@ import {
   toEditParams, fromEditParams, opsChanged,
 } from '@/lib/editParams';
 import useGalleryStore from '@/store/galleryStore';
+import CompareView from './CompareView';
 import ConfirmDialog from '@/components/Layout/ConfirmDialog';
 
 const clamp = (v, min, max) => Math.min(max, Math.max(min, v));
@@ -77,6 +78,7 @@ export default function ImageViewer({
   const [bust, setBust] = useState(0);
   // 编辑状态模型：clean → dirty → saving/saved…（Export 不改 dirty；Bake 成功后回 clean）
   const [showBefore, setShowBefore] = useState(false);
+  const [compareMode, setCompareMode] = useState('toggle'); // toggle | split
   bustRef.current = bust;
   const historyRef = useRef(null); // { stack: [ops], index }
   const savedBaselineRef = useRef(null); // 最近一次保存的参数快照（dirty 判定基线）
@@ -746,6 +748,33 @@ export default function ImageViewer({
       }
     : null;
 
+  // 编辑态渲染层：edited=true 应用变换/滤镜/裁剪框（After）；false 为原始编辑源（Before）
+  const editLayer = (edited) => (
+    <div className="editor-transform-layer" style={{ transform: edited ? editTransform : undefined }}>
+      <img
+        ref={editImgRef}
+        className="viewer-image"
+        src={editBaseSrc || displaySrc}
+        alt={image.filename?.replace(/\.\w+$/, '') || image.filename}
+        draggable={false}
+        style={{
+          filter: edited ? (previewChain ? 'url(#pixyang-basic)' : undefined) : undefined,
+          opacity: editBusy ? 0.75 : 1,
+          transition: dragging.current ? 'none' : undefined,
+        }}
+      />
+      {edited && crop && cropPct && (
+        <div className="editor-crop-box" style={cropPct} data-crop-box="1">
+          {['n', 's', 'e', 'w', 'ne', 'nw', 'se', 'sw'].map(h => (
+            <span key={h} data-crop-handle={h} className={`editor-crop-handle handle-${h}`} />
+          ))}
+          <span className="editor-crop-size">{Math.round(crop.width)}×{Math.round(crop.height)}</span>
+        </div>
+      )}
+      {edited && editBusy && <Loader2 className="editor-rendering-spinner animate-spin" />}
+    </div>
+  );
+
   return (
     <div className="viewer-overlay" onClick={editing ? undefined : onClose}>
       {/* 影调预览滤镜链：与分段渲染管线同序同数学（线性矩阵 → 阴影 gamma → 高光线性 → 饱和度） */}
@@ -893,29 +922,11 @@ export default function ImageViewer({
         ) : editing && editError ? (
           <div className="editor-error">{editError}</div>
         ) : editing ? (
-          <div className="editor-transform-layer" style={{ transform: showBeforeOn ? undefined : editTransform }}>
-            <img
-              ref={editImgRef}
-              className="viewer-image"
-              src={editBaseSrc || displaySrc}
-              alt={image.filename?.replace(/\.\w+$/, '') || image.filename}
-              draggable={false}
-              style={{
-                filter: showBeforeOn ? undefined : (previewChain ? 'url(#pixyang-basic)' : undefined),
-                opacity: editBusy ? 0.75 : 1,
-                transition: dragging.current ? 'none' : undefined,
-              }}
-            />
-            {crop && cropPct && !showBeforeOn && (
-              <div className="editor-crop-box" style={cropPct} data-crop-box="1">
-                {['n', 's', 'e', 'w', 'ne', 'nw', 'se', 'sw'].map(h => (
-                  <span key={h} data-crop-handle={h} className={`editor-crop-handle handle-${h}`} />
-                ))}
-                <span className="editor-crop-size">{Math.round(crop.width)}×{Math.round(crop.height)}</span>
-              </div>
-            )}
-            {editBusy && <Loader2 className="editor-rendering-spinner animate-spin" />}
-          </div>
+          showBeforeOn && compareMode === 'split' && editBaseSrc ? (
+            <CompareView beforeSrc={editBaseSrc} afterNode={editLayer(true)} />
+          ) : (
+            editLayer(!showBeforeOn)
+          )
         ) : (
           <img
             key={image.id}
@@ -944,11 +955,22 @@ export default function ImageViewer({
             <span className={`editor-phase-tag phase-${editPhase}`}>{PHASE_LABELS[editPhase] || editPhase}</span>
             <Button
               variant="ghost" size="icon-xs"
-              className={showBeforeOn ? 'is-active' : ''}
-              onClick={() => setShowBefore(v => !v)}
-              title="按住查看原始编辑源（Before = NEF 显影/JPG 原图）"
+              className={showBeforeOn && compareMode === 'toggle' ? 'is-active' : ''}
+              onClick={() => { setShowBefore(v => !(v && compareMode === 'toggle')); setCompareMode('toggle'); }}
+              title="整幅切换 Before/After（Before = NEF 显影/JPG 原图）"
             >
-              {showBeforeOn ? 'After' : 'Before'}
+              对比
+            </Button>
+            <Button
+              variant="ghost" size="icon-xs"
+              className={showBeforeOn && compareMode === 'split' ? 'is-active' : ''}
+              onClick={() => {
+                if (compareMode === 'split') { setShowBefore(false); setCompareMode('toggle'); }
+                else { setShowBefore(true); setCompareMode('split'); }
+              }}
+              title="分屏对比（拖动分割线，左原始/右编辑）"
+            >
+              分屏
             </Button>
           </div>
 
