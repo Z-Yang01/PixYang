@@ -33,6 +33,7 @@ async function renderSpecToSharp(spec, inputPath, outputPath) {
   const ctx = {
     bands: srcMeta.channels || 3,
     exifOrientation: srcMeta.orientation || 1,
+    hasProfile: !!srcMeta.hasProfile,
   };
 
   let pixels = null; // { data, info } raw 像素（检查点传递）
@@ -54,12 +55,19 @@ async function renderSpecToSharp(spec, inputPath, outputPath) {
       continue;
     }
     switch (stage.kind) {
-      case 'decode':
+      case 'decode': {
         // M3：常规格式直读（底图应已经 normalizeBase 规范化转正）；M8 在此替换 libraw 解码。
         if (ctx.exifOrientation > 1) {
           console.warn(`[render] 底图含 EXIF 方向标记（orientation=${ctx.exifOrientation}），应先经 normalizeBase 规范化，否则几何操作坐标系错误`);
         }
+        // 色彩管理：tagged 输入（P3/AdobeRGB 等）统一转换到 sRGB 工作空间，
+        // 保证影调数学在一致空间上执行（未转换时按 sRGB 调的曲线/偏移在宽色域会偏移）。
+        // libvips 对带 profile 的图像做 icc_transform；untagged 视为已是 sRGB，不动。
+        if (ctx.hasProfile) {
+          pixels = await materialize(sourceSharp(pixels, inputPath).toColourspace('srgb'));
+        }
         break;
+      }
 
       case 'whiteBalance': {
         // 灰度无色彩语义；彩色为对角增益

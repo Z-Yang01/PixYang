@@ -372,17 +372,39 @@ export default function App() {
     showToast(`${desc}（${ids.length} 张）`, 'success');
   }, [showToast]);
 
-  // 批量同步编辑参数：把复制的影调参数写到所选图片（非破坏，只写参数 JSON）
-  const handleSyncEdits = useCallback(async () => {
+  // 批量同步编辑参数：把复制的参数写到所选图片（非破坏，只写参数 JSON）。
+  // mode='basic' 仅影调（默认推荐）；'all' 含旋转/翻转（裁剪坐标跨图尺寸不同，不同步）。
+  // 单张失败不中断批次，结果 Toast 汇报。
+  const handleSyncEdits = useCallback(async (mode = 'basic') => {
     if (!api.isBridgeAvailable()) return;
-    const basic = useGalleryStore.getState().copiedEditsBasic;
+    const copied = useGalleryStore.getState().copiedEdits;
     const ids = [...useGalleryStore.getState().selectedIds];
-    if (!basic || ids.length === 0) return;
-    const params = toEditParams({ ...basic });
+    if (!copied?.basic || ids.length === 0) return;
+    const withGeometry = mode === 'all';
+    let ok = 0;
+    const failed = [];
     for (const id of ids) {
-      await api.saveEdits(id, params, { label: '批量同步参数' });
+      try {
+        const existing = await api.getEdits(id);
+        const params = toEditParams({
+          ...copied.basic,
+          ...(withGeometry
+            ? { rotation: copied.orientation?.rotate || 0, flipH: !!copied.orientation?.flipH, flipV: !!copied.orientation?.flipV }
+            : {}),
+        });
+        const result = await api.saveEdits(id, params, { label: withGeometry ? '批量同步影调与几何' : '批量同步影调' });
+        if (result?.error) throw new Error(result.error);
+        ok++;
+      } catch (e) {
+        failed.push(id);
+        console.error('[批量同步] 图片失败:', id, e.message);
+      }
     }
-    showToast(`已同步参数到 ${ids.length} 张图片`, 'success');
+    if (failed.length === 0) {
+      showToast(`已同步${withGeometry ? '影调与几何' : '影调'}到 ${ok} 张图片`, 'success');
+    } else {
+      showToast(`已同步 ${ok} 张，${failed.length} 张失败（可重试）`, 'error');
+    }
   }, [showToast]);
 
   const executeBatchDelete = useCallback(async () => {

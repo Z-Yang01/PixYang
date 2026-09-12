@@ -542,3 +542,15 @@
 - 编辑面板预设区分区：内置 chips（悬浮即用 accent 色高亮，tooltip 显示风格描述）+「我的预设」用户区（保存/应用/删除，既有功能不变）。应用走历史栈可撤销，非破坏只写参数。
 - 修复：CJS 具名导出经 Vite interop 不可靠 → 改 default 导入解构（同 editSchema 模式）；此前 node 脚本对 JSX 的替换为静默 no-op，由「探针 chips:0」定位后用 Edit 工具精确插入。
 - 测试 +6：内置预设 schema 合法性/唯一性/核心风格覆盖（shared 4 例）+ UI chips 渲染与黑白应用（saturate=0 矩阵断言，组件 2 例）。**516 passed / 0 failed**，覆盖率 90.1%。
+
+---
+
+# 2026-09-12 任务书实施批 5：色彩工作空间转换 + 批量同步加固
+
+- **Phase 7 深化**：decode 阶段 tagged 输入（P3/AdobeRGB 等）统一 icc_transform 到 sRGB 工作空间——影调数学此前按 sRGB 调的曲线/偏移在宽色域上会偏移，现在 tagged 输入先转换再计算，输出 profile 一致。untagged 视为已是 sRGB 不动（零开销）。测试 +1：P3 与 untagged 同参数渲染像素必不同（转换真实发生）。
+- **修复批量同步断链（用户可见 bug）**：批次 2 的 node 脚本替换是静默 no-op，handleSyncEdits 仍读已改名的 copiedEditsBasic → 复制后点同步无反应。现修复为读 copiedEdits，并落实批次 2 设计：分组菜单（仅影调/含旋转翻转，裁剪坐标跨图不同步）+ 单张 try/catch 容错（saveEdits 返回 error 也计失败）+ 结果 Toast 汇报（失败可重试）。
+- **517 passed / 0 failed**；golden 15/15；build/lint/typecheck 干净。
+
+### 教训记录
+
+node -e 模板字符串批量替换连续三次静默 no-op（字符串匹配不上时 replace 不报错）——凡跨行/含特殊字符的代码修改一律改用 Edit 工具或写临时脚本文件，完成后必须 grep 验证落地。

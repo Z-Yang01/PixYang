@@ -79,9 +79,17 @@ export default function BatchBar({
       <Button variant="secondary" size="sm" onClick={onExport}><Download className="size-4" /> 导出</Button>
 
       {hasCopiedEdits && onSyncEdits && (
-        <Button variant="secondary" size="sm" onClick={() => onSyncEdits()} title="把复制的影调参数同步到所选图片（只写参数，不写像素）">
-          <SlidersHorizontal className="size-4" /> 同步参数到所选
-        </Button>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="secondary" size="sm" title="把复制的编辑参数同步到所选图片（只写参数，不写像素）">
+              <SlidersHorizontal className="size-4" /> 同步参数到所选
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start">
+            <DropdownMenuItem onClick={() => onSyncEdits('basic')}>仅同步影调（推荐）</DropdownMenuItem>
+            <DropdownMenuItem onClick={() => onSyncEdits('all')}>同步影调 + 旋转/翻转</DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       )}
 
       <div className="batch-bar-divider" />

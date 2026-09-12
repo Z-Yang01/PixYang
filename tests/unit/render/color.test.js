@@ -60,12 +60,25 @@ describe('色彩输入处理（sRGB / P3 / 无 profile）', () => {
     expect(meta.width).toBe(32);
   });
 
-  it.each(cases)('%s：tagged 输入的 ICC profile 被 keepIccProfile 保留', async (name, profile) => {
+  it.each(cases)('%s：tagged 输入转换到 sRGB 工作空间后 profile 仍在（keepIccProfile）', async (name, profile) => {
     const input = await makeInput(name, profile);
     const out = path.join(TMP, `icc-${name}`);
     await renderSpecToSharp(SPEC('png'), input, out);
     const meta = await sharp(out).metadata();
     expect(!!meta.hasProfile).toBe(!!profile);
+  });
+
+  it('P3 tagged 输入经 decode 转换后像素与 untagged 不同（色彩转换真实发生）', async () => {
+    const p3 = await makeInput('conv-p3.png', 'p3');
+    const un = await makeInput('conv-un.png', null);
+    const outP3 = path.join(TMP, 'conv-p3-out.png');
+    const outUn = path.join(TMP, 'conv-un-out.png');
+    await renderSpecToSharp(SPEC('png'), p3, outP3);
+    await renderSpecToSharp(SPEC('png'), un, outUn);
+    const a = await sharp(outP3).raw().toBuffer();
+    const b = await sharp(outUn).raw().toBuffer();
+    // P3 的 (120,80,200) 转到 sRGB 后数值必有差异（同 RGB 数值在 P3 色域更饱和）
+    expect(a.equals(b)).toBe(false);
   });
 
   it('identity 渲染在 P3 输入下像素不越界（无 NaN/爆表）', async () => {
