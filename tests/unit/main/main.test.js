@@ -260,6 +260,7 @@ const workerStub = {
   generateThumbnailTiers: vi.fn(async () => null),
   extractNefPreview: vi.fn(async () => null),
   normalizeEditBase: vi.fn(async () => ({ width: 2000, height: 1200 })),
+  getImageMeta: vi.fn(async () => ({ width: 2000, height: 1200 })),
   closeWorker: vi.fn(async () => {}),
 };
 

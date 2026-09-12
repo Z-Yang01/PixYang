@@ -34,3 +34,32 @@ function isSupportedStage(kind) {
 }
 
 module.exports = { PIPELINE_ORDER, UNSUPPORTED_STAGES, isSupportedStage };
+
+// ── 渲染能力矩阵 ──
+// 每个功能在 预览(preview)/导出(export)/烘焙(bake) 三条路径上的真实可用状态。
+// UI 必须据此展示能力（禁止 UI 显示可调但导出被静默忽略）。
+// 状态：supported | partial | preview-only | unsupported | planned
+const CAPABILITY_MATRIX = {
+  decode:        { preview: 'supported', export: 'supported', bake: 'supported', note: '常规格式直读；RAW 解码 planned (M8)' },
+  whiteBalance:  { preview: 'supported', export: 'supported', bake: 'supported' },
+  exposure:      { preview: 'supported', export: 'supported', bake: 'supported' },
+  tone:          { preview: 'supported', export: 'supported', bake: 'supported', note: '高光/阴影为 gamma 近似，M8 换分区曲线' },
+  curves:        { preview: 'planned',   export: 'planned',   bake: 'planned' },
+  hsl:           { preview: 'planned',   export: 'planned',   bake: 'planned' },
+  colorGrading:  { preview: 'planned',   export: 'planned',   bake: 'planned' },
+  saturation:    { preview: 'supported', export: 'supported', bake: 'supported' },
+  masks:         { preview: 'planned',   export: 'planned',   bake: 'planned' },
+  detail:        { preview: 'partial',   export: 'partial',   bake: 'partial', note: 'sharpness supported；noiseReduction unsupported' },
+  lens:          { preview: 'planned',   export: 'planned',   bake: 'planned' },
+  geometry:      { preview: 'supported', export: 'supported', bake: 'supported' },
+  crop:          { preview: 'supported', export: 'supported', bake: 'supported' },
+};
+
+function stageCapability(kind, target) {
+  const cap = CAPABILITY_MATRIX[kind];
+  if (!cap) return 'unsupported';
+  return target ? (cap[target] || 'unsupported') : cap;
+}
+
+module.exports.CAPABILITY_MATRIX = CAPABILITY_MATRIX;
+module.exports.stageCapability = stageCapability;

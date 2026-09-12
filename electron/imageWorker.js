@@ -60,6 +60,11 @@ async function normalizeEditBase(srcPath, outPath) {
   return callWorker({ type: 'normalize', srcPath, outPath });
 }
 
+// 读取图片元数据（尺寸等，轻量）
+async function getImageMeta(filepath) {
+  return callWorker({ type: 'meta', filepath });
+}
+
 async function closeWorker() {
   if (worker) {
     const w = worker;
@@ -68,4 +73,4 @@ async function closeWorker() {
   }
 }
 
-module.exports = { generateThumbnailTiers, extractNefPreview, normalizeEditBase, callWorker, closeWorker };
+module.exports = { generateThumbnailTiers, extractNefPreview, normalizeEditBase, getImageMeta, callWorker, closeWorker };

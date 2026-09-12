@@ -417,3 +417,41 @@
 - **合并双 worker 池**：render/index 复用 imageWorker 的 thumbWorker 实例（此前烘焙/导出与缩略图各自持有 worker），少一个常驻线程、生命周期统一。
 - 性能基准：24MP 裁剪+旋转+九参数烘焙 876ms（预算 3s）；纯线性路径 370ms。
 - golden 15/15 刷新（仿射合并的舍入差异重锁）；497 例全绿。
+
+---
+
+# 2026-09-12 任务书实施批 1：NEF 预览缓存 + 能力矩阵 + Before/After + 状态模型
+
+对照任务书 14 项审计：10 项已有实现（参数同源/几何锁定/EXIF 回接/内存优化/世代令牌等），4 项差距本轮补齐。
+
+### Phase 5：NEF Preview 缓存
+
+- `ensureEditBase`：底图构建统一入口（openEditSession 与 renderEditPreviewOnce 共用），侧车 `edit-cache/{id}-base.jpg.meta.json` 记录 source/basePath/nefPath/srcMtimeMs/srcSize；NEF/JPG 未变化直接命中缓存（不再每次 edit-open 重新扫描提取），源文件变更自动失效。bake 替换 JPG 后 mtime 变化天然失效。
+- 新增 worker `meta` 消息 + imageWorker.getImageMeta（缓存命中时轻量取尺寸，不再走 normalize）。
+
+### 渲染能力矩阵
+
+- `shared/pipelineOrder.cjs` 导出 CAPABILITY_MATRIX + stageCapability(kind, target)：每功能在 preview/export/bake 三路径的真实状态（supported/partial/planned），detail 标 partial（sharpness 可用、noise 不可用），UI 可查询、杜绝"可调但导出被忽略"。
+
+### Before/After 对比视图
+
+- 编辑工具栏 Before/After 切换：Before = 原始编辑源（NEF 显影/JPG 原图，无滤镜无变换无裁剪框），After = 当前 RenderSpec 预览。语义与任务书一致（Before 不会是上次导出文件）。
+
+### 编辑状态模型
+
+- editBusy 收敛为 busyKind（opening/saving/exporting/baking），派生 editPhase（clean/dirty/saving/exporting/baking/opening/error）+ 面板状态徽章（已保存/未保存/保存中…）。Export 不改 dirty；Bake 成功 dirty→clean（既有行为经状态模型显式化）。
+- 顺手修 TDZ（editBusyRef 声明于使用后）。
+
+### 验证
+
+- 497 例全绿；golden 15/15；build/lint 干净。
+- 缓存端到端：首次 miss 构建底图 ✓ → 二次 hit（不再提取，meta 直读尺寸）✓ → 源 JPG 变更后失效 ✓。
+
+### 任务书后续批次（未完成，按实施顺序）
+
+- Phase 7 色彩管理（ICC 输入/输出 profile 处理与测试）
+- Phase 9 渲染取消 requestRequestId 贯通（当前同 id 去重+世代令牌已覆盖主要风险）
+- Phase 11 批量同步分组（Apply Basic/Geometry/Detail/All 选择器）
+- Phase 12 Export/Bake 安全增强（fsync、verify、.bak 策略）
+- Phase 13 对比视图扩展（side-by-side/split）
+- Phase 14 golden 补 EXIF 保留/缓存命中 case

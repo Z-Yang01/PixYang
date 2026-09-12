@@ -53,7 +53,7 @@ export default function ImageViewer({
   const [editSession, setEditSession] = useState(null); // { basePath, source, width, height, hasNef }
   const [editBaseSrc, setEditBaseSrc] = useState(null);
   const [editOps, setEditOps] = useState(EDIT_DEFAULTS);
-  const [editBusy, setEditBusy] = useState(false);
+  const [busyKind, setBusyKind] = useState(''); // opening | saving | exporting | baking
   const [editError, setEditError] = useState('');
   const [cropMode, setCropMode] = useState(false);
   const [cropRatioKey, setCropRatioKey] = useState('free');
@@ -67,6 +67,7 @@ export default function ImageViewer({
   editOpsRef.current = editOps;
   const editingRef = useRef(false);
   editingRef.current = editing;
+  const editBusy = busyKind !== ''; // 派生：任一忙态
   // 会话身份与生命周期：编辑会话建立/进行期间禁止换图（否则烘焙可能覆盖另一张图的原文件）
   const editPendingRef = useRef(false);
   const editSessionRef = useRef(null);
@@ -74,6 +75,8 @@ export default function ImageViewer({
   imageIdRef.current = image?.id;
   const bustRef = useRef(0); // 烘焙后像素已变，URL 加版本参数强制重载
   const [bust, setBust] = useState(0);
+  // 编辑状态模型：clean → dirty → saving/saved…（Export 不改 dirty；Bake 成功后回 clean）
+  const [showBefore, setShowBefore] = useState(false);
   bustRef.current = bust;
   const historyRef = useRef(null); // { stack: [ops], index }
   const savedBaselineRef = useRef(null); // 最近一次保存的参数快照（dirty 判定基线）
@@ -130,7 +133,7 @@ export default function ImageViewer({
     setEditOps({ ...EDIT_DEFAULTS });
     setCropMode(false);
     setEditError('');
-    setEditBusy(false);
+    setBusyKind('');
     setHistInfo({ canUndo: false, canRedo: false });
     historyRef.current = null;
     savedBaselineRef.current = null;
@@ -140,7 +143,7 @@ export default function ImageViewer({
     if (!image || editBusy || editPendingRef.current) return;
     const requestedId = image.id;
     editPendingRef.current = true; // 会话建立期间禁止翻页/换图（防烘焙覆盖另一张图）
-    setEditBusy(true);
+    setBusyKind('opening');
     setEditError('');
     try {
       const session = await api.editOpen(requestedId);
@@ -178,7 +181,7 @@ export default function ImageViewer({
       setPos({ x: 0, y: 0 });
     } finally {
       editPendingRef.current = false;
-      setEditBusy(false);
+      setBusyKind('');
     }
   }, [image, editBusy]);
 
@@ -222,7 +225,7 @@ export default function ImageViewer({
   // 保存：只写 EditParams JSON 到数据库（像素不动）
   const saveParams = useCallback(async () => {
     if (!image || editBusy) return;
-    setEditBusy(true);
+    setBusyKind('saving');
     try {
       const ops = composeOps();
       const result = await api.saveEdits(image.id, toEditParams(ops), {
@@ -237,7 +240,7 @@ export default function ImageViewer({
       savedBaselineRef.current = ops;
       toast.success('已保存编辑参数');
     } finally {
-      setEditBusy(false);
+      setBusyKind('');
     }
   }, [image, editBusy, composeOps]);
 
@@ -246,7 +249,7 @@ export default function ImageViewer({
     if (!image || editBusy) return;
     const dir = await api.selectExportDirectory();
     if (!dir) return;
-    setEditBusy(true);
+    setBusyKind('exporting');
     try {
       const result = await api.editExport(image.id, toEditParams(composeOps()), dir);
       if (result?.error) {
@@ -255,14 +258,14 @@ export default function ImageViewer({
       }
       toast.success(`已导出到 ${result.path}`);
     } finally {
-      setEditBusy(false);
+      setBusyKind('');
     }
   }, [image, editBusy, composeOps]);
 
   // 烘焙替代：渲染并原子替代原图（唯一写原图的路径，需确认）
   const bakeEdits = useCallback(async () => {
     if (!image || editBusy) return;
-    setEditBusy(true);
+    setBusyKind('baking');
     try {
       const result = await api.editBake(image.id, toEditParams(composeOps()));
       if (result?.error) {
@@ -282,7 +285,7 @@ export default function ImageViewer({
       // 结构性变化：像素/尺寸/缩略图已变，走全量刷新（查看器内 image 由 App 同步 effect 更新）
       onImageUpdated?.();
     } finally {
-      setEditBusy(false);
+      setBusyKind('');
     }
   }, [image, editBusy, onImageUpdated, cleanupEditSession, composeOps]);
 
@@ -711,8 +714,19 @@ export default function ImageViewer({
 
   if (!image) return null;
 
+  // 编辑状态模型：Export 不改 dirty；Bake 成功后 dirty→clean
+  const editPhase = editError ? 'error'
+    : busyKind === 'saving' ? 'saving'
+    : busyKind === 'exporting' ? 'exporting'
+    : busyKind === 'baking' ? 'baking'
+    : busyKind === 'opening' ? 'opening'
+    : (editing && opsChanged(composeOps(), savedBaselineRef.current)) ? 'dirty'
+    : 'clean';
+  const PHASE_LABELS = { clean: '已保存', dirty: '未保存', saving: '保存中…', exporting: '导出中…', baking: '烘焙中…', opening: '准备中…', error: '出错' };
+  const showBeforeOn = showBefore && editing;
+
   // 影调预览滤镜链（与分段渲染管线同序同数学）；needsMatrix 决定主矩阵原语是否渲染
-  const previewChainRaw = editing ? previewFilterChain(editOps) : null;
+  const previewChainRaw = editing && !showBeforeOn ? previewFilterChain(editOps) : null;
   const previewChain = previewChainRaw ? { ...previewChainRaw, needsMatrix: needsMatrix(editOps) } : null;
 
   // 编辑态：变换（旋转/翻转/缩放/平移）应用于包裹层，图像自身无变换，裁剪框百分比定位自动跟随
@@ -876,7 +890,7 @@ export default function ImageViewer({
         ) : editing && editError ? (
           <div className="editor-error">{editError}</div>
         ) : editing ? (
-          <div className="editor-transform-layer" style={{ transform: editTransform }}>
+          <div className="editor-transform-layer" style={{ transform: showBeforeOn ? undefined : editTransform }}>
             <img
               ref={editImgRef}
               className="viewer-image"
@@ -884,12 +898,12 @@ export default function ImageViewer({
               alt={image.filename?.replace(/\.\w+$/, '') || image.filename}
               draggable={false}
               style={{
-                filter: previewChain ? 'url(#pixyang-basic)' : undefined,
+                filter: showBeforeOn ? undefined : (previewChain ? 'url(#pixyang-basic)' : undefined),
                 opacity: editBusy ? 0.75 : 1,
                 transition: dragging.current ? 'none' : undefined,
               }}
             />
-            {crop && cropPct && (
+            {crop && cropPct && !showBeforeOn && (
               <div className="editor-crop-box" style={cropPct} data-crop-box="1">
                 {['n', 's', 'e', 'w', 'ne', 'nw', 'se', 'sw'].map(h => (
                   <span key={h} data-crop-handle={h} className={`editor-crop-handle handle-${h}`} />
@@ -924,6 +938,15 @@ export default function ImageViewer({
             <span className={`editor-source-tag ${editSession.source === 'nef' ? 'is-nef' : ''}`}>
               {editSession.source === 'nef' ? 'NEF 显影' : 'JPG'}
             </span>
+            <span className={`editor-phase-tag phase-${editPhase}`}>{PHASE_LABELS[editPhase] || editPhase}</span>
+            <Button
+              variant="ghost" size="icon-xs"
+              className={showBeforeOn ? 'is-active' : ''}
+              onClick={() => setShowBefore(v => !v)}
+              title="按住查看原始编辑源（Before = NEF 显影/JPG 原图）"
+            >
+              {showBeforeOn ? 'After' : 'Before'}
+            </Button>
           </div>
 
           {[

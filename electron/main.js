@@ -3,7 +3,7 @@ const { pathToFileURL } = require('url');
 const path = require('path');
 const fs = require('fs');
 const exifr = require('exifr');
-const { generateThumbnailTiers, extractNefPreview, normalizeEditBase, closeWorker } = require('./imageWorker');
+const { generateThumbnailTiers, extractNefPreview, normalizeEditBase, getImageMeta, closeWorker } = require('./imageWorker');
 const { renderFromEditParams, renderFromSpec, computeSourceHash, callWorker, closeRenderWorker } = require('./render/index.cjs');
 const {
   getEditPreviewPath, getEditPreviewPathFor, setEditPreviewPath, clearEditPreview, enforceEditPreviewLimit,
@@ -318,6 +318,52 @@ function editTempPathFor(filepath) {
   return path.join(path.dirname(filepath), `${base}-temp${ext}`);
 }
 
+// ── 编辑底图缓存：NEF/JPG 未变化时跳过重复提取与规范化（mtime+size 侧车校验）──
+function editBaseMetaPath(id) {
+  return path.join(getEditCacheDir(), `${id}-base.jpg.meta.json`);
+}
+
+function readEditBaseCache(id, img) {
+  try {
+    const cached = JSON.parse(fs.readFileSync(editBaseMetaPath(id), 'utf8'));
+    const srcPath = cached.source === 'nef' ? cached.nefPath : img.filepath;
+    if (!srcPath || !fs.existsSync(cached.basePath || '')) return null;
+    const st = fs.statSync(srcPath);
+    if (cached.srcMtimeMs === st.mtimeMs && cached.srcSize === st.size) {
+      return { basePath: cached.basePath, source: cached.source };
+    }
+  } catch { /* 缓存缺失/损坏按未命中处理 */ }
+  return null;
+}
+
+function writeEditBaseCache(id, img, basePath, source) {
+  try {
+    const st = fs.statSync(source === 'nef' ? img.raw_path : img.filepath);
+    fs.writeFileSync(editBaseMetaPath(id), JSON.stringify({
+      source, basePath, nefPath: img.raw_path || '', srcMtimeMs: st.mtimeMs, srcSize: st.size,
+    }));
+  } catch (e) {
+    console.error('[编辑底图] 缓存元数据写入失败:', e.message);
+  }
+}
+
+// 确保编辑底图就绪：优先 NEF 内嵌全尺寸预览，未变化直接命中缓存
+async function ensureEditBase(id, img) {
+  const cached = readEditBaseCache(id, img);
+  if (cached) return { ...cached, cached: true };
+
+  let source = 'jpg';
+  const basePath = path.join(getEditCacheDir(), `${id}-base.jpg`);
+  if (img.raw_path && fs.existsSync(img.raw_path)) {
+    const preview = await extractNefPreview(img.raw_path, basePath);
+    if (preview && preview.ok) source = 'nef';
+  }
+  const dims = await normalizeEditBase(source === 'nef' ? basePath : img.filepath, basePath);
+  const finalBase = dims.basePath || basePath;
+  writeEditBaseCache(id, img, finalBase, source);
+  return { basePath: finalBase, source, cached: false };
+}
+
 async function openEditSession(id) {
   const img = getImageById(id);
   if (!img) return { error: '图片不存在' };
@@ -334,21 +380,15 @@ async function openEditSession(id) {
     return { error: `清理临时文件失败：${e.message}` };
   }
 
-  // 编辑底图：优先 NEF 内嵌全尺寸预览（机内显影质量），无/失败回退 JPG 原图
-  let source = 'jpg';
-  let basePath = path.join(getEditCacheDir(), `${id}-base.jpg`);
-  if (img.raw_path && fs.existsSync(img.raw_path)) {
-    const preview = await extractNefPreview(img.raw_path, basePath);
-    if (preview && preview.ok) source = 'nef';
-  }
-  let dims;
+  // 编辑底图（带缓存：NEF/JPG 未变化直接命中，不再重复提取/规范化）
+  let baseInfo;
   try {
-    dims = await normalizeEditBase(source === 'nef' ? basePath : img.filepath, basePath);
-    // 含 alpha 输入的底图被 normalizeBase 改写为 PNG（JPEG 会毁掉透明通道）
-    if (dims.basePath) basePath = dims.basePath;
+    baseInfo = await ensureEditBase(id, img);
   } catch (e) {
     return { error: `准备编辑底图失败：${e.message}` };
   }
+  const { basePath, source } = baseInfo;
+  const dims = await getImageMeta(basePath);
 
   editSessions.set(id, {
     id,

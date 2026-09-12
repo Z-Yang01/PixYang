@@ -124,6 +124,9 @@ parentPort.on('message', async ({ id, type, filepath, nefPath, srcPath, outPath,
     } else if (type === 'nef-preview') {
       const result = await extractNefPreview(nefPath, outPath);
       parentPort.postMessage({ id, result });
+    } else if (type === 'meta') {
+      const meta = await sharp(filepath).metadata();
+      parentPort.postMessage({ id, result: { width: meta.width, height: meta.height } });
     } else if (type === 'normalize') {
       const result = await normalizeBase(srcPath, outPath);
       parentPort.postMessage({ id, result });
