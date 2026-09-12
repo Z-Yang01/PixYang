@@ -1014,7 +1014,7 @@ function setupIPC() {
   // ── 缩略图重生 ──
   // ── 批量删除 ──
   ipcMain.handle('db:batch-delete-images', async (_event, ids) => {
-    const results = batchDeleteImages(ids) || [];
+    const results = (await batchDeleteImages(ids)) || [];
     for (const r of results) if (r && !r.error) cleanupEditDerivedFiles(r.id);
     return results;
   });

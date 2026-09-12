@@ -738,3 +738,5 @@ Phase 1-6、8、10-14、16-17 全量落地；Phase 7（sRGB 工作空间转换 +
 ### 验证
 
 **534 passed / 0 failed**（+7：格式错配回归/护栏/缓存行为/并排断言）；golden 15/15。
+
+补充修复：批删 handler 对 async stub 返回 Promise 未 await（真实 batchDeleteImages 为同步不受影响，但防御性 await 更稳）。
