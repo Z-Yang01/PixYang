@@ -698,3 +698,11 @@ Phase 1-6、8、10-14、16-17 全量落地；Phase 7（sRGB 工作空间转换 +
 - encodeWith webp 分支（quality 生效）；exportEditSession 扩展名映射（-edited.webp）；
 - 导出对话框加 WebP 选项（质量滑杆对 webp 同样生效）。
 - 验证：WebP 800×600 同参比 JPEG 小 65%；533 例全绿；golden 15/15。
+
+---
+
+# 2026-09-12 优化批 3：1:1 实际像素缩放 + 对比/裁剪互斥（第 30 节收尾）
+
+- 缩放标签可点击：Fit ↔ 100% 实际像素切换（zoomActual = natural / fitW，从当前 rect 与 zoom 反推 fit 尺寸）——任务书第 30 节 "100% 时 1 screen pixel ≈ 1 image pixel"。
+- 对比/分屏/并排按钮进入时自动退出裁剪模式（消除分屏下残留裁剪框的 UX 粗糙点）。
+- 533 例全绿；golden 15/15。

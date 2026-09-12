@@ -932,7 +932,24 @@ export default function ImageViewer({
             <Info className="size-5" />
           </Button>
         )}
-        <span className="viewer-zoom-label">{Math.round(zoom * 100)}%</span>
+        {/* 任务书第 30 节：点击切换 Fit ↔ 100% 实际像素（1 screen pixel ≈ 1 image pixel） */}
+        <span
+          className="viewer-zoom-label"
+          style={{ cursor: 'pointer' }}
+          title="点击切换 适应窗口 / 实际像素 (100%)"
+          onClick={(e) => {
+            e.stopPropagation();
+            const el = editImgRef.current;
+            const natW = el?.naturalWidth || 0;
+            const dispW = el?.getBoundingClientRect().width || 0;
+            if (!natW || !dispW) return;
+            // 当前显示宽 = fitW × zoom → 实际像素倍率 = natural / fitW
+            const zoomActual = (natW * zoomRef.current) / dispW;
+            setZoom(z => (Math.abs(z - zoomActual) < 0.01 ? 1 : Math.min(5, Math.max(0.25, zoomActual))));
+          }}
+        >
+          {Math.round(zoom * 100)}%
+        </span>
       </div>
 
       <button
@@ -1003,7 +1020,7 @@ export default function ImageViewer({
             <Button
               variant="ghost" size="icon-xs"
               className={showBeforeOn && compareMode === 'toggle' ? 'is-active' : ''}
-              onClick={() => { setShowBefore(v => !(v && compareMode === 'toggle')); setCompareMode('toggle'); }}
+              onClick={() => { setShowBefore(v => !(v && compareMode === 'toggle')); setCompareMode('toggle'); setCropMode(false); }}
               title="整幅切换 Before/After（Before = NEF 显影/JPG 原图）"
             >
               对比
