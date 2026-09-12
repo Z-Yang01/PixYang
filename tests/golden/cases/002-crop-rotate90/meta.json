@@ -1,7 +1,7 @@
 {
   "width": 400,
   "height": 600,
-  "format": "jpeg",
+  "format": "png",
   "unsupported": [
     "curves",
     "hsl",

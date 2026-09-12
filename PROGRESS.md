@@ -345,3 +345,39 @@
 - **前端**：ImageGrid 两处 preferredThumb 改为 thumbnail_edit_path 优先（编辑预览 > 小图 > 中图）；useGalleryData 监听 edit-preview-ready bump thumbVersion 刷新 URL 缓存。
 - **顺带修复**：database.js 残留的 SQL 双引号字符串（`SET thumbnail = ""`）在 better-sqlite3 下报 "no such column"——迁移到单引号（sql.js 容忍、bs3 严格）。
 - 测试：+3（编辑预览读写/清理/LRU 505 行裁剪验证）；489 例全绿；端到端验证 1200×800 旋转 90° 保存 → 267×400 预览生成 ✓、DB 路径写入 ✓、clear 文件+记录双清 ✓。
+
+---
+
+# 2026-09-12 Bug 修复轮：编辑链路系统性审查（1 P0 + 8 P1 + 6 P2）
+
+两路独立审查（前端会话生命周期 / 渲染管线与数据层）+ 主进程核实，修复全部 P0/P1 与关键 P2。
+
+### P0
+
+- **烘焙可能覆盖错误图片**：enterEdit 的 `await editOpen` 窗口内可翻页/换图（editingRef 尚为 false），会话是旧图而 image 是新图 → 烘焙用旧图底图覆盖新图原文件。修复：editPendingRef 全程拦截导航（键盘+按钮），会话返回后两处校验 session.id 与当前图 id，不一致立即 editCancel 作废。
+
+### P1
+
+- **encode 阶段死参数**：format/quality 被解构后从未使用，.part 无扩展名 → sharp 回退输入格式 + Q80 默认。每次烘焙/导出都在静默 Q80 重编码。修复：applyEncode 显式 toFormat（jpeg q 可调/png/tiff），keepExif 保留元数据；M3 丢失的"输出格式跟随原图"联动恢复（bake/export 注入 session.format）。
+- **烘焙/导出丢失全部 EXIF**：新管线无 keepExif（旧 renderEdit 有），底图 normalizeBase 也未保留 → 产物无拍摄时间/相机信息。修复：normalizeBase 与 applyEncode 均加 keepExif。
+- **透明 PNG 烘焙后变黑底**：normalizeBase 输出 JPEG 把 alpha 按黑底合成，不可恢复。修复：alpha 输入自动改写 PNG 底图（返回 basePath 供会话消费，refreshEditPreview 双后缀探测）；烘焙 PNG 源保 alpha（端到端验证 ✓）；缩略图对 alpha 与白底合成。
+- **烘焙后参数不重置**：仅归零 orientation，重进编辑再烘焙 = 曝光/裁剪二次施加。修复：saveEditedImage 后参数整体重置为默认（保留 schemaVersion 与历史）。
+- **Escape/收藏移除绕过退出确认**：App 层 onEscape 直接 closeViewer → 会话泄漏、edit-cache 永久滞留。修复：viewerCloseGuardRef 关闭守卫（编辑态 Escape 转入未保存确认流程）+ 组件卸载兜底 editCancel（任何路径退出都会清理会话）。
+- **refreshEditPreview 无互斥**：快速连续保存并发写同一 edit-{id}.jpg（EPERM/坏图/旧参数上屏）。修复：per-id 串行化（running+dirty，完成后补渲最新参数）。
+- **烘焙与在途预览竞态**：烘焙清了 thumbnail_edit_path，在途预览稍后"复活"它，列表永久显示烘焙前效果。修复：世代令牌（bake/cancel 递增，渲染完成校验不符即丢弃产物）。
+- **烘焙后查看器显示陈旧**：rotation/flip 本地态未归零、文件路径未变浏览器缓存不失效 → 多转 90°/旧像素。修复：烘焙成功后归零 CSS 变换 + bust 版本号强制重载。
+
+### P2
+
+- LRU 语义错误（按 images.updated_at 只在导入/烘焙变化 → 实为导入顺序，刚生成的预览可能被当场清掉）→ 改按 edits.updated_at（"最近编辑过"才是最近使用）。
+- computeSourceHash 每次保存同步读整图卡主进程 → mtime/size 缓存键的异步缓存。
+- bakeEditSession 对 saveEditedImage 无 try/catch → 补 catch 返回明确错误。
+- closeRenderWorker 导出未调用 → before-quit 补上（双 worker 池关停）。
+- 崩溃残留 .render.jpg 无清理 → 启动时 cleanupStaleEditTmp。
+- decode 阶段对未规范化底图（含 EXIF 方向标记）告警，防几何坐标系错位。
+
+### 验证
+
+- 489 例全绿（bake/export 用例补真实底图文件、烘焙重置断言更新、LRU 用例改按 edits.updated_at）；golden 11/11（baseline 因 Q80→Q92 显式化刷新）；预览近似基线重算。
+- 端到端：alpha PNG 底图 hasAlpha ✓ → 烘焙产物 png+alpha ✓ → 参数整体重置 ✓ → 原图透明通道保留 ✓。
+- 修复过程中抓到并修正自身笔误：normalizeBase 返回字段 alphaBase/basePath 不一致（消费方读不到 alpha 底图路径）。

@@ -4,7 +4,7 @@ const path = require('path');
 const fs = require('fs');
 const exifr = require('exifr');
 const { generateThumbnailTiers, extractNefPreview, normalizeEditBase, closeWorker } = require('./imageWorker');
-const { renderFromEditParams, renderFromSpec, computeSourceHash, callWorker } = require('./render/index.cjs');
+const { renderFromEditParams, renderFromSpec, computeSourceHash, callWorker, closeRenderWorker } = require('./render/index.cjs');
 const {
   getEditPreviewPath, getEditPreviewPathFor, setEditPreviewPath, clearEditPreview, enforceEditPreviewLimit,
 } = require('./database');
@@ -284,6 +284,21 @@ function sendProgress(channel, payload) {
   }
 }
 
+// 清理上次进程崩溃残留的编辑渲染中间文件（thumbnails/*.render.jpg*）
+function cleanupStaleEditTmp() {
+  try {
+    const dir = path.join(app.getPath('userData'), 'thumbnails');
+    if (!fs.existsSync(dir)) return;
+    for (const name of fs.readdirSync(dir)) {
+      if (name.includes('.render.jpg')) {
+        try { fs.unlinkSync(path.join(dir, name)); } catch { /* 占用中跳过 */ }
+      }
+    }
+  } catch (e) {
+    console.error('[编辑预览] 残留清理失败:', e.message);
+  }
+}
+
 // ── 编辑会话（LR-like 非破坏）──
 // open 准备规范化底图（NEF 有配对时取其内嵌全尺寸预览，否则用原图）；
 // 保存 = 只写 edits.params_json（参数化，像素不动）；
@@ -321,7 +336,7 @@ async function openEditSession(id) {
 
   // 编辑底图：优先 NEF 内嵌全尺寸预览（机内显影质量），无/失败回退 JPG 原图
   let source = 'jpg';
-  const basePath = path.join(getEditCacheDir(), `${id}-base.jpg`);
+  let basePath = path.join(getEditCacheDir(), `${id}-base.jpg`);
   if (img.raw_path && fs.existsSync(img.raw_path)) {
     const preview = await extractNefPreview(img.raw_path, basePath);
     if (preview && preview.ok) source = 'nef';
@@ -329,6 +344,8 @@ async function openEditSession(id) {
   let dims;
   try {
     dims = await normalizeEditBase(source === 'nef' ? basePath : img.filepath, basePath);
+    // 含 alpha 输入的底图被 normalizeBase 改写为 PNG（JPEG 会毁掉透明通道）
+    if (dims.basePath) basePath = dims.basePath;
   } catch (e) {
     return { error: `准备编辑底图失败：${e.message}` };
   }
@@ -338,6 +355,7 @@ async function openEditSession(id) {
     filepath: img.filepath,
     basePath,
     source,
+    // 输出格式跟随原图（PNG 源保持 alpha），不跟随 NEF 底图
     format: ext === '.png' ? '.png' : '.jpg',
   });
 
@@ -354,7 +372,8 @@ async function openEditSession(id) {
 }
 
 // 烘焙替代：渲染 EditParams → 原名-temp → 原子替代原图（saveEditedImage 内含
-// DB 事务更新、orientation 归零双写、缩略图清空），随后后台重生成缩略图
+// DB 事务更新、参数重置、缩略图清空），随后后台重生成缩略图。
+// 输出格式跟随原图扩展名（PNG 源保持 alpha）。
 async function bakeEditSession(id, edits) {
   const session = editSessions.get(id);
   if (!session) return { error: '编辑会话不存在' };
@@ -362,19 +381,29 @@ async function bakeEditSession(id, edits) {
   const tempPath = editTempPathFor(session.filepath);
   let dims;
   try {
-    dims = await renderFromEditParams(edits, {
-      inputPath: session.basePath,
-      outputPath: tempPath,
-      sourceHash: computeSourceHash(session.basePath),
-    });
+    dims = await renderFromEditParams(
+      { ...edits, output: { ...edits?.output, format: session.format === '.png' ? 'png' : 'jpeg' } },
+      {
+        inputPath: session.basePath,
+        outputPath: tempPath,
+        sourceHash: await computeSourceHashCached(session.basePath),
+      }
+    );
   } catch (e) {
     return { error: `渲染失败：${e.message}` };
   }
 
-  const saved = saveEditedImage(id, tempPath, { width: dims.width, height: dims.height });
+  let saved;
+  try {
+    saved = saveEditedImage(id, tempPath, { width: dims.width, height: dims.height });
+  } catch (e) {
+    return { error: `保存失败：${e.message}（像素可能已替换，请重新进入编辑确认）` };
+  }
   if (saved.error) return saved;
 
-  // 烘焙后原图已是参数效果：编辑预览缩略图失去意义，清掉（缩略图由 rebuild 重生成）
+  // 烘焙后原图已是参数效果：编辑预览缩略图失去意义，清掉（缩略图由 rebuild 重生成）；
+  // 递增世代使任何在途预览渲染作废
+  bumpEditPreviewGeneration(id);
   clearEditPreview(id);
 
   editSessions.delete(id);
@@ -402,11 +431,14 @@ async function exportEditSession(id, edits, destDir) {
   }
 
   try {
-    const dims = await renderFromEditParams(edits, {
-      inputPath: session.basePath,
-      outputPath: dest,
-      sourceHash: computeSourceHash(session.basePath),
-    });
+    const dims = await renderFromEditParams(
+      { ...edits, output: { ...edits?.output, format: session.format === '.png' ? 'png' : 'jpeg' } },
+      {
+        inputPath: session.basePath,
+        outputPath: dest,
+        sourceHash: await computeSourceHashCached(session.basePath),
+      }
+    );
     return { ok: true, path: dest, width: dims.width, height: dims.height };
   } catch (e) {
     return { error: `导出失败：${e.message}` };
@@ -415,37 +447,94 @@ async function exportEditSession(id, edits, destDir) {
 
 function cancelEditSession(id) {
   const session = editSessions.get(id);
-  if (!session) return { ok: true };
-  try {
-    if (fs.existsSync(session.basePath)) fs.unlinkSync(session.basePath);
-  } catch (e) {
-    console.error('[编辑] 清理失败:', e.message);
+  // 递增预览世代：在途的编辑预览渲染完成后发现世代不符即丢弃，防止"复活"已被烘焙/取消清掉的预览
+  bumpEditPreviewGeneration(id);
+  if (session) {
+    try {
+      if (fs.existsSync(session.basePath)) fs.unlinkSync(session.basePath);
+    } catch (e) {
+      console.error('[编辑] 清理失败:', e.message);
+    }
+    editSessions.delete(id);
   }
-  editSessions.delete(id);
   return { ok: true };
 }
 
-// 编辑预览缩略图：按当前参数渲染 400px 存 thumbnails/edit-{id}.jpg（LR 同款列表显示）。
-// 复用编辑底图缓存（edit-cache/{id}-base.jpg）；无缓存时异步重建底图。
-async function refreshEditPreview(id, params) {
+// ── 编辑预览缩略图（LRU + 去重 + 世代令牌）──
+// 同 id 串行化：进行中时只更新 dirty 参数，完成后补渲最新一次，避免并发写坏同一输出文件。
+// 世代令牌：烘焙/取消会递增世代，在途渲染完成后校验，不符则丢弃（不写路径不发事件）。
+const editPreviewStates = new Map(); // id -> { running, dirty }
+const editPreviewGeneration = new Map(); // id -> number
+
+function bumpEditPreviewGeneration(id) {
+  editPreviewGeneration.set(id, (editPreviewGeneration.get(id) || 0) + 1);
+}
+
+// 底图内容哈希缓存（key 含 mtime/size，路径复用时自动失效；避免每次保存同步读整图卡主进程）
+const sourceHashCache = new Map();
+async function computeSourceHashCached(inputPath) {
+  const stat = fs.statSync(inputPath);
+  const key = `${inputPath}:${stat.mtimeMs}:${stat.size}`;
+  const hit = sourceHashCache.get(key);
+  if (hit) return hit;
+  const hash = await computeSourceHash(inputPath);
+  sourceHashCache.set(key, hash);
+  return hash;
+}
+
+async function renderEditPreviewOnce(id, params, generation) {
   const img = getImageById(id);
   if (!img || img.hidden) return null;
-  const basePath = path.join(getEditCacheDir(), `${id}-base.jpg`);
+  // 底图可能是 jpg（默认）或 .jpg.png（alpha 输入被 normalizeBase 改写），两者取先存在者
+  let basePath = path.join(getEditCacheDir(), `${id}-base.jpg`);
+  if (!fs.existsSync(basePath)) basePath = `${basePath}.png`;
   if (!fs.existsSync(basePath)) {
+    const fallback = path.join(getEditCacheDir(), `${id}-base.jpg`);
     let source = img.filepath;
     if (img.raw_path && fs.existsSync(img.raw_path)) {
-      const preview = await extractNefPreview(img.raw_path, basePath);
-      if (preview && preview.ok) source = basePath;
+      const preview = await extractNefPreview(img.raw_path, fallback);
+      if (preview && preview.ok) source = fallback;
     }
-    await normalizeEditBase(source, basePath);
+    const dims = await normalizeEditBase(source, fallback);
+    basePath = dims.basePath || fallback;
   }
   const previewPath = getEditPreviewPath(id);
-  const spec = editParamsToRenderSpec(params, { sourceHash: computeSourceHash(basePath) });
+  const spec = editParamsToRenderSpec(params, { sourceHash: await computeSourceHashCached(basePath) });
   await callWorker({ type: 'edit-preview', srcPath: basePath, outPath: previewPath, spec });
+  // 世代校验：烘焙/取消已发生则本次渲染作废（不复活被清掉的预览）
+  if (editPreviewGeneration.get(id) !== generation) {
+    try {
+      if (fs.existsSync(previewPath)) fs.unlinkSync(previewPath);
+    } catch { /* 清理失败无碍 */ }
+    return null;
+  }
   setEditPreviewPath(id, previewPath);
   enforceEditPreviewLimit();
   sendProgress('edit-preview-ready', { id, path: previewPath });
   return previewPath;
+}
+
+async function refreshEditPreview(id, params) {
+  const st = editPreviewStates.get(id) || { running: false, dirty: null };
+  st.dirty = params;
+  editPreviewStates.set(id, st);
+  if (st.running) return null;
+  st.running = true;
+  const generation = editPreviewGeneration.get(id) || 0;
+  try {
+    while (st.dirty) {
+      const latest = st.dirty;
+      st.dirty = null;
+      if (editPreviewGeneration.get(id) !== generation) break;
+      await renderEditPreviewOnce(id, latest, generation);
+    }
+  } catch (e) {
+    console.error('[编辑预览] 生成失败:', e.message);
+  } finally {
+    st.running = false;
+    if (!st.dirty) editPreviewStates.delete(id);
+  }
+  return null;
 }
 
 // 后台为缺失缩略图的图片补生成（防抖，分批让出事件循环避免阻塞主进程）
@@ -876,6 +965,7 @@ app.whenReady().then(async () => {
   // 移除默认菜单栏 (File/Edit/View 等)
   Menu.setApplicationMenu(null);
   await initDatabase();
+  cleanupStaleEditTmp();
   setupIPC();
   createWindow();
 
@@ -902,5 +992,6 @@ app.on('window-all-closed', () => {
 
 app.on('before-quit', () => {
   closeWorker();
+  closeRenderWorker();
   closeDatabase();
 });

@@ -845,6 +845,8 @@ describe('编辑会话（非破坏保存）', () => {
     fs.writeFileSync(path.join(FIXTURES, 'editme.jpg'), 'img');
     dbStub.getImageById.mockReturnValue(editImage());
     await call('fs:edit-open', 77);
+    // computeSourceHashCached 会 statSync 底图（stub 的 normalizeEditBase 不真写盘）
+    fs.writeFileSync(path.join(USER_DATA, 'edit-cache', '77-base.jpg'), 'base');
 
     renderModuleStub.renderFromEditParams.mockResolvedValueOnce({ ok: true, width: 800, height: 600 });
     const baked = { id: 77, filename: 'editme.jpg', filepath: path.join(FIXTURES, 'editme.jpg') };
@@ -871,6 +873,7 @@ describe('编辑会话（非破坏保存）', () => {
 
     const destDir = path.join(TMP_BASE, 'export-dir');
     fs.mkdirSync(destDir, { recursive: true });
+    fs.writeFileSync(path.join(USER_DATA, 'edit-cache', '77-base.jpg'), 'base'); // hash 缓存 statSync 需要
     renderModuleStub.renderFromEditParams.mockResolvedValue({ ok: true, width: 800, height: 600 });
     const r1 = await call('fs:edit-export', 77, sampleEdits, destDir);
     expect(r1.ok).toBe(true);

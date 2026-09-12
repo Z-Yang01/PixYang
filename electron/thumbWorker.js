@@ -1,19 +1,25 @@
 const { parentPort } = require('worker_threads');
 const sharp = require('sharp');
+const path = require('path');
 
 const THUMB_SMALL_SIZE = 160;
 const THUMB_MEDIUM_SIZE = 400;
 
+// 缩略图双档：含 alpha 的输入与白底合成（默认黑底在深色 UI 外不可预期）
 async function generateTiers(filepath) {
   const meta = await sharp(filepath, { failOn: 'none' }).metadata();
   if (!meta.width || !meta.height) return null;
   // rotate() 无参按 EXIF 方向转正，竖图也能产出方向正确的缩略图
-  const make = (maxSide) =>
-    sharp(filepath, { failOn: 'none' })
-      .rotate()
-      .resize({ width: maxSide, height: maxSide, fit: 'inside' })
-      .jpeg({ quality: 80 })
-      .toBuffer();
+  const make = (maxSide) => {
+    let p = sharp(filepath, { failOn: 'none' }).rotate().resize({ width: maxSide, height: maxSide, fit: 'inside' });
+    if (meta.hasAlpha) {
+      p = p.composite([{
+        input: Buffer.from(`<svg width="${maxSide}" height="${maxSide}"><rect width="100%" height="100%" fill="#ffffff"/></svg>`),
+        blend: 'destination-over',
+      }]);
+    }
+    return p.jpeg({ quality: 80 }).toBuffer();
+  };
   const [small, medium] = await Promise.all([make(THUMB_SMALL_SIZE), make(THUMB_MEDIUM_SIZE)]);
   const swapped = meta.orientation >= 5;
   return {
@@ -65,12 +71,24 @@ async function extractNefPreview(nefPath, outPath) {
   return { ok: true, width: finalMeta.width, height: finalMeta.height };
 }
 
-// 规范化编辑底图：auto-orient 转正 + 去方向标记，后续渲染/预览均以像素方向为准
+// 规范化编辑底图：auto-orient 转正 + 去方向标记，保留 EXIF（拍摄时间等），后续渲染/预览均以像素方向为准。
+// 含 alpha 的输入写 PNG 底图（JPEG 会把透明区按黑底合成，烘焙后不可恢复）。
+// 返回 { width, height, basePath }：basePath 为实际写出的底图路径（alpha 输入时是 .jpg.png）
 async function normalizeBase(srcPath, outPath) {
-  const buf = await sharp(srcPath, { failOn: 'none' }).rotate().jpeg({ quality: 92 }).toBuffer();
-  const meta = await sharp(buf).metadata();
+  const src = sharp(srcPath, { failOn: 'none' });
+  const meta = await src.metadata();
+  let pipeline = src.rotate().keepExif();
+  const isPng = path.extname(outPath).toLowerCase() === '.png';
+  if (meta.hasAlpha && !isPng) {
+    const pngPath = `${outPath}.png`;
+    await pipeline.png().toFile(pngPath);
+    const pngMeta = await sharp(pngPath).metadata();
+    return { width: pngMeta.width, height: pngMeta.height, basePath: pngPath };
+  }
+  const buf = await pipeline.jpeg({ quality: 92 }).toBuffer();
+  const outMeta = await sharp(buf).metadata();
   await fsWrite(outPath, buf);
-  return { width: meta.width, height: meta.height };
+  return { width: outMeta.width, height: outMeta.height, basePath: outPath };
 }
 
 const fs = require('fs');

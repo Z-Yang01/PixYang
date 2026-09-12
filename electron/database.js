@@ -77,13 +77,16 @@ function clearEditPreview(id) {
   setEditPreviewPath(id, '');
 }
 
-// LRU：编辑预览文件数超过上限时，按记录 updated_at 清最旧（含文件与路径列）
+// LRU：编辑预览文件数超过上限时清最旧（按 edits.updated_at——"最近编辑过"才是该预览的最近使用；
+// images.updated_at 只在导入/烘焙时变化，语义不对）。清文件与路径列，edits 行保留（下次保存自愈）。
 function enforceEditPreviewLimit() {
   try {
     const rows = db.prepare(`
-      SELECT id, thumbnail_edit_path FROM images
-      WHERE thumbnail_edit_path != ''
-      ORDER BY updated_at DESC
+      SELECT i.id, i.thumbnail_edit_path
+      FROM images i
+      LEFT JOIN edits e ON e.image_id = i.id
+      WHERE i.thumbnail_edit_path != ''
+      ORDER BY COALESCE(e.updated_at, '1970-01-01') DESC
     `).all();
     if (rows.length <= EDIT_PREVIEW_LIMIT) return 0;
     let removed = 0;
@@ -1304,14 +1307,11 @@ function saveEditedImage(id, tempPath, { width, height }) {
   deleteThumbnailFile(id);
   saveDatabase();
 
-  // 烘焙后 orientation 已进像素：参数侧同步归零（其余参数保留），无参数行则不动
+  // 烘焙后效果已写入像素：参数重置为默认（保留 schemaVersion 与历史记录），否则重进编辑会二次施加
   const editRow = getEdits(id);
   if (editRow) {
-    const zeroed = {
-      ...editRow.params,
-      orientation: { rotate: 0, flipH: false, flipV: false },
-    };
-    db.prepare('UPDATE edits SET params_json = ? WHERE image_id = ?').run(JSON.stringify(zeroed), id);
+    const reset = { ...DEFAULT_EDITS(), schemaVersion: editRow.params.schemaVersion };
+    db.prepare('UPDATE edits SET params_json = ? WHERE image_id = ?').run(JSON.stringify(reset), id);
   }
   return getImageById(id);
 }

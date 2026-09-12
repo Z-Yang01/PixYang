@@ -19,7 +19,7 @@ const clamp = (v, min, max) => Math.min(max, Math.max(min, v));
 
 export default function ImageViewer({
   image, imageIndex = 0, totalCount = 0, onClose, onPrev, onNext, hasPrev, hasNext, onImageUpdated,
-  onOpenInfo,
+  onOpenInfo, closeGuardRef,
 }) {
   const [thumbSrc, setThumbSrc] = useState(null);
   const [fullSrc, setFullSrc] = useState(null);
@@ -65,6 +65,14 @@ export default function ImageViewer({
   editOpsRef.current = editOps;
   const editingRef = useRef(false);
   editingRef.current = editing;
+  // 会话身份与生命周期：编辑会话建立/进行期间禁止换图（否则烘焙可能覆盖另一张图的原文件）
+  const editPendingRef = useRef(false);
+  const editSessionRef = useRef(null);
+  const imageIdRef = useRef(null);
+  imageIdRef.current = image?.id;
+  const bustRef = useRef(0); // 烘焙后像素已变，URL 加版本参数强制重载
+  const [bust, setBust] = useState(0);
+  bustRef.current = bust;
   const historyRef = useRef(null); // { stack: [ops], index }
   const savedBaselineRef = useRef(null); // 最近一次保存的参数快照（dirty 判定基线）
 
@@ -114,6 +122,7 @@ export default function ImageViewer({
 
   const cleanupEditSession = useCallback(() => {
     setEditSession(null);
+    editSessionRef.current = null;
     setEditBaseSrc(null);
     setEditOps({ ...EDIT_DEFAULTS });
     setCropMode(false);
@@ -125,18 +134,30 @@ export default function ImageViewer({
   }, []);
 
   const enterEdit = useCallback(async () => {
-    if (!image || editBusy) return;
+    if (!image || editBusy || editPendingRef.current) return;
+    const requestedId = image.id;
+    editPendingRef.current = true; // 会话建立期间禁止翻页/换图（防烘焙覆盖另一张图）
     setEditBusy(true);
     setEditError('');
     try {
-      const session = await api.editOpen(image.id);
+      const session = await api.editOpen(requestedId);
+      // await 期间用户可能已换图：会话与当前图不一致时立即作废，绝不挂错图
+      if (imageIdRef.current !== requestedId) {
+        api.editCancel(requestedId);
+        return;
+      }
       if (!session || session.error) {
         setEditError(session?.error || '无法进入编辑模式');
         return;
       }
       const url = await api.toFileUrl(session.basePath);
+      if (imageIdRef.current !== requestedId) {
+        api.editCancel(requestedId);
+        return;
+      }
+      editSessionRef.current = session;
       setEditSession(session);
-      setEditBaseSrc(url);
+      setEditBaseSrc(url ? `${url}${url.includes('?') ? '&' : '?'}v=${bustRef.current}` : null);
       // 已保存的参数优先；无参数时从记录上的 CSS 变换初始化（legacy 兼容）
       const initial = session.savedEdits
         ? fromEditParams(session.savedEdits.params)
@@ -153,6 +174,7 @@ export default function ImageViewer({
       setZoom(1);
       setPos({ x: 0, y: 0 });
     } finally {
+      editPendingRef.current = false;
       setEditBusy(false);
     }
   }, [image, editBusy]);
@@ -246,7 +268,13 @@ export default function ImageViewer({
       }
       setBakeConfirm(false);
       setEditing(false);
+      editSessionRef.current = null;
       cleanupEditSession();
+      // 像素已含变换：CSS 旋转/翻转归零，bust 版本号强制重载文件 URL（内容已变路径未变）
+      setRotation(0);
+      setFlipH(false);
+      setFlipV(false);
+      setBust(b => b + 1);
       toast.success('已烘焙并替代原图');
       // 结构性变化：像素/尺寸/缩略图已变，走全量刷新（查看器内 image 由 App 同步 effect 更新）
       onImageUpdated?.();
@@ -454,8 +482,8 @@ export default function ImageViewer({
       e.preventDefault();
       switch (action) {
         case VIEWER_ACTIONS.Close: editingRef.current ? requestExitEdit() : onClose(); break;
-        case VIEWER_ACTIONS.Prev: if (hasPrev && !editingRef.current) onPrev(); break;
-        case VIEWER_ACTIONS.Next: if (hasNext && !editingRef.current) onNext(); break;
+        case VIEWER_ACTIONS.Prev: if (hasPrev && !editingRef.current && !editPendingRef.current) onPrev(); break;
+        case VIEWER_ACTIONS.Next: if (hasNext && !editingRef.current && !editPendingRef.current) onNext(); break;
         case VIEWER_ACTIONS.ZoomIn: setZoom(z => Math.min(z + 0.25, 5)); break;
         case VIEWER_ACTIONS.ZoomOut: setZoom(z => Math.max(z - 0.25, 0.25)); break;
         case VIEWER_ACTIONS.RotateCw: applyRotate(90); break;
@@ -479,19 +507,52 @@ export default function ImageViewer({
   }, [hasPrev, hasNext, image, onClose, onPrev, onNext, toggleFavorite, setRating, onOpenInfo, applyRotate, applyFlip, requestExitEdit, applyHistory]);
 
   // 加载策略：中图占位，原图异步替换；列表小图不用于查看器
+  // bust 版本号：烘焙替代后文件内容已变而路径不变，加版本参数绕过浏览器缓存
   const loadImage = async () => {
     if (!image || !window.pixyang) return;
     const loadId = image.id;
+    const v = bustRef.current;
     setThumbSrc(null);
     setFullSrc(null);
     setFullLoaded(false);
     if (image.thumbnail_path) {
       const thumb = await window.pixyang.toFileUrl(image.thumbnail_path);
-      if (image.id === loadId && thumb) setThumbSrc(thumb);
+      if (image.id === loadId && thumb) setThumbSrc(`${thumb}${thumb.includes('?') ? '&' : '?'}v=${v}`);
     }
     const url = await window.pixyang.toFileUrl(image.filepath);
-    if (image.id === loadId) setFullSrc(url || null);
+    if (image.id === loadId) setFullSrc(url ? `${url}${url.includes('?') ? '&' : '?'}v=${v}` : null);
   };
+
+  // ── 生命周期守护 ──
+  // App 层 Escape 先经此守卫：编辑态时交给组件自身走"未保存确认"流程而非直接关闭
+  useEffect(() => {
+    if (!closeGuardRef) return undefined;
+    closeGuardRef.current = () => {
+      if (editingRef.current || editPendingRef.current) {
+        requestExitEdit();
+        return true; // 已拦截
+      }
+      return false;
+    };
+    return () => { closeGuardRef.current = null; };
+  }, [closeGuardRef, requestExitEdit]);
+
+  // 组件卸载兜底：无论何种路径退出（收藏页取消收藏移除图片、外部关闭等），
+  // 只要有会话就通知主进程清理，杜绝 edit-cache 底图泄漏
+  useEffect(() => () => {
+    if (editSessionRef.current) {
+      api.editCancel(editSessionRef.current.id);
+    }
+  }, []);
+
+  // 烘焙替代后强制重载像素（bust 版本号变化；id 未变所以主 effect 不会自动跑）
+  useEffect(() => {
+    if (bust > 0 && !editingRef.current) {
+      loadImage();
+      setZoom(1);
+      setPos({ x: 0, y: 0 });
+    }
+  }, [bust]);
 
   // 鼠标拖拽平移（裁剪模式时转为框选/移动裁剪框）
   const handleMouseDown = (e) => {
@@ -678,12 +739,12 @@ export default function ImageViewer({
         <X className="size-5" />
       </button>
 
-      {!editing && hasPrev && (
+      {!editing && !editPendingRef.current && hasPrev && (
         <button className="viewer-nav" style={{ left: 20 }} onClick={(e) => { e.stopPropagation(); onPrev(); }}>
           <ChevronLeft className="size-6" />
         </button>
       )}
-      {!editing && hasNext && (
+      {!editing && !editPendingRef.current && hasNext && (
         <button className="viewer-nav" style={{ right: 20 }} onClick={(e) => { e.stopPropagation(); onNext(); }}>
           <ChevronRight className="size-6" />
         </button>

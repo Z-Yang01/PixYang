@@ -422,6 +422,8 @@ export default function App() {
         return true;
       }
       if (viewerImageRef.current) {
+        // 编辑态时由查看器接管（未保存确认流程），不直接关闭
+        if (viewerCloseGuardRef.current?.()) return true;
         closeViewer();
         return true;
       }
@@ -450,6 +452,8 @@ export default function App() {
   selectionSizeRef.current = selectedIds.size;
   const handleSelectAllAllRef = useRef(null);
   handleSelectAllAllRef.current = handleSelectAllAll;
+  // 查看器关闭守卫：编辑态 Escape 交给查看器走未保存确认，而非直接关闭（否则会话泄漏）
+  const viewerCloseGuardRef = useRef(null);
 
   // / 与 /favorites 共用同一实例，切换时不重挂、保留网格缓存。
   // 注意：react-router-dom v6 的 <Route path> 不支持数组（v7 才支持），
@@ -538,6 +542,7 @@ export default function App() {
             imageIndex={viewerIndex}
             totalCount={totalImages}
             onClose={closeViewer}
+            closeGuardRef={viewerCloseGuardRef}
             onPrev={viewerPrev}
             onNext={viewerNext}
             hasPrev={viewerIndex > 0}

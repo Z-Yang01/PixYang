@@ -17,7 +17,7 @@ async function renderSpecToSharp(spec, inputPath, outputPath) {
 
   // 灰度输入（bands<3）不支持线性数组形式：通道差异化算子（色温/色调）按 bands 降级
   const meta = await sharp(inputPath).metadata();
-  const ctx = { bands: meta.channels || 3 };
+  const ctx = { bands: meta.channels || 3, exifOrientation: meta.orientation || 1 };
 
   for (const stage of spec.stages) {
     if (stage.unsupported || UNSUPPORTED_STAGES.has(stage.kind)) {
@@ -43,7 +43,11 @@ async function renderSpecToSharp(spec, inputPath, outputPath) {
 async function applyStage(pipe, stage, colorSpace, ctx) {
   switch (stage.kind) {
     case 'decode':
-      // M3：常规格式直读（底图已规范化转正）；M8 在此替换 libraw 解码
+      // M3：常规格式直读（底图已规范化转正）；M8 在此替换 libraw 解码。
+      // 防护：带 EXIF 方向标记的底图未规范化，几何 stage 会按未转正坐标系裁剪——告警提示走 normalizeBase
+      if (ctx?.exifOrientation && ctx.exifOrientation > 1) {
+        console.warn(`[render] 底图含 EXIF 方向标记（orientation=${ctx.exifOrientation}），应先经 normalizeBase 规范化，否则几何操作坐标系错误`);
+      }
       return pipe;
 
     case 'whiteBalance':
@@ -156,17 +160,29 @@ function applyCrop(pipe, params) {
 }
 
 function applyEncode(pipe, { format = 'jpeg', quality = 92, resize = null } = {}, colorSpace) {
+  let out = pipe;
   if (resize && (resize.width || resize.height)) {
-    pipe = pipe.resize({ width: resize.width || undefined, height: resize.height || undefined, fit: 'inside' });
+    out = out.resize({
+      width: resize.width || undefined,
+      height: resize.height || undefined,
+      fit: 'inside',
+      withoutEnlargement: true,
+    });
   }
+  // 保留底图元数据（拍摄时间/相机等）；EXIF 方向标记已由底图规范化去除，不会双重转正
+  out = out.keepExif();
   // M3 working/output 均为 sRGB；ICC 管线（icc_transform）在 M8 引入
   if (colorSpace?.output && colorSpace.output !== 'srgb') {
     console.warn(`[render] 输出色彩空间 ${colorSpace.output} 尚未实现（ICC），按 sRGB 输出`);
   }
-  return pipe;
+  // 显式定格式与质量：不依赖输出扩展名推断（.part 无扩展名会回退输入格式 + Q80 默认）
+  if (format === 'png') return out.png({ compressionLevel: 8 });
+  if (format === 'tiff') return out.tiff({ compression: 'lzw' });
+  return out.jpeg({ quality: clampInt(quality, 1, 100, 92) });
 }
 
 const fs = require('fs');
 function clampNum(v, min, max) { return Math.min(max, Math.max(min, v)); }
+function clampInt(v, min, max) { return Math.min(max, Math.max(min, Math.round(v))); }
 
 module.exports = { renderSpecToSharp, applyStage };
