@@ -278,6 +278,8 @@ async function extractExifBatch(files, onProgress, assignDate) {
   }
 }
 
+const RENDER_VERSION = 'render-1'; // 渲染管线实现版本：算子语义变化时递增，编辑预览缓存全量失效
+
 function sendProgress(channel, payload) {
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send(channel, payload);
@@ -552,8 +554,18 @@ async function renderEditPreviewOnce(id, params, generation) {
     basePath = dims.basePath || fallback;
   }
   const previewPath = getEditPreviewPath(id);
+  // 缓存键校验：同一 edits.version 且预览文件存在 → 跳过重渲染
+  const version = getEdits(id)?.version || 0;
+  const previewMetaPath = `${previewPath}.meta.json`;
+  try {
+    const prevMeta = JSON.parse(fs.readFileSync(previewMetaPath, 'utf8'));
+    if (prevMeta.editVersion === version && fs.existsSync(previewPath)) return previewPath;
+  } catch { /* 无缓存元数据，继续渲染 */ }
   const spec = editParamsToRenderSpec(params, { sourceHash: await computeSourceHashCached(basePath) });
   await callWorker({ type: 'edit-preview', srcPath: basePath, outPath: previewPath, spec });
+  try {
+    fs.writeFileSync(previewMetaPath, JSON.stringify({ editVersion: version, renderVersion: RENDER_VERSION }));
+  } catch (e) { console.error('[编辑预览] 缓存元数据写入失败:', e.message); }
   // 世代校验：烘焙/取消已发生则本次渲染作废（不复活被清掉的预览）
   if (editPreviewGeneration.get(id) !== generation) {
     try {

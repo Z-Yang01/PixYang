@@ -71,6 +71,8 @@ function clearEditPreview(id) {
   const p = getEditPreviewPath(id);
   try {
     if (fs.existsSync(p)) fs.unlinkSync(p);
+    // 缓存键元数据一并删除，防止烘焙后版本号巧合匹配导致跳过重渲染
+    if (fs.existsSync(`${p}.meta.json`)) fs.unlinkSync(`${p}.meta.json`);
   } catch (e) {
     console.error('[编辑预览] 删除失败:', e.message);
   }

@@ -489,3 +489,19 @@
 - Phase 9 渲染取消 requestRequestId 贯通
 - Phase 13 side-by-side/split 对比视图
 - 缩略图缓存键升级（editVersion:renderVersion:size）
+
+---
+
+# 2026-09-12 任务书实施批 3：缩略图缓存键 + ICC 保留
+
+- 编辑预览缓存键升级：`edit-{id}.jpg.meta.json` 记录 editVersion + renderVersion；同一版本且文件存在 → 跳过重渲染；渲染器实现版本 RENDER_VERSION 变更全量失效（任务书第十四节：imageId:editVersion:renderVersion:size 语义的最小落地）。
+- clearEditPreview 同步删除缓存元数据侧车（防烘焙后版本号巧合匹配跳过重渲染）。
+- Phase 7 最小落地：encode 阶段 keepIccProfile——AdobeRGB/Display P3 输入的 ICC profile 不再丢失，导出颜色不漂移；完整输入 profile 转换（lcms/libvips icc_transform）留 M8。
+- 501 例全绿；golden 15/15。
+
+### 剩余批次（记录待续）
+
+- Phase 7 深化：输入 profile 识别与 working space 转换、4 类色彩输入 golden case
+- Phase 9：requestRequestId 贯通全链路
+- Phase 13：side-by-side/split 对比视图
+- M8：libraw RAW 解码（前置：许可证确认）

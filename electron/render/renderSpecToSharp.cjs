@@ -215,9 +215,9 @@ async function encodeAndWrite(pixels, inputPath, outputPath, encodeStage, spec, 
       if (s.kind === 'geometry' && hasGeometry(s.params)) metaBase = applyGeometry(metaBase, s.params);
       else if (s.kind === 'crop') metaBase = applyCrop(metaBase, s.params, ctx);
     }
-    out = metaBase.composite([{ input: editedPng, blend: 'over' }]).keepExif();
+    out = metaBase.composite([{ input: editedPng, blend: 'over' }]).keepExif().keepIccProfile();
   } else {
-    out = sharp(inputPath, { failOn: 'none', unlimited: true }).keepExif();
+    out = sharp(inputPath, { failOn: 'none', unlimited: true }).keepExif().keepIccProfile();
   }
 
   if (resize && (resize.width || resize.height)) {
