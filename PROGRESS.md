@@ -671,3 +671,21 @@ Phase 1-6、8、10-14、16-17 全量落地；Phase 7（sRGB 工作空间转换 +
 - **530 passed / 0 failed**（+3）；golden 15/15。
 
 教训：交付缓存类功能时，缓存键的每个维度都必须有命中/失效双向测试——只测写入不测命中条件，版本维度漏比对这类缺陷无法暴露。
+
+---
+
+# 2026-09-12 优化批：代理分辨率预览渲染（任务书第 20 节核心落地）
+
+- **shared/renderSpec.cjs buildProxySpec**：decode 标记 proxyLongEdge + crop 坐标等比缩放（scale = target/长边）；小图（≤target）原样返回。影调/几何/编码语义不变——缩略图与烘焙产物同一 RenderSpec 语义，仅分辨率不同。
+- **renderSpecToSharp decode**：支持 params.proxyLongEdge（decode 后立即 fit-inside 缩放，后续算子在 ~400px 图上执行）。
+- **main renderEditPreviewOnce**：预览渲染自动代理化——getImageMeta 后 buildProxySpec(spec, w, h, 400)。批量同步 50 张的预览渲染排队从 ~40s 降到 ~2s 量级。
+- 性能实测：6000×4000 带几何+裁剪+影调 代理渲染 95ms vs 全分辨率 726ms（**8x**）；代理 crop 语义与全分辨率一致（同区域中心像素一致验证）。
+
+### 过程修复
+
+- decode 代理改造时引入 `pipe` 未定义 ReferenceError（检查点架构下 decode case 无 pipe 变量）——色彩转换对 tagged 输入曾因此崩溃，颜色测试立即捕获；改为 decodePipe 局部链 + 按需 materialize。
+- 代理 crop 语义验证：rotate 90 后代理空间裁剪与全分辨率裁剪中心像素一致。
+
+### 验证
+
+- **533 passed / 0 failed**（+6：buildProxySpec 2 例、proxyLongEdge 渲染 1 例、色彩回归 3 例保持）；golden 15/15。

@@ -219,3 +219,23 @@ describe('导出缩放路径（两段式 composite+resize）', () => {
     expect(meta.height).toBe(30);
   });
 });
+
+
+describe('代理分辨率渲染（edit-preview 路径）', () => {
+  it('proxyLongEdge：decode 后缩放，crop 坐标为代理空间', async () => {
+    const input = path.join(TMP, 'proxy-src.jpg');
+    // 2000x1200 图，代理到长边 400（scale=0.2），裁剪框全图右半 x=1000..2000, y=0..1200 → 代理 200x240
+    await sharp({ create: { width: 2000, height: 1200, channels: 3, background: 'red' } }).jpeg().toFile(input);
+    const stages = baseSpecStages();
+    stages.find((st) => st.kind === 'decode').params = { proxyLongEdge: 400 };
+    stages.find((st) => st.kind === 'crop').params = { x: 200, y: 0, w: 200, h: 240, ratio: 'free', angle: 0 };
+    const out = path.join(TMP, 'proxy-out.jpg');
+    await renderSpecToSharp(
+      { specVersion: 1, sourceHash: 't', colorSpace: { working: 'srgb', output: 'srgb' }, stages, meta: {} },
+      input, out
+    );
+    const meta = await sharp(out).metadata();
+    expect(meta.width).toBe(200);
+    expect(meta.height).toBe(240);
+  });
+});

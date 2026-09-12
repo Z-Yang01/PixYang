@@ -168,6 +168,28 @@ function specToPreviewTweaks(spec) {
   };
 }
 
+// 代理分辨率 spec（任务书第 20 节 proxy resolution）：
+// 编辑预览/缩略图不需要全分辨率——decode 后立即缩到 targetLongEdge，后续像素算子
+// 在小图上执行（语义不变：影调逐像素、几何等比、crop 坐标同步缩放）。
+// srcWidth/srcHeight 为 decode 后工作图尺寸；源图已 ≤ target 时原样返回（scale=1）。
+// 返回 { spec, scale }：scale = 代理尺寸/原尺寸，供调用方换算显示坐标。
+function buildProxySpec(spec, srcWidth, srcHeight, targetLongEdge) {
+  const longEdge = Math.max(srcWidth || 0, srcHeight || 0);
+  if (!longEdge || longEdge <= targetLongEdge) return { spec, scale: 1 };
+  const scale = targetLongEdge / longEdge;
+  const stages = spec.stages.map((s) => {
+    if (s.kind === 'decode') {
+      return { ...s, params: { ...s.params, proxyLongEdge: targetLongEdge } };
+    }
+    if (s.kind === 'crop' && s.params) {
+      const n = (v) => Math.round(v * scale);
+      return { ...s, params: { ...s.params, x: n(s.params.x), y: n(s.params.y), w: n(s.params.w), h: n(s.params.h) } };
+    }
+    return s;
+  });
+  return { spec: { ...spec, stages }, scale };
+}
+
 // 列出 spec 中被跳过的未实现 stage（渲染日志与 M4~M8 进度盘点用）
 function listUnsupported(spec) {
   return spec.stages.filter(s => s.unsupported).map(s => s.kind);
@@ -178,6 +200,7 @@ module.exports = {
   PIPELINE_ORDER,
   editParamsToRenderSpec,
   specToPreviewTweaks,
+  buildProxySpec,
   listUnsupported,
   __internals: { buildStages, buildCropStage },
 };

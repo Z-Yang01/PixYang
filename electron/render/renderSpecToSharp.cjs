@@ -70,8 +70,14 @@ async function renderSpecToSharp(spec, inputPath, outputPath, opts = {}) {
         // 色彩管理：tagged 输入（P3/AdobeRGB 等）统一转换到 sRGB 工作空间，
         // 保证影调数学在一致空间上执行（未转换时按 sRGB 调的曲线/偏移在宽色域会偏移）。
         // libvips 对带 profile 的图像做 icc_transform；untagged 视为已是 sRGB，不动。
-        if (ctx.hasProfile) {
-          pixels = await materialize(sourceSharp(pixels, inputPath).toColourspace('srgb'));
+        // 代理分辨率（预览/缩略图专用）：decode 后立即缩到目标长边，后续算子在小图上执行。
+        let decodePipe = sourceSharp(pixels, inputPath);
+        if (ctx.hasProfile) decodePipe = decodePipe.toColourspace('srgb');
+        if (stage.params.proxyLongEdge) {
+          decodePipe = decodePipe.resize({ width: stage.params.proxyLongEdge, height: stage.params.proxyLongEdge, fit: 'inside' });
+        }
+        if (ctx.hasProfile || stage.params.proxyLongEdge) {
+          pixels = await materialize(decodePipe);
         }
         break;
       }

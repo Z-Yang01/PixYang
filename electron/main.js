@@ -8,7 +8,7 @@ const { renderFromEditParams, renderFromSpec, computeSourceHash, callWorker, sen
 const {
   getEditPreviewPath, getEditPreviewPathFor, setEditPreviewPath, clearEditPreview, enforceEditPreviewLimit,
 } = require('./database');
-const { editParamsToRenderSpec } = require('../shared/renderSpec.cjs');
+const { editParamsToRenderSpec, buildProxySpec } = require('../shared/renderSpec.cjs');
 const {
   initDatabase,
   closeDatabase,
@@ -595,7 +595,11 @@ async function renderEditPreviewOnce(id, params, generation) {
     }
   } catch { /* 无缓存元数据，继续渲染 */ }
   const spec = editParamsToRenderSpec(params, { sourceHash: await computeSourceHashCached(basePath) });
-  const renderResult = await callWorker({ type: 'edit-preview', srcPath: basePath, outPath: previewPath, spec, requestSeq });
+  // 代理分辨率（任务书第 20 节）：预览渲染在 decode 后缩到 400 长边再跑后续算子，
+  // crop 坐标同步等比缩放——批量同步/连续保存的预览渲染耗时降一个数量级
+  const baseDims = await getImageMeta(basePath);
+  const { spec: proxySpec } = buildProxySpec(spec, baseDims.width, baseDims.height, 400);
+  const renderResult = await callWorker({ type: 'edit-preview', srcPath: basePath, outPath: previewPath, spec: proxySpec, requestSeq });
   editPreviewRenderSeq.delete(id);
   // Phase 9：被取消的渲染（烘焙/取消会话触发）不写路径不发事件
   if (renderResult && renderResult.cancelled) {

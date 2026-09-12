@@ -104,3 +104,28 @@ describe('editSchema 深合并行为锁死', () => {
     expect(editSchema.normalizeEdits({ crop: null }).crop).toBeNull();
   });
 });
+
+
+describe('buildProxySpec（代理分辨率）', () => {
+  const build = (params) => renderSpec.editParamsToRenderSpec(params, { sourceHash: 'x' });
+
+  it('大图：decode 标记 proxyLongEdge，crop 坐标等比缩放', () => {
+    const spec = build({ orientation: { rotate: 90 }, crop: { x: 1000, y: 800, w: 2000, h: 1600 }, basic: { exposure: 0.5 } });
+    const { spec: proxy, scale } = renderSpec.buildProxySpec(spec, 6000, 4000, 400);
+    expect(scale).toBeCloseTo(400 / 6000, 4);
+    const decode = proxy.stages.find((s) => s.kind === 'decode');
+    expect(decode.params.proxyLongEdge).toBe(400);
+    const crop = proxy.stages.find((s) => s.kind === 'crop').params;
+    expect(crop.x).toBe(Math.round(1000 * scale));
+    expect(crop.w).toBe(Math.round(2000 * scale));
+    // 影调参数原样保留
+    expect(proxy.stages.find((s) => s.kind === 'exposure').params.ev).toBe(0.5);
+  });
+
+  it('小图（≤target）原样返回不缩放', () => {
+    const spec = build({ crop: { x: 10, y: 10, w: 50, h: 50 } });
+    const { spec: proxy, scale } = renderSpec.buildProxySpec(spec, 300, 200, 400);
+    expect(scale).toBe(1);
+    expect(proxy).toBe(spec);
+  });
+});
