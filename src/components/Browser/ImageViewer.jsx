@@ -599,8 +599,8 @@ export default function ImageViewer({
   // 键盘
   useEffect(() => {
     const handleKey = (e) => {
-      // 滑杆等表单元素聚焦时不触发查看器快捷键（方向键留给滑杆）
-      if (e.target?.tagName === 'INPUT' || e.target?.tagName === 'SELECT') return;
+      // 滑杆/备注框等表单元素聚焦时不触发查看器快捷键（TEXTAREA 里 f/v 会误写库）
+      if (e.target?.tagName === 'INPUT' || e.target?.tagName === 'SELECT' || e.target?.tagName === 'TEXTAREA' || e.target?.isContentEditable) return;
       // 编辑态：撤销/重做
       if (editingRef.current && (e.ctrlKey || e.metaKey) && !e.altKey) {
         const k = e.key.toLowerCase();
@@ -629,7 +629,7 @@ export default function ImageViewer({
         case VIEWER_ACTIONS.FlipH: applyFlip('H'); break;
         case VIEWER_ACTIONS.FlipV: applyFlip('V'); break;
         case VIEWER_ACTIONS.Favorite: toggleFavorite(); break;
-        case VIEWER_ACTIONS.ToggleInfo: onOpenInfo?.(image); break;
+        case VIEWER_ACTIONS.ToggleInfo: if (!editingRef.current) onOpenInfo?.(image); break;
         case VIEWER_ACTIONS.ZoomReset:
           setZoom(1); setPos({ x: 0, y: 0 });
           if (!editingRef.current) { setRotation(0); setFlipH(false); setFlipV(false); }

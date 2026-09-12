@@ -710,3 +710,31 @@ Phase 1-6、8、10-14、16-17 全量落地；Phase 7（sRGB 工作空间转换 +
 ### 零拷贝画质量化
 
 理想单次编码参照下：旧路径（q92 底图中转）meanΔ 0.102 → 零拷贝直出 **0.080**（偏离降低 ~22%），叠加磁盘与速度收益。
+
+---
+
+# 2026-09-12 多代理逻辑检查修复（三路并行审查）
+
+### 修复（P1 × 7）
+
+1. **烘焙格式错配（数据完整性）**：webp/gif/bmp/tiff/svg 源烘焙时 JPEG 字节写入原扩展名文件（内容与扩展名永久错配、alpha 丢失）。修复：输出格式按源映射（png→png/webp→webp/其余→jpeg），temp 扩展名跟随输出，saveEditedImage 托管改名（扩展名变更时同步更新 DB filepath/format）。
+2. **裁剪框拖动/手柄完全失效**：`.editor-crop-box` 双规则中首条的 pointer-events:none 使框与手柄不可命中，拖动变为误清重画（测试 fireEvent 直派发绕过了它）。修复：删除重复规则。
+3. **Escape 链式弹窗**：Radix 弹窗 Escape 与全局链叠加——导出弹窗 Escape 连锁出"放弃编辑"框、确认框被换框。修复：全局链入口检查 e.defaultPrevented。
+4. **备注框 TEXTAREA 快捷键误写库**：查看器 keydown 漏 TEXTAREA——详情面板备注输入 f/v 直接切换收藏写库。修复：表单守卫补 TEXTAREA/contentEditable。
+5. **编辑态按 I 打开详情**：重命名/改日期在会话进行中发生会使 session 路径过期。修复：ToggleInfo 编辑态守卫。
+6. **删除图片派生文件泄漏**：deleteImage/batch 不清理 edit-preview/base 缓存/meta 侧车；批量同步对从未打开编辑器的图片也写全尺寸底图（无上限）。修复：cleanupEditDerivedFiles(id)（preview+meta、base 三变体+meta、三张状态 Map）挂入单删与批删 handler。
+7. **缩放标签查看态无效 + 旋转倍率错**：editImgRef 编辑态才赋值；rotate 90/270 时 bounding 宽对应 naturalHeight。修复：回退查 contentRef 内 img + 旋转感知 natural 维度。
+
+### 修复（P2 × 3）
+
+- 分屏/并排进入时重置 zoom/pos（Before 层不随缩放，防错位）；分屏按钮补 setCropMode(false)（此前漏）。
+- 批删 handler 对 results 容错（|| []）。
+- applyPreset 'all' 裁剪钳制失败时保留当前 crop 但 toast 已含范围标注（记录语义）。
+
+### 审查确认无问题
+
+零拷贝护栏全清点、alpha PNG 烘焙全链 alpha 保留、LRU 范围、editPreviewStates 生命周期、烘焙后双重旋转、NEF base 缓存 mtime 校验、presets 版本链、WebP 导出命名、toImageCoords 逆变换。
+
+### 验证
+
+**534 passed / 0 failed**（+7：格式错配回归/护栏/缓存行为/并排断言）；golden 15/15。

@@ -286,6 +286,20 @@ function sendProgress(channel, payload) {
   }
 }
 
+// 清理编辑派生文件：预览缩略图（含 meta 侧车）+ 编辑底图缓存（含变体与 meta）
+function cleanupEditDerivedFiles(id) {
+  clearEditPreview(id);
+  for (const name of [`${id}-base.jpg`, `${id}-base.jpg.png`, `${id}-base.jpg.meta.json`]) {
+    try {
+      const p = path.join(getEditCacheDir(), name);
+      if (fs.existsSync(p)) fs.unlinkSync(p);
+    } catch { /* 清理失败无碍 */ }
+  }
+  editPreviewStates.delete(id);
+  editPreviewRenderSeq.delete(id);
+  editPreviewGeneration.delete(id);
+}
+
 // 清理上次进程崩溃残留的编辑渲染中间文件（thumbnails/*.render.jpg*）
 function cleanupStaleEditTmp() {
   try {
@@ -314,10 +328,11 @@ function getEditCacheDir() {
   return dir;
 }
 
-function editTempPathFor(filepath) {
+function editTempPathFor(filepath, outExt) {
   const ext = path.extname(filepath).toLowerCase();
   const base = path.basename(filepath, ext);
-  return path.join(path.dirname(filepath), `${base}-temp${ext}`);
+  // temp 扩展名跟随实际输出格式（内容与扩展名必须一致）
+  return path.join(path.dirname(filepath), `${base}-temp${outExt || ext}`);
 }
 
 // ── 编辑底图缓存：NEF/JPG 未变化时跳过重复提取与规范化（mtime+size 侧车校验）──
@@ -390,13 +405,13 @@ async function openEditSession(id) {
   if (!fs.existsSync(img.filepath)) return { error: '图片文件不存在' };
 
   const ext = path.extname(img.filepath).toLowerCase();
-  const tempPath = editTempPathFor(img.filepath);
 
-  // 清理上次烘焙中断的残留 temp
-  try {
-    if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
-  } catch (e) {
-    return { error: `清理临时文件失败：${e.message}` };
+  // 清理上次烘焙中断的残留 temp（各格式变体）
+  for (const variant of ['.jpg', '.png', '.webp']) {
+    try {
+      const staleTemp = editTempPathFor(img.filepath, variant);
+      if (fs.existsSync(staleTemp)) fs.unlinkSync(staleTemp);
+    } catch { /* 占用中跳过 */ }
   }
 
   // 编辑底图（带缓存：NEF/JPG 未变化直接命中，不再重复提取/规范化）
@@ -414,8 +429,8 @@ async function openEditSession(id) {
     filepath: img.filepath,
     basePath,
     source,
-    // 输出格式跟随原图（PNG 源保持 alpha），不跟随 NEF 底图
-    format: ext === '.png' ? '.png' : '.jpg',
+    // 输出格式跟随原图（PNG/WebP 源保持原格式与特性），不跟随 NEF 底图
+    format: ext === '.png' ? '.png' : (ext === '.webp' ? '.webp' : '.jpg'),
   });
 
   const saved = getEdits(id);
@@ -433,15 +448,19 @@ async function openEditSession(id) {
 // 烘焙替代：渲染 EditParams → 原名-temp → 原子替代原图（saveEditedImage 内含
 // DB 事务更新、参数重置、缩略图清空），随后后台重生成缩略图。
 // 输出格式跟随原图扩展名（PNG 源保持 alpha）。
+// 输出格式按源扩展名映射（png→png、webp→webp、其余→jpeg），temp 扩展名跟随输出，
+// 源扩展名不受支持时（gif/bmp/tiff/svg）由 saveEditedImage 托管改名到 .jpg。
 async function bakeEditSession(id, edits) {
   const session = editSessions.get(id);
   if (!session) return { error: '编辑会话不存在' };
 
-  const tempPath = editTempPathFor(session.filepath);
+  const outFormat = session.format === '.png' ? 'png' : (session.format === '.webp' ? 'webp' : 'jpeg');
+  const outExt = outFormat === 'png' ? '.png' : (outFormat === 'webp' ? '.webp' : '.jpg');
+  const tempPath = editTempPathFor(session.filepath, outExt);
   let dims;
   try {
     dims = await renderFromEditParams(
-      { ...edits, output: { ...edits?.output, format: session.format === '.png' ? 'png' : 'jpeg' } },
+      { ...edits, output: { ...edits?.output, format: outFormat } },
       {
         inputPath: session.basePath,
         outputPath: tempPath,
@@ -816,9 +835,11 @@ function setupIPC() {
     return renameImage(id, newFilename);
   });
 
-  // 删除图片
+  // 删除图片（含编辑派生文件清理：预览缩略图、编辑底图缓存）
   ipcMain.handle('db:delete-image', async (_event, id) => {
-    return deleteImage(id);
+    const result = deleteImage(id);
+    if (result && !result.error) cleanupEditDerivedFiles(id);
+    return result;
   });
 
   // ── 重建缩略图 ──
@@ -993,7 +1014,9 @@ function setupIPC() {
   // ── 缩略图重生 ──
   // ── 批量删除 ──
   ipcMain.handle('db:batch-delete-images', async (_event, ids) => {
-    return batchDeleteImages(ids);
+    const results = batchDeleteImages(ids) || [];
+    for (const r of results) if (r && !r.error) cleanupEditDerivedFiles(r.id);
+    return results;
   });
 
   // ── 编辑模式（非破坏）──

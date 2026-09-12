@@ -11,6 +11,8 @@ export default function useGlobalShortcuts(handlers) {
       const h = handlersRef.current;
       // 确认/导入等模态打开时忽略全局快捷键，避免 Delete/Escape 误触底层逻辑
       if (h.isModalOpen()) return;
+      // Radix 等组件已处理并 preventDefault 的按键（如弹窗 Escape）不进入全局链
+      if (e.defaultPrevented) return;
 
       // Escape 分层关闭：帮助 → 详情 → 查看器 → 清选择
       if (e.key === 'Escape' && !isTypingTarget(e.target)) {

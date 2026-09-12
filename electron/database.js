@@ -1288,9 +1288,18 @@ function saveEditedImage(id, tempPath, { width, height }) {
   if (!img) return { error: '图片不存在' };
   if (!fs.existsSync(tempPath)) return { error: '编辑产物不存在' };
 
+  // 输出扩展名跟随 temp 实际内容（bake 侧已按格式映射）；不同则托管改名（gif 等源烘焙为 jpg）
+  const outExt = path.extname(tempPath).toLowerCase();
+  let targetPath = img.filepath;
+  let targetFormat = img.format;
+  if (outExt !== path.extname(img.filepath).toLowerCase()) {
+    targetPath = path.join(path.dirname(img.filepath), path.basename(img.filepath, path.extname(img.filepath)) + outExt);
+    targetFormat = outExt;
+  }
+
   const size = fs.statSync(tempPath).size;
   try {
-    fs.renameSync(tempPath, img.filepath);
+    fs.renameSync(tempPath, targetPath);
   } catch (e) {
     return { error: `替代原文件失败：${e.message}` };
   }
@@ -1299,11 +1308,12 @@ function saveEditedImage(id, tempPath, { width, height }) {
     db.prepare(`
       UPDATE images
       SET width = ?, height = ?, size = ?,
+          filepath = ?, format = ?,
           rotation = 0, flip_h = 0, flip_v = 0,
           thumbnail = '', thumbnail_path = '', thumbnail_small_path = '', thumbnail_edit_path = '',
           updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
-    `).run(width || img.width, height || img.height, size, id);
+    `).run(width || img.width, height || img.height, size, targetPath, targetFormat, id);
   })();
 
   deleteThumbnailFile(id);
