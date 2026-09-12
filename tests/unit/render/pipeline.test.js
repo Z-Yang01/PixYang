@@ -186,3 +186,36 @@ describe('裁剪越界钳制（预设跨尺寸应用防护）', () => {
     expect(meta.height).toBe(400);
   });
 });
+
+
+describe('导出缩放路径（两段式 composite+resize）', () => {
+  it('resize 后 EXIF 保留（两段管线每段 keepExif）', async () => {
+    if (!srcExifPath) return; // 无 EXIF fixture 环境跳过
+    const out = path.join(TMP, 'resize-exif.jpg');
+    const stages = baseSpecStages();
+    stages.find((st) => st.kind === 'encode').params = { format: 'jpeg', quality: 92, resize: { width: 64, height: 64 } };
+    await renderSpecToSharp(
+      { specVersion: 1, sourceHash: 't', colorSpace: { working: 'srgb', output: 'srgb' }, stages, meta: {} },
+      srcExifPath, out
+    );
+    const exif = await exifr.parse(out, { pick: ['DateTimeOriginal'] });
+    expect(String(exif?.DateTimeOriginal || '')).toContain('2023:05:10');
+    const meta = await sharp(out).metadata();
+    expect(Math.max(meta.width, meta.height)).toBe(64);
+  });
+
+  it('resize 不放大（withoutEnlargement）', async () => {
+    const input = path.join(TMP, 'small-resize.jpg');
+    await sharp({ create: { width: 40, height: 30, channels: 3, background: 'red' } }).jpeg().toFile(input);
+    const out = path.join(TMP, 'small-resize-out.jpg');
+    const stages = baseSpecStages();
+    stages.find((st) => st.kind === 'encode').params = { format: 'jpeg', quality: 92, resize: { width: 1920, height: 1920 } };
+    await renderSpecToSharp(
+      { specVersion: 1, sourceHash: 't', colorSpace: { working: 'srgb', output: 'srgb' }, stages, meta: {} },
+      input, out
+    );
+    const meta = await sharp(out).metadata();
+    expect(meta.width).toBe(40);
+    expect(meta.height).toBe(30);
+  });
+});

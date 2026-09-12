@@ -141,10 +141,12 @@ parentPort.on('message', async ({ id, type, filepath, nefPath, srcPath, outPath,
     } else if (type === 'edit-preview') {
       if (requestSeq) cancelledRenderSeqs.delete(requestSeq);
       const result = await generateEditPreview(srcPath, outPath, spec, requestSeq ? () => cancelledRenderSeqs.has(requestSeq) : null);
+      if (requestSeq) cancelledRenderSeqs.delete(requestSeq); // 完成清理：晚到的取消不得使集合无界增长
       parentPort.postMessage({ id, result });
     } else if (type === 'render-spec') {
       if (requestSeq) cancelledRenderSeqs.delete(requestSeq);
       const r = await renderSpecToSharp(spec, srcPath, outPath, requestSeq ? { isCancelled: () => cancelledRenderSeqs.has(requestSeq) } : {});
+      if (requestSeq) cancelledRenderSeqs.delete(requestSeq); // 完成清理
       if (r && r.cancelled) {
         parentPort.postMessage({ id, result: { cancelled: true } });
         return;

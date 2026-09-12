@@ -647,3 +647,15 @@ Phase 1-6、8、10-14、16-17 全量落地；Phase 7（sRGB 工作空间转换 +
 - 测试 +2：越界裁剪钳制（尺寸保留位置回拉）/ 完全越界收敛。**525 passed / 0 failed**；golden 15/15。
 
 修复过程自身两次校准：第一版钳制语义（钳位置导致 1px 裁剪）被新测试立即捕获，改为「保尺寸、回拉位置」的正确语义。
+
+---
+
+# 2026-09-12 逻辑自查批 3：导出 resize 路径质量/元数据修复 + 取消集合清理
+
+对 Phase 17 新增的 resize 两段式路径做逻辑检查，发现并修复 2 个真实问题 + 1 个内存问题：
+
+1. **resize 路径双压缩**：composite 后 `out.toBuffer()` 无显式格式 → sharp 按输入格式 + 默认 Q80 推断，随后再以目标 quality 编码 = 两次有损压缩。修复：中间缓冲显式 PNG 无损（compressionLevel 3）。
+2. **resize 二段管线丢 EXIF**：sharp 每段管线默认剥离元数据。修复：keepExif 移入 encodeWith 对所有路径（含中间段）生效。
+3. **取消集合无界增长**：thumbWorker cancelledRenderSeqs 只在 handler 开始 delete；渲染完成后晚到的 cancel 重新 add 且永不清理。修复：完成路径（成功/取消两分支）补 delete。
+
+测试 +2（resize 后 EXIF 保留、withoutEnlargement 不放大）。**527 passed / 0 failed**；golden 15/15。

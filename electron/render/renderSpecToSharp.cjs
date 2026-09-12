@@ -247,15 +247,18 @@ async function encodeAndWrite(pixels, inputPath, outputPath, encodeStage, spec, 
   // encode：composite 与 resize 不可同管线（libvips 把 resize 折叠到 composite 之前会导致
   // composite 层尺寸大于底图报错），有 resize 时先物化 composite 结果再独立缩放。
   const encodeWith = (pipe2) => {
-    if (format === 'png') return pipe2.png({ compressionLevel: 6 });
-    if (format === 'tiff') return pipe2.tiff({ compression: 'lzw' });
-    return pipe2.jpeg({ quality: clampInt(quality, 1, 100, 92) });
+    // 元数据贯穿：中间物化/二次缩放都会丢 EXIF，每段管线显式保留
+    let p = pipe2.keepExif();
+    if (format === 'png') return p.png({ compressionLevel: 6 });
+    if (format === 'tiff') return p.tiff({ compression: 'lzw' });
+    return p.jpeg({ quality: clampInt(quality, 1, 100, 92) });
   };
 
   const partPath = `${outputPath}.part`;
   try {
     if (resize && (resize.width || resize.height)) {
-      const composited = await out.toBuffer();
+      // 中间缓冲必须无损（PNG）：toBuffer 无显式格式时会按输入格式 + 默认 Q80 推断，二次编码产生额外损失
+      const composited = await out.png({ compressionLevel: 3 }).toBuffer();
       await encodeWith(sharp(composited).resize({
         width: resize.width || undefined,
         height: resize.height || undefined,
