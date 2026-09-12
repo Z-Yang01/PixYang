@@ -334,3 +334,57 @@ describe('内置风格预设', () => {
     expect(screen.getByText('复古胶片')).toBeInTheDocument();
   });
 });
+
+describe('预设应用范围（Phase 16）', () => {
+  function mockBridgeWithPreset() {
+    window.pixyang = {
+      getImageTags: vi.fn().mockResolvedValue([]),
+      toFileUrl: vi.fn().mockImplementation((p) => Promise.resolve(p ? `file:///${p}` : null)),
+      editOpen: vi.fn().mockResolvedValue({
+        id: 3, source: 'jpg', basePath: 'C:/cache/3-base.jpg',
+        width: 1920, height: 1080, hasNef: false,
+        savedEdits: { version: 1, params: { orientation: { rotate: 90 }, basic: { exposure: 0.5 } } },
+      }),
+      getPresets: vi.fn().mockResolvedValue([
+        { id: 9, name: '我的风格', params: { orientation: { rotate: 270, flipH: true }, basic: { exposure: 1 } } },
+      ]),
+      createPreset: vi.fn().mockResolvedValue({ id: 1, name: 'x' }),
+      deletePreset: vi.fn().mockResolvedValue(undefined),
+      editCancel: vi.fn().mockResolvedValue({ ok: true }),
+      saveEdits: vi.fn().mockResolvedValue({ version: 1, params: {} }),
+    };
+  }
+
+  beforeEach(() => {
+    mockBridgeWithPreset();
+  });
+
+  afterEach(() => {
+    cleanup();
+    delete window.pixyang;
+  });
+
+  it('点击预设名默认仅影调（几何保持当前值）；开启含几何后写入旋转/翻转', async () => {
+    render(<ImageViewer {...baseProps()} />);
+    fireEvent.click(screen.getByTitle(/编辑模式/));
+    await screen.findByText('我的风格');
+    // 初始：已存参数 rotate 90
+    const layer = () => document.querySelector('.editor-transform-layer');
+    expect(layer().style.transform).toContain('rotate(90deg)');
+    // 手动右旋两次 → 270
+    fireEvent.click(screen.getByTitle('右旋 90° (R)'));
+    fireEvent.click(screen.getByTitle('右旋 90° (R)'));
+    expect(layer().style.transform).toContain('rotate(270deg)');
+    // 默认仅影调：点击预设名（曝光 +1），旋转保持 270
+    fireEvent.click(screen.getByText('我的风格'));
+    await vi.waitFor(() => {
+      expect(layer().style.transform).toContain('rotate(270deg)');
+    });
+    // 开启「含几何」→ 点击预设名 → 预设的 rotate 270 + flipH 生效（覆盖当前 270/无翻转）
+    fireEvent.click(screen.getByText('含几何'));
+    fireEvent.click(screen.getByText('我的风格'));
+    await vi.waitFor(() => {
+      expect(layer().style.transform).toContain('scale(-1');
+    });
+  });
+});

@@ -5,8 +5,11 @@ import { Input } from '@/components/ui/input';
 import {
   RotateCw, RotateCcw, FlipHorizontal2, FlipVertical2, Save, Heart, HeartOff,
   Star, X, ChevronLeft, ChevronRight, Camera, Calendar, Info, Pencil,
-  Crop, RotateCcwSquare, Loader2, SlidersHorizontal, Undo2, Redo2,
+  Crop, RotateCcwSquare, Loader2, SlidersHorizontal, Undo2, Redo2, ChevronDown,
 } from 'lucide-react';
+import {
+  DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem,
+} from '@/components/ui/dropdown-menu';
 import { toast } from 'sonner';
 import { matchViewerShortcut, VIEWER_ACTIONS, ratingFromViewerAction } from '@/lib/shortcuts';
 import api from '@/lib/api';
@@ -318,6 +321,8 @@ export default function ImageViewer({
   // ── 预设 / 复制粘贴 ──
   const [presets, setPresets] = useState([]);
   const [presetName, setPresetName] = useState('');
+  // 预设应用范围开关：关闭（默认）只套影调；开启连旋转/翻转/裁剪一起套
+  const [applyWithGeometry, setApplyWithGeometry] = useState(false);
 
   const loadPresets = useCallback(async () => {
     const list = await api.getPresets();
@@ -328,7 +333,9 @@ export default function ImageViewer({
     if (editing) loadPresets();
   }, [editing, loadPresets]);
 
-  const applyPreset = useCallback((presetParams) => {
+  // 应用预设：scope='basic' 只覆盖影调（几何保持当前构图）；
+  // scope='all' 连旋转/翻转/裁剪一起应用（crop 坐标基于保存时的底图尺寸，跨尺寸图需手动微调）
+  const applyPreset = useCallback((presetParams, scope = 'basic') => {
     const p = presetParams?.basic;
     if (!p) return;
     const next = {
@@ -339,9 +346,27 @@ export default function ImageViewer({
       crop: editOpsRef.current.crop,
       ...p,
     };
+    if (scope === 'all') {
+      const o = presetParams.orientation;
+      if (o) {
+        next.rotation = Number(o.rotate) || 0;
+        next.flipH = !!o.flipH;
+        next.flipV = !!o.flipV;
+      }
+      if (presetParams.crop && presetParams.crop.w > 0) {
+        next.crop = {
+          left: presetParams.crop.x,
+          top: presetParams.crop.y,
+          width: presetParams.crop.w,
+          height: presetParams.crop.h,
+          ratio: presetParams.crop.ratio || 'free',
+        };
+      }
+    }
     pushHistory(next);
     setEditOps(next);
-    toast.success(`已应用预设`);
+    const scopeLabel = scope === 'all' ? '（含几何）' : '';
+    toast.success(presetParams?.name ? `已应用预设「${presetParams.name}」${scopeLabel}` : `已应用预设${scopeLabel}`);
   }, [pushHistory]);
 
   const savePreset = useCallback(async () => {
@@ -1049,6 +1074,14 @@ export default function ImageViewer({
             <div className="editor-crop-header">
               <span>预设</span>
               <div style={{ display: 'flex', gap: 4 }}>
+                <Button
+                  variant="ghost" size="xs"
+                  className={applyWithGeometry ? 'is-active' : ''}
+                  onClick={() => setApplyWithGeometry(v => !v)}
+                  title="开启后，点击预设会连旋转/翻转/裁剪一起应用（裁剪坐标基于保存时的底图尺寸）"
+                >
+                  含几何
+                </Button>
                 <Button variant="ghost" size="xs" onClick={copySettings} title="复制当前调整参数（影调 + 几何，同步时可选择范围）">复制</Button>
                 <Button variant="ghost" size="xs" onClick={pasteSettings} title="粘贴已复制的参数">粘贴</Button>
               </div>
@@ -1064,7 +1097,7 @@ export default function ImageViewer({
             {presets.length === 0 && <p className="editor-crop-hint" style={{ marginTop: 8 }}>暂无自定义预设，调整参数后可保存为预设。</p>}
             {presets.map(pr => (
               <div className="editor-preset-row" key={pr.id}>
-                <button className="editor-preset-name" onClick={() => applyPreset(pr.params)} title="应用预设">
+                <button className="editor-preset-name" onClick={() => applyPreset(pr.params, applyWithGeometry ? 'all' : 'basic')} title={applyWithGeometry ? '应用全部（含旋转/翻转/裁剪）' : '应用预设（仅影调）'}>
                   {pr.name}
                 </button>
                 <Button variant="ghost" size="icon-xs" onClick={() => removePreset(pr.id)} title="删除预设">

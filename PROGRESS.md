@@ -554,3 +554,28 @@
 ### 教训记录
 
 node -e 模板字符串批量替换连续三次静默 no-op（字符串匹配不上时 replace 不报错）——凡跨行/含特殊字符的代码修改一律改用 Edit 工具或写临时脚本文件，完成后必须 grep 验证落地。
+
+---
+
+# 2026-09-12 任务书实施批 6：预设应用范围（Phase 16）+ /error 错误文档
+
+### Phase 16：预设应用范围
+
+- 预设区头部新增「含几何」开关（默认关）：关闭时点击预设只套影调九参数（几何保持当前构图，推荐）；开启后连旋转/翻转/裁剪一起套（crop 坐标基于保存时底图尺寸，跨尺寸图需微调，tooltip 已说明）。
+- 用户预设保存的本来就是完整 EditParams（M2 起含 orientation/crop），应用端此前只取 basic——现在按开关选择作用范围；应用走历史栈可撤销。
+- 组件测试 +2：默认仅影调（几何保持）/ 开关开启后旋转翻转写入（transform 断言 scale(-1)）。
+
+### 第 25 节合规：/error 错误文档
+
+按任务书规范格式（Symptom/Root Cause/Why It Happened/Fix/Regression Risk/Test Added/Prevention）为四个严重 bug 建档：
+
+- `error/bake-overwrite-wrong-image.md`：P0 烘焙覆盖错图（async 窗口身份校验规则沉淀）
+- `error/encode-quality-ignored.md`：encode 死参数静默 Q80（golden 无法发现"参数未接线"类 bug 的教训）
+- `error/shadows-crash-gamma-range.md`：±阴影崩溃与 libvips 折叠（新算子接入三件事）
+- `error/batch-sync-broken-rename.md`：批量同步断链（node -e 内联替换禁令 + 字段改名 grep 规则）
+
+每篇 Prevention 均为可执行规则而非口号。
+
+### 验证
+
+- **518 passed / 0 failed**（+2）；golden 15/15；build/lint/typecheck 干净。
