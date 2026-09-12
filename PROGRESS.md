@@ -589,3 +589,16 @@ node -e 模板字符串批量替换连续三次静默 no-op（字符串匹配不
 - **修复 encode composite+resize 同管线崩溃**：E2E 抓到 libvips 把 resize 折叠到 composite 之前（composite 层尺寸大于底图报错）——有 resize 时先物化 composite 结果再独立实例缩放（与 M5 折叠发现同根因，检查点模式的第三次应用）。
 - 测试：导出用例适配两段式对话框（断言 output.format/maxEdge 默认透传语义）。
 - **517 passed / 0 failed**；golden 15/15；E2E：PNG 1920×1440 / JPEG 1280×960 全参数渲染正确。
+
+---
+
+# 2026-09-12 任务书实施批 8：并排对比 + 文档同步
+
+- CompareView 扩展第三种模式：**并排**（side，左 Before / 右 After 各占一半，无分割线）；工具栏三按钮（对比/分屏/并排），Phase 13 全部交付。
+- CompareView 重构：分割拖动监听仅 split 模式挂载；side 模式 After 节点右画布独立容器。
+- AGENTS.md 同步：shared/ 四模块、electron/render/、CompareView、error/ 目录入档。
+- **519 passed / 0 failed**；golden 15/15。
+
+### 任务书最终状态
+
+Phase 1-6、8、10-14、16-17 全量落地；Phase 7（sRGB 工作空间转换 + ICC 保留 + 三类输入测试）、Phase 13（toggle/split/side 三模式）核心子集完成。**未做**（均需独立大块窗口或外部决策）：Phase 9 全链 requestRequestId（现有去重+世代令牌覆盖主要风险）、M7 WebGL2 预览、M8 libraw RAW（前置：LGPL 许可证确认）。

@@ -49,3 +49,22 @@ describe('CompareView（Before/After 分屏）', () => {
     rectSpy.mockRestore();
   });
 });
+
+describe('CompareView 并排模式', () => {
+  afterEach(() => cleanup());
+
+  it('side 模式渲染左右两画布，After 节点在右', () => {
+    const { container } = render(
+      <CompareView mode="side" beforeSrc="file:///before.jpg" afterNode={<div data-testid="after-layer">after</div>} />
+    );
+    expect(container.querySelector('.editor-side-wrap')).toBeInTheDocument();
+    const panes = container.querySelectorAll('.editor-side-pane');
+    expect(panes.length).toBe(2);
+    expect(panes[0].querySelector('img')?.getAttribute('src')).toBe('file:///before.jpg');
+    expect(panes[1].querySelector('[data-testid="after-layer"]')).toBeInTheDocument();
+    expect(screen.getByText('Before')).toBeInTheDocument();
+    expect(screen.getByText('After')).toBeInTheDocument();
+    // 并排无分割线
+    expect(container.querySelector('.editor-split-divider')).toBeNull();
+  });
+});

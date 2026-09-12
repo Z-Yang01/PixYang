@@ -17,20 +17,30 @@ PixYang 是一个本地桌面图片管理应用，技术栈：
 
 ```
 electron/
-  main.js         主进程：窗口、IPC 处理器、扫描、进度事件
+  main.js         主进程：窗口、IPC 处理器、扫描、进度事件、编辑会话
+  render/
+    renderSpecToSharp.cjs  RenderSpec → sharp 执行器（逐算子检查点，golden 测试共用）
+    index.cjs     渲染入口封装（renderFromEditParams，worker 内执行）
   database.js     数据库：schema、图片/标签/相册/设置操作、导入/删除/移动/重命名
   imageWorker.js  缩略图 worker 调度（worker_threads）
   thumbWorker.js  worker 内 sharp 缩略图生成（竖图按 EXIF 转正）
   preload.js      contextBridge 暴露 window.pixyang API
 scripts/
   native.js       better-sqlite3 的 node/electron 双 ABI 切换（dev/test 前自动执行）
+shared/
+  editSchema.cjs  EditParams v1 zod schema（非破坏编辑参数唯一事实源，前后端同构）
+  renderSpec.cjs  EditParams → RenderSpec 纯函数（渲染指令序列，预览/导出唯一消费格式）
+  pipelineOrder.cjs  渲染阶段固定顺序 + 能力矩阵
+  builtinPresets.cjs  内置风格预设参数集
+error/
+  *.md            严重 bug 建档（Symptom/Root Cause/Fix/Prevention 格式）
 src/
   App.jsx         组合根：路由、弹层状态、批量操作、快捷键接线
   store/          zustand store（galleryStore：筛选/勾选/网格设置/图片页数据/共享数据）
   hooks/          useGalleryData（加载 wiring）/ useGlobalShortcuts / useDragImport
   lib/            api.js（IPC 封装）/ gallery.js / shortcuts.js / format.js / utils.ts
   components/
-    Browser/      图片网格、全屏查看器、批量操作栏
+    Browser/      图片网格、全屏查看器（含非破坏编辑面板）、批量操作栏、CompareView 对比视图
     Explorer/     导入对话框、相册视图
     Info/         图片详情面板
     Layout/       侧边栏、顶栏、确认对话框、右键菜单、Toast
