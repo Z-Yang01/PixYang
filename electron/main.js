@@ -470,24 +470,42 @@ async function bakeEditSession(id, edits) {
   return { ok: true, image: saved };
 }
 
-// 导出：渲染全尺寸到目标目录（原名-edited.ext，重名自动加序号），绝不覆盖原图
-async function exportEditSession(id, edits, destDir) {
+// 导出：渲染到目标目录（原名-edited[-Npx].ext，重名自动加序号），绝不覆盖原图。
+// output 可选 { format: 'jpeg'|'png', quality, maxEdge }——缺省跟随原图格式全尺寸。
+async function exportEditSession(id, edits, destDir, output = null) {
   const session = editSessions.get(id);
   if (!session) return { error: '编辑会话不存在' };
   if (!destDir || !fs.existsSync(destDir)) return { error: '导出目录不存在' };
 
-  const ext = path.extname(session.filepath).toLowerCase();
-  const base = path.basename(session.filepath, ext);
-  let dest = path.join(destDir, `${base}-edited${ext}`);
+  // 输出选项：format 覆盖；maxEdge 可选长边缩放（仅原图超长边时生效）
+  const outFormat = output?.format === 'png' ? 'png' : (output?.format === 'jpeg' ? 'jpeg' : (session.format === '.png' ? 'png' : 'jpeg'));
+  const ext = outFormat === 'png' ? '.png' : '.jpg';
+  const maxEdge = Number(output?.maxEdge) > 0 ? Number(output.maxEdge) : null;
+  const meta = await getImageMeta(session.basePath);
+  const resize = maxEdge && meta.width && Math.max(meta.width, meta.height) > maxEdge
+    ? { width: maxEdge, height: maxEdge }
+    : null;
+
+  const base = path.basename(session.filepath, path.extname(session.filepath));
+  const sizeTag = maxEdge ? `-${maxEdge}px` : '';
+  let dest = path.join(destDir, `${base}-edited${sizeTag}${ext}`);
   let n = 1;
   while (fs.existsSync(dest)) {
-    dest = path.join(destDir, `${base}-edited_${n}${ext}`);
+    dest = path.join(destDir, `${base}-edited${sizeTag}_${n}${ext}`);
     n++;
   }
 
   try {
     const dims = await renderFromEditParams(
-      { ...edits, output: { ...edits?.output, format: session.format === '.png' ? 'png' : 'jpeg' } },
+      {
+        ...edits,
+        output: {
+          ...edits?.output,
+          format: outFormat,
+          quality: Number(output?.quality) > 0 ? Math.min(100, Math.max(1, Math.round(Number(output.quality)))) : (edits?.output?.quality ?? 92),
+          resize,
+        },
+      },
       {
         inputPath: session.basePath,
         outputPath: dest,
@@ -964,8 +982,8 @@ function setupIPC() {
     return bakeEditSession(id, edits);
   });
 
-  ipcMain.handle('fs:edit-export', async (_event, id, edits, destDir) => {
-    return exportEditSession(id, edits, destDir);
+  ipcMain.handle('fs:edit-export', async (_event, id, edits, destDir, output) => {
+    return exportEditSession(id, edits, destDir, output || null);
   });
 
   ipcMain.handle('fs:edit-cancel', async (_event, id) => {

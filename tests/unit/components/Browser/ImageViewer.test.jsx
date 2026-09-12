@@ -203,11 +203,15 @@ describe('ImageViewer', () => {
     await screen.findByText('参数已保存');
     fireEvent.change(document.querySelectorAll('.editor-slider-row input[type="range"]')[0], { target: { value: '0.5' } });
     fireEvent.click(screen.getByText('导出…'));
+    // 选项对话框出现 → 确认导出
+    fireEvent.click(await screen.findByText('选择目录并导出'));
     await vi.waitFor(() => {
       expect(window.pixyang.editExport).toHaveBeenCalledTimes(1);
-      const [, edits, dir] = window.pixyang.editExport.mock.calls[0];
+      const [, edits, dir, output] = window.pixyang.editExport.mock.calls[0];
       expect(dir).toBe('C:/out');
       expect(edits.basic.exposure).toBe(0.5);
+      expect(output.format).toBeUndefined(); // 默认跟随原图
+      expect(output.maxEdge).toBeUndefined();
       expect(onImageUpdated).not.toHaveBeenCalled();
     });
   });

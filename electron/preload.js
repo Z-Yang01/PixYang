@@ -36,7 +36,7 @@ contextBridge.exposeInMainWorld('pixyang', {
   saveEdits: (id, params, command) => ipcRenderer.invoke('edits:save', id, params, command),
   getEditHistory: (id) => ipcRenderer.invoke('edit-history:get', id),
   editBake: (id, edits) => ipcRenderer.invoke('fs:edit-bake', id, edits),
-  editExport: (id, edits, destDir) => ipcRenderer.invoke('fs:edit-export', id, edits, destDir),
+  editExport: (id, edits, destDir, output) => ipcRenderer.invoke('fs:edit-export', id, edits, destDir, output),
   editCancel: (id) => ipcRenderer.invoke('fs:edit-cancel', id),
   getPresets: () => ipcRenderer.invoke('presets:list'),
   createPreset: (name, params) => ipcRenderer.invoke('presets:create', name, params),

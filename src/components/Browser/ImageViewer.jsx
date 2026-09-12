@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { formatSizeDisplay as formatSize } from '@/lib/format';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import {
   RotateCw, RotateCcw, FlipHorizontal2, FlipVertical2, Save, Heart, HeartOff,
   Star, X, ChevronLeft, ChevronRight, Camera, Calendar, Info, Pencil,
@@ -64,6 +65,8 @@ export default function ImageViewer({
   const [cropMode, setCropMode] = useState(false);
   const [cropRatioKey, setCropRatioKey] = useState('free');
   const [exitConfirm, setExitConfirm] = useState(false);
+  const [showExportDialog, setShowExportDialog] = useState(false);
+  const [exportOpts, setExportOpts] = useState({ format: 'auto', quality: 92, maxEdge: 0 });
   const [bakeConfirm, setBakeConfirm] = useState(false);
   const [histInfo, setHistInfo] = useState({ canUndo: false, canRedo: false });
   const editImgRef = useRef(null);
@@ -252,13 +255,27 @@ export default function ImageViewer({
   }, [image, editBusy, composeOps]);
 
   // 导出：渲染全尺寸到用户选的目标目录（绝不覆盖原图）
+  // 打开导出选项对话框
+  const openExportDialog = useCallback(() => {
+    if (!image || editBusy) return;
+    setExportOpts({ format: 'auto', quality: 92, maxEdge: 0 });
+    setShowExportDialog(true);
+  }, [image, editBusy]);
+
+  // 确认导出：选项 → 选目录 → 渲染（绝不覆盖原图）
   const exportEdits = useCallback(async () => {
     if (!image || editBusy) return;
     const dir = await api.selectExportDirectory();
     if (!dir) return;
+    setShowExportDialog(false);
     setBusyKind('exporting');
     try {
-      const result = await api.editExport(image.id, toEditParams(composeOps()), dir);
+      const output = {
+        ...(exportOpts.format !== 'auto' ? { format: exportOpts.format } : {}),
+        ...(exportOpts.format !== 'png' ? { quality: exportOpts.quality } : {}),
+        ...(exportOpts.maxEdge > 0 ? { maxEdge: exportOpts.maxEdge } : {}),
+      };
+      const result = await api.editExport(image.id, toEditParams(composeOps()), dir, output);
       if (result?.error) {
         setEditError(result.error);
         return;
@@ -267,7 +284,7 @@ export default function ImageViewer({
     } finally {
       setBusyKind('');
     }
-  }, [image, editBusy, composeOps]);
+  }, [image, editBusy, composeOps, exportOpts]);
 
   // 烘焙替代：渲染并原子替代原图（唯一写原图的路径，需确认）
   const bakeEdits = useCallback(async () => {
@@ -1156,7 +1173,7 @@ export default function ImageViewer({
               <Button
                 variant="secondary" size="sm" className="w-full"
                 disabled={editBusy || !editDirty}
-                onClick={exportEdits}
+                onClick={openExportDialog}
                 title="按当前参数渲染新文件到所选目录，绝不覆盖原图"
               >
                 导出…
@@ -1175,6 +1192,65 @@ export default function ImageViewer({
             </p>
           </div>
         </div>
+      )}
+
+      {showExportDialog && (
+        <Dialog open onOpenChange={(o) => { if (!o) setShowExportDialog(false); }}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle>导出选项</DialogTitle>
+            </DialogHeader>
+            <div className="dialog-body" style={{ padding: '8px 16px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <label className="editor-slider-row">
+                <span>格式</span>
+                <select
+                  value={exportOpts.format}
+                  onChange={(e) => setExportOpts(o => ({ ...o, format: e.target.value }))}
+                >
+                  <option value="auto">跟随原图</option>
+                  <option value="jpeg">JPEG</option>
+                  <option value="png">PNG</option>
+                </select>
+                <em />
+              </label>
+              {exportOpts.format !== 'png' && (
+                <label className="editor-slider-row">
+                  <span>质量</span>
+                  <input
+                    type="range" min={60} max={100} step={1}
+                    value={exportOpts.quality}
+                    onChange={(e) => setExportOpts(o => ({ ...o, quality: Number(e.target.value) }))}
+                  />
+                  <em>{exportOpts.quality}</em>
+                </label>
+              )}
+              <label className="editor-slider-row">
+                <span>最长边</span>
+                <select
+                  value={exportOpts.maxEdge}
+                  onChange={(e) => setExportOpts(o => ({ ...o, maxEdge: Number(e.target.value) }))}
+                >
+                  <option value={0}>原始尺寸</option>
+                  <option value={2560}>2560 px</option>
+                  <option value={1920}>1920 px</option>
+                  <option value={1280}>1280 px</option>
+                </select>
+                <em />
+              </label>
+              <p className="editor-hint">
+                导出生成新文件（<code>-edited</code> 后缀，重名自动加序号），原图与 NEF 不受影响。
+                {editSession?.width ? ` 当前 ${editSession.width}×${editSession.height}。` : ''}
+              </p>
+            </div>
+            <DialogFooter>
+              <Button variant="secondary" size="sm" onClick={() => setShowExportDialog(false)}>取消</Button>
+              <Button size="sm" onClick={exportEdits} disabled={editBusy}>
+                {editBusy ? <Loader2 className="size-4 animate-spin" /> : null}
+                选择目录并导出
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       )}
 
       {bakeConfirm && (

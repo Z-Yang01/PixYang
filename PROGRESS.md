@@ -579,3 +579,13 @@ node -e 模板字符串批量替换连续三次静默 no-op（字符串匹配不
 ### 验证
 
 - **518 passed / 0 failed**（+2）；golden 15/15；build/lint/typecheck 干净。
+
+---
+
+# 2026-09-12 任务书实施批 7：导出选项（Phase 17 核心）
+
+- **main.js exportEditSession**：接受 output 覆盖 `{ format, quality, maxEdge }`——格式可导出 JPEG/PNG（扩展名跟随：-edited.jpg/-edited.png），maxEdge 长边缩放仅原图超限生效，文件名带尺寸标记（`photo-edited-1920px.jpg`）；quality 走 encode stage 显式参数。
+- **导出选项对话框**（ImageViewer）：格式（跟随原图/JPEG/PNG）+ 质量（JPEG 60-100，PNG 隐藏）+ 最长边（原图/2560/1920/1280）+ 语义提示；确认后选目录执行。
+- **修复 encode composite+resize 同管线崩溃**：E2E 抓到 libvips 把 resize 折叠到 composite 之前（composite 层尺寸大于底图报错）——有 resize 时先物化 composite 结果再独立实例缩放（与 M5 折叠发现同根因，检查点模式的第三次应用）。
+- 测试：导出用例适配两段式对话框（断言 output.format/maxEdge 默认透传语义）。
+- **517 passed / 0 failed**；golden 15/15；E2E：PNG 1920×1440 / JPEG 1280×960 全参数渲染正确。

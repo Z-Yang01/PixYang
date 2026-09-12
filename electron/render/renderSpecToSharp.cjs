@@ -228,22 +228,27 @@ async function encodeAndWrite(pixels, inputPath, outputPath, encodeStage, spec, 
     out = sharp(inputPath, { failOn: 'none', unlimited: true }).keepExif().keepIccProfile();
   }
 
-  if (resize && (resize.width || resize.height)) {
-    out = out.resize({
-      width: resize.width || undefined,
-      height: resize.height || undefined,
-      fit: 'inside',
-      withoutEnlargement: true,
-    });
-  }
-  // 显式定格式与质量：不依赖输出扩展名推断（.part 无扩展名会回退输入格式 + Q80 默认）
-  if (format === 'png') out = out.png({ compressionLevel: 6 });
-  else if (format === 'tiff') out = out.tiff({ compression: 'lzw' });
-  else out = out.jpeg({ quality: clampInt(quality, 1, 100, 92) });
+  // encode：composite 与 resize 不可同管线（libvips 把 resize 折叠到 composite 之前会导致
+  // composite 层尺寸大于底图报错），有 resize 时先物化 composite 结果再独立缩放。
+  const encodeWith = (pipe2) => {
+    if (format === 'png') return pipe2.png({ compressionLevel: 6 });
+    if (format === 'tiff') return pipe2.tiff({ compression: 'lzw' });
+    return pipe2.jpeg({ quality: clampInt(quality, 1, 100, 92) });
+  };
 
   const partPath = `${outputPath}.part`;
   try {
-    await out.toFile(partPath);
+    if (resize && (resize.width || resize.height)) {
+      const composited = await out.toBuffer();
+      await encodeWith(sharp(composited).resize({
+        width: resize.width || undefined,
+        height: resize.height || undefined,
+        fit: 'inside',
+        withoutEnlargement: true,
+      })).toFile(partPath);
+    } else {
+      await encodeWith(out).toFile(partPath);
+    }
     // fsync 确保数据落盘后才原子 rename（烘焙/导出都是不可逆替换，掉电不留半文件）
     const fd = fs.openSync(partPath, 'r+');
     try {
