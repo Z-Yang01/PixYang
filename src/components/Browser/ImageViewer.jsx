@@ -836,7 +836,7 @@ export default function ImageViewer({
     if (!webglActive) return null;
     try {
       const spec = editParamsToRenderSpec(toEditParams(composeOps()), { sourceHash: 'preview' });
-      return specToShaderUniforms(spec);
+      return specToShaderUniforms(spec, [editSession?.width || 0, editSession?.height || 0]);
     } catch (e) {
       console.error('[webgl] uniforms 构建失败:', e.message);
       return null;

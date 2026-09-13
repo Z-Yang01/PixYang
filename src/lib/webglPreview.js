@@ -37,6 +37,49 @@ uniform vec3 uGradingDelta2;
 uniform float uSaturation;
 uniform float uMono;
 uniform float uVignette;
+uniform float uMaskOn;
+uniform vec2 uImageSize;        // 底图全尺寸（蒙版几何为 pre-crop 像素坐标）
+uniform float uMaskType[8];     // 0 none, 1 radial, 2 linear
+uniform vec4 uMaskGeo[8];       // radial: cx,cy,rx,ry / linear: x0,y0,x1,y1
+uniform float uMaskRotation[8];
+uniform float uMaskFeather[8];
+uniform float uMaskInvert[8];
+uniform float uMaskAdjExposure[8];
+uniform float uMaskAdjContrast[8];
+uniform float uMaskAdjSat[8];
+uniform float uMaskAdjTemp[8];
+uniform float uMaskAdjTint[8];
+
+float maskWeight(int i, vec2 px) {
+  vec4 g = uMaskGeo[i];
+  float w;
+  if (uMaskType[i] < 1.5) {
+    vec2 d = px - g.xy;
+    float a = radians(uMaskRotation[i]);
+    vec2 u = vec2(d.x * cos(a) + d.y * sin(a), -d.x * sin(a) + d.y * cos(a));
+    float dist = length(u / g.zw);
+    w = uMaskFeather[i] > 0.0 ? clamp((1.0 - dist) / uMaskFeather[i], 0.0, 1.0) : (dist < 1.0 ? 1.0 : 0.0);
+  } else {
+    vec2 dir = g.zw - g.xy;
+    float len2 = dot(dir, dir);
+    if (len2 <= 0.0) return uMaskInvert[i] > 0.5 ? 1.0 : 0.0;
+    w = clamp(dot(px - g.xy, dir) / len2, 0.0, 1.0);
+  }
+  if (uMaskInvert[i] > 0.5) w = 1.0 - w;
+  return w;
+}
+
+void applyMaskedAdjust(int i, float w, inout vec3 c) {
+  if (uMaskAdjExposure[i] != 0.0) c *= pow(2.0, uMaskAdjExposure[i] * w);
+  float tk = uMaskAdjTemp[i] / 100.0 * w;
+  float gk = uMaskAdjTint[i] / 100.0 * w;
+  if (tk != 0.0 || gk != 0.0) c = vec3(c.r * (1.0 + tk * 0.1), c.g * (1.0 - gk * 0.06), c.b * (1.0 - tk * 0.1));
+  if (uMaskAdjContrast[i] != 0.0) c = (c - 0.5) * (1.0 + (uMaskAdjContrast[i] / 50.0) * w) + 0.5;
+  if (uMaskAdjSat[i] != 0.0) {
+    float y = dot(c, vec3(0.2126, 0.7152, 0.0722));
+    c = y + (c - y) * (1.0 + (uMaskAdjSat[i] / 100.0) * w);
+  }
+}
 
 vec3 rgb2hsl(vec3 c) {
   float mx = max(c.r, max(c.g, c.b));
@@ -123,6 +166,15 @@ void main() {
   float luma = dot(c, vec3(0.213, 0.715, 0.072));
   if (uMono > 0.5) c = vec3(luma);
   else if (uSaturation != 1.0) c = mix(vec3(luma), c, uSaturation);
+  if (uMaskOn > 0.5) {
+    vec2 px = vUv * uImageSize;
+    for (int i = 0; i < 8; i++) {
+      if (uMaskType[i] < 0.5) continue;
+      float w = maskWeight(i, px);
+      if (w > 0.0) applyMaskedAdjust(i, w, c);
+    }
+    c = clamp(c, 0.0, 1.0);
+  }
   if (uVignette != 0.0) {
     float d = length((vUv - 0.5) * 2.0);
     float f = clamp((d - 0.5) / 0.5, 0.0, 1.0);
@@ -154,6 +206,8 @@ function getUniformLocations(gl, program) {
     'uHighlightsSlope', 'uHslOn', 'uHslHue', 'uHslSat', 'uHslLum', 'uHslCenters',
     'uBandRadius', 'uHueMaxDeg', 'uLumMax', 'uGradingOn', 'uGradingScale',
     'uGradingDelta0', 'uGradingDelta1', 'uGradingDelta2', 'uSaturation', 'uMono', 'uVignette',
+    'uMaskOn', 'uImageSize', 'uMaskType', 'uMaskGeo', 'uMaskRotation', 'uMaskFeather',
+    'uMaskInvert', 'uMaskAdjExposure', 'uMaskAdjContrast', 'uMaskAdjSat', 'uMaskAdjTemp', 'uMaskAdjTint',
   ];
   const locs = {};
   for (const n of names) locs[n] = gl.getUniformLocation(program, n);
@@ -266,6 +320,18 @@ export function renderWebGLPreview(canvas, image, uniforms) {
     gl.uniform1f(locs.uSaturation, uniforms.saturation);
     gl.uniform1f(locs.uMono, uniforms.mono);
     gl.uniform1f(locs.uVignette, uniforms.vignette);
+    gl.uniform1f(locs.uMaskOn, uniforms.maskOn || 0);
+    gl.uniform2fv(locs.uImageSize, uniforms.imageSize || [0, 0]);
+    gl.uniform1fv(locs.uMaskType, uniforms.maskType);
+    gl.uniform4fv(locs.uMaskGeo, uniforms.maskGeo.flat());
+    gl.uniform1fv(locs.uMaskRotation, uniforms.maskRotation);
+    gl.uniform1fv(locs.uMaskFeather, uniforms.maskFeather);
+    gl.uniform1fv(locs.uMaskInvert, uniforms.maskInvert);
+    gl.uniform1fv(locs.uMaskAdjExposure, uniforms.maskAdjExposure);
+    gl.uniform1fv(locs.uMaskAdjContrast, uniforms.maskAdjContrast);
+    gl.uniform1fv(locs.uMaskAdjSat, uniforms.maskAdjSat);
+    gl.uniform1fv(locs.uMaskAdjTemp, uniforms.maskAdjTemp);
+    gl.uniform1fv(locs.uMaskAdjTint, uniforms.maskAdjTint);
 
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
     return true;

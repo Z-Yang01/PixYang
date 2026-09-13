@@ -7,6 +7,7 @@
 import curvesLib from '../../shared/curves.cjs';
 import gradingLib from '../../shared/colorGrading.cjs';
 import hslLib from '../../shared/hsl.cjs';
+import masksLib from '../../shared/masks.cjs';
 
 const { buildCurveLuts } = curvesLib;
 const { buildGradeLuts } = gradingLib;
@@ -21,8 +22,8 @@ function stagesBy(spec) {
   return by;
 }
 
-// spec.stages → shader uniforms（纯函数）
-export function specToShaderUniforms(spec) {
+// spec.stages → shader uniforms（纯函数）。imageSize 为底图全尺寸 [w,h]（蒙版几何 pre-crop 像素坐标）。
+export function specToShaderUniforms(spec, imageSize = [0, 0]) {
   const by = stagesBy(spec);
   const wb = by.whiteBalance?.params || { temp: 0, tint: 0 };
   const tone = by.tone?.params || {};
@@ -88,7 +89,45 @@ export function specToShaderUniforms(spec) {
   // 暗角（pre-crop 椭圆，shader 内线性衰减，公式与 shared/lens.cjs 一致）
   const vignette = clamp(Number(by.lens?.params?.vignette) || 0, -100, 100);
 
+  // 蒙版（pre-crop 像素坐标，shader 内权重 × 调整，公式与 shared/masks.cjs 一致；上限 8 个）
+  const maskList = masksLib.normalizeMasks(by.masks?.params?.list || []).slice(0, 8);
+  const MASK_COUNT = 8;
+  const maskType = new Array(MASK_COUNT).fill(0);
+  const maskGeo = new Array(MASK_COUNT).fill([0, 0, 0, 0]);
+  const maskRotation = new Array(MASK_COUNT).fill(0);
+  const maskFeather = new Array(MASK_COUNT).fill(0);
+  const maskInvert = new Array(MASK_COUNT).fill(0);
+  const maskAdjExposure = new Array(MASK_COUNT).fill(0);
+  const maskAdjContrast = new Array(MASK_COUNT).fill(0);
+  const maskAdjSat = new Array(MASK_COUNT).fill(0);
+  const maskAdjTemp = new Array(MASK_COUNT).fill(0);
+  const maskAdjTint = new Array(MASK_COUNT).fill(0);
+  maskList.forEach((m, i) => {
+    maskType[i] = m.type === 'radial' ? 1 : 2;
+    maskGeo[i] = m.type === 'radial' ? [m.cx, m.cy, m.rx, m.ry] : [m.x0, m.y0, m.x1, m.y1];
+    maskRotation[i] = m.rotation || 0;
+    maskFeather[i] = m.feather || 0;
+    maskInvert[i] = m.invert ? 1 : 0;
+    maskAdjExposure[i] = m.adjustments.exposure;
+    maskAdjContrast[i] = m.adjustments.contrast;
+    maskAdjSat[i] = m.adjustments.saturation;
+    maskAdjTemp[i] = m.adjustments.temperature;
+    maskAdjTint[i] = m.adjustments.tint;
+  });
+
   return {
+    maskOn: maskList.length > 0 ? 1 : 0,
+    imageSize: [imageSize[0] || 0, imageSize[1] || 0],
+    maskType,
+    maskGeo,
+    maskRotation,
+    maskFeather,
+    maskInvert,
+    maskAdjExposure,
+    maskAdjContrast,
+    maskAdjSat,
+    maskAdjTemp,
+    maskAdjTint,
     affineSlope,
     affineOffset255,
     shadows,
@@ -155,6 +194,23 @@ export function simulateShaderPixel(rgb255, uniforms, uv = [0.5, 0.5]) {
   } else if (uniforms.saturation !== 1) {
     const y = 0.213 * c[0] + 0.715 * c[1] + 0.072 * c[2];
     c = c.map((x) => y + (x - y) * uniforms.saturation);
+  }
+  if (uniforms.maskOn) {
+    const px = [uv[0] * uniforms.imageSize[0], uv[1] * uniforms.imageSize[1]];
+    for (let i = 0; i < 8; i++) {
+      if (uniforms.maskType[i] === 0) continue;
+      const w = masksLib.maskWeight({
+        type: uniforms.maskType[i] === 1 ? 'radial' : 'linear',
+        cx: uniforms.maskGeo[i][0], cy: uniforms.maskGeo[i][1], rx: uniforms.maskGeo[i][2], ry: uniforms.maskGeo[i][3],
+        x0: uniforms.maskGeo[i][0], y0: uniforms.maskGeo[i][1], x1: uniforms.maskGeo[i][2], y1: uniforms.maskGeo[i][3],
+        rotation: uniforms.maskRotation[i], feather: uniforms.maskFeather[i], invert: uniforms.maskInvert[i] === 1,
+      }, px[0], px[1]);
+      if (w <= 0) continue;
+      c = masksLib.applyMaskedAdjustment(c, {
+        exposure: uniforms.maskAdjExposure[i], contrast: uniforms.maskAdjContrast[i],
+        saturation: uniforms.maskAdjSat[i], temperature: uniforms.maskAdjTemp[i], tint: uniforms.maskAdjTint[i],
+      }, w);
+    }
   }
   if (uniforms.vignette) {
     const dx = (uv[0] - 0.5) * 2;

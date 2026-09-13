@@ -84,6 +84,7 @@ const MaskAdjustmentsSchema = z.object({
 
 const RadialMaskSchema = z.object({
   type: z.literal('radial'),
+  id: z.string().catch(''),
   cx: z.number().catch(0),
   cy: z.number().catch(0),
   rx: z.number().min(1).catch(100),
@@ -96,6 +97,7 @@ const RadialMaskSchema = z.object({
 
 const LinearMaskSchema = z.object({
   type: z.literal('linear'),
+  id: z.string().catch(''),
   x0: z.number().catch(0),
   y0: z.number().catch(0),
   x1: z.number().catch(100),

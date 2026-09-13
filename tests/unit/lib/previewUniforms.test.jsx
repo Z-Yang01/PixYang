@@ -6,14 +6,16 @@ import { previewFilterChain, fromEditParams } from '@/lib/editParams';
 
 const require_ = createRequire(import.meta.url);
 const renderSpec = require_('../../../shared/renderSpec.cjs');
+const masksLib = require_('../../../shared/masks.cjs');
 const curves = require_('../../../shared/curves.cjs');
 const grading = require_('../../../shared/colorGrading.cjs');
 const lens = require_('../../../shared/lens.cjs');
 const hsl = require_('../../../shared/hsl.cjs');
 const editSchema = require_('../../../shared/editSchema.cjs');
 
-const buildUniforms = (params) => specToShaderUniforms(
-  renderSpec.editParamsToRenderSpec(editSchema.normalizeEdits(params), { sourceHash: 'preview' })
+const buildUniforms = (params, imageSize) => specToShaderUniforms(
+  renderSpec.editParamsToRenderSpec(editSchema.normalizeEdits(params), { sourceHash: 'preview' }),
+  imageSize
 );
 
 const FULL_PARAMS = {
@@ -121,3 +123,49 @@ describe('simulateShaderPixel（shader 公式 JS 模拟）与 shared 数学连�
     expect(got).toEqual([120, 60, 30]);
   });
 });
+
+describe('masks uniforms（蒙版打包 + shader 模拟）', () => {
+  const MASK_PARAMS = {
+    masks: [
+      { type: 'radial', id: 'm1', cx: 200, cy: 150, rx: 80, ry: 60, rotation: 30, feather: 0.4, invert: false, adjustments: { exposure: -0.8, saturation: -30 } },
+      { type: 'linear', id: 'm2', x0: 0, y0: 0, x1: 400, y1: 0, invert: true, adjustments: { exposure: 0.5 } },
+      { type: 'brush', adjustments: {} },
+    ],
+  };
+
+  it('蒙版归一化打包进 uniforms（上限 8，未知类型丢弃）', () => {
+    const u = buildUniforms(MASK_PARAMS, [400, 300]);
+    expect(u.maskOn).toBe(1);
+    expect(u.maskType[0]).toBe(1);
+    expect(u.maskGeo[0]).toEqual([200, 150, 80, 60]);
+    expect(u.maskRotation[0]).toBe(30);
+    expect(u.maskAdjExposure[0]).toBe(-0.8);
+    expect(u.maskType[1]).toBe(2);
+    expect(u.maskGeo[1]).toEqual([0, 0, 400, 0]);
+    expect(u.maskInvert[1]).toBe(1);
+    expect(u.maskType[2]).toBe(0);
+    expect(u.maskType[7]).toBe(0);
+  });
+
+  it('simulateShaderPixel 蒙版段与 shared maskWeight/applyMaskedAdjustment 一致', () => {
+    const u = buildUniforms(MASK_PARAMS, [400, 300]);
+    const norm = masksLib.normalizeMasks(MASK_PARAMS.masks);
+    for (const uv of [[0.5, 0.5], [0.1, 0.9], [0.9, 0.1]]) {
+      const px = [uv[0] * 400, uv[1] * 300];
+      const expected = masksLib.applyMaskedAdjustment(
+        masksLib.applyMaskedAdjustment([0.5, 0.5, 0.5], norm[0].adjustments, masksLib.maskWeight(norm[0], px[0], px[1])),
+        norm[1].adjustments, masksLib.maskWeight(norm[1], px[0], px[1])
+      ).map((v) => Math.round(clamp01(v) * 255));
+      const got = simulateShaderPixel([128, 128, 128], u, uv);
+      expect(got.every((v, i) => Math.abs(v - expected[i]) <= 1)).toBe(true);
+    }
+  });
+
+  it('无蒙版时 maskOn=0 且模拟不受 imageSize 影响', () => {
+    const u = buildUniforms({ basic: { exposure: 0.5 } }, [400, 300]);
+    expect(u.maskOn).toBe(0);
+    expect(simulateShaderPixel([120, 120, 120], u, [0.9, 0.9])).toEqual(simulateShaderPixel([120, 120, 120], u, [0.1, 0.1]));
+  });
+});
+
+function clamp01(v) { return Math.min(1, Math.max(0, v)); }

@@ -34,6 +34,7 @@ function normalizeMasks(masks) {
       if (!Number.isFinite(m.cx) || !Number.isFinite(m.cy)) continue;
       out.push({
         type: 'radial',
+        id: typeof m.id === 'string' ? m.id : '',
         cx: Number(m.cx),
         cy: Number(m.cy),
         rx, ry,
@@ -45,6 +46,7 @@ function normalizeMasks(masks) {
     } else {
       out.push({
         type: 'linear',
+        id: typeof m.id === 'string' ? m.id : '',
         x0: Number(m.x0) || 0,
         y0: Number(m.y0) || 0,
         x1: Number(m.x1) || 0,
