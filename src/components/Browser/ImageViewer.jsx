@@ -33,6 +33,7 @@ import { isWebGL2Available, renderWebGLPreview } from '@/lib/webglPreview';
 import { specToShaderUniforms } from '@/lib/previewUniforms';
 import CompareView from './CompareView';
 import CurveEditor from './CurveEditor';
+import MaskPanel from './MaskPanel';
 import ConfirmDialog from '@/components/Layout/ConfirmDialog';
 
 const clamp = (v, min, max) => Math.min(max, Math.max(min, v));
@@ -84,6 +85,7 @@ export default function ImageViewer({
   const webglAvailable = useRef(isWebGL2Available()).current;
   const [webglFailed, setWebglFailed] = useState(false);
   const webglCanvasRef = useRef(null);
+  const [selectedMaskId, setSelectedMaskId] = useState(null); // 当前编辑的蒙版 id
   const editImgRef = useRef(null);
   const contentRef = useRef(null);
   const cropDragRef = useRef(null);
@@ -385,6 +387,32 @@ export default function ImageViewer({
   useEffect(() => {
     if (editing) loadPresets();
   }, [editing, loadPresets]);
+
+  useEffect(() => {
+    setSelectedMaskId(null);
+  }, [image?.id]);
+
+  // 蒙版动作：默认几何取当前底图尺寸比例；id 生成一次即稳定
+  const addMask = useCallback((type) => {
+    const W = editSessionRef.current?.width || 1000;
+    const H = editSessionRef.current?.height || 1000;
+    const id = `mask-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    const mask = type === 'radial'
+      ? { type: 'radial', id, cx: W / 2, cy: H / 2, rx: Math.round(W * 0.25), ry: Math.round(H * 0.25), rotation: 0, feather: 0.5, invert: false, adjustments: { exposure: -0.5, contrast: 0, saturation: 0, temperature: 0, tint: 0 } }
+      : { type: 'linear', id, x0: 0, y0: Math.round(H * 0.3), x1: 0, y1: Math.round(H * 0.7), feather: 0.5, invert: false, adjustments: { exposure: -0.5, contrast: 0, saturation: 0, temperature: 0, tint: 0 } };
+    const next = sanitizeEditOps({ ...editOpsRef.current, masks: [...(editOpsRef.current.masks || []), mask] });
+    pushHistory(next, type === 'radial' ? '添加径向蒙版' : '添加线性蒙版');
+    setEditOps(next);
+    setSelectedMaskId(id);
+  }, [pushHistory]);
+
+  const deleteSelectedMask = useCallback(() => {
+    if (!selectedMaskId) return;
+    const next = sanitizeEditOps({ ...editOpsRef.current, masks: (editOpsRef.current.masks || []).filter((m) => m.id !== selectedMaskId) });
+    pushHistory(next, '删除蒙版');
+    setEditOps(next);
+    setSelectedMaskId(null);
+  }, [selectedMaskId, pushHistory]);
 
   // 应用预设：scope='basic' 只覆盖影调（几何保持当前构图）；
   // scope='all' 连旋转/翻转/裁剪一起应用（crop 坐标基于保存时的底图尺寸，跨尺寸图需手动微调）
@@ -1312,6 +1340,28 @@ export default function ImageViewer({
               );
             })}
             <p className="editor-crop-hint">按亮度区间着色：先拖色相选色调，再调强度</p>
+          </div>
+
+          {/* 局部蒙版：radial/linear，渲染与 WebGL 预览同公式（shared/masks.cjs） */}
+          <div className="editor-crop-section">
+            <div className="editor-crop-header">
+              <span>蒙版</span>
+              <div style={{ display: 'flex', gap: 4 }}>
+                <Button variant="ghost" size="xs" onClick={() => addMask('radial')}>+ 径向</Button>
+                <Button variant="ghost" size="xs" onClick={() => addMask('linear')}>+ 线性</Button>
+                {selectedMaskId && (
+                  <Button variant="ghost" size="xs" onClick={deleteSelectedMask}>删除</Button>
+                )}
+              </div>
+            </div>
+            <MaskPanel
+              masks={editOps.masks || []}
+              session={editSession}
+              selectedId={selectedMaskId}
+              onSelect={setSelectedMaskId}
+              onCommit={(label) => pushHistory(editOpsRef.current, label)}
+              onChange={(m) => setEditOps(o => ({ ...o, masks: m }))}
+            />
           </div>
 
           <div className="editor-crop-section">

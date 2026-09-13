@@ -898,3 +898,15 @@ Phase 1-6、8、10-14、16-17 全量落地；Phase 7（sRGB 工作空间转换 +
 - WebGL2 shader 的蒙版权重与调整（uniform 打包，cap 8 蒙版）+ SVG 回退策略标注；
 - 蒙版 UI（图像上拖拽创建/手柄编辑 + 蒙版列表面板 + 调整滑杆）；
 - brush/range/ai 类型与多蒙版可视化管理。
+
+---
+
+# 2026-09-13 masks 二期 B：蒙版 UI（shader 批已随 06c8a9b 落地）
+
+- **WebGL2 shader 蒙版支持（06c8a9b）**：GLSL 移植 radial（旋转椭圆+羽化+反相）/linear（投影渐变）权重与五项加权调整，上限 8 蒙版；uniform 数组打包由 previewUniforms 完成（imageSize 换算 pre-crop 像素坐标）；契约测试锁定模拟与 shared 数学逐像素一致。
+- **平铺模型**：EDIT_DEFAULTS.masks + sanitize（normalizeMasks）+ hasEdits + toEditParams/fromEditParams 往返；**蒙版不参与复制/批量同步**（几何坐标是图像相关的，跨图同步语义错误）。
+- **MaskPanel.jsx（新）**：蒙版 chip 列表（选中态）+ 选中蒙版的几何滑杆（径向：中心 X/Y、半径 X/Y、旋转；线性：起终点 X/Y）+ 羽化（线性禁用）+ 反相 + 5 项调整滑杆；手势 pointerup 收敛历史（标签「蒙版调整」），键盘逐次提交。
+- **ImageViewer 蒙版区**（颜色分级后）：+ 径向 / + 线性（默认几何按底图尺寸比例，exposure -0.5 起步）/ 删除；id 稳定生成供选中态；切图重置选中。
+- **UI 语义备忘**：v1 几何用滑杆编辑（图像上拖拽创建/手柄编辑为后续）；预览依赖 WebGL2（SVG 回退不渲染 masks，能力矩阵 preview partial）。
+- 测试基建备忘：python 脚本 .replace() 锚点不匹配会**静默 no-op**（本批 state/callback/import 三处插入失效未报错，靠 Uncaught Exception 逐个暴露）——多锚点插入后必须 grep 验证，或直接用 Edit 工具。
+- 680 例全绿（+11：MaskPanel 5、viewer 集成 1、masks 往返 2、shader 契约 3）；golden 21/21；lint 0 error；typecheck/build 通过。

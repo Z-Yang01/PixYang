@@ -190,3 +190,23 @@ describe('vignette（平铺模型）', () => {
     expect(fromEditParams(params).vignette).toBe(-55);
   });
 });
+
+describe('masks（平铺模型）', () => {
+  it('sanitize 归一化蒙版（未知类型丢弃/几何钳制），默认空数组', () => {
+    expect(sanitizeEditOps({}).masks).toEqual([]);
+    const s = sanitizeEditOps({ masks: [{ type: 'brush' }, { type: 'radial', cx: 5, cy: 5, rx: -1, ry: 1, adjustments: { exposure: 9 } }] });
+    expect(s.masks).toHaveLength(1);
+    expect(s.masks[0].rx).toBe(1);
+    expect(s.masks[0].adjustments.exposure).toBe(2);
+  });
+
+  it('蒙版含非零调整即已编辑；往返经 zod 不丢', async () => {
+    expect(hasEdits({ ...EDIT_DEFAULTS, masks: [{ type: 'radial', cx: 1, cy: 1, rx: 5, ry: 5, adjustments: {} }] })).toBe(false);
+    expect(hasEdits({ ...EDIT_DEFAULTS, masks: [{ type: 'linear', x0: 0, y0: 0, x1: 10, y1: 0, adjustments: { exposure: 0.5 } }] })).toBe(true);
+    const { toEditParams, fromEditParams } = await import('@/lib/editParams');
+    const ops = { ...EDIT_DEFAULTS, masks: [{ type: 'radial', id: 'a', cx: 10, cy: 20, rx: 30, ry: 40, feather: 0.5, invert: true, adjustments: { exposure: -0.5 } }] };
+    const params = toEditParams(ops);
+    expect(params.masks[0].adjustments.exposure).toBe(-0.5);
+    expect(fromEditParams(params).masks[0].invert).toBe(true);
+  });
+});

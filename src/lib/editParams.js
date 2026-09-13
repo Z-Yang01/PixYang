@@ -5,9 +5,11 @@
 import editSchema from '../../shared/editSchema.cjs';
 import curvesLib from '../../shared/curves.cjs';
 import gradingLib from '../../shared/colorGrading.cjs';
+import masksLib from '../../shared/masks.cjs';
 
 const { normalizePoints, buildCurveTables, hasCurveData } = curvesLib;
 const { normalizeGrading, hasColorGradingData, buildGradingTables } = gradingLib;
+const { normalizeMasks, hasMaskData } = masksLib;
 
 export const EDIT_DEFAULTS = {
   rotation: 0,        // 90 的倍数
@@ -26,6 +28,7 @@ export const EDIT_DEFAULTS = {
   curves: { rgb: [], r: [], g: [], b: [] },  // 点对平铺数组 [x0,y0,...]，0..1，见 shared/curves.cjs
   colorGrading: { shadows: [], midtones: [], highlights: [] },  // 每区间 [hue 0..360, sat 0..100]
   vignette: 0,        // -100..100（负压暗/正提亮），pre-crop 语义，见 shared/lens.cjs
+  masks: [],          // 局部蒙版（radial/linear），pre-crop 像素坐标，见 shared/masks.cjs
 };
 
 export const CROP_RATIOS = [
@@ -73,6 +76,7 @@ export function sanitizeEditOps(input = {}) {
     },
     colorGrading: normalizeGrading(ops.colorGrading),
     vignette: clamp(Number(ops.vignette) || 0, -100, 100),
+    masks: normalizeMasks(ops.masks),
   };
 }
 
@@ -81,7 +85,8 @@ export function hasEdits(ops) {
   return !!(s.rotation !== 0 || s.flipH || s.flipV || s.crop
     || s.exposure !== 0 || s.contrast !== 0 || s.saturation !== 0 || s.temperature !== 0
     || s.highlights !== 0 || s.shadows !== 0 || s.whites !== 0 || s.blacks !== 0 || s.tint !== 0
-    || hasCurveData(s.curves) || hasColorGradingData(s.colorGrading) || s.vignette !== 0);
+    || hasCurveData(s.curves) || hasColorGradingData(s.colorGrading) || s.vignette !== 0
+    || hasMaskData(s.masks));
 }
 
 // 色温预览：SVG feColorMatrix 逐通道增益，与 sharp 管线的 RGB 增益同数学语义
@@ -128,6 +133,7 @@ export function toEditParams(ops) {
     curves: s.curves,
     colorGrading: s.colorGrading,
     lens: { profile: '', distortion: 0, vignette: s.vignette, chromatic: 0 },
+    masks: s.masks,
   });
 }
 
@@ -158,6 +164,7 @@ export function fromEditParams(params) {
     },
     colorGrading: normalizeGrading(p.colorGrading),
     vignette: clamp(Number(p.lens?.vignette) || 0, -100, 100),
+    masks: normalizeMasks(p.masks),
   };
 }
 

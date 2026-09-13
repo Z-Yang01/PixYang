@@ -255,6 +255,30 @@ describe('ImageViewer', () => {
     expect(layer().style.transform).toContain('rotate(90deg)');
   });
 
+  it('编辑模式：添加径向蒙版入列，保存参数携带 masks，删除复位', async () => {
+    mockEditBridge();
+    const { container } = render(<ImageViewer {...baseProps()} />);
+    fireEvent.click(screen.getByTitle(/编辑模式/));
+    await screen.findByText('编辑');
+    expect(container.querySelector('.editor-mask-panel')).toBeTruthy();
+    fireEvent.click(screen.getByText('+ 径向'));
+    const chips = container.querySelectorAll('.editor-mask-list button');
+    expect(chips).toHaveLength(1);
+    expect(chips[0].textContent).toContain('径向');
+    // 保存参数携带 masks（WebGL 关闭的测试环境同样只走参数链路）
+    fireEvent.click(screen.getByText('保存参数'));
+    await vi.waitFor(() => {
+      expect(window.pixyang.saveEdits).toHaveBeenCalled();
+      const [, params] = window.pixyang.saveEdits.mock.calls.at(-1);
+      expect(Array.isArray(params.masks)).toBe(true);
+      expect(params.masks[0].type).toBe('radial');
+      expect(params.masks[0].adjustments.exposure).toBeCloseTo(-0.5);
+    });
+    // 删除
+    fireEvent.click(screen.getByText('删除'));
+    expect(container.querySelectorAll('.editor-mask-list button')).toHaveLength(0);
+  });
+
   it('编辑模式：曲线编辑器渲染、加点出现清除、清除复位', async () => {
     mockEditBridge();
     // Element.prototype 覆盖 SVG（曲线面板固定 100x100 @ (0,0)）
