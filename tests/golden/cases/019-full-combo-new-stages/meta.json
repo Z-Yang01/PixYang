@@ -3,7 +3,6 @@
   "height": 1000,
   "format": "png",
   "unsupported": [
-    "hsl",
     "masks"
   ]
 }

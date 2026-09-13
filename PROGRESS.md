@@ -853,3 +853,30 @@ Phase 1-6、8、10-14、16-17 全量落地；Phase 7（sRGB 工作空间转换 +
 - **颜色分级区块**（曲线区之后）：阴影/中间调/高光 × 色相（0..360 彩虹轨道渐变）/强度（0..100）双滑杆；强度独立不自动激活（可预期语义）；区间标签双击清除、区块级清除按钮（hasColorGradingData 联动）；历史复用滑杆模式（拖动全程一条 `分级·阴影` 等）；值读数 `210° · 45%`。
 - **测试**：+2（分级滑杆状态流/清除联动、暗角滑杆 overlay 渲染）；640 例全绿；lint 0 error；typecheck/build 通过。
 - 至此曲线/分级/暗角三个渲染能力全部有手动 UI 入口 + 预设入口，用户完全可见。
+
+---
+
+# 2026-09-13 M7：WebGL2 预览 + HSL 渲染转正（shader 消费 RenderSpec）
+
+## HSL 渲染端（预览一致性的另一半）
+
+- **shared/hsl.cjs（新）**：8 色相带（红0/橙30/黄60/绿120/青180/蓝240/紫280/品320）色相/饱和度/亮度。带权重为 60° 线性衰减；重叠带内**归一加权平均**（分母计入所有有权重带——首版分母跳过零调整带会让 60° 边缘保持全强度产生硬边，测试驱动修正）。语义：hue ±100→±30°、sat ×(1±1)、lum ±0.3。执行器新增 hsl 阶段（curves 后 grading 前，显示参照空间，灰度跳过）。
+- pipelineOrder：UNSUPPORTED 仅余 masks；能力矩阵 hsl 三路 supported（预览经 WebGL2，SVG 回退路径不渲染 hsl 并已注明）。
+- golden 020-hsl-shift（绿带 hue-60/sat+40/lum+10，PNG Δ=0）；执行器彩色渐变逐像素 vs hslPixel Δ≤1 测试。
+
+## WebGL2 预览（shader 直接消费 RenderSpec）
+
+- **src/lib/previewUniforms.js（新）**：spec.stages → shader uniforms 纯函数——仿射（白平衡·曝光·影调线性，与执行器 pending affine 同序复合）、阴影 ±镜像 gamma、高光斜率、曲线复合 LUT（256×4 RGBA 纹理）、HSL 8 带数组、分级三槽位（scale+delta）、饱和度（feColorMatrix saturate = mix(luma,c,s) 语义）、暗角。
+- **src/lib/webglPreview.js（新）**：GLSL ES 3.0 单 pass shader，逐阶段公式与 shared/ 一致（hsl 带权重/分级真亮度/暗角椭圆 falloff 均 port 自 shared 模块）；底图纹理按 src 缓存（滑杆调节零重传）、LUT 纹理 4KB 每帧重传、长边钳 2048。
+- **ImageViewer**：编辑态 canvas 覆盖底图（absolute inset 0，img 保留供 1:1 缩放与纹理源）；WebGL 激活时 SVG 滤镜与暗角 overlay 关闭（shader 内渲染）；初始化/编译失败自动回退 SVG 路径。happy-dom 无 GPU → 组件测试自然走 SVG 路径不受影响。
+- **一致性锁定**：previewUniforms 契约测试——uniforms 数值 vs previewFilterChain（仿射/阴影/高光/饱和度）逐项相等 + 曲线 LUT 逐项相等；**simulateShaderPixel（shader 公式 JS 逐像素模拟）vs 独立 shared 数学连续求值相等**（全公式组合像素）。GPU 侧无法在 vitest 验证，公式由模拟锁定、渲染侧由 golden 锁定。
+
+## 测试基建备忘
+
+- baseSpecStages 残留 unsupported 标记第三次踩坑（hsl）——转正阶段务必同步删除标记。
+- previewFilterChain 吃平铺 ops：EditParams 形状对象传入会静默得到全默认值（测试曾因此矩阵全 1）。
+- SVG feColorMatrix 索引为行主 5 列布局（G 行斜率在 index 6、B 行在 12）。
+
+## 验证
+
+658 例全绿（+20：hsl 单测 9、执行器 hsl、previewUniforms 契约 7、golden 020 及相关）；golden 20/20；lint 0 error；typecheck/build 通过。

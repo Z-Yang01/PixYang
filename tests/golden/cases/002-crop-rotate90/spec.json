@@ -52,8 +52,7 @@
         "hue": [],
         "sat": [],
         "lum": []
-      },
-      "unsupported": true
+      }
     },
     {
       "kind": "colorGrading",
@@ -123,6 +122,6 @@
   ],
   "meta": {
     "fromEditParamsVersion": 0,
-    "generatedAt": "2026-09-13T10:13:00.906Z"
+    "generatedAt": "2026-09-13T14:42:32.932Z"
   }
 }

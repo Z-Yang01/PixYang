@@ -62,8 +62,7 @@
         "lum": [
           0
         ]
-      },
-      "unsupported": true
+      }
     },
     {
       "kind": "colorGrading",
@@ -126,6 +125,6 @@
   ],
   "meta": {
     "fromEditParamsVersion": 0,
-    "generatedAt": "2026-09-13T10:13:01.200Z"
+    "generatedAt": "2026-09-13T14:42:33.233Z"
   }
 }

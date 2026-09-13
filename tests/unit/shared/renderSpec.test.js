@@ -13,9 +13,9 @@ describe('pipelineOrder（渲染阶段顺序铁律）', () => {
     expect(order[order.length - 1]).toBe('encode');
   });
 
-  it('未实现阶段清单：hsl/masks（curves/colorGrading/lens.vignette 已支持）', () => {
+  it('未实现阶段清单：仅 masks（curves/colorGrading/hsl/lens.vignette 已支持）', () => {
     expect([...pipelineOrder.UNSUPPORTED_STAGES].sort()).toEqual(
-      ['hsl', 'masks']
+      ['masks']
     );
   });
 });
@@ -27,7 +27,7 @@ describe('editParamsToRenderSpec（纯函数转换）', () => {
     const spec = build({});
     expect(spec.specVersion).toBe(1);
     expect(spec.stages.map((s) => s.kind)).toEqual(pipelineOrder.PIPELINE_ORDER);
-    expect(renderSpec.listUnsupported(spec)).toEqual(['hsl', 'masks']);
+    expect(renderSpec.listUnsupported(spec)).toEqual(['masks']);
   });
 
   it('2. 纯函数：同输入两次调用 stages 深相等', () => {
@@ -68,13 +68,14 @@ describe('editParamsToRenderSpec（纯函数转换）', () => {
     }
   });
 
-  it('8. curves 已支持（无 unsupported 标记）且数据透传；hsl 仍标 unsupported', () => {
+  it('8. curves/hsl 已支持（无 unsupported 标记）且数据透传', () => {
     const spec = build({ curves: { rgb: [0, 0.25, 1, 0.8] }, hsl: { hue: [10] } });
     const curves = spec.stages.find((s) => s.kind === 'curves');
     expect(curves.unsupported).toBeUndefined();
     expect(curves.params.rgb).toEqual([0, 0.25, 1, 0.8]);
     const hsl = spec.stages.find((s) => s.kind === 'hsl');
-    expect(hsl.unsupported).toBe(true);
+    expect(hsl.unsupported).toBeUndefined();
+    expect(hsl.params.hue).toEqual([10]);
   });
 
   it('9. 非法值混合（schemaVersion 缺失/越界值）归一化后不抛错', () => {

@@ -66,7 +66,7 @@ const baseSpecStages = (over = {}) => ([
   { kind: 'exposure', params: { ev: over.ev ?? 0 } },
   { kind: 'tone', params: { contrast: 0, highlights: 0, shadows: 0, whites: 0, blacks: 0 } },
   { kind: 'curves', params: over.curves ?? {} },
-  { kind: 'hsl', params: {}, unsupported: true },
+  { kind: 'hsl', params: {} },
   { kind: 'colorGrading', params: {} },
   { kind: 'saturation', params: { value: 0, mono: false } },
   { kind: 'masks', params: { list: [] }, unsupported: true },
@@ -288,6 +288,50 @@ describe('半透明图烘焙/导出（composite 元数据回接）', () => {
     expect(res.data[3]).toBe(153);
     expect(res.data[4]).toBe(80);
     expect(res.data[7]).toBe(255);
+  });
+});
+
+describe('hsl 阶段（8 色相带 raw pass）', () => {
+  it('色相/饱和度/亮度带调整与 shared hslPixel 逐像素一致（PNG 无损）', async () => {
+    const hslLib = require_('../../../shared/hsl.cjs');
+    // 红→绿→蓝水平彩色渐变（覆盖各色相带）
+    const W = 96;
+    const H = 4;
+    const raw = Buffer.alloc(W * H * 3);
+    for (let x = 0; x < W; x++) {
+      const t = x / (W - 1);
+      const r = Math.round(255 * Math.max(0, 1 - t * 2));
+      const g = Math.round(255 * (1 - Math.abs(t - 0.5) * 2));
+      const b = Math.round(255 * Math.max(0, t * 2 - 1));
+      for (let y = 0; y < H; y++) {
+        const i = (y * W + x) * 3;
+        raw[i] = r; raw[i + 1] = g; raw[i + 2] = b;
+      }
+    }
+    const input = path.join(TMP, 'hsl-src.png');
+    await sharp(raw, { raw: { width: W, height: H, channels: 3 } }).png().toFile(input);
+    const params = { hue: [30, 0, 0, -60, 0, 0, 0, 25], sat: [0, 0, 0, 40, 0, 0, 0, -30], lum: [0, 0, 0, 10, 0, 0, 0, 0] };
+    const stages = baseSpecStages();
+    stages.find(s => s.kind === 'hsl').params = params;
+    stages.find(s => s.kind === 'encode').params = { format: 'png', quality: 92, resize: null };
+    const out = path.join(TMP, 'hsl-out.png');
+    await renderSpecToSharp(
+      { specVersion: 1, sourceHash: 't', colorSpace: { working: 'srgb', output: 'srgb' }, stages, meta: {} },
+      input, out
+    );
+    const [src, res] = await Promise.all([
+      sharp(input).raw().toBuffer({ resolveWithObject: true }),
+      sharp(out).raw().toBuffer({ resolveWithObject: true }),
+    ]);
+    const sch = src.info.channels;
+    const och = res.info.channels;
+    let maxDelta = 0;
+    for (let i = 0; i < W * H; i++) {
+      const [er, eg, eb] = hslLib.hslPixel([src.data[i * sch], src.data[i * sch + 1], src.data[i * sch + 2]], hslLib.normalizeHsl(params));
+      maxDelta = Math.max(maxDelta,
+        Math.abs(res.data[i * och] - er), Math.abs(res.data[i * och + 1] - eg), Math.abs(res.data[i * och + 2] - eb));
+    }
+    expect(maxDelta).toBeLessThanOrEqual(1);
   });
 });
 

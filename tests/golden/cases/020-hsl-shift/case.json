@@ -1,0 +1,8 @@
+{
+  "fixture": "landscape.jpg",
+  "tolerance": {
+    "maxDelta": 1,
+    "meanDelta": 0.2
+  },
+  "description": "020-hsl-shift（绿色带色相/饱和度偏移，PNG 无损输出）"
+}

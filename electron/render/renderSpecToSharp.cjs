@@ -18,6 +18,7 @@ const { UNSUPPORTED_STAGES } = require('../../shared/pipelineOrder.cjs');
 const { buildCurveLuts } = require('../../shared/curves.cjs');
 const { hasColorGradingData, applyColorGradingInPlace } = require('../../shared/colorGrading.cjs');
 const { applyVignetteInPlace } = require('../../shared/lens.cjs');
+const { hasHslData, applyHslInPlace } = require('../../shared/hsl.cjs');
 const fs = require('fs');
 
 const IDENTITY = () => ({ slope: [1, 1, 1], offset: [0, 0, 0] });
@@ -133,6 +134,15 @@ async function renderSpecToSharp(spec, inputPath, outputPath, opts = {}) {
         pixels = await flushAffine();
         if (!pixels) pixels = await materialize(sourceSharp(null, inputPath));
         applyCurveLutsInPlace(pixels.data, luts, pixels.info.channels);
+        break;
+      }
+
+      case 'hsl': {
+        // 8 色相带色相/饱和度/亮度（curves 之后、colorGrading 之前，同显示参照空间）
+        if (!hasHslData(stage.params || {})) break;
+        pixels = await flushAffine();
+        if (!pixels) pixels = await materialize(sourceSharp(null, inputPath));
+        applyHslInPlace(pixels.data, stage.params, pixels.info.channels);
         break;
       }
 

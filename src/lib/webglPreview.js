@@ -1,0 +1,276 @@
+// M7 WebGL2 预览渲染器：shader 直接消费 RenderSpec uniforms（specToShaderUniforms 产出），
+// 与 sharp 执行器共享 shared/ 数学（曲线 LUT/HSL/分级/暗角逐像素同公式）。
+// 无 WebGL2 环境由调用方回退 CSS/SVG 滤镜链。几何/裁剪不在此渲染（CSS transform 承担）。
+
+const VERTEX_SRC = `#version 300 es
+in vec2 aPos;
+out vec2 vUv;
+void main() {
+  vUv = vec2(aPos.x * 0.5 + 0.5, 0.5 - aPos.y * 0.5);
+  gl_Position = vec4(aPos, 0.0, 1.0);
+}`;
+
+const FRAGMENT_SRC = `#version 300 es
+precision highp float;
+in vec2 vUv;
+out vec4 outColor;
+uniform sampler2D uImage;
+uniform sampler2D uCurveLut;
+uniform float uCurveLutOn;
+uniform vec3 uAffineSlope;
+uniform float uAffineOffset;
+uniform vec2 uShadows;          // x=exponent(0=off), y=invert
+uniform float uHighlightsSlope;
+uniform float uHslOn;
+uniform float uHslHue[8];
+uniform float uHslSat[8];
+uniform float uHslLum[8];
+uniform float uHslCenters[8];
+uniform float uBandRadius;
+uniform float uHueMaxDeg;
+uniform float uLumMax;
+uniform float uGradingOn;
+uniform vec3 uGradingScale;
+uniform vec3 uGradingDelta0;
+uniform vec3 uGradingDelta1;
+uniform vec3 uGradingDelta2;
+uniform float uSaturation;
+uniform float uMono;
+uniform float uVignette;
+
+vec3 rgb2hsl(vec3 c) {
+  float mx = max(c.r, max(c.g, c.b));
+  float mn = min(c.r, min(c.g, c.b));
+  float l = (mx + mn) / 2.0;
+  if (mx == mn) return vec3(0.0, 0.0, l);
+  float d = mx - mn;
+  float s = (l > 0.0 && l < 1.0) ? d / (1.0 - abs(2.0 * l - 1.0)) : 0.0;
+  float h;
+  if (mx == c.r) h = 60.0 * mod((c.g - c.b) / d, 6.0);
+  else if (mx == c.g) h = 60.0 * ((c.b - c.r) / d + 2.0);
+  else h = 60.0 * ((c.r - c.g) / d + 4.0);
+  return vec3(mod(h, 360.0), s, l);
+}
+
+float hue2rgb(float p, float q, float t) {
+  t = mod(t, 1.0);
+  if (t < 1.0 / 6.0) return p + (q - p) * 6.0 * t;
+  if (t < 0.5) return q;
+  if (t < 2.0 / 3.0) return p + (q - p) * (2.0 / 3.0 - t) * 6.0;
+  return p;
+}
+
+vec3 hsl2rgb(vec3 hsl) {
+  if (hsl.y == 0.0) return vec3(hsl.z);
+  float h = hsl.x / 360.0;
+  float q = hsl.z < 0.5 ? hsl.z * (1.0 + hsl.y) : hsl.z + hsl.y - hsl.z * hsl.y;
+  float p = 2.0 * hsl.z - q;
+  return vec3(hue2rgb(p, q, h + 1.0 / 3.0), hue2rgb(p, q, h), hue2rgb(p, q, h - 1.0 / 3.0));
+}
+
+float bandWeight(float center, float h) {
+  float d = abs(mod(h - center + 180.0, 360.0) - 180.0);
+  return max(0.0, 1.0 - d / uBandRadius);
+}
+
+float weighted(float adj[8], float h) {
+  float sum = 0.0;
+  float wsum = 0.0;
+  for (int i = 0; i < 8; i++) {
+    float w = bandWeight(uHslCenters[i], h);
+    if (w <= 0.0) continue;
+    wsum += w;
+    sum += adj[i] * w;
+  }
+  return wsum > 0.0 ? sum / wsum : 0.0;
+}
+
+void main() {
+  vec3 c = texture(uImage, vUv).rgb;
+  c = clamp(c * uAffineSlope + uAffineOffset, 0.0, 1.0);
+  if (uShadows.x > 0.0) {
+    c = uShadows.y > 0.5 ? 1.0 - pow(1.0 - c, vec3(uShadows.x)) : pow(c, vec3(uShadows.x));
+  }
+  if (uHighlightsSlope != 1.0) c *= uHighlightsSlope;
+  if (uCurveLutOn > 0.5) {
+    c = vec3(
+      texture(uCurveLut, vec2(c.r, 0.5)).r,
+      texture(uCurveLut, vec2(c.g, 0.5)).g,
+      texture(uCurveLut, vec2(c.b, 0.5)).b
+    );
+  }
+  if (uHslOn > 0.5) {
+    vec3 hsl = rgb2hsl(c);
+    float hueAdj = weighted(uHslHue, hsl.x) / 100.0 * uHueMaxDeg;
+    float satAdj = weighted(uHslSat, hsl.x) / 100.0;
+    float lumAdj = weighted(uHslLum, hsl.x) / 100.0 * uLumMax;
+    c = hsl2rgb(vec3(mod(hsl.x + hueAdj, 360.0), clamp(hsl.y * (1.0 + satAdj), 0.0, 1.0), clamp(hsl.z + lumAdj, 0.0, 1.0)));
+  }
+  if (uGradingOn > 0.5) {
+    float L = dot(c, vec3(0.2126, 0.7152, 0.0722));
+    for (int i = 0; i < 3; i++) {
+      float scale = i == 0 ? uGradingScale.x : (i == 1 ? uGradingScale.y : uGradingScale.z);
+      if (scale <= 0.0) continue;
+      float w = i == 0 ? clamp(1.0 - L / 0.5, 0.0, 1.0)
+        : i == 1 ? clamp(1.0 - abs(L - 0.5) / 0.35, 0.0, 1.0)
+          : clamp((L - 0.5) / 0.5, 0.0, 1.0);
+      w *= w;
+      vec3 delta = i == 0 ? uGradingDelta0 : (i == 1 ? uGradingDelta1 : uGradingDelta2);
+      c += (w * scale / 255.0) * delta;
+    }
+    c = clamp(c, 0.0, 1.0);
+  }
+  float luma = dot(c, vec3(0.213, 0.715, 0.072));
+  if (uMono > 0.5) c = vec3(luma);
+  else if (uSaturation != 1.0) c = mix(vec3(luma), c, uSaturation);
+  if (uVignette != 0.0) {
+    float d = length((vUv - 0.5) * 2.0);
+    float f = clamp((d - 0.5) / 0.5, 0.0, 1.0);
+    if (uVignette < 0.0) c *= 1.0 + (uVignette / 100.0) * f;
+    else c += (uVignette / 100.0) * f * (1.0 - c);
+  }
+  outColor = vec4(clamp(c, 0.0, 1.0), 1.0);
+}`;
+
+let cachedAvailability = null;
+
+export function isWebGL2Available() {
+  if (cachedAvailability !== null) return cachedAvailability;
+  try {
+    const probe = document.createElement('canvas');
+    cachedAvailability = !!probe.getContext('webgl2');
+  } catch {
+    cachedAvailability = false;
+  }
+  return cachedAvailability;
+}
+
+// 每画布状态（gl 上下文/程序/纹理缓存）
+const stateByCanvas = new WeakMap();
+
+function getUniformLocations(gl, program) {
+  const names = [
+    'uImage', 'uCurveLut', 'uCurveLutOn', 'uAffineSlope', 'uAffineOffset', 'uShadows',
+    'uHighlightsSlope', 'uHslOn', 'uHslHue', 'uHslSat', 'uHslLum', 'uHslCenters',
+    'uBandRadius', 'uHueMaxDeg', 'uLumMax', 'uGradingOn', 'uGradingScale',
+    'uGradingDelta0', 'uGradingDelta1', 'uGradingDelta2', 'uSaturation', 'uMono', 'uVignette',
+  ];
+  const locs = {};
+  for (const n of names) locs[n] = gl.getUniformLocation(program, n);
+  return locs;
+}
+
+function initCanvas(canvas) {
+  const gl = canvas.getContext('webgl2', { premultipliedAlpha: false, preserveDrawingBuffer: true });
+  if (!gl) return null;
+  const compile = (type, src) => {
+    const sh = gl.createShader(type);
+    gl.shaderSource(sh, src);
+    gl.compileShader(sh);
+    if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) {
+      throw new Error(`[webgl] shader 编译失败: ${gl.getShaderInfoLog(sh)}`);
+    }
+    return sh;
+  };
+  let program;
+  try {
+    program = gl.createProgram();
+    gl.attachShader(program, compile(gl.VERTEX_SHADER, VERTEX_SRC));
+    gl.attachShader(program, compile(gl.FRAGMENT_SHADER, FRAGMENT_SRC));
+    gl.linkProgram(program);
+    if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+      throw new Error(`[webgl] 程序链接失败: ${gl.getProgramInfoLog(program)}`);
+    }
+  } catch (e) {
+    console.error(e.message);
+    return null;
+  }
+  const quad = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, quad);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
+  const aPos = gl.getAttribLocation(program, 'aPos');
+  gl.enableVertexAttribArray(aPos);
+  gl.vertexAttribPointer(aPos, 2, gl.FLOAT, false, 0, 0);
+  const texture = gl.createTexture();
+  const lutTexture = gl.createTexture();
+  return { gl, program, locs: getUniformLocations(gl, program), texture, lutTexture, lastSrc: null };
+}
+
+// 主入口：canvas 上绘制 uniforms 驱动的预览。image 须已加载（complete && naturalWidth>0）。
+// 失败返回 false，调用方回退 CSS/SVG。
+export function renderWebGLPreview(canvas, image, uniforms) {
+  let st = stateByCanvas.get(canvas);
+  if (!st || !st.gl) {
+    st = initCanvas(canvas);
+    if (!st) return false;
+    stateByCanvas.set(canvas, st);
+  }
+  const { gl, locs } = st;
+  try {
+    const MAX_EDGE = 2048;
+    const longEdge = Math.max(image.naturalWidth, image.naturalHeight);
+    const scale = longEdge > MAX_EDGE ? MAX_EDGE / longEdge : 1;
+    const w = Math.max(1, Math.round(image.naturalWidth * scale));
+    const h = Math.max(1, Math.round(image.naturalHeight * scale));
+    if (canvas.width !== w || canvas.height !== h) {
+      canvas.width = w;
+      canvas.height = h;
+    }
+    gl.viewport(0, 0, w, h);
+    gl.useProgram(st.program);
+
+    // 底图纹理（按 src 缓存，滑杆调节不重复上传）
+    if (st.lastSrc !== image.src) {
+      gl.bindTexture(gl.TEXTURE_2D, st.texture);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
+      st.lastSrc = image.src;
+    }
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, st.texture);
+    gl.uniform1i(locs.uImage, 0);
+
+    // 曲线 LUT 纹理（4KB，每次重传无压力）
+    gl.activeTexture(gl.TEXTURE1);
+    gl.bindTexture(gl.TEXTURE_2D, st.lutTexture);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    if (uniforms.curveLut) {
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 256, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, uniforms.curveLut);
+    }
+    gl.uniform1i(locs.uCurveLut, 1);
+    gl.uniform1f(locs.uCurveLutOn, uniforms.curveLut ? 1 : 0);
+
+    gl.uniform3fv(locs.uAffineSlope, uniforms.affineSlope);
+    gl.uniform1f(locs.uAffineOffset, uniforms.affineOffset255 / 255);
+    gl.uniform2f(locs.uShadows, uniforms.shadows ? uniforms.shadows.exponent : 0, uniforms.shadows ? uniforms.shadows.invert : 0);
+    gl.uniform1f(locs.uHighlightsSlope, uniforms.highlightsSlope);
+    gl.uniform1f(locs.uHslOn, uniforms.hslOn);
+    gl.uniform1fv(locs.uHslHue, uniforms.hslHue);
+    gl.uniform1fv(locs.uHslSat, uniforms.hslSat);
+    gl.uniform1fv(locs.uHslLum, uniforms.hslLum);
+    gl.uniform1fv(locs.uHslCenters, uniforms.hslBands);
+    gl.uniform1f(locs.uBandRadius, 60);
+    gl.uniform1f(locs.uHueMaxDeg, 30);
+    gl.uniform1f(locs.uLumMax, 0.3);
+    gl.uniform1f(locs.uGradingOn, uniforms.gradingOn);
+    gl.uniform3fv(locs.uGradingScale, uniforms.gradingScale);
+    gl.uniform3fv(locs.uGradingDelta0, uniforms.gradingDelta[0]);
+    gl.uniform3fv(locs.uGradingDelta1, uniforms.gradingDelta[1]);
+    gl.uniform3fv(locs.uGradingDelta2, uniforms.gradingDelta[2]);
+    gl.uniform1f(locs.uSaturation, uniforms.saturation);
+    gl.uniform1f(locs.uMono, uniforms.mono);
+    gl.uniform1f(locs.uVignette, uniforms.vignette);
+
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    return true;
+  } catch (e) {
+    console.error('[webgl] 预览渲染失败:', e.message);
+    return false;
+  }
+}

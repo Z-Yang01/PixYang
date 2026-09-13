@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { formatSizeDisplay as formatSize } from '@/lib/format';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -27,6 +27,10 @@ import gradingLib from '../../../shared/colorGrading.cjs';
 const { hasColorGradingData } = gradingLib;
 import lensLib from '../../../shared/lens.cjs';
 const { vignettePreviewStyle } = lensLib;
+import renderSpecModule from '../../../shared/renderSpec.cjs';
+const { editParamsToRenderSpec } = renderSpecModule;
+import { isWebGL2Available, renderWebGLPreview } from '@/lib/webglPreview';
+import { specToShaderUniforms } from '@/lib/previewUniforms';
 import CompareView from './CompareView';
 import CurveEditor from './CurveEditor';
 import ConfirmDialog from '@/components/Layout/ConfirmDialog';
@@ -77,6 +81,9 @@ export default function ImageViewer({
   const [bakeConfirm, setBakeConfirm] = useState(false);
   const [histInfo, setHistInfo] = useState({ canUndo: false, canRedo: false, index: 0, length: 0 });
   const [editEpoch, setEditEpoch] = useState(0); // 外部替换 ops（撤销/跳转/清除）时递增，中断进行中的手势
+  const webglAvailable = useRef(isWebGL2Available()).current;
+  const [webglFailed, setWebglFailed] = useState(false);
+  const webglCanvasRef = useRef(null);
   const editImgRef = useRef(null);
   const contentRef = useRef(null);
   const cropDragRef = useRef(null);
@@ -823,6 +830,39 @@ export default function ImageViewer({
   // 影调预览滤镜链（与分段渲染管线同序同数学）；needsMatrix 决定主矩阵原语是否渲染
   const previewChainRaw = editing && !showBeforeOn ? previewFilterChain(editOps) : null;
   const previewChain = previewChainRaw ? { ...previewChainRaw, needsMatrix: needsMatrix(editOps) } : null;
+  // M7 WebGL2：shader 消费 RenderSpec（与导出同源），构建失败回退 SVG
+  const webglActive = !!(editing && webglAvailable && !webglFailed);
+  const shaderUniforms = useMemo(() => {
+    if (!webglActive) return null;
+    try {
+      const spec = editParamsToRenderSpec(toEditParams(composeOps()), { sourceHash: 'preview' });
+      return specToShaderUniforms(spec);
+    } catch (e) {
+      console.error('[webgl] uniforms 构建失败:', e.message);
+      return null;
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [webglActive, editOps, editSession]);
+
+  // WebGL 预览绘制：uniforms 或底图变化时重绘（底图纹理按 src 缓存）
+  useEffect(() => {
+    if (!webglActive || !shaderUniforms) return;
+    const canvas = webglCanvasRef.current;
+    const img = editImgRef.current;
+    if (!canvas || !img) return;
+    const draw = () => {
+      if (img.complete && img.naturalWidth > 0) {
+        const ok = renderWebGLPreview(canvas, img, shaderUniforms);
+        if (!ok) setWebglFailed(true);
+      }
+    };
+    if (img.complete && img.naturalWidth > 0) {
+      draw();
+      return undefined;
+    }
+    img.addEventListener('load', draw, { once: true });
+    return () => img.removeEventListener('load', draw);
+  }, [webglActive, shaderUniforms, editBaseSrc, bust]);
 
   // 编辑态：变换（旋转/翻转/缩放/平移）应用于包裹层，图像自身无变换，裁剪框百分比定位自动跟随
   const editTransform = editing
@@ -840,7 +880,8 @@ export default function ImageViewer({
 
   // 编辑态渲染层：edited=true 应用变换/滤镜/裁剪框（After）；false 为原始编辑源（Before）
   const editLayer = (edited) => {
-    const vignetteStyle = edited && editOps.vignette ? vignettePreviewStyle(editOps.vignette) : null;
+    const useWebgl = edited && webglActive && shaderUniforms;
+    const vignetteStyle = !useWebgl && edited && editOps.vignette ? vignettePreviewStyle(editOps.vignette) : null;
     return (
     <div className="editor-transform-layer" style={{ transform: edited ? editTransform : undefined }}>
       <img
@@ -850,12 +891,14 @@ export default function ImageViewer({
         alt={image.filename?.replace(/\.\w+$/, '') || image.filename}
         draggable={false}
         style={{
-          filter: edited ? (previewChain ? 'url(#pixyang-basic)' : undefined) : undefined,
+          filter: edited && !useWebgl ? (previewChain ? 'url(#pixyang-basic)' : undefined) : undefined,
           opacity: editBusy ? 0.75 : 1,
           transition: dragging.current ? 'none' : undefined,
         }}
       />
-      {/* 暗角 overlay：CSS 渐变与渲染端 raw pass 同数学（multiply/screen 精确等价） */}
+      {/* M7 WebGL2 预览层：覆盖底图，shader 内完成影调/曲线/HSL/分级/饱和度/暗角 */}
+      {useWebgl && <canvas ref={webglCanvasRef} className="editor-webgl-canvas" aria-hidden="true" />}
+      {/* 暗角 overlay：CSS 渐变与渲染端 raw pass 同数学（multiply/screen 精确等价；WebGL 时由 shader 内渲染） */}
       {vignetteStyle && (
         <div
           className="editor-vignette-overlay"
