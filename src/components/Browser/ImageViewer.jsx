@@ -23,6 +23,8 @@ import builtinPresetsModule from '../../../shared/builtinPresets.cjs';
 const { BUILTIN_PRESETS } = builtinPresetsModule;
 import curvesLib from '../../../shared/curves.cjs';
 const { hasCurveData } = curvesLib;
+import gradingLib from '../../../shared/colorGrading.cjs';
+const { hasColorGradingData } = gradingLib;
 import lensLib from '../../../shared/lens.cjs';
 const { vignettePreviewStyle } = lensLib;
 import CompareView from './CompareView';
@@ -1134,6 +1136,7 @@ export default function ImageViewer({
             { key: 'saturation', label: '饱和度', min: -100, max: 100, step: 1, fmt: v => `${v > 0 ? '+' : ''}${v}` },
             { key: 'temperature', label: '色温', min: -100, max: 100, step: 1, fmt: v => `${v > 0 ? '+' : ''}${v}` },
             { key: 'tint', label: '色调', min: -100, max: 100, step: 1, fmt: v => `${v > 0 ? '+' : ''}${v}` },
+            { key: 'vignette', label: '暗角', min: -100, max: 100, step: 1, fmt: v => `${v > 0 ? '+' : ''}${v}` },
           ].map(({ key, label, min, max, step, fmt }) => (
             <label className="editor-slider-row" key={key}>
               <span
@@ -1189,6 +1192,83 @@ export default function ImageViewer({
               epoch={editEpoch}
             />
             <p className="editor-crop-hint">点击添加锚点并拖拽，将锚点拖出面板删除</p>
+          </div>
+
+          {/* 颜色分级：分离色调（渲染端真亮度加权，预览逐通道近似，见 shared/colorGrading.cjs） */}
+          <div className="editor-crop-section">
+            <div className="editor-crop-header">
+              <span>颜色分级</span>
+              {hasColorGradingData(editOps.colorGrading) && (
+                <Button variant="ghost" size="xs" onClick={() => {
+                  const next = { ...editOpsRef.current, colorGrading: EDIT_DEFAULTS.colorGrading };
+                  pushHistory(next, '清除分级');
+                  setEditOps(next);
+                }}>
+                  清除
+                </Button>
+              )}
+            </div>
+            {[
+              { key: 'shadows', label: '阴影' },
+              { key: 'midtones', label: '中间调' },
+              { key: 'highlights', label: '高光' },
+            ].map(({ key, label }) => {
+              const range = editOps.colorGrading?.[key] || [];
+              const hue = range[0] ?? 0;
+              const sat = range[1] ?? 0;
+              const setRange = (nextHue, nextSat) => ({
+                ...editOpsRef.current,
+                colorGrading: { ...editOpsRef.current.colorGrading, [key]: [nextHue, nextSat] },
+              });
+              const commit = () => {
+                if (sliderDragRef.current === `grade-${key}`) {
+                  sliderDragRef.current = null;
+                  pushHistory(editOpsRef.current, `分级·${label}`);
+                }
+              };
+              return (
+                <div key={key} className="editor-grade-row">
+                  <div className="editor-grade-labels">
+                    <span
+                      title="双击清除该区间"
+                      onDoubleClick={() => {
+                        const next = { ...editOpsRef.current, colorGrading: { ...editOpsRef.current.colorGrading, [key]: [] } };
+                        pushHistory(next, `清除分级·${label}`);
+                        setEditOps(next);
+                      }}
+                    >
+                      {label}
+                    </span>
+                    {sat > 0 && <em>{`${Math.round(hue)}° · ${Math.round(sat)}%`}</em>}
+                  </div>
+                  <input
+                    type="range" min={0} max={360} step={1} className="editor-hue-slider"
+                    value={hue}
+                    aria-label={`${label}色相`}
+                    onPointerDown={() => { sliderDragRef.current = `grade-${key}`; }}
+                    onPointerUp={commit}
+                    onChange={(e) => {
+                      const next = setRange(Number(e.target.value), sat);
+                      setEditOps(next);
+                      if (!sliderDragRef.current) pushHistory(next, `分级·${label}`);
+                    }}
+                  />
+                  <input
+                    type="range" min={0} max={100} step={1}
+                    value={sat}
+                    aria-label={`${label}强度`}
+                    onPointerDown={() => { sliderDragRef.current = `grade-${key}`; }}
+                    onPointerUp={commit}
+                    onChange={(e) => {
+                      const next = setRange(hue, Number(e.target.value));
+                      setEditOps(next);
+                      if (!sliderDragRef.current) pushHistory(next, `分级·${label}`);
+                    }}
+                  />
+                </div>
+              );
+            })}
+            <p className="editor-crop-hint">按亮度区间着色：先拖色相选色调，再调强度</p>
           </div>
 
           <div className="editor-crop-section">

@@ -300,6 +300,50 @@ describe('ImageViewer', () => {
     });
   });
 
+  it('编辑模式：颜色分级滑杆更新参数与预览表，清除按钮联动', async () => {
+    mockEditBridge();
+    const { container } = render(<ImageViewer {...baseProps()} />);
+    fireEvent.click(screen.getByTitle(/编辑模式/));
+    await screen.findByText('编辑');
+    expect(screen.getByText('颜色分级')).toBeInTheDocument();
+    const hue = screen.getByLabelText('阴影色相');
+    const strength = screen.getByLabelText('阴影强度');
+    // 拖色相（键盘调整路径：无指针直接 change → 逐次入历史）
+    fireEvent.change(hue, { target: { value: '210' } });
+    expect(strength.value).toBe('0'); // 强度独立，不自动激活
+    fireEvent.change(strength, { target: { value: '45' } });
+    // 分级数据出现 → 全局清除按钮出现
+    await vi.waitFor(() => {
+      const section = hue.closest('.editor-crop-section');
+      expect(section.textContent).toContain('210° · 45%');
+      expect(section.querySelector('.editor-crop-header button')).toBeTruthy();
+    });
+    // 双击标签清除该区间（"阴影"与基础滑杆同名，取分级区间的那个）
+    const gradeLabel = [...screen.getAllByText('阴影')].find(el => el.title === '双击清除该区间');
+    fireEvent.doubleClick(gradeLabel);
+    await vi.waitFor(() => {
+      const section = hue.closest('.editor-crop-section');
+      expect(section.querySelector('.editor-crop-header button')).toBeNull();
+    });
+  });
+
+  it('编辑模式：暗角滑杆入参数（overlay 渲染）并可重置', async () => {
+    mockEditBridge();
+    const { container } = render(<ImageViewer {...baseProps()} />);
+    fireEvent.click(screen.getByTitle(/编辑模式/));
+    await screen.findByText('编辑');
+    expect(screen.getByText('暗角')).toBeInTheDocument();
+    const overlay = () => container.querySelector('.editor-vignette-overlay');
+    expect(overlay()).toBeNull();
+    // 输入负值 → overlay 出现且用 multiply 黑渐变
+    const vigSlider = [...container.querySelectorAll('input[type="range"]')][9]; // 基础滑杆第 10 个 = 暗角
+    fireEvent.change(vigSlider, { target: { value: '-40' } });
+    await vi.waitFor(() => {
+      expect(overlay()).toBeTruthy();
+      expect(overlay().style.background).toContain('rgba(0,0,0,0.4)');
+    });
+  });
+
   it('编辑模式：拖拽框选的 crop 合入保存参数', async () => {
     mockEditBridge();
     // 图像显示区域固定为 1000x1000 @ (0,0)，便于坐标换算
