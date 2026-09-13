@@ -840,24 +840,6 @@ export default function ImageViewer({
 
   const displaySrc = fullLoaded && fullSrc ? fullSrc : (thumbSrc || fullSrc);
 
-  if (!image) return null;
-
-  // 编辑状态模型：Export 不改 dirty；Bake 成功后 dirty→clean
-  const editPhase = editError ? 'error'
-    : busyKind === 'saving' ? 'saving'
-    : busyKind === 'exporting' ? 'exporting'
-    : busyKind === 'baking' ? 'baking'
-    : busyKind === 'opening' ? 'opening'
-    : (editing && opsChanged(composeOps(), savedBaselineRef.current)) ? 'dirty'
-    : 'clean';
-  const PHASE_LABELS = { clean: '已保存', dirty: '未保存', saving: '保存中…', exporting: '导出中…', baking: '烘焙中…', opening: '准备中…', error: '出错' };
-  const showBeforeOn = showBefore && editing;
-  const exportSourceIsPng = (image?.format || '').toLowerCase() === 'png';
-  const exportQualityHidden = exportOpts.format === 'png' || (exportOpts.format === 'auto' && exportSourceIsPng);
-
-  // 影调预览滤镜链（与分段渲染管线同序同数学）；needsMatrix 决定主矩阵原语是否渲染
-  const previewChainRaw = editing && !showBeforeOn ? previewFilterChain(editOps) : null;
-  const previewChain = previewChainRaw ? { ...previewChainRaw, needsMatrix: needsMatrix(editOps) } : null;
   // M7 WebGL2：shader 消费 RenderSpec（与导出同源），构建失败回退 SVG
   const webglActive = !!(editing && webglAvailable && !webglFailed);
   const shaderUniforms = useMemo(() => {
@@ -880,8 +862,9 @@ export default function ImageViewer({
     if (!canvas || !img) return;
     const draw = () => {
       if (img.complete && img.naturalWidth > 0) {
-        const ok = renderWebGLPreview(canvas, img, shaderUniforms);
-        if (!ok) setWebglFailed(true);
+        renderWebGLPreview(canvas, img, shaderUniforms).then((ok) => {
+          if (!ok) setWebglFailed(true);
+        });
       }
     };
     if (img.complete && img.naturalWidth > 0) {
@@ -891,6 +874,25 @@ export default function ImageViewer({
     img.addEventListener('load', draw, { once: true });
     return () => img.removeEventListener('load', draw);
   }, [webglActive, shaderUniforms, editBaseSrc, bust]);
+
+  if (!image) return null;
+
+  // 编辑状态模型：Export 不改 dirty；Bake 成功后 dirty→clean
+  const editPhase = editError ? 'error'
+    : busyKind === 'saving' ? 'saving'
+    : busyKind === 'exporting' ? 'exporting'
+    : busyKind === 'baking' ? 'baking'
+    : busyKind === 'opening' ? 'opening'
+    : (editing && opsChanged(composeOps(), savedBaselineRef.current)) ? 'dirty'
+    : 'clean';
+  const PHASE_LABELS = { clean: '已保存', dirty: '未保存', saving: '保存中…', exporting: '导出中…', baking: '烘焙中…', opening: '准备中…', error: '出错' };
+  const showBeforeOn = showBefore && editing;
+  const exportSourceIsPng = (image?.format || '').toLowerCase() === 'png';
+  const exportQualityHidden = exportOpts.format === 'png' || (exportOpts.format === 'auto' && exportSourceIsPng);
+
+  // 影调预览滤镜链（与分段渲染管线同序同数学）；needsMatrix 决定主矩阵原语是否渲染
+  const previewChainRaw = editing && !showBeforeOn ? previewFilterChain(editOps) : null;
+  const previewChain = previewChainRaw ? { ...previewChainRaw, needsMatrix: needsMatrix(editOps) } : null;
 
   // 编辑态：变换（旋转/翻转/缩放/平移）应用于包裹层，图像自身无变换，裁剪框百分比定位自动跟随
   const editTransform = editing

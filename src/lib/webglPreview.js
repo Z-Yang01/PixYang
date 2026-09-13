@@ -251,8 +251,9 @@ function initCanvas(canvas) {
 }
 
 // 主入口：canvas 上绘制 uniforms 驱动的预览。image 须已加载（complete && naturalWidth>0）。
-// 失败返回 false，调用方回退 CSS/SVG。
-export function renderWebGLPreview(canvas, image, uniforms) {
+// 失败返回 false，调用方回退 CSS/SVG。异步（纹理上传走 createImageBitmap 跳过浏览器
+// 色彩转换——导出在原生编码值上编辑，预览纹理也必须取原生值，宽色域 tagged 图才一致）。
+export async function renderWebGLPreview(canvas, image, uniforms) {
   let st = stateByCanvas.get(canvas);
   if (!st || !st.gl) {
     st = initCanvas(canvas);
@@ -260,6 +261,7 @@ export function renderWebGLPreview(canvas, image, uniforms) {
     stateByCanvas.set(canvas, st);
   }
   const { gl, locs } = st;
+  const seq = (st.drawSeq = (st.drawSeq || 0) + 1); // 异步上传的过期绘制丢弃
   try {
     const MAX_EDGE = 2048;
     const longEdge = Math.max(image.naturalWidth, image.naturalHeight);
@@ -273,14 +275,28 @@ export function renderWebGLPreview(canvas, image, uniforms) {
     gl.viewport(0, 0, w, h);
     gl.useProgram(st.program);
 
-    // 底图纹理（按 src 缓存，滑杆调节不重复上传）
+    // 底图纹理（按 src 缓存，滑杆调节不重复上传）。
+    // createImageBitmap colorSpaceConversion:'none'——浏览器默认会把 tagged 图转到 sRGB，
+    // 而导出在原生编码值上编辑，预览纹理必须同为原生值（宽色域 P3 等才与导出一致）。
     if (st.lastSrc !== image.src) {
       gl.bindTexture(gl.TEXTURE_2D, st.texture);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
+      let source = image;
+      if (typeof createImageBitmap === 'function') {
+        try {
+          const bitmap = await createImageBitmap(image, { colorSpaceConversion: 'none', premultiplyAlpha: 'none' });
+          if (seq !== st.drawSeq) {
+            bitmap.close();
+            return false;
+          }
+          source = bitmap;
+        } catch { /* 构造失败回退直接上传（可能经浏览器色彩转换） */ }
+      }
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, source);
+      if (source !== image) source.close();
       st.lastSrc = image.src;
     }
     gl.activeTexture(gl.TEXTURE0);

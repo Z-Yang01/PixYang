@@ -52,6 +52,7 @@ async function renderSpecToSharp(spec, inputPath, outputPath, opts = {}) {
     bands: srcMeta.channels || 3,
     exifOrientation: srcMeta.orientation || 1,
     hasProfile: !!srcMeta.hasProfile,
+    icc: srcMeta.icc || null,
     width: srcMeta.width,
     height: srcMeta.height,
     proxyLongEdge: 0,
@@ -83,9 +84,9 @@ async function renderSpecToSharp(spec, inputPath, outputPath, opts = {}) {
         if (ctx.exifOrientation > 1) {
           console.warn(`[render] 底图含 EXIF 方向标记（orientation=${ctx.exifOrientation}），应先经 normalizeBase 规范化，否则几何操作坐标系错误`);
         }
-        // 色彩管理：tagged 输入（P3/AdobeRGB 等）统一转换到 sRGB 工作空间，
-        // 保证影调数学在一致空间上执行（未转换时按 sRGB 调的曲线/偏移在宽色域会偏移）。
-        // libvips 对带 profile 的图像做 icc_transform；untagged 视为已是 sRGB，不动。
+        // 色彩管理：tagged 输入（Display P3 等）不做输入侧 ICC 转换（sharp 无此 API），
+        // 编辑在原生编码值（gamma 空间）上进行，输出经 keepIccProfile 保留原 profile——
+        // 标签与像素编码自洽（P3 入 P3 出）。宽色域→sRGB 工作空间转换属 Phase 7/M8（lcms）。
         // 代理分辨率（预览/缩略图专用）：decode 后立即缩到目标长边，后续算子在小图上执行。
         const dp = stage.params || {};
         let decodePipe = sourceSharp(pixels, inputPath);
@@ -381,9 +382,23 @@ async function encodeAndWrite(pixels, inputPath, outputPath, encodeStage, spec, 
 
   // encode：composite 与 resize 不可同管线（libvips 把 resize 折叠到 composite 之前会导致
   // composite 层尺寸大于底图报错），有 resize 时先物化 composite 结果再独立缩放。
+  // tagged 输入不用 keepIccProfile：它会在 composite 管线触发隐式像素 ICC 转换且标签错乱
+  // （实测 composite+keepIccProfile 把 overlay 值做了 P3→sRGB 移动却仍贴 P3 标签）。
+  // 改为把原 profile 字节落盘临时文件，显式 withMetadata 重挂——像素无转换、标签一致。
+  let iccPath = null;
+  if (ctx.hasProfile && ctx.icc && ctx.icc.length) {
+    iccPath = `${outputPath}.icc`;
+    try {
+      fs.writeFileSync(iccPath, ctx.icc);
+    } catch (e) {
+      console.error('[render] ICC profile 临时文件写入失败，输出将不携带 ICC:', e.message);
+      iccPath = null;
+    }
+  }
   const encodeWith = (pipe2) => {
     // 元数据贯穿：中间物化/二次缩放都会丢 EXIF/ICC，每段管线显式保留
-    let p = pipe2.keepExif().keepIccProfile();
+    let p = pipe2.keepExif();
+    p = iccPath ? p.withMetadata({ icc: iccPath }) : p.keepIccProfile();
     if (format === 'png') return p.png({ compressionLevel: 6 });
     if (format === 'webp') return p.webp({ quality: clampInt(quality, 1, 100, 92) });
     if (format === 'tiff') return p.tiff({ compression: 'lzw' });
@@ -412,10 +427,16 @@ async function encodeAndWrite(pixels, inputPath, outputPath, encodeStage, spec, 
       fs.closeSync(fd);
     }
     fs.renameSync(partPath, outputPath);
+    if (iccPath) {
+      try { fs.unlinkSync(iccPath); } catch { /* 清理失败无碍 */ }
+    }
   } catch (e) {
     try {
       if (fs.existsSync(partPath)) fs.unlinkSync(partPath);
     } catch { /* 清理失败无碍 */ }
+    if (iccPath) {
+      try { fs.unlinkSync(iccPath); } catch { /* 清理失败无碍 */ }
+    }
     throw e;
   }
   return outputPath;

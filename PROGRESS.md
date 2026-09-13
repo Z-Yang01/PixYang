@@ -910,3 +910,25 @@ Phase 1-6、8、10-14、16-17 全量落地；Phase 7（sRGB 工作空间转换 +
 - **UI 语义备忘**：v1 几何用滑杆编辑（图像上拖拽创建/手柄编辑为后续）；预览依赖 WebGL2（SVG 回退不渲染 masks，能力矩阵 preview partial）。
 - 测试基建备忘：python 脚本 .replace() 锚点不匹配会**静默 no-op**（本批 state/callback/import 三处插入失效未报错，靠 Uncaught Exception 逐个暴露）——多锚点插入后必须 grep 验证，或直接用 Edit 工具。
 - 680 例全绿（+11：MaskPanel 5、viewer 集成 1、masks 往返 2、shader 契约 3）；golden 21/21；lint 0 error；typecheck/build 通过。
+
+---
+
+# 2026-09-14 宽色域 ICC 批：探明真实行为 + composite/keepIccProfile 隐式转换修复
+
+## 探明的事实（逐项 sharp 探针实证）
+
+1. **sharp 无输入侧 ICC 转换 API**——decode 的 `toColourspace('srgb')` 对 P3 tagged 输入是 no-op（图像在 vips 里本属 srgb 色彩空间族）。此前 decode 注释声称"libvips 做 icc_transform"是错的，已修正：tagged 输入在**原生编码值**上编辑，输出 keepIccProfile 保留原 profile——标签与像素编码自洽（P3 入 P3 出）。
+2. **composite + keepIccProfile 组合 bug（真）**：composite 本身像素无损，但随后 keepIccProfile 会触发隐式像素 ICC 转换（实测 overlay 值 (255,48,75) 被移动到 (255,0,67)）却仍贴原 P3 标签——像素/标签双错。keepIccProfile 单独使用则完全无转换。
+3. 修复：tagged 输入（ctx.icc 缓存自 decode 的 metadata）改走**显式 `withMetadata({ icc: profilePath })`**——profile 字节落盘临时文件（`<output>.icc`，finally 清理），重挂后像素仅 ±1 lcms 舍入、标签与输入一致。untagged 路径 keepIccProfile 不变（golden 全部无感知）。
+4. **预览端配套**：`createImageBitmap(colorSpaceConversion:'none')` 上传纹理——浏览器默认把 tagged 图转到 sRGB，而导出在原生编码值上编辑；跳过转换后预览/导出对宽色域输入一致（带过期绘制丢弃守卫）。
+5. renderWebGLPreview 转 async（纹理上传 await bitmap），viewer effect 挂 then 回退。
+
+## 测试
+
+- P3 tagged 全管线测试：输出 ICC 字节 == 输入（自洽）+ 像素 == 原生值上施加仿射（Δ≤2 舍入容差）。
+- 681 例全绿（+1）；golden 21/21；lint 0 error；typecheck/build 通过。
+
+## 遗留（Phase 7/M8）
+
+- 输入侧 ICC→工作空间转换（LR 语义：先转 sRGB 再编辑）需 lcms/原生 ICC 访问，sharp 无此 API；当前"原生空间编辑+原标签输出"是自洽的替代语义。
+- baseSpecStages unsupported 残留的坑未再犯（本批无新阶段）；python .replace 静默 no-op 教训重演一次（hooks 插入后 lint rules-of-hooks 抓出条件调用）——hooks 类插入建议只用 Edit 工具。

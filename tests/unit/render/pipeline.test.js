@@ -373,6 +373,45 @@ describe('masks 阶段（径向蒙版 raw pass）', () => {
   });
 });
 
+describe('宽色域 tagged 底图（ICC 标签一致性）', () => {
+  it('P3 tagged 输入：输出保留原 profile（标签与原生编码值自洽），像素=原生值上施加仿射', async () => {
+    const input = path.join(TMP, 'p3-src.png');
+    await sharp({ create: { width: 16, height: 16, channels: 3, background: { r: 255, g: 40, b: 60 } } })
+      .withMetadata({ icc: 'p3' })
+      .png().toFile(input);
+    const inMeta = await sharp(input).metadata();
+    expect(inMeta.hasProfile).toBe(true);
+    const stages = baseSpecStages({ ev: 0.3 }); // 非零编辑 → pixels 非空 → composite 元数据回接路径
+    stages.find(s => s.kind === 'encode').params = { format: 'png', quality: 92, resize: null };
+    const out = path.join(TMP, 'p3-out.png');
+    await renderSpecToSharp(
+      { specVersion: 1, sourceHash: 't', colorSpace: { working: 'srgb', output: 'srgb' }, stages, meta: {} },
+      input, out
+    );
+    // 输出 ICC 与输入 P3 一致（无输入侧 ICC 转换，标签与像素编码自洽）
+    const outMeta = await sharp(out).metadata();
+    expect(outMeta.hasProfile).toBe(true);
+    const iccIn = (await sharp(input).metadata()).icc;
+    expect(Buffer.from(outMeta.icc).equals(Buffer.from(iccIn))).toBe(true);
+    // 像素 = 原生 P3 编码值上施加仿射（无 ICC 转换；双次取整容差 2）
+    const [src, res] = await Promise.all([
+      sharp(input).raw().toBuffer({ resolveWithObject: true }),
+      sharp(out).raw().toBuffer({ resolveWithObject: true }),
+    ]);
+    const gain = Math.pow(2, 0.3);
+    const sch = src.info.channels;
+    const och = res.info.channels;
+    let maxDelta = 0;
+    for (let i = 0; i < src.info.width * src.info.height; i++) {
+      for (let c = 0; c < 3; c++) {
+        const expected = Math.round(Math.min(255, (src.data[i * sch + c] / 255) * gain * 255));
+        maxDelta = Math.max(maxDelta, Math.abs(res.data[i * och + c] - expected));
+      }
+    }
+    expect(maxDelta).toBeLessThanOrEqual(2);
+  });
+});
+
 describe('渲染取消（Phase 9）', () => {
   it('isCancelled 命中时返回 cancelled 且不写输出文件', async () => {
     const input = path.join(TMP, 'cancel-src.jpg');
