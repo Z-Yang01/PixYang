@@ -374,18 +374,20 @@ export default function App() {
 
   // 批量同步编辑参数：把复制的参数写到所选图片（非破坏，只写参数 JSON）。
   // mode='basic' 仅影调（默认推荐）；'all' 含旋转/翻转（裁剪坐标跨图尺寸不同，不同步）。
-  // 单张失败不中断批次，结果 Toast 汇报。
+  // 单张失败不中断批次；进行中防重入 + 进度 Toast（任务书第 15 节）。
+  const syncRunningRef = useRef(false);
   const handleSyncEdits = useCallback(async (mode = 'basic') => {
-    if (!api.isBridgeAvailable()) return;
+    if (!api.isBridgeAvailable() || syncRunningRef.current) return;
     const copied = useGalleryStore.getState().copiedEdits;
     const ids = [...useGalleryStore.getState().selectedIds];
     if (!copied?.basic || ids.length === 0) return;
     const withGeometry = mode === 'all';
+    syncRunningRef.current = true;
+    const toastId = toast.loading(`同步中 0/${ids.length}…`);
     let ok = 0;
     const failed = [];
     for (const id of ids) {
       try {
-        const existing = await api.getEdits(id);
         const params = toEditParams({
           ...copied.basic,
           ...(withGeometry
@@ -399,13 +401,15 @@ export default function App() {
         failed.push(id);
         console.error('[批量同步] 图片失败:', id, e.message);
       }
+      toast.loading(`同步中 ${ok + failed.length}/${ids.length}…`, { id: toastId });
     }
+    syncRunningRef.current = false;
     if (failed.length === 0) {
-      showToast(`已同步${withGeometry ? '影调与几何' : '影调'}到 ${ok} 张图片`, 'success');
+      toast.success(`已同步${withGeometry ? '影调与几何' : '影调'}到 ${ok} 张图片`, { id: toastId });
     } else {
-      showToast(`已同步 ${ok} 张，${failed.length} 张失败（可重试）`, 'error');
+      toast.error(`已同步 ${ok} 张，${failed.length} 张失败（可重试）`, { id: toastId });
     }
-  }, [showToast]);
+  }, []);
 
   const executeBatchDelete = useCallback(async () => {
     if (!api.isBridgeAvailable()) return;

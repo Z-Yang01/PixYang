@@ -740,3 +740,12 @@ Phase 1-6、8、10-14、16-17 全量落地；Phase 7（sRGB 工作空间转换 +
 **534 passed / 0 failed**（+7：格式错配回归/护栏/缓存行为/并排断言）；golden 15/15。
 
 补充修复：批删 handler 对 async stub 返回 Promise 未 await（真实 batchDeleteImages 为同步不受影响，但防御性 await 更稳）。
+
+---
+
+# 2026-09-12 优化批：批量同步进度显示 + 防重入（任务书第 15 节收尾）
+
+- 批量同步进行中显示进度 Toast（sonner loading toast 同 id 更新：同步中 X/Y…），完成/失败后原地转为结果；
+- 防重入守卫（syncRunningRef）——进行中重复触发直接忽略；
+- 顺带移除未使用的 existing 查询（前轮遗留）。
+- 571 例全绿；lint 0 error。
