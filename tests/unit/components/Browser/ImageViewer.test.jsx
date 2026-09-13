@@ -255,6 +255,30 @@ describe('ImageViewer', () => {
     expect(layer().style.transform).toContain('rotate(90deg)');
   });
 
+  it('编辑模式：曲线编辑器渲染、加点出现清除、清除复位', async () => {
+    mockEditBridge();
+    // Element.prototype 覆盖 SVG（曲线面板固定 100x100 @ (0,0)）
+    const rectSpy = vi.spyOn(Element.prototype, 'getBoundingClientRect').mockReturnValue({
+      left: 0, top: 0, right: 100, bottom: 100, width: 100, height: 100, x: 0, y: 0,
+      toJSON: () => {},
+    });
+    const { container } = render(<ImageViewer {...baseProps()} />);
+    fireEvent.click(screen.getByTitle(/编辑模式/));
+    await screen.findByText('编辑');
+    const svg = container.querySelector('[data-curve-editor]');
+    expect(svg).toBeInTheDocument();
+    const curveHeader = svg.closest('.editor-crop-section').querySelector('.editor-crop-header');
+    expect(curveHeader.textContent).toContain('曲线');
+    expect(curveHeader.querySelector('button')).toBeNull(); // 无曲线数据时无清除
+    // 点击中心加锚点并拖离对角线（(60,30) → 曲线点 (0.6,0.7)，非恒等）→ 清除按钮出现
+    fireEvent.mouseDown(svg, { clientX: 50, clientY: 50 });
+    fireEvent.mouseMove(window, { clientX: 60, clientY: 30 });
+    await vi.waitFor(() => expect(curveHeader.querySelector('button')).toBeTruthy());
+    fireEvent.click(curveHeader.querySelector('button'));
+    await vi.waitFor(() => expect(curveHeader.querySelector('button')).toBeNull());
+    rectSpy.mockRestore();
+  });
+
   it('编辑模式：拖拽框选的 crop 合入保存参数', async () => {
     mockEditBridge();
     // 图像显示区域固定为 1000x1000 @ (0,0)，便于坐标换算

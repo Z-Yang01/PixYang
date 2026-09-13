@@ -2167,6 +2167,27 @@ body {
   flex-wrap: wrap;
   gap: 4px;
 }
+.editor-curve-svg {
+  display: block;
+  width: 100%;
+  aspect-ratio: 1;
+  background: rgba(127, 127, 127, 0.12);
+  border: 1px solid var(--border-color, rgba(255, 255, 255, 0.15));
+  border-radius: 6px;
+  touch-action: none;
+  cursor: crosshair;
+}
+.editor-curve-grid {
+  stroke: var(--border-color, rgba(255, 255, 255, 0.12));
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+.editor-curve-diagonal {
+  stroke: var(--border-color, rgba(255, 255, 255, 0.25));
+  stroke-width: 1;
+  stroke-dasharray: 4 3;
+  vector-effect: non-scaling-stroke;
+}
 .editor-ratio-btn {
   padding: 3px 8px;
   font-size: 11px;

@@ -781,3 +781,14 @@ Phase 1-6、8、10-14、16-17 全量落地；Phase 7（sRGB 工作空间转换 +
 - **测试**：+23 例（curves 单测 11、spec 契约更新、执行器 LUT 逐像素一致性（PNG 无损）、预览表与 LUT 偏差锁定、预设曲线、往返转换）；golden 新增 016-curves-scurve（PNG 输出 Δ=0）。
 - **顺手发现**：composite 元数据回接路径的 PNG/无损输出带 alpha（libvips composite 内部转 RGBA）——JPEG 输出无感知，PNG 测试需按 4 通道步长比对（已知行为，暂不改产物）。
 - 597 例全绿；golden 16/16；lint 0 error；typecheck/build 通过。
+
+---
+
+# 2026-09-13 功能批：曲线编辑器 UI（曲线功能闭环）
+
+- **CurveEditor.jsx（新）**：SVG 受控编辑器——RGB/R/G/B 通道页签（通道色）、点击空处加锚点（y 吸附当前曲线值不跳变）、拖拽调整（内部锚点 x 邻点钳制、端点 x 锁定 y 可调）、锚点拖出面板删除（±15% 死区）、空曲线按恒等对角线显示（首次拖拽写入显式点）。语义复用 shared/curves.cjs，恒等曲线不产生编辑数据。
+- **ImageViewer**：编辑面板滑杆区后新增「曲线」区——清除按钮（有曲线数据时出现，pushHistory '清除曲线'）、拖拽起点入历史（onBegin pushHistory '曲线'，与滑杆全程一条同语义）、提示文案。
+- **CSS**：editor-curve-svg（aspect-ratio 1、crosshair、touch-action none）/grid/diagonal；通道页签复用 editor-ratio-btn。
+- **测试**：CurveEditor 6 例（通道切换/加点吸附/拖拽/拖出删除/端点锁定/通道独立写入）+ ImageViewer 集成 1 例（渲染/加点拖离对角线出现清除/清除复位）。604 例全绿。
+- **测试基建备忘**：SVG 的 getBoundingClientRect 在 SVGElement→Element 原型链上（不经过 HTMLElement），mock 须打 Element.prototype；恒等曲线上的锚点仍为恒等（拖离对角线才产生数据）——两处都曾让测试误判。
+- 604 例全绿；golden 16/16；lint 0 error；typecheck/build 通过。

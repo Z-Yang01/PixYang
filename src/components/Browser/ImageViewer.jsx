@@ -21,7 +21,10 @@ import {
 import useGalleryStore from '@/store/galleryStore';
 import builtinPresetsModule from '../../../shared/builtinPresets.cjs';
 const { BUILTIN_PRESETS } = builtinPresetsModule;
+import curvesLib from '../../../shared/curves.cjs';
+const { hasCurveData } = curvesLib;
 import CompareView from './CompareView';
+import CurveEditor from './CurveEditor';
 import ConfirmDialog from '@/components/Layout/ConfirmDialog';
 
 const clamp = (v, min, max) => Math.min(max, Math.max(min, v));
@@ -1120,6 +1123,28 @@ export default function ImageViewer({
               <em>{fmt(editOps[key])}</em>
             </label>
           ))}
+
+          {/* 色调曲线：渲染端 LUT 与预览端 tableValues 同语义（shared/curves.cjs） */}
+          <div className="editor-crop-section">
+            <div className="editor-crop-header">
+              <span>曲线</span>
+              {hasCurveData(editOps.curves) && (
+                <Button variant="ghost" size="xs" onClick={() => {
+                  const next = { ...editOpsRef.current, curves: EDIT_DEFAULTS.curves };
+                  pushHistory(next, '清除曲线');
+                  setEditOps(next);
+                }}>
+                  清除
+                </Button>
+              )}
+            </div>
+            <CurveEditor
+              curves={editOps.curves || EDIT_DEFAULTS.curves}
+              onBegin={() => pushHistory(editOpsRef.current, '曲线')}
+              onChange={(nextCurves) => setEditOps(o => ({ ...o, curves: nextCurves }))}
+            />
+            <p className="editor-crop-hint">点击添加锚点并拖拽，将锚点拖出面板删除</p>
+          </div>
 
           <div className="editor-crop-section">
             <div className="editor-crop-header">
