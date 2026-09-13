@@ -32,7 +32,7 @@
       "params": {
         "contrast": 0,
         "highlights": 0,
-        "shadows": -80,
+        "shadows": 0,
         "whites": 0,
         "blacks": 0
       }
@@ -58,9 +58,15 @@
     {
       "kind": "colorGrading",
       "params": {
-        "shadows": [],
+        "shadows": [
+          210,
+          45
+        ],
         "midtones": [],
-        "highlights": []
+        "highlights": [
+          45,
+          30
+        ]
       }
     },
     {
@@ -109,7 +115,7 @@
     {
       "kind": "encode",
       "params": {
-        "format": "jpeg",
+        "format": "png",
         "quality": 92,
         "resize": null
       }
@@ -117,6 +123,6 @@
   ],
   "meta": {
     "fromEditParamsVersion": 0,
-    "generatedAt": "2026-09-13T08:48:07.894Z"
+    "generatedAt": "2026-09-13T08:48:08.145Z"
   }
 }

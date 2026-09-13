@@ -4,8 +4,10 @@
 
 import editSchema from '../../shared/editSchema.cjs';
 import curvesLib from '../../shared/curves.cjs';
+import gradingLib from '../../shared/colorGrading.cjs';
 
 const { normalizePoints, buildCurveTables, hasCurveData } = curvesLib;
+const { normalizeGrading, hasColorGradingData, buildGradingTables } = gradingLib;
 
 export const EDIT_DEFAULTS = {
   rotation: 0,        // 90 的倍数
@@ -22,6 +24,7 @@ export const EDIT_DEFAULTS = {
   blacks: 0,          // -100..100
   tint: 0,            // -100..100（绿- 品红+）
   curves: { rgb: [], r: [], g: [], b: [] },  // 点对平铺数组 [x0,y0,...]，0..1，见 shared/curves.cjs
+  colorGrading: { shadows: [], midtones: [], highlights: [] },  // 每区间 [hue 0..360, sat 0..100]
 };
 
 export const CROP_RATIOS = [
@@ -67,6 +70,7 @@ export function sanitizeEditOps(input = {}) {
       g: flatPoints(ops.curves?.g),
       b: flatPoints(ops.curves?.b),
     },
+    colorGrading: normalizeGrading(ops.colorGrading),
   };
 }
 
@@ -75,7 +79,7 @@ export function hasEdits(ops) {
   return !!(s.rotation !== 0 || s.flipH || s.flipV || s.crop
     || s.exposure !== 0 || s.contrast !== 0 || s.saturation !== 0 || s.temperature !== 0
     || s.highlights !== 0 || s.shadows !== 0 || s.whites !== 0 || s.blacks !== 0 || s.tint !== 0
-    || hasCurveData(s.curves));
+    || hasCurveData(s.curves) || hasColorGradingData(s.colorGrading));
 }
 
 // 色温预览：SVG feColorMatrix 逐通道增益，与 sharp 管线的 RGB 增益同数学语义
@@ -120,6 +124,7 @@ export function toEditParams(ops) {
       tint: s.tint || 0,
     },
     curves: s.curves,
+    colorGrading: s.colorGrading,
   });
 }
 
@@ -148,6 +153,7 @@ export function fromEditParams(params) {
       g: flatPoints(p.curves?.g),
       b: flatPoints(p.curves?.b),
     },
+    colorGrading: normalizeGrading(p.colorGrading),
   };
 }
 
@@ -195,9 +201,11 @@ export function previewFilterChain(ops) {
   const highlightsSlope = s.highlights !== 0 ? clamp(1 - s.highlights / 400, 0.75, 1.15) : null;
   // 曲线表（复合 rgb+通道，均匀采样供 feComponentTransfer type="table"），管线序在 tone 后、saturation 前
   const curves = buildCurveTables(s.curves);
+  // 分离色调表（逐通道近似，管线序在 curves 后、saturation 前）
+  const grading = buildGradingTables(s.colorGrading);
   const saturate = s.saturation !== 0 ? 1 + s.saturation / 100 : null;
 
-  return { matrix, shadows, highlightsSlope, curves, saturate };
+  return { matrix, shadows, highlightsSlope, curves, grading, saturate };
 }
 
 // 线性段（白场/黑场/对比度/曝光/色温/色调）是否需要主矩阵原语

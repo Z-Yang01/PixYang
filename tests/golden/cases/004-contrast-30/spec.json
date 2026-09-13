@@ -61,8 +61,7 @@
         "shadows": [],
         "midtones": [],
         "highlights": []
-      },
-      "unsupported": true
+      }
     },
     {
       "kind": "saturation",
@@ -118,6 +117,6 @@
   ],
   "meta": {
     "fromEditParamsVersion": 0,
-    "generatedAt": "2026-09-13T07:55:43.194Z"
+    "generatedAt": "2026-09-13T08:48:07.497Z"
   }
 }

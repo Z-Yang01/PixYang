@@ -49,6 +49,8 @@ const HslSchema = z.object({
   lum: z.array(z.number()).catch([]),
 });
 
+// 颜色分级：每亮度区间（shadows/midtones/highlights）为 [hue 0..360, sat 0..100]，
+// sat=0/空数组即该区间无偏移。语义实现唯一在 shared/colorGrading.cjs。
 const ColorGradingSchema = z.object({
   shadows: z.array(z.number()).catch([]),
   midtones: z.array(z.number()).catch([]),

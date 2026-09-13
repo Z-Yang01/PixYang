@@ -4,7 +4,6 @@
   "format": "png",
   "unsupported": [
     "hsl",
-    "colorGrading",
     "masks",
     "lens"
   ]

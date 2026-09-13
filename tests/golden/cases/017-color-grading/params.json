@@ -1,0 +1,10 @@
+{
+  "colorGrading": {
+    "shadows": [210, 45],
+    "midtones": [],
+    "highlights": [45, 30]
+  },
+  "output": {
+    "format": "png"
+  }
+}

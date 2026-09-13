@@ -383,6 +383,7 @@ export default function ImageViewer({
       crop: editOpsRef.current.crop,
       ...p,
       curves: presetParams.curves || EDIT_DEFAULTS.curves,
+      colorGrading: presetParams.colorGrading || EDIT_DEFAULTS.colorGrading,
     };
     if (scope === 'all') {
       const o = presetParams.orientation;
@@ -888,6 +889,16 @@ export default function ImageViewer({
                 })}
               </feComponentTransfer>
             )}
+            {previewChain.grading && (
+              <feComponentTransfer>
+                {['r', 'g', 'b'].map((ch) => {
+                  const table = previewChain.grading[ch];
+                  if (!table) return null;
+                  const Func = `feFunc${ch.toUpperCase()}`;
+                  return <Func key={ch} type="table" tableValues={table.join(' ')} />;
+                })}
+              </feComponentTransfer>
+            )}
             {previewChain.saturate != null && (
               <feColorMatrix type="saturate" values={previewChain.saturate} />
             )}
@@ -1224,7 +1235,7 @@ export default function ImageViewer({
             </div>
             <div className="editor-builtin-row">
               {BUILTIN_PRESETS.map(bp => (
-                <button key={bp.name} className="editor-builtin-chip" title={bp.desc} onClick={() => applyPreset({ name: bp.name, basic: bp.basic, curves: bp.curves })}>
+                <button key={bp.name} className="editor-builtin-chip" title={bp.desc} onClick={() => applyPreset({ name: bp.name, basic: bp.basic, curves: bp.curves, colorGrading: bp.colorGrading })}>
                   {bp.name}
                 </button>
               ))}

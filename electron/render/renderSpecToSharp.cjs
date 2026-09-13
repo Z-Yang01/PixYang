@@ -16,6 +16,7 @@ const sharp = require('sharp');
 sharp.cache(false);
 const { UNSUPPORTED_STAGES } = require('../../shared/pipelineOrder.cjs');
 const { buildCurveLuts } = require('../../shared/curves.cjs');
+const { hasColorGradingData, applyColorGradingInPlace } = require('../../shared/colorGrading.cjs');
 const fs = require('fs');
 
 const IDENTITY = () => ({ slope: [1, 1, 1], offset: [0, 0, 0] });
@@ -131,6 +132,17 @@ async function renderSpecToSharp(spec, inputPath, outputPath, opts = {}) {
         pixels = await flushAffine();
         if (!pixels) pixels = await materialize(sourceSharp(null, inputPath));
         applyCurveLutsInPlace(pixels.data, luts, pixels.info.channels);
+        break;
+      }
+
+      case 'colorGrading': {
+        // 分离色调：真亮度加权的逐像素偏移（曲线之后、饱和度之前，同显示参照空间）。
+        // 无分级数据时不物化——保持 pixels 为 null，让 encode 走原图直编码路径
+        // （空阶段物化会切换 encode 到 composite 路径，改变无编辑图的输出字节与通道数）。
+        if (!hasColorGradingData(stage.params || {})) break;
+        pixels = await flushAffine();
+        if (!pixels) pixels = await materialize(sourceSharp(null, inputPath));
+        applyColorGradingInPlace(pixels.data, stage.params, pixels.info.channels);
         break;
       }
 

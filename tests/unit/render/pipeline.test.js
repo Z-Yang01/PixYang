@@ -67,7 +67,7 @@ const baseSpecStages = (over = {}) => ([
   { kind: 'tone', params: { contrast: 0, highlights: 0, shadows: 0, whites: 0, blacks: 0 } },
   { kind: 'curves', params: over.curves ?? {} },
   { kind: 'hsl', params: {}, unsupported: true },
-  { kind: 'colorGrading', params: {}, unsupported: true },
+  { kind: 'colorGrading', params: {} },
   { kind: 'saturation', params: { value: 0, mono: false } },
   { kind: 'masks', params: { list: [] }, unsupported: true },
   { kind: 'detail', params: { sharpness: 0, noise: 0 } },
@@ -186,6 +186,40 @@ describe('curves 阶段（LUT 原位应用）', () => {
       for (let c = 0; c < 3; c++) {
         expect(res.data[p * och + c]).toBe(src.data[p * sch + c]);
       }
+    }
+  });
+});
+
+describe('colorGrading 阶段（真亮度加权 raw pass）', () => {
+  it('阴影/高光分离色调与 shared gradePixel 逐像素一致（PNG 无损）', async () => {
+    const cg = require_('../../../shared/colorGrading.cjs');
+    // 灰阶渐变覆盖全部亮度权重区间
+    const W = 256;
+    const raw = Buffer.alloc(W * 3);
+    for (let x = 0; x < W; x++) { raw[x * 3] = x; raw[x * 3 + 1] = x; raw[x * 3 + 2] = x; }
+    const input = path.join(TMP, 'grade-src.png');
+    await sharp(raw, { raw: { width: W, height: 1, channels: 3 } }).png().toFile(input);
+    const grading = { shadows: [210, 45], midtones: [], highlights: [45, 30] };
+    const stages = baseSpecStages();
+    stages.find(s => s.kind === 'colorGrading').params = grading;
+    stages.find(s => s.kind === 'encode').params = { format: 'png', quality: 92, resize: null };
+    const out = path.join(TMP, 'grade-out.png');
+    await renderSpecToSharp(
+      { specVersion: 1, sourceHash: 't', colorSpace: { working: 'srgb', output: 'srgb' }, stages, meta: {} },
+      input, out
+    );
+    const luts = cg.buildGradeLuts(grading);
+    const [src, res] = await Promise.all([
+      sharp(input).raw().toBuffer({ resolveWithObject: true }),
+      sharp(out).raw().toBuffer({ resolveWithObject: true }),
+    ]);
+    const sch = src.info.channels;
+    const och = res.info.channels;
+    for (let x = 0; x < W; x++) {
+      const [er, eg, eb] = cg.gradePixel([src.data[x * sch], src.data[x * sch + 1], src.data[x * sch + 2]], luts);
+      expect(Math.abs(res.data[x * och] - er)).toBeLessThanOrEqual(1);
+      expect(Math.abs(res.data[x * och + 1] - eg)).toBeLessThanOrEqual(1);
+      expect(Math.abs(res.data[x * och + 2] - eb)).toBeLessThanOrEqual(1);
     }
   });
 });

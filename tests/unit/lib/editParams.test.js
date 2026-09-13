@@ -143,3 +143,34 @@ describe('curves（平铺模型 + 预览链）', () => {
     expect(chain.curves.r).toBeTruthy();
   });
 });
+
+describe('colorGrading（平铺模型 + 预览链）', () => {
+  it('sanitize 归一化 [hue,sat]（hue 折叠/sat 钳制），默认空', () => {
+    expect(sanitizeEditOps({}).colorGrading).toEqual({ shadows: [], midtones: [], highlights: [] });
+    const s = sanitizeEditOps({ colorGrading: { shadows: [370, 150], midtones: [10], highlights: [] } });
+    expect(s.colorGrading.shadows).toEqual([10, 100]);
+    expect(s.colorGrading.midtones).toEqual([]);
+  });
+
+  it('仅分级 sat>0 即视为已编辑', () => {
+    expect(hasEdits({ ...EDIT_DEFAULTS, colorGrading: { shadows: [210, 30] } })).toBe(true);
+    expect(hasEdits({ ...EDIT_DEFAULTS, colorGrading: { shadows: [210, 0] } })).toBe(false);
+  });
+
+  it('toEditParams / fromEditParams 分级往返不丢', async () => {
+    const { toEditParams, fromEditParams } = await import('@/lib/editParams');
+    const ops = { ...EDIT_DEFAULTS, colorGrading: { shadows: [210, 45], midtones: [], highlights: [45, 30] } };
+    const params = toEditParams(ops);
+    expect(params.colorGrading.shadows).toEqual([210, 45]);
+    const back = fromEditParams(params);
+    expect(back.colorGrading).toEqual(sanitizeEditOps(ops).colorGrading);
+  });
+
+  it('previewFilterChain 输出 grading 表（curves 后 saturate 前），无数据为 null', async () => {
+    const { previewFilterChain } = await import('@/lib/editParams');
+    const chain = previewFilterChain({ ...EDIT_DEFAULTS, colorGrading: { shadows: [220, 40] } });
+    expect(chain.grading).toBeTruthy();
+    expect(chain.grading.r).toHaveLength(33);
+    expect(previewFilterChain({ exposure: 0.5 }).grading).toBeNull();
+  });
+});

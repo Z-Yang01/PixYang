@@ -792,3 +792,14 @@ Phase 1-6、8、10-14、16-17 全量落地；Phase 7（sRGB 工作空间转换 +
 - **测试**：CurveEditor 6 例（通道切换/加点吸附/拖拽/拖出删除/端点锁定/通道独立写入）+ ImageViewer 集成 1 例（渲染/加点拖离对角线出现清除/清除复位）。604 例全绿。
 - **测试基建备忘**：SVG 的 getBoundingClientRect 在 SVGElement→Element 原型链上（不经过 HTMLElement），mock 须打 Element.prototype；恒等曲线上的锚点仍为恒等（拖离对角线才产生数据）——两处都曾让测试误判。
 - 604 例全绿；golden 16/16；lint 0 error；typecheck/build 通过。
+
+---
+
+# 2026-09-13 功能批：颜色分级渲染支持（分离色调）
+
+- **shared/colorGrading.cjs（新）**：分离色调唯一实现——每亮度区间 [hue 0..360（自动折叠）, sat 0..100]，HSV→RGB tint，亮度区间权重（阴影 L=0 全量/0.5 归零、高光镜像、中间调 ±0.35 带通，平方衰减），sat=100 单通道最大偏移 ±30。gradePixel（uint8 取整）与 applyColorGradingInPlace（raw 原位、累积后一次钳制、alpha 步长跳过、灰度按 tint 亮度偏移改明度）同数学。
+- **渲染端**：colorGrading 移出 UNSUPPORTED；执行器新增阶段——曲线之后、饱和度之前（显示参照空间），真亮度加权。**无分级数据不物化**（空阶段物化会把 encode 从直编码切到 composite 路径，identity 图输出通道数 3→4 且像素偏移 Δ240——golden 001 字节级比对当场抓获，与 curves 的 null 检查同模式修复）。
+- **预览端**：buildGradingTables 逐通道 33 点表（通道值代替亮度做权重的能力矩阵 partial 近似，先例同 tone gamma）；editLayer 在曲线后、饱和度前插入原语；平铺模型 sanitize/hasEdits/往返转换接入。
+- **内置预设**：港风霓虹高光洋红 [320,35]；validateBuiltinPresets 补 [hue,sat] 形状校验；applyPreset 携带 colorGrading（无则重置）。
+- **测试**：+15 例（shared 语义 8、执行器灰阶渐变逐像素 PNG Δ≤1、平铺模型/预览链 4、预设）；golden 新增 017-color-grading（PNG Δ=0）。
+- 619 例全绿；golden 17/17；lint 0 error；typecheck/build 通过。未实现清单余 hsl/masks/lens。

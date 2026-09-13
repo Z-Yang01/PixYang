@@ -13,7 +13,7 @@ const PIPELINE_ORDER = [
   'tone',          // 对比度/高光/阴影/白场/黑场
   'curves',        // 曲线（rgb/r/g/b 分段线性，shared/curves.cjs LUT）
   'hsl',           // HSL（未实现，unsupported）
-  'colorGrading',  // 颜色分级（未实现，unsupported）
+  'colorGrading',  // 颜色分级（分离色调，亮度加权，shared/colorGrading.cjs）
   'saturation',    // 饱和度（-100 = 黑白，mono 显式）
   'masks',         // 局部蒙版（未实现，unsupported）
   'detail',        // 锐化/降噪（锐化已实现，降噪未实现时按参数内警告）
@@ -24,7 +24,7 @@ const PIPELINE_ORDER = [
 ];
 
 // 整个 stage 尚未实现的 kind（渲染时跳过并记录警告，而非静默丢弃）
-const UNSUPPORTED_STAGES = new Set(['hsl', 'colorGrading', 'masks', 'lens']);
+const UNSUPPORTED_STAGES = new Set(['hsl', 'masks', 'lens']);
 
 function isSupportedStage(kind) {
   if (!PIPELINE_ORDER.includes(kind)) {
@@ -46,7 +46,7 @@ const CAPABILITY_MATRIX = {
   tone:          { preview: 'supported', export: 'supported', bake: 'supported', note: '高光/阴影为 gamma 近似，M8 换分区曲线' },
   curves:        { preview: 'supported', export: 'supported', bake: 'supported', note: 'rgb/r/g/b 分段线性曲线；UI 编辑器 planned（内置预设已用）' },
   hsl:           { preview: 'planned',   export: 'planned',   bake: 'planned' },
-  colorGrading:  { preview: 'planned',   export: 'planned',   bake: 'planned' },
+  colorGrading:  { preview: 'partial',    export: 'supported', bake: 'supported', note: '导出为真亮度加权；预览为逐通道 LUT 近似（通道值代替亮度）' },
   saturation:    { preview: 'supported', export: 'supported', bake: 'supported' },
   masks:         { preview: 'planned',   export: 'planned',   bake: 'planned' },
   detail:        { preview: 'partial',   export: 'partial',   bake: 'partial', note: 'sharpness supported；noiseReduction unsupported' },
