@@ -44,8 +44,7 @@
         "r": [],
         "g": [],
         "b": []
-      },
-      "unsupported": true
+      }
     },
     {
       "kind": "hsl",
@@ -119,6 +118,6 @@
   ],
   "meta": {
     "fromEditParamsVersion": 0,
-    "generatedAt": "2026-09-12T07:45:10.155Z"
+    "generatedAt": "2026-09-13T07:55:43.263Z"
   }
 }

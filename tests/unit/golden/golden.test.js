@@ -4,8 +4,11 @@ import { describe, it, expect } from 'vitest';
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
+import { createRequire } from 'module';
 import { editParamsToRenderSpec, listUnsupported } from '../../../shared/renderSpec.cjs';
 import { renderSpecToSharp } from '../../../electron/render/renderSpecToSharp.cjs';
+
+const require_ = createRequire(import.meta.url);
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const CASES_DIR = path.join(HERE, '..', '..', 'golden', 'cases');
@@ -68,11 +71,40 @@ describe.skipIf(caseDirs.length === 0)('golden 像素锁定', () => {
     expect(kinds.indexOf('geometry')).toBeLessThan(kinds.indexOf('crop'));
   });
 
-  it('009 未实现阶段显式 unsupported（curves/hsl）', () => {
+  it('009 curves 已支持（不进 unsupported 清单），hsl/colorGrading 仍显式 unsupported', () => {
     const params = JSON.parse(fs.readFileSync(path.join(CASES_DIR, '009-unsupported-curves-hsl', 'params.json'), 'utf8'));
     const spec = editParamsToRenderSpec(params, { sourceHash: 'golden' });
     const unsupported = listUnsupported(spec);
-    expect(unsupported).toContain('curves');
+    expect(unsupported).not.toContain('curves');
     expect(unsupported).toContain('hsl');
+  });
+
+  it('016 曲线渲染与 LUT 语义一致（灰阶梯度直接查表比对，PNG 无损）', async () => {
+    const dir = path.join(CASES_DIR, '016-curves-scurve');
+    const params = JSON.parse(fs.readFileSync(path.join(dir, 'params.json'), 'utf8'));
+    const spec = editParamsToRenderSpec(params, { sourceHash: 'golden' });
+    const actualTmp = path.join(dir, '__actual__.png');
+    await renderSpecToSharp(spec, path.join(dir, 'input.jpg'), actualTmp);
+    // 用同一 LUT 对原图 raw 逐像素求期望值，与渲染输出比对（PNG 编码无损，理论 Δ=0）
+    const sharpMod = await import('sharp').then((m) => m.default);
+    const curves = require_('../../../shared/curves.cjs');
+    const luts = curves.buildCurveLuts({ rgb: params.curves.rgb });
+    const [src, out] = await Promise.all([
+      sharpMod(path.join(dir, 'input.jpg')).raw().toBuffer({ resolveWithObject: true }),
+      sharpMod(actualTmp).raw().toBuffer({ resolveWithObject: true }),
+    ]);
+    fs.unlinkSync(actualTmp);
+    expect(out.info.width).toBe(src.info.width);
+    expect(out.info.height).toBe(src.info.height);
+    const pxCount = src.info.width * src.info.height;
+    const sch = src.info.channels;
+    const och = out.info.channels;
+    let maxDelta = 0;
+    for (let p = 0; p < pxCount; p++) {
+      for (let c = 0; c < 3; c++) {
+        maxDelta = Math.max(maxDelta, Math.abs(out.data[p * och + c] - luts.r[src.data[p * sch + c]]));
+      }
+    }
+    expect(maxDelta).toBeLessThanOrEqual(1);
   });
 });

@@ -3,6 +3,9 @@
 // 本文件的平铺结构仅作 UI 内部模型，经 toEditParams/fromEditParams 在边界转换。
 
 import editSchema from '../../shared/editSchema.cjs';
+import curvesLib from '../../shared/curves.cjs';
+
+const { normalizePoints, buildCurveTables, hasCurveData } = curvesLib;
 
 export const EDIT_DEFAULTS = {
   rotation: 0,        // 90 的倍数
@@ -18,6 +21,7 @@ export const EDIT_DEFAULTS = {
   whites: 0,          // -100..100
   blacks: 0,          // -100..100
   tint: 0,            // -100..100（绿- 品红+）
+  curves: { rgb: [], r: [], g: [], b: [] },  // 点对平铺数组 [x0,y0,...]，0..1，见 shared/curves.cjs
 };
 
 export const CROP_RATIOS = [
@@ -29,6 +33,9 @@ export const CROP_RATIOS = [
 ];
 
 const clamp = (v, min, max) => Math.min(max, Math.max(min, v));
+
+// 曲线通道归一化为平铺点对数组（排序/钳制/去重后），保证 sanitize 输出键序与值稳定可比较
+const flatPoints = (arr) => normalizePoints(arr).flat();
 
 export function sanitizeEditOps(input = {}) {
   const ops = { ...EDIT_DEFAULTS, ...input };
@@ -54,6 +61,12 @@ export function sanitizeEditOps(input = {}) {
     saturation: clamp(Number(ops.saturation) || 0, -100, 100),
     temperature: clamp(Number(ops.temperature) || 0, -100, 100),
     tint: clamp(Number(ops.tint) || 0, -100, 100),
+    curves: {
+      rgb: flatPoints(ops.curves?.rgb),
+      r: flatPoints(ops.curves?.r),
+      g: flatPoints(ops.curves?.g),
+      b: flatPoints(ops.curves?.b),
+    },
   };
 }
 
@@ -61,7 +74,8 @@ export function hasEdits(ops) {
   const s = sanitizeEditOps(ops);
   return !!(s.rotation !== 0 || s.flipH || s.flipV || s.crop
     || s.exposure !== 0 || s.contrast !== 0 || s.saturation !== 0 || s.temperature !== 0
-    || s.highlights !== 0 || s.shadows !== 0 || s.whites !== 0 || s.blacks !== 0 || s.tint !== 0);
+    || s.highlights !== 0 || s.shadows !== 0 || s.whites !== 0 || s.blacks !== 0 || s.tint !== 0
+    || hasCurveData(s.curves));
 }
 
 // 色温预览：SVG feColorMatrix 逐通道增益，与 sharp 管线的 RGB 增益同数学语义
@@ -105,6 +119,7 @@ export function toEditParams(ops) {
       temperature: s.temperature,
       tint: s.tint || 0,
     },
+    curves: s.curves,
   });
 }
 
@@ -127,6 +142,12 @@ export function fromEditParams(params) {
     saturation: p.basic.saturation,
     temperature: p.basic.temperature,
     tint: p.basic.tint,
+    curves: {
+      rgb: flatPoints(p.curves?.rgb),
+      r: flatPoints(p.curves?.r),
+      g: flatPoints(p.curves?.g),
+      b: flatPoints(p.curves?.b),
+    },
   };
 }
 
@@ -172,9 +193,11 @@ export function previewFilterChain(ops) {
 
   // 高光线性回收（sharp 端在阴影之后，单独原语保持顺序）
   const highlightsSlope = s.highlights !== 0 ? clamp(1 - s.highlights / 400, 0.75, 1.15) : null;
+  // 曲线表（复合 rgb+通道，均匀采样供 feComponentTransfer type="table"），管线序在 tone 后、saturation 前
+  const curves = buildCurveTables(s.curves);
   const saturate = s.saturation !== 0 ? 1 + s.saturation / 100 : null;
 
-  return { matrix, shadows, highlightsSlope, saturate };
+  return { matrix, shadows, highlightsSlope, curves, saturate };
 }
 
 // 线性段（白场/黑场/对比度/曝光/色温/色调）是否需要主矩阵原语

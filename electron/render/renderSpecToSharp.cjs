@@ -15,6 +15,7 @@
 const sharp = require('sharp');
 sharp.cache(false);
 const { UNSUPPORTED_STAGES } = require('../../shared/pipelineOrder.cjs');
+const { buildCurveLuts } = require('../../shared/curves.cjs');
 const fs = require('fs');
 
 const IDENTITY = () => ({ slope: [1, 1, 1], offset: [0, 0, 0] });
@@ -122,6 +123,16 @@ async function renderSpecToSharp(spec, inputPath, outputPath, opts = {}) {
       case 'tone':
         affine = await applyToneAffine(pixels, inputPath, affine, stage.params || {}, ctx);
         break;
+
+      case 'curves': {
+        // 曲线作用于显示参照（gamma）空间：先物化 pending 仿射，再在 raw 检查点上原位查表
+        const luts = buildCurveLuts(stage.params || {});
+        if (!luts) break;
+        pixels = await flushAffine();
+        if (!pixels) pixels = await materialize(sourceSharp(null, inputPath));
+        applyCurveLutsInPlace(pixels.data, luts, pixels.info.channels);
+        break;
+      }
 
       case 'saturation':
         pixels = await flushAffine();
@@ -241,6 +252,22 @@ function sourceSharp(pixels, inputPath) {
 async function materialize(pipe) {
   const out = await pipe.raw().toBuffer({ resolveWithObject: true });
   return { data: out.data, info: out.info };
+}
+
+// 曲线 LUT 原位应用：彩色逐通道复合表（含 alpha 步长跳过）；灰度仅 rgb 曲线（通道曲线无意义）
+function applyCurveLutsInPlace(data, luts, channels) {
+  if (channels < 3) {
+    if (!luts.rgb) return;
+    for (let i = 0; i < data.length; i++) data[i] = luts.rgb[data[i]];
+    return;
+  }
+  const { r, g, b } = luts;
+  if (!r && !g && !b) return;
+  for (let i = 0; i + 2 < data.length; i += channels) {
+    if (r) data[i] = r[data[i]];
+    if (g) data[i + 1] = g[data[i + 1]];
+    if (b) data[i + 2] = b[data[i + 2]];
+  }
 }
 
 async function encodeAndWrite(pixels, inputPath, outputPath, encodeStage, spec, ctx) {

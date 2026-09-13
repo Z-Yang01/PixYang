@@ -99,3 +99,47 @@ describe('previewFilterChain（M5 预览滤镜链）', () => {
     expect(chain.saturate).toBeCloseTo(0.5, 3);
   });
 });
+
+describe('curves（平铺模型 + 预览链）', () => {
+  it('sanitize 归一化曲线点（排序/钳制/去重），默认空数组', () => {
+    expect(sanitizeEditOps({}).curves).toEqual({ rgb: [], r: [], g: [], b: [] });
+    const s = sanitizeEditOps({ curves: { rgb: [1, 0.9, 0, 0.1, 0.5, 2, 0.5, -1] } });
+    expect(s.curves.rgb).toEqual([0, 0.1, 0.5, 0, 1, 0.9]);
+  });
+
+  it('仅曲线非恒等即视为已编辑', () => {
+    expect(hasEdits({ ...EDIT_DEFAULTS, curves: { rgb: [0, 0.1, 1, 0.9] } })).toBe(true);
+    expect(hasEdits({ ...EDIT_DEFAULTS, curves: { rgb: [0, 0, 1, 1] } })).toBe(false);
+  });
+
+  it('toEditParams / fromEditParams 曲线往返不丢数据', async () => {
+    const { toEditParams, fromEditParams } = await import('@/lib/editParams');
+    const ops = { ...EDIT_DEFAULTS, curves: { rgb: [0, 0.04, 1, 0.96], b: [0, 0.06, 1, 0.94] } };
+    const params = toEditParams(ops);
+    expect(params.curves.rgb).toEqual([0, 0.04, 1, 0.96]);
+    const back = fromEditParams(params);
+    expect(back.curves).toEqual(sanitizeEditOps(ops).curves);
+  });
+
+  it('previewFilterChain 输出曲线表（tone 后 saturate 前语义，均匀采样）', async () => {
+    const { previewFilterChain } = await import('@/lib/editParams');
+    const chain = previewFilterChain({ ...EDIT_DEFAULTS, curves: { rgb: [0, 0.04, 1, 0.96] } });
+    expect(chain.curves).toBeTruthy();
+    expect(chain.curves.r).toHaveLength(33);
+    expect(chain.curves.r[0]).toBeCloseTo(0.04);
+    expect(chain.saturate).toBeNull();
+    const noCurve = previewFilterChain({ exposure: 0.5 });
+    expect(noCurve.curves).toBeNull();
+  });
+
+  it('仅曲线编辑也产出预览链（identity 矩阵 + 曲线原语）', async () => {
+    const { previewFilterChain, needsMatrix } = await import('@/lib/editParams');
+    const ops = { ...EDIT_DEFAULTS, curves: { rgb: [0, 0.2, 1, 0.8] } };
+    const chain = previewFilterChain(ops);
+    expect(chain).toBeTruthy();
+    expect(needsMatrix(ops)).toBe(false);
+    expect(chain.matrix[0]).toBeCloseTo(1 / 255, 4);
+    expect(chain.matrix[4]).toBe(0);
+    expect(chain.curves.r).toBeTruthy();
+  });
+});

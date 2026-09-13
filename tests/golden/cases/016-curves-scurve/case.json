@@ -1,0 +1,8 @@
+{
+  "fixture": "portrait.jpg",
+  "tolerance": {
+    "maxDelta": 1,
+    "meanDelta": 0.2
+  },
+  "description": "016-curves-scurve（rgb S 曲线，PNG 无损输出）"
+}

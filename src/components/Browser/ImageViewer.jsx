@@ -379,6 +379,7 @@ export default function ImageViewer({
       flipV: editOpsRef.current.flipV,
       crop: editOpsRef.current.crop,
       ...p,
+      curves: presetParams.curves || EDIT_DEFAULTS.curves,
     };
     if (scope === 'all') {
       const o = presetParams.orientation;
@@ -874,6 +875,16 @@ export default function ImageViewer({
                 <feFuncB type="linear" slope={previewChain.highlightsSlope} intercept="0" />
               </feComponentTransfer>
             )}
+            {previewChain.curves && (
+              <feComponentTransfer>
+                {['r', 'g', 'b'].map((ch) => {
+                  const table = previewChain.curves[ch];
+                  if (!table) return null;
+                  const Func = `feFunc${ch.toUpperCase()}`;
+                  return <Func key={ch} type="table" tableValues={table.join(' ')} />;
+                })}
+              </feComponentTransfer>
+            )}
             {previewChain.saturate != null && (
               <feColorMatrix type="saturate" values={previewChain.saturate} />
             )}
@@ -1188,7 +1199,7 @@ export default function ImageViewer({
             </div>
             <div className="editor-builtin-row">
               {BUILTIN_PRESETS.map(bp => (
-                <button key={bp.name} className="editor-builtin-chip" title={bp.desc} onClick={() => applyPreset({ name: bp.name, basic: bp.basic })}>
+                <button key={bp.name} className="editor-builtin-chip" title={bp.desc} onClick={() => applyPreset({ name: bp.name, basic: bp.basic, curves: bp.curves })}>
                   {bp.name}
                 </button>
               ))}

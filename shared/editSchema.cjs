@@ -34,6 +34,8 @@ const BasicSchema = z.object({
   tint: z.number().min(-100).max(100).catch(0),        // 绿- 品红+
 });
 
+// 曲线：每通道为点对平铺数组 [x0,y0, x1,y1, ...]，取值 0..1，x 升序，≥2 点有效；
+// 分段线性插值，端点外横向延伸。语义实现唯一在 shared/curves.cjs（渲染 LUT 与预览 tableValues 共用）。
 const CurvesSchema = z.object({
   rgb: z.array(z.number()).catch([]),
   r: z.array(z.number()).catch([]),

@@ -769,3 +769,15 @@ Phase 1-6、8、10-14、16-17 全量落地；Phase 7（sRGB 工作空间转换 +
 **修复（生产级）**：零拷贝底图（orientation=1 源，含 webp）烘焙时 libvips 操作缓存持有托管原文件句柄 → Windows unlink EBUSY，烘焙 100% 失败。`sharp.cache(false)`（renderSpecToSharp/thumbWorker 两个 worker 入口）确定性修复；saveEditedImage 补重试 unlink（3×200ms）+ read/write 回退兜底。建档 `error/bake-ebusy-sharp-cache-holds-source-fd.md`。
 
 **收尾**：裁剪拖动完成入历史（上一批源码遗留，随本批提交）。574 例全绿（vitest 含 golden 17/17 像素锁定）；lint 0 error；typecheck/build 通过。
+
+---
+
+# 2026-09-13 功能批：色调曲线渲染支持（能力矩阵最大缺口之一）
+
+- **shared/curves.cjs（新）**：曲线语义唯一实现——点约定 [x0,y0,...] 0..1 平铺数组、归一化（成对/钳制/排序/同 x 去重/≥2 点）、分段线性求值、256 级 LUT 生成、rgb+通道复合、SVG tableValues 均匀采样（33 点）。渲染端与预览端共用同一求值函数。
+- **渲染端**：curves 移出 UNSUPPORTED_STAGES；执行器新增 curves 阶段——tone 后物化 pending 仿射（曲线作用于显示参照空间），raw 检查点上原位查表（零额外物化、alpha 步长跳过、灰度图仅 rgb 曲线）。
+- **预览端**：editParams 平铺模型接入 curves（sanitize/hasEdits/toEditParams/fromEditParams）；previewFilterChain 输出 buildCurveTables 表；editLayer SVG 在高光后、饱和度前插入 feComponentTransfer type="table"（与 LUT 分段线性同语义，采样偏差 ≤3/255 有测试锁定）。
+- **内置预设接入**：黑白胶片（陡 S 曲线）、电影青橙（淡黑 S 曲线 + 蓝通道分离做青橙调）——曲线能力对用户立即可见；validateBuiltinPresets 校验曲线形状。
+- **测试**：+23 例（curves 单测 11、spec 契约更新、执行器 LUT 逐像素一致性（PNG 无损）、预览表与 LUT 偏差锁定、预设曲线、往返转换）；golden 新增 016-curves-scurve（PNG 输出 Δ=0）。
+- **顺手发现**：composite 元数据回接路径的 PNG/无损输出带 alpha（libvips composite 内部转 RGBA）——JPEG 输出无感知，PNG 测试需按 4 通道步长比对（已知行为，暂不改产物）。
+- 597 例全绿；golden 16/16；lint 0 error；typecheck/build 通过。

@@ -65,7 +65,7 @@ const baseSpecStages = (over = {}) => ([
   { kind: 'whiteBalance', params: { temp: 0, tint: 0, mode: 'custom' } },
   { kind: 'exposure', params: { ev: over.ev ?? 0 } },
   { kind: 'tone', params: { contrast: 0, highlights: 0, shadows: 0, whites: 0, blacks: 0 } },
-  { kind: 'curves', params: {}, unsupported: true },
+  { kind: 'curves', params: over.curves ?? {} },
   { kind: 'hsl', params: {}, unsupported: true },
   { kind: 'colorGrading', params: {}, unsupported: true },
   { kind: 'saturation', params: { value: 0, mono: false } },
@@ -129,6 +129,64 @@ describe('渲染管线安全（真实 sharp）', () => {
     const meta = await sharp(out).metadata();
     expect(meta.width).toBe(30);
     expect(meta.height).toBe(60);
+  });
+});
+
+describe('curves 阶段（LUT 原位应用）', () => {
+  it('rgb S 曲线输出与 shared LUT 逐像素一致（PNG 无损）', async () => {
+    const curves = require_('../../../shared/curves.cjs');
+    const input = path.join(TMP, 'curve-src.jpg');
+    await sharp({ create: { width: 32, height: 32, channels: 3, background: '#808080' } })
+      .composite([{ input: await sharp({ create: { width: 8, height: 8, channels: 3, background: '#303040' } }).png().toBuffer(), left: 4, top: 4 }])
+      .jpeg().toFile(input);
+    const curvePts = [0, 0.02, 0.25, 0.18, 0.75, 0.82, 1, 0.98];
+    const stages = baseSpecStages({ curves: { rgb: curvePts } });
+    stages.find(s => s.kind === 'encode').params = { format: 'png', quality: 92, resize: null };
+    const out = path.join(TMP, 'curve-out.png');
+    await renderSpecToSharp(
+      { specVersion: 1, sourceHash: 't', colorSpace: { working: 'srgb', output: 'srgb' }, stages, meta: {} },
+      input, out
+    );
+    const luts = curves.buildCurveLuts({ rgb: curvePts });
+    const [src, res] = await Promise.all([
+      sharp(input).raw().toBuffer({ resolveWithObject: true }),
+      sharp(out).raw().toBuffer({ resolveWithObject: true }),
+    ]);
+    expect(res.info.width).toBe(src.info.width);
+    const pxCount = src.info.width * src.info.height;
+    const sch = src.info.channels;
+    const och = res.info.channels;
+    let maxDelta = 0;
+    for (let p = 0; p < pxCount; p++) {
+      for (let c = 0; c < 3; c++) {
+        maxDelta = Math.max(maxDelta, Math.abs(res.data[p * och + c] - luts.r[src.data[p * sch + c]]));
+      }
+    }
+    expect(maxDelta).toBeLessThanOrEqual(1);
+  });
+
+  it('空曲线为恒等（不改变像素）', async () => {
+    const input = path.join(TMP, 'gray-src.jpg');
+    await sharp({ create: { width: 20, height: 20, channels: 3, background: '#606060' } }).jpeg().toFile(input);
+    const stages = baseSpecStages();
+    stages.find(s => s.kind === 'encode').params = { format: 'png', quality: 92, resize: null };
+    const out = path.join(TMP, 'curve-id.png');
+    await renderSpecToSharp(
+      { specVersion: 1, sourceHash: 't', colorSpace: { working: 'srgb', output: 'srgb' }, stages, meta: {} },
+      input, out
+    );
+    const [src, res] = await Promise.all([
+      sharp(input).raw().toBuffer({ resolveWithObject: true }),
+      sharp(out).raw().toBuffer({ resolveWithObject: true }),
+    ]);
+    const pxCount = src.info.width * src.info.height;
+    const sch = src.info.channels;
+    const och = res.info.channels;
+    for (let p = 0; p < pxCount; p++) {
+      for (let c = 0; c < 3; c++) {
+        expect(res.data[p * och + c]).toBe(src.data[p * sch + c]);
+      }
+    }
   });
 });
 
