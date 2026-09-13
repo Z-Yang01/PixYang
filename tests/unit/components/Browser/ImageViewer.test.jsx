@@ -279,6 +279,27 @@ describe('ImageViewer', () => {
     rectSpy.mockRestore();
   });
 
+  it('编辑模式：滑杆拖动终态入历史，Ctrl+Z 可撤销', async () => {
+    mockEditBridge();
+    const { container } = render(<ImageViewer {...baseProps()} />);
+    fireEvent.click(screen.getByTitle(/编辑模式/));
+    await screen.findByText('编辑');
+    // 拖动曝光滑杆：change（值变化）→ pointerup（手势结束）
+    const slider = container.querySelector('input[type="range"]');
+    fireEvent.change(slider, { target: { value: '0.5' } });
+    fireEvent.pointerUp(slider);
+    // 撤销恢复默认值
+    fireEvent.keyDown(window, { key: 'z', ctrlKey: true });
+    await vi.waitFor(() => {
+      expect(slider.value).toBe('0');
+    });
+    // 重做恢复
+    fireEvent.keyDown(window, { key: 'z', ctrlKey: true, shiftKey: true });
+    await vi.waitFor(() => {
+      expect(slider.value).toBe('0.5');
+    });
+  });
+
   it('编辑模式：拖拽框选的 crop 合入保存参数', async () => {
     mockEditBridge();
     // 图像显示区域固定为 1000x1000 @ (0,0)，便于坐标换算

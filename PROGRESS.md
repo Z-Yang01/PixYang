@@ -815,3 +815,32 @@ Phase 1-6、8、10-14、16-17 全量落地；Phase 7（sRGB 工作空间转换 +
 - **测试**：+12 例（shared 语义 9、执行器 64x48 逐像素 PNG Δ=0、平铺模型 2、预设）；golden 新增 018-vignette（-55 暗角，PNG Δ=0）。
 - **测试基建备忘**：baseSpecStages 中新支持阶段的 `unsupported: true` 残留标记会让执行器静默跳过（colorGrading/lens 两次同坑）——新阶段转正时必须同步删标记。
 - 631 例全绿；golden 18/18；lint 0 error；typecheck/build 通过。未实现清单余 **hsl / masks**。
+
+---
+
+# 2026-09-13 多代理全面测试批：3 审查报告 + 1 覆盖分析 + 8 项修复
+
+四路并行子代理审查（前端链路 / 数据会话链路 / 渲染层 / 覆盖分析；前两者完整跑完，渲染层因并发限制重试后完成，覆盖分析由主代理补位）。发现并修复：
+
+## 修复清单
+
+- **[P0] previewFilterChain feColorMatrix slope 误除 255**（M5 起潜伏）：曝光/对比度/白色/黑色/色温/色调任一非零时预览近黑。SVG feColorMatrix 工作在 0..1 空间，slope 为无量纲增益原值，仅 offset 需 /255。前端无像素级测试故 golden 漏网——agent 以 Chrome headless 采样实证。
+- **[P1] 滑杆/曲线手势终态不入历史栈**：pushHistory 在手势开始推"当前状态"被 dedupe 吃掉，最后一次调整不可撤销、历史面板不可见。改为手势结束推终态：滑杆 pointerdown 标记 + pointerup 提交（键盘逐次提交）；CurveEditor onBegin → onCommit（mouseup/拖出删除时回调）。裁剪原本正确。
+- **[P1] 复制/批量同步不携带 curves/colorGrading/vignette 且 saveEdits 整体替换**：目标图这些编辑被静默清零。copySettings 载荷扩展 + App 同步传参 + **saveEdits 新增 preserveGeometry**（同步影调时保留目标图自己的 crop/orientation——顺带修复旧的 crop 清零问题）。
+- **[P1] saveEditedImage 预 unlink 制造原图丢失窗口**（agent 可运行复现：unlink 成功后 rename+回退都失败 → 原图永久丢失且 temp 被下次会话清理）。重构为 **rename-first 无丢失窗口**：Windows renameSync=MoveFileEx 原子替换失败不伤目标 → 重试 3×150ms → 回退改"同目录旁路副本 + rename"（弃 read+write 直写，消除截断风险）；unlink(temp) 失败仅警告不回滚已成功替代；格式改名后清理旧格式源文件（警告级）。
+- **[P1] 半透明图 composite 双重 alpha 混合**（渲染层 agent 发现）：over 复合 α'=α+α(1−α) 且 premultiply 往返回混底色，编辑结果被冲淡变不透明。修复：两段复合 **over（不透明编辑层）→ dest-in（原始 alpha 蒙版）**，单管线元数据直通，逐像素精确（回归测试锁定）。曾试 joinChannel 方案——sharp 内部固定执行序（joinChannel 先于 composite）不可行，弃。
+- **[P2] bake 竞态**：渲染 await 后复查 editSessions.has(id)（cancel 后不再替代原图）；bake 后清理 base meta sidecar。
+- **[P2] 历史栈快照浅拷贝**（防将来原处 mutate 污染）；**拖拽中撤销/跳转中断**：editEpoch 递增清空 CurveEditor dragRef + cropDragRef（旧 dragRef 写回污染已跳转状态的竞态）。
+- **[P2] 2 通道直调防御**：curves/colorGrading/lens 原位函数 channels===2 按步长只处理灰度字节（文件路径不可达，纯防御）。
+
+## 审查确认无问题（渲染层 agent 逐项验证）
+
+极端参数数学（NaN/越界/hue 折叠/±100 溢出）、4 带与 16-bit stride、各像素阶段前 affine flush（golden 019 组合锁定）、pre-crop 暗角语义（解析值 maxErr=0）、代理渲染几何等价、EXIF 回接（jpeg/png/webp/tiff）、zod 参数完整性、enforceEditPreviewLimit、applyPreset 重置语义、SVG 原语顺序与管线对应、Before/分屏/overlay 层级。
+
+## 覆盖分析（主代理补位）
+
+新文件覆盖率：curves.cjs 100%/91%分支、colorGrading.cjs 83%/97%、lens.cjs 92%/97%、CurveEditor.jsx 100%/89%、editParams.js 100%/97%。组合用例盲区已补：**golden 019（basic+曲线+分级+暗角，PNG Δ=0）**。已知遗留：宽色域 tagged 底图 composite 色彩空间失配（分析性发现，需 ICC fixture 定量，归 M7/M8 ICC 批次）；半透明图直编码路径的元数据仅 composite 路径保证（本次 dest-in 修复已覆盖）。
+
+## 验证
+
+638 例全绿（+7：saveEditedImage 原子替代 3 例、preserveGeometry、滑杆历史、半透明回归、组合 golden）；golden 19/19；lint 0 error；typecheck/build 通过。

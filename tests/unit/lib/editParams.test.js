@@ -75,7 +75,7 @@ describe('previewFilterChain（M5 预览滤镜链）', () => {
     const { previewFilterChain } = await import('@/lib/editParams');
     const chain = previewFilterChain({ exposure: 1, contrast: 30 });
     // slope = 2^(1) * 1 * (1+30/50) = 3.2；offset = 127.5*(1-1.6) = -76.5
-    expect(chain.matrix[0]).toBeCloseTo(3.2 / 255, 4);
+    expect(chain.matrix[0]).toBeCloseTo(3.2, 4);
     expect(chain.matrix[4]).toBeCloseTo(-76.5 / 255, 4);
     expect(chain.shadows).toBeNull();
     expect(chain.highlightsSlope).toBeNull();
@@ -138,7 +138,7 @@ describe('curves（平铺模型 + 预览链）', () => {
     const chain = previewFilterChain(ops);
     expect(chain).toBeTruthy();
     expect(needsMatrix(ops)).toBe(false);
-    expect(chain.matrix[0]).toBeCloseTo(1 / 255, 4);
+    expect(chain.matrix[0]).toBe(1);
     expect(chain.matrix[4]).toBe(0);
     expect(chain.curves.r).toBeTruthy();
   });

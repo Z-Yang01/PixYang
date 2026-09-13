@@ -74,9 +74,11 @@ export default function ImageViewer({
   const [exportOpts, setExportOpts] = useState({ format: 'auto', quality: 92, maxEdge: 0 });
   const [bakeConfirm, setBakeConfirm] = useState(false);
   const [histInfo, setHistInfo] = useState({ canUndo: false, canRedo: false, index: 0, length: 0 });
+  const [editEpoch, setEditEpoch] = useState(0); // 外部替换 ops（撤销/跳转/清除）时递增，中断进行中的手势
   const editImgRef = useRef(null);
   const contentRef = useRef(null);
   const cropDragRef = useRef(null);
+  const sliderDragRef = useRef(null); // 拖动中的滑杆 key（pointerup 时收敛为一条历史）
   const editOpsRef = useRef(editOps);
   editOpsRef.current = editOps;
   const editingRef = useRef(false);
@@ -223,7 +225,8 @@ export default function ImageViewer({
     const json = JSON.stringify(snapshot);
     if (json === JSON.stringify(h.stack[h.index]?.ops)) return;
     h.stack = h.stack.slice(0, h.index + 1);
-    h.stack.push({ ops: snapshot, label });
+    // 浅拷贝快照：防止后续原处 mutate 污染整个历史栈
+    h.stack.push({ ops: { ...snapshot }, label });
     h.index = h.stack.length - 1;
     syncHistInfo();
   }, [syncHistInfo]);
@@ -232,6 +235,8 @@ export default function ImageViewer({
     const h = historyRef.current;
     if (!h || index < 0 || index >= h.stack.length) return;
     h.index = index;
+    cropDragRef.current = null; // 拖拽中跳转：丢弃陈旧手势基准，防写回污染已跳转状态
+    setEditEpoch(e => e + 1);   // 同步中断曲线拖拽
     setEditOps(h.stack[index].ops);
     syncHistInfo();
   }, [syncHistInfo]);
@@ -446,6 +451,9 @@ export default function ImageViewer({
         temperature: editOpsRef.current.temperature,
         tint: editOpsRef.current.tint,
       },
+      curves: editOpsRef.current.curves,
+      colorGrading: editOpsRef.current.colorGrading,
+      vignette: editOpsRef.current.vignette,
       orientation: { rotate: editOpsRef.current.rotation, flipH: editOpsRef.current.flipH, flipV: editOpsRef.current.flipV },
     });
     toast.success('已复制当前调整参数');
@@ -1141,8 +1149,19 @@ export default function ImageViewer({
               <input
                 type="range" min={min} max={max} step={step}
                 value={editOps[key]}
-                onPointerDown={() => pushHistory(editOpsRef.current, label)}
-                onChange={(e) => setEditOps(o => ({ ...o, [key]: Number(e.target.value) }))}
+                onPointerDown={() => { sliderDragRef.current = key; }}
+                onPointerUp={() => {
+                  if (sliderDragRef.current === key) {
+                    sliderDragRef.current = null;
+                    pushHistory(editOpsRef.current, label);
+                  }
+                }}
+                onChange={(e) => {
+                  const next = { ...editOpsRef.current, [key]: Number(e.target.value) };
+                  setEditOps(next);
+                  // 键盘调整（无指针拖动）逐次入历史；拖动全程由 pointerup 收敛为一条
+                  if (!sliderDragRef.current) pushHistory(next, label);
+                }}
               />
               <em>{fmt(editOps[key])}</em>
             </label>
@@ -1156,6 +1175,7 @@ export default function ImageViewer({
                 <Button variant="ghost" size="xs" onClick={() => {
                   const next = { ...editOpsRef.current, curves: EDIT_DEFAULTS.curves };
                   pushHistory(next, '清除曲线');
+                  setEditEpoch(e => e + 1);
                   setEditOps(next);
                 }}>
                   清除
@@ -1164,8 +1184,9 @@ export default function ImageViewer({
             </div>
             <CurveEditor
               curves={editOps.curves || EDIT_DEFAULTS.curves}
-              onBegin={() => pushHistory(editOpsRef.current, '曲线')}
+              onCommit={() => pushHistory(editOpsRef.current, '曲线')}
               onChange={(nextCurves) => setEditOps(o => ({ ...o, curves: nextCurves }))}
+              epoch={editEpoch}
             />
             <p className="editor-crop-hint">点击添加锚点并拖拽，将锚点拖出面板删除</p>
           </div>
@@ -1242,7 +1263,7 @@ export default function ImageViewer({
                 >
                   含几何
                 </Button>
-                <Button variant="ghost" size="xs" onClick={copySettings} title="复制当前调整参数（影调 + 几何，同步时可选择范围）">复制</Button>
+                <Button variant="ghost" size="xs" onClick={copySettings} title="复制当前调整参数（影调/曲线/分级/暗角 + 几何，同步时可选择范围）">复制</Button>
                 <Button variant="ghost" size="xs" onClick={pasteSettings} title="粘贴已复制的参数">粘贴</Button>
               </div>
             </div>

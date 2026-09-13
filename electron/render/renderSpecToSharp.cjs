@@ -281,11 +281,13 @@ async function materialize(pipe) {
   return { data: out.data, info: out.info };
 }
 
-// 曲线 LUT 原位应用：彩色逐通道复合表（含 alpha 步长跳过）；灰度仅 rgb 曲线（通道曲线无意义）
+// 曲线 LUT 原位应用：彩色逐通道复合表（含 alpha 步长跳过）；灰度仅 rgb 曲线（通道曲线无意义）；
+// 2 通道（灰+alpha，仅直调可达）按步长只处理灰度字节，防污染 alpha
 function applyCurveLutsInPlace(data, luts, channels) {
   if (channels < 3) {
     if (!luts.rgb) return;
-    for (let i = 0; i < data.length; i++) data[i] = luts.rgb[data[i]];
+    const stride = channels === 2 ? 2 : 1;
+    for (let i = 0; i < data.length; i += stride) data[i] = luts.rgb[data[i]];
     return;
   }
   const { r, g, b } = luts;
@@ -313,17 +315,48 @@ async function encodeAndWrite(pixels, inputPath, outputPath, encodeStage, spec, 
   if (pixels && ctx.proxyLongEdge) {
     out = sourceSharp(pixels, inputPath);
   } else if (pixels) {
-    const editedPng = await sharp(pixels.data, {
-      raw: { width: pixels.info.width, height: pixels.info.height, channels: pixels.info.channels },
-    }).png({ compressionLevel: 3 }).toBuffer(); // 无损中间层，低压缩级别换取速度
+    const { width: pw, height: ph, channels: pch } = pixels.info;
+    let semiAlpha = false;
+    if (pch === 4) {
+      for (let i = 3; i < pixels.data.length; i += 4) {
+        if (pixels.data[i] !== 255) { semiAlpha = true; break; }
+      }
+    }
+    // 元数据回接：把几何/裁剪同样应用到原图（携带 EXIF/ICC）得到同尺寸底
     let metaBase = sharp(inputPath, { failOn: 'none', unlimited: true });
     for (const s of spec?.stages || []) {
       if (s.kind === 'geometry' && hasGeometry(s.params)) metaBase = applyGeometry(metaBase, s.params);
       else if (s.kind === 'crop' && ctx.effectiveCrop) metaBase = metaBase.extract(ctx.effectiveCrop);
     }
-    out = metaBase.composite([{ input: editedPng, blend: 'over' }]).keepExif().keepIccProfile();
+    if (semiAlpha) {
+      // 半透明底图不能直接 over 复合：α'=α+α(1−α) 双重混合 + premultiply 往返回混底色。
+      // 两段复合：① 不透明编辑层 over（α=1 复合无损失，RGB 精确置入）
+      //           ② 原始 alpha 蒙版 dest-in（预乘语义下 RGB/α 还原后仍精确），单管线元数据直通
+      const opaque = Buffer.from(pixels.data);
+      const maskRaw = Buffer.alloc(pw * ph * 4);
+      for (let p = 0; p < pw * ph; p++) {
+        maskRaw[p * 4] = 255;
+        maskRaw[p * 4 + 1] = 255;
+        maskRaw[p * 4 + 2] = 255;
+        maskRaw[p * 4 + 3] = opaque[p * 4 + 3];
+        opaque[p * 4 + 3] = 255;
+      }
+      const opaquePng = await sharp(opaque, { raw: { width: pw, height: ph, channels: 4 } })
+        .png({ compressionLevel: 3 }).toBuffer();
+      const maskPng = await sharp(maskRaw, { raw: { width: pw, height: ph, channels: 4 } })
+        .png({ compressionLevel: 3 }).toBuffer();
+      out = metaBase.composite([
+        { input: opaquePng, blend: 'over' },
+        { input: maskPng, blend: 'dest-in' },
+      ]);
+    } else {
+      const editedPng = await sharp(pixels.data, {
+        raw: { width: pw, height: ph, channels: pch },
+      }).png({ compressionLevel: 3 }).toBuffer(); // 无损中间层，低压缩级别换取速度
+      out = metaBase.composite([{ input: editedPng, blend: 'over' }]);
+    }
   } else {
-    out = sharp(inputPath, { failOn: 'none', unlimited: true }).keepExif().keepIccProfile();
+    out = sharp(inputPath, { failOn: 'none', unlimited: true });
   }
 
   // encode：composite 与 resize 不可同管线（libvips 把 resize 折叠到 composite 之前会导致

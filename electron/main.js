@@ -471,6 +471,12 @@ async function bakeEditSession(id, edits) {
     return { error: `渲染失败：${e.message}` };
   }
 
+  // 渲染期间会话可能已被取消（editCancel 删除会话并清理底图）——替代前复查
+  if (!editSessions.has(id)) {
+    try { if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath); } catch { /* 清理失败无碍 */ }
+    return { error: '编辑会话已取消，已放弃替代' };
+  }
+
   // 渲染产物验证：尺寸与渲染返回一致且文件可解码，异常产物绝不替代原图
   try {
     const sharpCheck = require('sharp');
@@ -502,6 +508,11 @@ async function bakeEditSession(id, edits) {
     // 零拷贝会话的 basePath 就是原图本身——绝不可删
     if (fs.existsSync(session.basePath) && session.basePath !== session.filepath) fs.unlinkSync(session.basePath);
   } catch { /* 缓存清理失败无碍 */ }
+  try {
+    // 底图 meta 侧车一并清理（残留无害但会累积）
+    const metaPath = editBaseMetaPath(id);
+    if (fs.existsSync(metaPath)) fs.unlinkSync(metaPath);
+  } catch { /* 清理失败无碍 */ }
 
   scheduleThumbnailRebuild();
   return { ok: true, image: saved };

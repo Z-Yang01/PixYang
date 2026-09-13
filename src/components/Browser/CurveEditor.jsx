@@ -16,10 +16,16 @@ const HIT_PX = 12;
 // 曲线编辑器（受控组件）：空曲线按恒等对角线显示，首次拖拽即写入显式点。
 // 交互：点击空处添加锚点（y 吸附当前曲线值）、拖拽调整、锚点拖出面板删除、端点 x 锁定。
 // 曲线语义与渲染端共用 shared/curves.cjs（分段线性）。
-export default function CurveEditor({ curves, onBegin, onChange }) {
+// onCommit 在手势结束（mouseup/拖出删除）时回调——由父组件把终态推入历史栈；
+// epoch 变化（外部撤销/跳转）立即中断进行中的拖拽，防止旧 dragRef 写回污染已跳转状态。
+export default function CurveEditor({ curves, onCommit, onChange, epoch = 0 }) {
   const [channel, setChannel] = useState('rgb');
   const svgRef = useRef(null);
   const dragRef = useRef(null);
+
+  useEffect(() => {
+    dragRef.current = null;
+  }, [epoch]);
 
   const channelColor = (CHANNELS.find((c) => c.key === channel) || CHANNELS[0]).color;
 
@@ -43,7 +49,6 @@ export default function CurveEditor({ curves, onBegin, onChange }) {
       const dy = (1 - pts[i][1]) * rect.height - (e.clientY - rect.top);
       if (Math.hypot(dx, dy) <= HIT_PX) { hit = i; break; }
     }
-    onBegin?.();
     if (hit >= 0) {
       dragRef.current = { points: pts, index: hit };
       return;
@@ -74,6 +79,7 @@ export default function CurveEditor({ curves, onBegin, onChange }) {
       if (i > 0 && i < pts.length - 1 && (y > 1.15 || y < -0.15)) {
         dragRef.current = null;
         writePoints(pts.filter((_, k) => k !== i));
+        onCommit?.();
         return;
       }
       const ny = clamp01(y);
@@ -85,14 +91,19 @@ export default function CurveEditor({ curves, onBegin, onChange }) {
       dragRef.current = { points: next, index: i };
       writePoints(next);
     };
-    const onUp = () => { dragRef.current = null; };
+    const onUp = () => {
+      if (dragRef.current) {
+        dragRef.current = null;
+        onCommit?.();
+      }
+    };
     window.addEventListener('mousemove', onMove);
     window.addEventListener('mouseup', onUp);
     return () => {
       window.removeEventListener('mousemove', onMove);
       window.removeEventListener('mouseup', onUp);
     };
-  }, [writePoints]);
+  }, [writePoints, onCommit]);
 
   const pts = displayPoints();
   const pathD = pts.map((p, i) => `${i === 0 ? 'M' : 'L'} ${(p[0] * 100).toFixed(2)} ${((1 - p[1]) * 100).toFixed(2)}`).join(' ');

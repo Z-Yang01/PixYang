@@ -266,6 +266,31 @@ describe('colorGrading 阶段（真亮度加权 raw pass）', () => {
   });
 });
 
+describe('半透明图烘焙/导出（composite 元数据回接）', () => {
+  it('半透明 PNG 编辑后 RGB 精确替换且 alpha 原样保留', async () => {
+    const input = path.join(TMP, 'alpha-src.png');
+    // [200,200,200,153]（半透明）与 [40,40,40,255]（不透明）两像素
+    const raw = Buffer.from([200, 200, 200, 153, 40, 40, 40, 255]);
+    await sharp(raw, { raw: { width: 2, height: 1, channels: 4 } }).png().toFile(input);
+    const stages = baseSpecStages({ ev: 1 }); // +1EV：200→255、40→80
+    stages.find(s => s.kind === 'encode').params = { format: 'png', quality: 92, resize: null };
+    const out = path.join(TMP, 'alpha-out.png');
+    await renderSpecToSharp(
+      { specVersion: 1, sourceHash: 't', colorSpace: { working: 'srgb', output: 'srgb' }, stages, meta: {} },
+      input, out
+    );
+    const res = await sharp(out).raw().toBuffer({ resolveWithObject: true });
+    expect(res.info.channels).toBe(4);
+    // 曝光 ×2 后：半透明像素 RGB 精确（不被底图回混）、不透明像素正常
+    expect(res.data[0]).toBe(255);
+    expect(res.data[1]).toBe(255);
+    expect(res.data[2]).toBe(255);
+    expect(res.data[3]).toBe(153);
+    expect(res.data[4]).toBe(80);
+    expect(res.data[7]).toBe(255);
+  });
+});
+
 describe('渲染取消（Phase 9）', () => {
   it('isCancelled 命中时返回 cancelled 且不写输出文件', async () => {
     const input = path.join(TMP, 'cancel-src.jpg');

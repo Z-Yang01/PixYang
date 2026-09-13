@@ -439,6 +439,100 @@ describe('saveEditedImage 编辑保存', () => {
   });
 });
 
+describe('saveEditedImage 原子替代与回退', () => {
+  it('格式改名烘焙：filepath/format 更新，旧格式源文件被清理', async () => {
+    const dir = tmpDir('edit-rename');
+    const [img] = await db.importImages([makeImage('legacy.webp', dir, 'webp-bytes')]);
+    expect(img.format).toBe('.webp');
+    const tempPath = path.join(dir, 'legacy-temp.jpg');
+    fs.writeFileSync(tempPath, 'jpeg-baked-bytes');
+
+    const saved = db.saveEditedImage(img.id, tempPath, { width: 300, height: 200 });
+    expect(saved.error).toBeUndefined();
+    expect(saved.filepath.endsWith('.jpg')).toBe(true);
+    expect(saved.format).toBe('.jpg');
+    expect(fs.existsSync(saved.filepath)).toBe(true);
+    expect(fs.readFileSync(saved.filepath, 'utf8')).toBe('jpeg-baked-bytes');
+    // 旧 webp 源文件清理
+    expect(fs.existsSync(img.filepath)).toBe(false);
+  });
+
+  it('rename 连续失败时走旁路回退：原图经副本替换、无 .bake-tmp 残留', async () => {
+    const dir = tmpDir('edit-fallback');
+    const [img] = await db.importImages([makeImage('fallback.jpg', dir, 'original-bytes')]);
+    const tempPath = path.join(dir, 'fallback-temp.jpg');
+    fs.writeFileSync(tempPath, 'fallback-baked-bytes');
+
+    let calls = 0;
+    const origRename = fs.renameSync;
+    fs.renameSync = (...args) => {
+      calls++;
+      if (calls <= 3) throw Object.assign(new Error('EBUSY: locked'), { code: 'EBUSY' });
+      return origRename(...args);
+    };
+    try {
+      const saved = db.saveEditedImage(img.id, tempPath, { width: 10, height: 10 });
+      expect(saved.error).toBeUndefined();
+      expect(calls).toBe(4);
+      expect(fs.readFileSync(img.filepath, 'utf8')).toBe('fallback-baked-bytes');
+      expect(fs.existsSync(`${img.filepath}.bake-tmp`)).toBe(false);
+      expect(fs.existsSync(tempPath)).toBe(false);
+    } finally {
+      fs.renameSync = origRename;
+    }
+  });
+
+  it('彻底失败时返回错误且原图字节完好（无丢失窗口）', async () => {
+    const dir = tmpDir('edit-noloss');
+    const [img] = await db.importImages([makeImage('noloss.jpg', dir, 'precious-bytes')]);
+    const tempPath = path.join(dir, 'noloss-temp.jpg');
+    fs.writeFileSync(tempPath, 'unplaceable-bytes');
+
+    const origRename = fs.renameSync;
+    const origCopy = fs.copyFileSync;
+    fs.renameSync = () => { throw Object.assign(new Error('EBUSY'), { code: 'EBUSY' }); };
+    fs.copyFileSync = () => { throw Object.assign(new Error('EPERM'), { code: 'EPERM' }); };
+    try {
+      const saved = db.saveEditedImage(img.id, tempPath, { width: 10, height: 10 });
+      expect(saved.error).toContain('原文件未受影响');
+      expect(fs.readFileSync(img.filepath, 'utf8')).toBe('precious-bytes');
+      expect(fs.existsSync(tempPath)).toBe(true); // 产物保留供重试
+    } finally {
+      fs.renameSync = origRename;
+      fs.copyFileSync = origCopy;
+    }
+  });
+});
+
+describe('saveEdits preserveGeometry（批量同步保留目标几何）', () => {
+  it('preserveGeometry 时保留已有 crop/orientation；不带标记时整体替换', async () => {
+    const dir = tmpDir('sync-geom');
+    const [img] = await db.importImages([makeImage('sync.jpg', dir, 'sync-bytes')]);
+    // 目标图先有裁剪+旋转
+    const first = db.saveEdits(img.id, {
+      orientation: { rotate: 90, flipH: false, flipV: false },
+      crop: { x: 10, y: 20, w: 300, h: 200, ratio: 'free', angle: 0 },
+      basic: { exposure: 1 },
+    });
+    expect(first.error).toBeUndefined();
+
+    // 仅同步影调（不带几何）+ preserveGeometry → 目标 crop/rotation 保留
+    const synced = db.saveEdits(img.id, { basic: { exposure: -0.5 } }, { label: '批量同步影调', preserveGeometry: true });
+    expect(synced.error).toBeUndefined();
+    const after = db.getEdits(img.id).params;
+    expect(after.crop.w).toBe(300);
+    expect(after.orientation.rotate).toBe(90);
+    expect(after.basic.exposure).toBe(-0.5);
+
+    // 不带标记 → 几何被替换为默认（整体替换语义）
+    const synced2 = db.saveEdits(img.id, { basic: { exposure: 0.2 } }, { label: '同步' });
+    expect(synced2.error).toBeUndefined();
+    const after2 = db.getEdits(img.id).params;
+    expect(after2.crop).toBeNull();
+    expect(after2.orientation.rotate).toBe(0);
+  });
+});
+
 describe('查询辅助函数', () => {
   it('getImageById 返回完整记录', async () => {
     const dir = tmpDir('byid');

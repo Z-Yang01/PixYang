@@ -186,10 +186,11 @@ export function previewFilterChain(ops) {
   const offset255 = cf * blacksOff + 127.5 * (1 - cf);
   const slope = wb.map(w => w * gain * whitesF * cf);
   const n = (v) => Number(v.toFixed(5));
+  // feColorMatrix 工作在 0..1 空间：slope 为无量纲增益原值，仅 offset 需 /255
   const matrix = [
-    n(slope[0] / 255), 0, 0, 0, n(offset255 / 255),
-    0, n(slope[1] / 255), 0, 0, n(offset255 / 255),
-    0, 0, n(slope[2] / 255), 0, n(offset255 / 255),
+    n(slope[0]), 0, 0, 0, n(offset255 / 255),
+    0, n(slope[1]), 0, 0, n(offset255 / 255),
+    0, 0, n(slope[2]), 0, n(offset255 / 255),
     0, 0, 0, 1, 0,
   ];
 

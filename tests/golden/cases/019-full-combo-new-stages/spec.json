@@ -16,31 +16,40 @@
     {
       "kind": "whiteBalance",
       "params": {
-        "temp": 25,
-        "tint": -5,
+        "temp": 12,
+        "tint": 0,
         "mode": "custom"
       }
     },
     {
       "kind": "exposure",
       "params": {
-        "ev": 0.5
+        "ev": 0.3
       }
     },
     {
       "kind": "tone",
       "params": {
-        "contrast": 20,
-        "highlights": -30,
-        "shadows": 40,
-        "whites": 10,
-        "blacks": -10
+        "contrast": 15,
+        "highlights": -20,
+        "shadows": 25,
+        "whites": 0,
+        "blacks": 0
       }
     },
     {
       "kind": "curves",
       "params": {
-        "rgb": [],
+        "rgb": [
+          0,
+          0.03,
+          0.3,
+          0.22,
+          0.7,
+          0.8,
+          1,
+          0.97
+        ],
         "r": [],
         "g": [],
         "b": []
@@ -58,15 +67,21 @@
     {
       "kind": "colorGrading",
       "params": {
-        "shadows": [],
+        "shadows": [
+          215,
+          35
+        ],
         "midtones": [],
-        "highlights": []
+        "highlights": [
+          40,
+          25
+        ]
       }
     },
     {
       "kind": "saturation",
       "params": {
-        "value": -20,
+        "value": 10,
         "mono": false
       }
     },
@@ -89,7 +104,7 @@
       "params": {
         "profile": "",
         "distortion": 0,
-        "vignette": 0,
+        "vignette": -35,
         "chromatic": 0
       }
     },
@@ -108,7 +123,7 @@
     {
       "kind": "encode",
       "params": {
-        "format": "jpeg",
+        "format": "png",
         "quality": 92,
         "resize": null
       }
@@ -116,6 +131,6 @@
   ],
   "meta": {
     "fromEditParamsVersion": 0,
-    "generatedAt": "2026-09-13T10:13:01.407Z"
+    "generatedAt": "2026-09-13T10:13:01.699Z"
   }
 }

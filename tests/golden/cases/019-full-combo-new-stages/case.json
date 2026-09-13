@@ -1,0 +1,8 @@
+{
+  "fixture": "portrait.jpg",
+  "tolerance": {
+    "maxDelta": 1,
+    "meanDelta": 0.2
+  },
+  "description": "019-full-combo-new-stages（basic+曲线+分级+暗角组合，PNG 无损输出）"
+}

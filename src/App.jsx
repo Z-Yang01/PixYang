@@ -390,11 +390,15 @@ export default function App() {
       try {
         const params = toEditParams({
           ...copied.basic,
+          ...(copied.curves ? { curves: copied.curves } : {}),
+          ...(copied.colorGrading ? { colorGrading: copied.colorGrading } : {}),
+          ...(copied.vignette ? { vignette: copied.vignette } : {}),
           ...(withGeometry
             ? { rotation: copied.orientation?.rotate || 0, flipH: !!copied.orientation?.flipH, flipV: !!copied.orientation?.flipV }
             : {}),
         });
-        const result = await api.saveEdits(id, params, { label: withGeometry ? '批量同步影调与几何' : '批量同步影调' });
+        // 仅同步影调时保留每张图自己的裁剪/旋转（saveEdits 整体替换 params_json）
+        const result = await api.saveEdits(id, params, { label: withGeometry ? '批量同步影调与几何' : '批量同步影调', preserveGeometry: !withGeometry });
         if (result?.error) throw new Error(result.error);
         ok++;
       } catch (e) {

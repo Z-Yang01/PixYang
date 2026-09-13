@@ -1306,29 +1306,35 @@ function saveEditedImage(id, tempPath, { width, height }) {
   }
 
   const size = fs.statSync(tempPath).size;
-  // Windows 安全替代：Temp 目录新建文件可能被 Defender/indexing 短暂锁定，重试释放
-  let targetGone = false;
-  for (let attempt = 0; attempt < 3 && !targetGone; attempt++) {
+  // 原子替换优先：Windows renameSync = MoveFileEx REPLACE_EXISTING，失败不伤目标文件。
+  // 铁律：任何失败路径都不得先删除原图——否则 rename/写入再失败时原图永久丢失。
+  let placed = false;
+  for (let attempt = 0; attempt < 3 && !placed; attempt++) {
     try {
-      if (fs.existsSync(targetPath)) fs.unlinkSync(targetPath);
-      targetGone = true;
+      fs.renameSync(tempPath, targetPath);
+      placed = true;
     } catch (e) {
-      if (attempt < 2) {
-        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 200);
-      } else {
-        return { error: `替代原文件失败：无法删除旧文件（被占用），请关闭其他程序后重试` };
-      }
+      if (attempt < 2) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 150);
     }
   }
-  try {
-    fs.renameSync(tempPath, targetPath);
-  } catch (e) {
+  if (!placed) {
+    // 回退：复制到同目录旁路文件再 rename 替换（copy/最终 rename 失败都不伤原图）
+    const sidePath = `${targetPath}.bake-tmp`;
     try {
-      const data = fs.readFileSync(tempPath);
-      fs.writeFileSync(targetPath, data);
-      fs.unlinkSync(tempPath);
+      fs.copyFileSync(tempPath, sidePath);
+      fs.renameSync(sidePath, targetPath);
     } catch (e2) {
-      return { error: `替代原文件失败：${e.message}` };
+      try { if (fs.existsSync(sidePath)) fs.unlinkSync(sidePath); } catch { /* 清理失败无碍 */ }
+      return { error: `替代原文件失败：${e2.message}（原文件未受影响，请稍后重试）` };
+    }
+  }
+  try { fs.unlinkSync(tempPath); } catch { /* temp 残留可由 stale 清理兜底，不回滚已成功的替代 */ }
+  // 格式改名（如 gif/webp 源烘焙为 jpg）：清理旧格式源文件，失败仅警告不阻塞
+  if (targetPath !== img.filepath) {
+    try {
+      if (fs.existsSync(img.filepath)) fs.unlinkSync(img.filepath);
+    } catch (e) {
+      console.error('[db] 旧格式源文件清理失败（不阻塞，可手动删除）:', img.filepath, e.message);
     }
   }
 
@@ -1375,7 +1381,18 @@ function getEdits(id) {
 // 保存参数：upsert 且 version+1；command = { label, before, after } 时推入历史（滑杆拖动全程一条）
 function saveEdits(id, params, command) {
   if (!getImageById(id)) return { error: '图片不存在' };
-  const normalized = upgradeEdits(params);
+  let incoming = params;
+  // 批量同步影调：整体替换前保留目标图自己的裁剪/旋转（命令方未携带几何语义）
+  if (command?.preserveGeometry) {
+    const existing = getObject('SELECT params_json FROM edits WHERE image_id = ?', [id])?.params_json;
+    if (existing) {
+      try {
+        const prev = JSON.parse(existing);
+        incoming = { ...params, crop: prev.crop ?? params?.crop ?? null, orientation: prev.orientation ?? params?.orientation };
+      } catch { /* 旧数据损坏时按无合并处理 */ }
+    }
+  }
+  const normalized = upgradeEdits(incoming);
   const json = JSON.stringify(normalized);
   let version = 0;
   db.transaction(() => {

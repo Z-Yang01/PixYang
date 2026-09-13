@@ -95,7 +95,9 @@ function applyColorGradingInPlace(data, grading, channels) {
   const luts = buildGradeLuts(grading);
   if (!luts.ranges.length) return;
   if (channels < 3) {
-    for (let i = 0; i < data.length; i++) {
+    // 2 通道（灰+alpha，仅直调可达）按步长只处理灰度字节
+    const stride = channels === 2 ? 2 : 1;
+    for (let i = 0; i < data.length; i += stride) {
       const L = data[i] / 255;
       let d = 0;
       for (const r of luts.ranges) d += weightFor(r.key, L) * r.scale * r.lumDelta;

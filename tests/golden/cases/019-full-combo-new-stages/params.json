@@ -1,0 +1,27 @@
+{
+  "basic": {
+    "exposure": 0.3,
+    "contrast": 15,
+    "highlights": -20,
+    "shadows": 25,
+    "saturation": 10,
+    "temperature": 12
+  },
+  "curves": {
+    "rgb": [0, 0.03, 0.3, 0.22, 0.7, 0.8, 1, 0.97]
+  },
+  "colorGrading": {
+    "shadows": [215, 35],
+    "midtones": [],
+    "highlights": [40, 25]
+  },
+  "lens": {
+    "profile": "",
+    "distortion": 0,
+    "vignette": -35,
+    "chromatic": 0
+  },
+  "output": {
+    "format": "png"
+  }
+}

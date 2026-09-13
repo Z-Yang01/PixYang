@@ -38,7 +38,8 @@ function applyVignetteInPlace(data, width, height, vignette, channels) {
       const falloff = vignetteFalloff(Math.sqrt(nx * nx + ny * ny));
       if (falloff <= 0) continue;
       const i = (y * width + x) * channels;
-      const cCount = Math.min(3, channels);
+      // 2 通道（灰+alpha，仅直调可达）只处理灰度字节，防污染 alpha
+      const cCount = channels >= 3 ? 3 : 1;
       if (v < 0) {
         const factor = 1 + k * falloff;
         for (let c = 0; c < cCount; c++) data[i + c] = Math.round(data[i + c] * factor);

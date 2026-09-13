@@ -21,11 +21,11 @@ describe('CurveEditor（曲线编辑器）', () => {
   });
 
   const setup = (curves = EMPTY) => {
-    const onBegin = vi.fn();
+    const onCommit = vi.fn();
     const onChange = vi.fn();
-    const { container } = render(<CurveEditor curves={curves} onBegin={onBegin} onChange={onChange} />);
+    const { container } = render(<CurveEditor curves={curves} onCommit={onCommit} onChange={onChange} />);
     const svg = container.querySelector('[data-curve-editor]');
-    return { onBegin, onChange, svg, container };
+    return { onCommit, onChange, svg, container };
   };
 
   it('渲染 4 个通道页签，默认 RGB 激活，点击切换', () => {
@@ -38,32 +38,35 @@ describe('CurveEditor（曲线编辑器）', () => {
     expect(container.querySelector('[data-curve-editor]').dataset.channel).toBe('g');
   });
 
-  it('空处点击添加锚点（y 吸附当前曲线），拖拽更新，onBegin 仅一次', () => {
-    const { onBegin, onChange, svg } = setup();
+  it('空处点击添加锚点（y 吸附当前曲线），拖拽更新，onCommit 在松手时一次', () => {
+    const { onCommit, onChange, svg } = setup();
     // 点击中心 (0.5, 0.5)：恒等曲线上 y=0.5 → 3 个点
     fireEvent.mouseDown(svg, { clientX: 50, clientY: 50 });
-    expect(onBegin).toHaveBeenCalledTimes(1);
+    expect(onCommit).not.toHaveBeenCalled();
     const added = onChange.mock.calls.at(-1)[0];
     expect(added.rgb).toEqual([0, 0, 0.5, 0.5, 1, 1]);
     // 拖到 (0.6, 0.6)
     fireEvent.mouseMove(window, { clientX: 60, clientY: 40 });
     const moved = onChange.mock.calls.at(-1)[0];
     expect(moved.rgb).toEqual([0, 0, 0.6, 0.6, 1, 1]);
-    expect(onBegin).toHaveBeenCalledTimes(1);
-    // 松开后移动不再触发
+    expect(onCommit).not.toHaveBeenCalled();
+    // 松手时终态入历史（一次）
     fireEvent.mouseUp(window);
+    expect(onCommit).toHaveBeenCalledTimes(1);
+    // 松开后移动不再触发
     fireEvent.mouseMove(window, { clientX: 90, clientY: 10 });
     expect(onChange).toHaveBeenCalledTimes(2);
   });
 
   it('内部锚点拖出面板即删除', () => {
-    const { onChange, svg } = setup({ rgb: [0, 0, 0.5, 0.5, 1, 1], r: [], g: [], b: [] });
+    const { onCommit, onChange, svg } = setup({ rgb: [0, 0, 0.5, 0.5, 1, 1], r: [], g: [], b: [] });
     // 命中中间点 (0.5,0.5) → 屏幕 (50,50)
     fireEvent.mouseDown(svg, { clientX: 50, clientY: 50 });
     fireEvent.mouseMove(window, { clientX: 60, clientY: -200 });
     const last = onChange.mock.calls.at(-1)[0];
     expect(last.rgb).toEqual([0, 0, 1, 1]);
     expect(onChange).toHaveBeenCalledTimes(1);
+    expect(onCommit).toHaveBeenCalledTimes(1);
   });
 
   it('端点 x 锁定，y 可调', () => {
