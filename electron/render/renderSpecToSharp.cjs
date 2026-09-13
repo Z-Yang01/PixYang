@@ -19,6 +19,7 @@ const { buildCurveLuts } = require('../../shared/curves.cjs');
 const { hasColorGradingData, applyColorGradingInPlace } = require('../../shared/colorGrading.cjs');
 const { applyVignetteInPlace } = require('../../shared/lens.cjs');
 const { hasHslData, applyHslInPlace } = require('../../shared/hsl.cjs');
+const { hasMaskData, applyMasksInPlace } = require('../../shared/masks.cjs');
 const fs = require('fs');
 
 const IDENTITY = () => ({ slope: [1, 1, 1], offset: [0, 0, 0] });
@@ -163,6 +164,15 @@ async function renderSpecToSharp(spec, inputPath, outputPath, opts = {}) {
           pixels = await materialize(applySaturation(sourceSharp(pixels, inputPath), stage.params));
         }
         break;
+
+      case 'masks': {
+        // 局部蒙版（pre-crop 坐标系，radial/linear v1）：逐像素权重 × 调整（raw pass）
+        if (!hasMaskData(stage.params?.list)) break;
+        pixels = await flushAffine();
+        if (!pixels) pixels = await materialize(sourceSharp(null, inputPath));
+        applyMasksInPlace(pixels.data, pixels.info.width, pixels.info.height, stage.params.list, pixels.info.channels);
+        break;
+      }
 
       case 'detail': {
         const { sharpness = 0, noise = 0 } = stage.params || {};

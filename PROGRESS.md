@@ -880,3 +880,21 @@ Phase 1-6、8、10-14、16-17 全量落地；Phase 7（sRGB 工作空间转换 +
 ## 验证
 
 658 例全绿（+20：hsl 单测 9、执行器 hsl、previewUniforms 契约 7、golden 020 及相关）；golden 20/20；lint 0 error；typecheck/build 通过。
+
+---
+
+# 2026-09-13 masks v1：局部蒙版渲染支持 — 14 阶段全部落地
+
+- **MaskSchema v1 收紧**：`z.any()` 占位替换为判别联合——radial（cx/cy/rx/ry/rotation/feather/invert）+ linear（x0/y0/x1/y1，渐变即过渡，feather 保留不适用）+ MaskAdjustments（exposure/contrast/saturation/temperature/tint，各带值域）；未知类型元素在归一化层丢弃（`transform(filter(Boolean))` 防单个非法蒙版拖垮整个数组）。
+- **shared/masks.cjs（新）**：权重函数（椭圆旋转系归一距离、feather=0 硬边/feather>0 从 1−feather 起线性衰减、invert 反相；线性为 p0→p1 投影）+ 逐像素调整（曝光→色温/色调→对比度→饱和度，权重缩放、0..1 逐步钳制）。pre-crop 语义（decode 后未旋转未裁剪坐标，与 vignette 一致）。
+- **执行器**：masks 阶段（saturation 后 detail 前，显示参照空间 raw pass）；**UNSUPPORTED_STAGES 清空——14 个渲染阶段全部支持**；能力矩阵 masks: preview partial（WebGL2 shader 与 UI 为后续批次，SVG 回退不渲染）。
+- golden 021-radial-mask（中心 -1EV+对比+去饱和，PNG Δ=0）。
+- **AGENTS.md 同步**：测试规模（52 文件/669 例+golden 21）与 shared/ 新模块清单。
+- 测试基建备忘：baseSpecStages 残留 unsupported 标记第四次踩坑（masks）——该模式已在三批中重复出现，后续新阶段转正时必须与 fixture 同步清理。
+- 669 例全绿（+11：masks 单测 9、执行器逐像素、golden 021）；golden 21/21；lint 0 error；typecheck/build 通过。
+
+## 遗留（masks 二期）
+
+- WebGL2 shader 的蒙版权重与调整（uniform 打包，cap 8 蒙版）+ SVG 回退策略标注；
+- 蒙版 UI（图像上拖拽创建/手柄编辑 + 蒙版列表面板 + 调整滑杆）；
+- brush/range/ai 类型与多蒙版可视化管理。

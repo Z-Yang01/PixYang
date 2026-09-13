@@ -73,8 +73,7 @@
       "kind": "masks",
       "params": {
         "list": []
-      },
-      "unsupported": true
+      }
     },
     {
       "kind": "detail",
@@ -122,6 +121,6 @@
   ],
   "meta": {
     "fromEditParamsVersion": 0,
-    "generatedAt": "2026-09-13T14:42:33.187Z"
+    "generatedAt": "2026-09-13T15:37:31.256Z"
   }
 }

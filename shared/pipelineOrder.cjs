@@ -15,7 +15,7 @@ const PIPELINE_ORDER = [
   'hsl',           // HSL（8 色相带色相/饱和度/亮度，shared/hsl.cjs）
   'colorGrading',  // 颜色分级（分离色调，亮度加权，shared/colorGrading.cjs）
   'saturation',    // 饱和度（-100 = 黑白，mono 显式）
-  'masks',         // 局部蒙版（未实现，unsupported）
+  'masks',         // 局部蒙版（radial/linear + 曝光/色温/对比/饱和，shared/masks.cjs）
   'detail',        // 锐化/降噪（锐化已实现，降噪未实现时按参数内警告）
   'lens',          // 镜头校正（vignette 已实现，shared/lens.cjs；profile/distortion/chromatic 阶段内警告跳过）
   'geometry',      // 旋转/翻转（90° 倍数）
@@ -24,7 +24,7 @@ const PIPELINE_ORDER = [
 ];
 
 // 整个 stage 尚未实现的 kind（渲染时跳过并记录警告，而非静默丢弃）
-const UNSUPPORTED_STAGES = new Set(['masks']);
+const UNSUPPORTED_STAGES = new Set([]);
 
 function isSupportedStage(kind) {
   if (!PIPELINE_ORDER.includes(kind)) {
@@ -48,7 +48,7 @@ const CAPABILITY_MATRIX = {
   hsl:           { preview: 'supported', export: 'supported', bake: 'supported', note: '预览经 WebGL2 shader（同公式）；SVG 回退路径不渲染 hsl' },
   colorGrading:  { preview: 'partial',    export: 'supported', bake: 'supported', note: '导出为真亮度加权；预览为逐通道 LUT 近似（通道值代替亮度）' },
   saturation:    { preview: 'supported', export: 'supported', bake: 'supported' },
-  masks:         { preview: 'planned',   export: 'planned',   bake: 'planned' },
+  masks:         { preview: 'partial',   export: 'supported', bake: 'supported', note: 'radial/linear v1；预览 WebGL2 shader 计划中（SVG 回退不渲染 masks）；UI 计划中' },
   detail:        { preview: 'partial',   export: 'partial',   bake: 'partial', note: 'sharpness supported；noiseReduction unsupported' },
   lens:          { preview: 'partial',   export: 'partial',   bake: 'partial', note: 'vignette supported（预览 CSS 渐变精确对齐）；profile/distortion/chromatic unsupported (M8)' },
   geometry:      { preview: 'supported', export: 'supported', bake: 'supported' },

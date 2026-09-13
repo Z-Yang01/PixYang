@@ -71,11 +71,41 @@ const LensSchema = z.object({
   chromatic: z.number().catch(0),
 });
 
-const MaskSchema = z.object({
-  type: z.enum(['linear', 'radial', 'brush', 'range', 'ai']),
-  params: z.record(z.string(), z.any()).catch({}),
-  adjustments: z.record(z.string(), z.any()).catch({}),
+// 蒙版 v1（shared/masks.cjs 唯一实现）：radial（椭圆+羽化+反相）与 linear（渐变线，
+// p0→p1 线性 0→1，feather 字段保留不适用）。坐标系为 decode 后未旋转未裁剪图像。
+// brush/range/ai 类型暂不支持——非法/未知类型元素在归一化层丢弃。
+const MaskAdjustmentsSchema = z.object({
+  exposure: z.number().min(-2).max(2).catch(0),
+  contrast: z.number().min(-50).max(50).catch(0),
+  saturation: z.number().min(-100).max(100).catch(0),
+  temperature: z.number().min(-100).max(100).catch(0),
+  tint: z.number().min(-100).max(100).catch(0),
 });
+
+const RadialMaskSchema = z.object({
+  type: z.literal('radial'),
+  cx: z.number().catch(0),
+  cy: z.number().catch(0),
+  rx: z.number().min(1).catch(100),
+  ry: z.number().min(1).catch(100),
+  rotation: z.number().catch(0),
+  feather: z.number().min(0).max(1).catch(0.5),
+  invert: z.boolean().catch(false),
+  adjustments: MaskAdjustmentsSchema,
+});
+
+const LinearMaskSchema = z.object({
+  type: z.literal('linear'),
+  x0: z.number().catch(0),
+  y0: z.number().catch(0),
+  x1: z.number().catch(100),
+  y1: z.number().catch(100),
+  feather: z.number().min(0).max(1).catch(0.5),
+  invert: z.boolean().catch(false),
+  adjustments: MaskAdjustmentsSchema,
+});
+
+const MaskSchema = z.union([RadialMaskSchema, LinearMaskSchema]).nullable().catch(null);
 
 const OutputSchema = z.object({
   format: z.enum(['jpeg', 'tiff', 'png', 'webp']).catch('jpeg'),
@@ -97,7 +127,7 @@ const EditParamsSchema = z.object({
   colorGrading: ColorGradingSchema,
   detail: DetailSchema,
   lens: LensSchema,
-  masks: z.array(MaskSchema).catch([]),
+  masks: z.array(MaskSchema).transform((a) => a.filter(Boolean)).catch([]),
   output: OutputSchema,
 });
 

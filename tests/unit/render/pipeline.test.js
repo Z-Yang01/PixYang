@@ -69,7 +69,7 @@ const baseSpecStages = (over = {}) => ([
   { kind: 'hsl', params: {} },
   { kind: 'colorGrading', params: {} },
   { kind: 'saturation', params: { value: 0, mono: false } },
-  { kind: 'masks', params: { list: [] }, unsupported: true },
+  { kind: 'masks', params: { list: [] } },
   { kind: 'detail', params: { sharpness: 0, noise: 0 } },
   { kind: 'lens', params: {} },
   { kind: 'geometry', params: { rotate: 0, flipH: false, flipV: false } },
@@ -330,6 +330,44 @@ describe('hsl 阶段（8 色相带 raw pass）', () => {
       const [er, eg, eb] = hslLib.hslPixel([src.data[i * sch], src.data[i * sch + 1], src.data[i * sch + 2]], hslLib.normalizeHsl(params));
       maxDelta = Math.max(maxDelta,
         Math.abs(res.data[i * och] - er), Math.abs(res.data[i * och + 1] - eg), Math.abs(res.data[i * och + 2] - eb));
+    }
+    expect(maxDelta).toBeLessThanOrEqual(1);
+  });
+});
+
+describe('masks 阶段（径向蒙版 raw pass）', () => {
+  it('中心曝光蒙版输出与 shared 逐像素一致（PNG 无损）', async () => {
+    const masksLib = require_('../../../shared/masks.cjs');
+    const W = 32;
+    const H = 32;
+    const input = path.join(TMP, 'mask-src.png');
+    await sharp({ create: { width: W, height: H, channels: 3, background: '#646464' } }).png().toFile(input);
+    const list = [{
+      type: 'radial', cx: W / 2, cy: H / 2, rx: 10, ry: 10, rotation: 0, feather: 0.5, invert: false,
+      adjustments: { exposure: -1, contrast: 0, saturation: 0, temperature: 0, tint: 0 },
+    }];
+    const stages = baseSpecStages();
+    stages.find(s => s.kind === 'masks').params = { list };
+    stages.find(s => s.kind === 'encode').params = { format: 'png', quality: 92, resize: null };
+    const out = path.join(TMP, 'mask-out.png');
+    await renderSpecToSharp(
+      { specVersion: 1, sourceHash: 't', colorSpace: { working: 'srgb', output: 'srgb' }, stages, meta: {} },
+      input, out
+    );
+    const [src, res] = await Promise.all([
+      sharp(input).raw().toBuffer({ resolveWithObject: true }),
+      sharp(out).raw().toBuffer({ resolveWithObject: true }),
+    ]);
+    const sch = src.info.channels;
+    const och = res.info.channels;
+    let maxDelta = 0;
+    for (let y = 0; y < H; y++) {
+      for (let x = 0; x < W; x++) {
+        const w = masksLib.radialWeight(masksLib.normalizeMasks(list)[0], x, y);
+        const gain = Math.pow(2, -1 * w);
+        const expected = Math.round(Math.min(1, (src.data[(y * W + x) * sch] / 255) * gain) * 255);
+        maxDelta = Math.max(maxDelta, Math.abs(res.data[(y * W + x) * och] - expected));
+      }
     }
     expect(maxDelta).toBeLessThanOrEqual(1);
   });

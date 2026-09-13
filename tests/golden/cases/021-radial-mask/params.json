@@ -1,0 +1,18 @@
+{
+  "masks": [
+    {
+      "type": "radial",
+      "cx": 400,
+      "cy": 500,
+      "rx": 260,
+      "ry": 320,
+      "rotation": 0,
+      "feather": 0.6,
+      "invert": false,
+      "adjustments": { "exposure": -1, "contrast": 10, "saturation": -40 }
+    }
+  ],
+  "output": {
+    "format": "png"
+  }
+}

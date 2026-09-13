@@ -2,7 +2,5 @@
   "width": 400,
   "height": 600,
   "format": "png",
-  "unsupported": [
-    "masks"
-  ]
+  "unsupported": []
 }

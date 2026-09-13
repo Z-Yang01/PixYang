@@ -30,8 +30,9 @@ scripts/
 shared/
   editSchema.cjs  EditParams v1 zod schema（非破坏编辑参数唯一事实源，前后端同构）
   renderSpec.cjs  EditParams → RenderSpec 纯函数（渲染指令序列，预览/导出唯一消费格式）
-  pipelineOrder.cjs  渲染阶段固定顺序 + 能力矩阵
+  pipelineOrder.cjs  渲染阶段固定顺序 + 能力矩阵（14 阶段全部支持）
   builtinPresets.cjs  内置风格预设参数集
+  curves.cjs / colorGrading.cjs / hsl.cjs / lens.cjs / masks.cjs  各渲染阶段语义唯一实现（执行器 raw pass 与 WebGL2 shader 同公式）
 error/
   *.md            严重 bug 建档（Symptom/Root Cause/Fix/Prevention 格式）
 src/
@@ -87,7 +88,7 @@ tests/            vitest（node 环境 + per-file happy-dom pragma）
 
 ## 验证
 
-- 测试：`npm test`（vitest，22 个文件 / 262 例）；覆盖率：`npm run test:coverage`，门槛配置在 `vitest.config.js`（statements/lines 75、branches 70、functions 50）。
+- 测试：`npm test`（vitest，52 个文件 / 669 例，含 golden 像素锁定 21 例 `node tests/golden/runner.cjs`，`--update` 刷新基线）；覆盖率：`npm run test:coverage`，门槛配置在 `vitest.config.js`（statements/lines 75、branches 70、functions 50）。
 - Lint：`npm run lint`（ESLint flat config，`eslint.config.mjs`）；0 error 为准，warning 不阻塞。
 - 类型检查：`npm run typecheck`（tsc --noEmit，覆盖 src 下 TS/TSX）。
 - 格式检查：`npm run format:check`（Prettier 仅检查，禁止全量重排产生巨 diff）。

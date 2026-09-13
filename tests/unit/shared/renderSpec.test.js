@@ -13,10 +13,8 @@ describe('pipelineOrder（渲染阶段顺序铁律）', () => {
     expect(order[order.length - 1]).toBe('encode');
   });
 
-  it('未实现阶段清单：仅 masks（curves/colorGrading/hsl/lens.vignette 已支持）', () => {
-    expect([...pipelineOrder.UNSUPPORTED_STAGES].sort()).toEqual(
-      ['masks']
-    );
+  it('未实现阶段清单：空（14 阶段全部支持）', () => {
+    expect([...pipelineOrder.UNSUPPORTED_STAGES].sort()).toEqual([]);
   });
 });
 
@@ -27,7 +25,7 @@ describe('editParamsToRenderSpec（纯函数转换）', () => {
     const spec = build({});
     expect(spec.specVersion).toBe(1);
     expect(spec.stages.map((s) => s.kind)).toEqual(pipelineOrder.PIPELINE_ORDER);
-    expect(renderSpec.listUnsupported(spec)).toEqual(['masks']);
+    expect(renderSpec.listUnsupported(spec)).toEqual([]);
   });
 
   it('2. 纯函数：同输入两次调用 stages 深相等', () => {

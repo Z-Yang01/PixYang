@@ -1,0 +1,8 @@
+{
+  "fixture": "portrait.jpg",
+  "tolerance": {
+    "maxDelta": 1,
+    "meanDelta": 0.2
+  },
+  "description": "021-radial-mask（中心径向蒙版 -1EV + 饱和度，PNG 无损输出）"
+}

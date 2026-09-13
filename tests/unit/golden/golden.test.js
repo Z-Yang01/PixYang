@@ -71,13 +71,10 @@ describe.skipIf(caseDirs.length === 0)('golden 像素锁定', () => {
     expect(kinds.indexOf('geometry')).toBeLessThan(kinds.indexOf('crop'));
   });
 
-  it('009 curves/hsl/colorGrading 均已支持（仅 masks 显式 unsupported）', () => {
+  it('009 全部 14 阶段已支持（不再有 unsupported 清单）', () => {
     const params = JSON.parse(fs.readFileSync(path.join(CASES_DIR, '009-unsupported-curves-hsl', 'params.json'), 'utf8'));
     const spec = editParamsToRenderSpec(params, { sourceHash: 'golden' });
-    const unsupported = listUnsupported(spec);
-    expect(unsupported).not.toContain('curves');
-    expect(unsupported).not.toContain('hsl');
-    expect(unsupported).toEqual(['masks']);
+    expect(listUnsupported(spec)).toEqual([]);
   });
 
   it('016 曲线渲染与 LUT 语义一致（灰阶梯度直接查表比对，PNG 无损）', async () => {

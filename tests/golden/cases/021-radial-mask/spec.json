@@ -24,7 +24,7 @@
     {
       "kind": "exposure",
       "params": {
-        "ev": 1
+        "ev": 0
       }
     },
     {
@@ -72,7 +72,25 @@
     {
       "kind": "masks",
       "params": {
-        "list": []
+        "list": [
+          {
+            "type": "radial",
+            "cx": 400,
+            "cy": 500,
+            "rx": 260,
+            "ry": 320,
+            "rotation": 0,
+            "feather": 0.6,
+            "invert": false,
+            "adjustments": {
+              "exposure": -1,
+              "contrast": 10,
+              "saturation": -40,
+              "temperature": 0,
+              "tint": 0
+            }
+          }
+        ]
       }
     },
     {
@@ -106,7 +124,7 @@
     {
       "kind": "encode",
       "params": {
-        "format": "jpeg",
+        "format": "png",
         "quality": 92,
         "resize": null
       }
@@ -114,6 +132,6 @@
   ],
   "meta": {
     "fromEditParamsVersion": 0,
-    "generatedAt": "2026-09-13T15:37:31.031Z"
+    "generatedAt": "2026-09-13T15:37:33.147Z"
   }
 }

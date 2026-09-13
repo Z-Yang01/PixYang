@@ -2,7 +2,5 @@
   "width": 1200,
   "height": 800,
   "format": "jpeg",
-  "unsupported": [
-    "masks"
-  ]
+  "unsupported": []
 }
