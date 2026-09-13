@@ -601,11 +601,13 @@ export default function ImageViewer({
       const drag = cropDragRef.current;
       cropDragRef.current = null;
       if (!drag) return;
-      setEditOps(o => {
-        const c = o.crop;
-        if (c && (c.width < 8 || c.height < 8)) return { ...o, crop: null };
-        return o;
-      });
+      // 裁剪拖动完成后入历史（undo 回到拖前状态）
+      const c = editOpsRef.current.crop;
+      if (c && c.width >= 8 && c.height >= 8) {
+        pushHistory(editOpsRef.current, '裁剪');
+      } else {
+        setEditOps(o => ({ ...o, crop: null }));
+      }
     };
     window.addEventListener('mousemove', onMove);
     window.addEventListener('mouseup', onUp);
@@ -1160,7 +1162,7 @@ export default function ImageViewer({
                   className={`editor-history-item ${idx === histInfo.index ? 'active' : ''} ${idx > histInfo.index ? 'future' : ''}`}
                   onClick={() => jumpToHistory(idx)}
                 >
-                  <span className="editor-history-step">{idx === 0 ? '原始' : `#${idx}`}</span>
+                  <span className="editor-history-step">#{idx}</span>
                   <span className="editor-history-label">{entry.label}</span>
                 </button>
               ))}

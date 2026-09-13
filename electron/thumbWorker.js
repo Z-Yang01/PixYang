@@ -1,5 +1,6 @@
 const { parentPort } = require('worker_threads');
 const sharp = require('sharp');
+sharp.cache(false);
 const path = require('path');
 
 const THUMB_SMALL_SIZE = 160;

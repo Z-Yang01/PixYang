@@ -759,3 +759,13 @@ Phase 1-6、8、10-14、16-17 全量落地；Phase 7（sRGB 工作空间转换 +
 - 与撤销/重做共用同一栈——跳转后 canUndo/canRedo 正确联动；
 - 裁剪拖动起点入历史（此前裁剪拖动绕过历史栈——undo 会跳过裁剪，补齐）。
 - 571 例全绿；golden 15/15。
+
+---
+
+# 2026-09-13 验证批：四项新功能 E2E 验证 + webp 烘焙 Windows 句柄 bug 修复
+
+重点验证（用户指定）：历史面板跳转 ✓（组件测试标签/跳转/undo-redo 联动）、分屏对比对齐 ✓（CompareView clipPath 结构断言）、含几何预设跨尺寸 ✓（大图预设→小图烘焙钳制 600x600 不崩、参数重置）、webp 源烘焙 ✓（真实导入→渲染→saveEditedImage 全链 13/13）。
+
+**修复（生产级）**：零拷贝底图（orientation=1 源，含 webp）烘焙时 libvips 操作缓存持有托管原文件句柄 → Windows unlink EBUSY，烘焙 100% 失败。`sharp.cache(false)`（renderSpecToSharp/thumbWorker 两个 worker 入口）确定性修复；saveEditedImage 补重试 unlink（3×200ms）+ read/write 回退兜底。建档 `error/bake-ebusy-sharp-cache-holds-source-fd.md`。
+
+**收尾**：裁剪拖动完成入历史（上一批源码遗留，随本批提交）。574 例全绿（vitest 含 golden 17/17 像素锁定）；lint 0 error；typecheck/build 通过。

@@ -526,3 +526,95 @@ describe('预设应用范围（Phase 16）', () => {
     });
   });
 });
+
+describe('历史面板（本轮新功能验证）', () => {
+  function mockBridgeForHistory() {
+    window.pixyang = {
+      getImageTags: vi.fn().mockResolvedValue([]),
+      toFileUrl: vi.fn().mockImplementation((p) => Promise.resolve(p ? `file:///${p}` : null)),
+      editOpen: vi.fn().mockResolvedValue({
+        id: 3, source: 'jpg', basePath: 'C:/cache/3-base.jpg',
+        width: 1920, height: 1080, hasNef: false, savedEdits: null,
+      }),
+      getPresets: vi.fn().mockResolvedValue([]),
+      editCancel: vi.fn().mockResolvedValue({ ok: true }),
+      saveEdits: vi.fn().mockResolvedValue({ version: 1, params: {} }),
+    };
+  }
+
+  beforeEach(() => {
+    mockBridgeForHistory();
+  });
+
+  afterEach(() => {
+    cleanup();
+    delete window.pixyang;
+  });
+
+  it('历史面板：操作产生带标签条目，点击旧条目跳转到该状态', async () => {
+    render(<ImageViewer {...baseProps()} />);
+    fireEvent.click(screen.getByTitle(/编辑模式/));
+    await screen.findByText('参数已保存');
+    // 依次右旋、水平翻转 → 产生两条历史
+    fireEvent.click(screen.getByTitle('右旋 90° (R)'));
+    fireEvent.click(screen.getByTitle('水平翻转 (H)'));
+    // 面板出现带标签的条目
+    expect(screen.getByText('旋转')).toBeInTheDocument();
+    expect(screen.getByText('水平翻转')).toBeInTheDocument();
+    // 当前态 = 原始 + 旋转 + 翻转
+    const layer = () => document.querySelector('.editor-transform-layer');
+    expect(layer().style.transform).toContain('rotate(90deg)');
+    expect(layer().style.transform).toContain('-1');
+    // 点击「原始」跳转到初始态
+    fireEvent.click(screen.getByText('原始'));
+    expect(layer().style.transform).not.toContain('rotate(90deg)');
+    expect(layer().style.transform).not.toContain('-1');
+    // 点击「旋转」跳到中间态
+    fireEvent.click(screen.getByText('旋转'));
+    expect(layer().style.transform).toContain('rotate(90deg)');
+    expect(layer().style.transform).not.toContain('-1');
+  });
+
+  it('历史跳转后撤销/重做按钮联动', async () => {
+    render(<ImageViewer {...baseProps()} />);
+    fireEvent.click(screen.getByTitle(/编辑模式/));
+    await screen.findByText('参数已保存');
+    fireEvent.click(screen.getByTitle('右旋 90° (R)'));
+    fireEvent.click(screen.getByTitle('右旋 90° (R)'));
+    // 跳回「原始」
+    fireEvent.click(screen.getByText('原始'));
+    // canRedo 应为 true（在中间位置）
+    const redoBtn = screen.getByTitle('重做 (Ctrl+Shift+Z)');
+    expect(redoBtn).not.toBeDisabled();
+    // 点重做 → 回到 #2（两次旋转后的状态）
+    fireEvent.click(redoBtn);
+    const layer = () => document.querySelector('.editor-transform-layer');
+    expect(layer().style.transform).toContain('rotate(90deg)');
+  });
+
+  it('裁剪拖动入历史：拖动后撤销可回到拖前状态', async () => {
+    window.pixyang.editOpen = vi.fn().mockResolvedValue({
+      id: 3, source: 'jpg', basePath: 'C:/cache/3-base.jpg',
+      width: 1920, height: 1080, hasNef: false, savedEdits: null,
+    });
+    window.pixyang.toFileUrl.mockImplementation((p) => Promise.resolve(p ? `file:///${p}` : null));
+    const rectSpy = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({
+      left: 0, top: 0, right: 1000, bottom: 1000, width: 1000, height: 1000, x: 0, y: 0,
+      toJSON: () => {},
+    });
+    const { container } = render(<ImageViewer {...baseProps()} />);
+    fireEvent.click(screen.getByTitle(/编辑模式/));
+    await screen.findByText('参数已保存');
+    fireEvent.click(screen.getByTitle('裁剪'));
+    const content = container.querySelector('.viewer-content');
+    fireEvent.mouseDown(content, { clientX: 100, clientY: 100 });
+    fireEvent.mouseMove(window, { clientX: 500, clientY: 400 });
+    fireEvent.mouseUp(window);
+    // 撤销 → 裁剪消失（回到拖前）
+    fireEvent.keyDown(window, { key: 'z', ctrlKey: true });
+    await vi.waitFor(() => {
+      expect(container.querySelector('.editor-crop-box')).toBeNull();
+    });
+    rectSpy.mockRestore();
+  });
+});

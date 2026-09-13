@@ -13,6 +13,7 @@
 // 又把常见路径的 raw 往返降到 0~1 次。
 // 【EXIF 回接】encode 以原图（同几何/裁剪）为底 composite 编辑像素，保留元数据。
 const sharp = require('sharp');
+sharp.cache(false);
 const { UNSUPPORTED_STAGES } = require('../../shared/pipelineOrder.cjs');
 const fs = require('fs');
 

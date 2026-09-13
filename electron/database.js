@@ -1306,10 +1306,30 @@ function saveEditedImage(id, tempPath, { width, height }) {
   }
 
   const size = fs.statSync(tempPath).size;
+  // Windows 安全替代：Temp 目录新建文件可能被 Defender/indexing 短暂锁定，重试释放
+  let targetGone = false;
+  for (let attempt = 0; attempt < 3 && !targetGone; attempt++) {
+    try {
+      if (fs.existsSync(targetPath)) fs.unlinkSync(targetPath);
+      targetGone = true;
+    } catch (e) {
+      if (attempt < 2) {
+        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 200);
+      } else {
+        return { error: `替代原文件失败：无法删除旧文件（被占用），请关闭其他程序后重试` };
+      }
+    }
+  }
   try {
     fs.renameSync(tempPath, targetPath);
   } catch (e) {
-    return { error: `替代原文件失败：${e.message}` };
+    try {
+      const data = fs.readFileSync(tempPath);
+      fs.writeFileSync(targetPath, data);
+      fs.unlinkSync(tempPath);
+    } catch (e2) {
+      return { error: `替代原文件失败：${e.message}` };
+    }
   }
 
   db.transaction(() => {
