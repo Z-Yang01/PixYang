@@ -1,0 +1,11 @@
+{
+  "lens": {
+    "profile": "",
+    "distortion": 0,
+    "vignette": -55,
+    "chromatic": 0
+  },
+  "output": {
+    "format": "png"
+  }
+}

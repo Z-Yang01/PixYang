@@ -23,6 +23,8 @@ import builtinPresetsModule from '../../../shared/builtinPresets.cjs';
 const { BUILTIN_PRESETS } = builtinPresetsModule;
 import curvesLib from '../../../shared/curves.cjs';
 const { hasCurveData } = curvesLib;
+import lensLib from '../../../shared/lens.cjs';
+const { vignettePreviewStyle } = lensLib;
 import CompareView from './CompareView';
 import CurveEditor from './CurveEditor';
 import ConfirmDialog from '@/components/Layout/ConfirmDialog';
@@ -384,6 +386,7 @@ export default function ImageViewer({
       ...p,
       curves: presetParams.curves || EDIT_DEFAULTS.curves,
       colorGrading: presetParams.colorGrading || EDIT_DEFAULTS.colorGrading,
+      vignette: presetParams.lens?.vignette || EDIT_DEFAULTS.vignette,
     };
     if (scope === 'all') {
       const o = presetParams.orientation;
@@ -826,7 +829,9 @@ export default function ImageViewer({
     : null;
 
   // 编辑态渲染层：edited=true 应用变换/滤镜/裁剪框（After）；false 为原始编辑源（Before）
-  const editLayer = (edited) => (
+  const editLayer = (edited) => {
+    const vignetteStyle = edited && editOps.vignette ? vignettePreviewStyle(editOps.vignette) : null;
+    return (
     <div className="editor-transform-layer" style={{ transform: edited ? editTransform : undefined }}>
       <img
         ref={editImgRef}
@@ -840,6 +845,13 @@ export default function ImageViewer({
           transition: dragging.current ? 'none' : undefined,
         }}
       />
+      {/* 暗角 overlay：CSS 渐变与渲染端 raw pass 同数学（multiply/screen 精确等价） */}
+      {vignetteStyle && (
+        <div
+          className="editor-vignette-overlay"
+          style={{ background: vignetteStyle.background, mixBlendMode: vignetteStyle.blendMode }}
+        />
+      )}
       {edited && compareMode === 'toggle' && crop && cropPct && (
         <div className="editor-crop-box" style={cropPct} data-crop-box="1">
           {['n', 's', 'e', 'w', 'ne', 'nw', 'se', 'sw'].map(h => (
@@ -850,7 +862,8 @@ export default function ImageViewer({
       )}
       {edited && editBusy && <Loader2 className="editor-rendering-spinner animate-spin" />}
     </div>
-  );
+    );
+  };
 
   return (
     <div className="viewer-overlay" onClick={editing ? undefined : onClose}>
@@ -1235,7 +1248,7 @@ export default function ImageViewer({
             </div>
             <div className="editor-builtin-row">
               {BUILTIN_PRESETS.map(bp => (
-                <button key={bp.name} className="editor-builtin-chip" title={bp.desc} onClick={() => applyPreset({ name: bp.name, basic: bp.basic, curves: bp.curves, colorGrading: bp.colorGrading })}>
+                <button key={bp.name} className="editor-builtin-chip" title={bp.desc} onClick={() => applyPreset({ name: bp.name, basic: bp.basic, curves: bp.curves, colorGrading: bp.colorGrading, lens: bp.lens })}>
                   {bp.name}
                 </button>
               ))}

@@ -1,0 +1,8 @@
+{
+  "fixture": "landscape.jpg",
+  "tolerance": {
+    "maxDelta": 1,
+    "meanDelta": 0.2
+  },
+  "description": "018-vignette（-55 暗角，PNG 无损输出）"
+}

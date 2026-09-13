@@ -17,6 +17,7 @@ sharp.cache(false);
 const { UNSUPPORTED_STAGES } = require('../../shared/pipelineOrder.cjs');
 const { buildCurveLuts } = require('../../shared/curves.cjs');
 const { hasColorGradingData, applyColorGradingInPlace } = require('../../shared/colorGrading.cjs');
+const { applyVignetteInPlace } = require('../../shared/lens.cjs');
 const fs = require('fs');
 
 const IDENTITY = () => ({ slope: [1, 1, 1], offset: [0, 0, 0] });
@@ -160,6 +161,20 @@ async function renderSpecToSharp(spec, inputPath, outputPath, opts = {}) {
           pixels = await flushAffine();
           pixels = await materialize(sourceSharp(pixels, inputPath).sharpen({ sigma: 0.8 + sharpness / 50 }));
         }
+        break;
+      }
+
+      case 'lens': {
+        // 镜头校正：vignette 已实现（pre-crop 语义，作用于 decode 后未旋转未裁剪尺寸）；
+        // profile/distortion/chromatic 仍不支持，警告跳过（参数保留在 spec 中）
+        const lp = stage.params || {};
+        if (lp.profile) console.warn('[render] 镜头 profile 校正尚未实现，已跳过');
+        if (lp.distortion) console.warn('[render] 镜头畸变校正尚未实现，已跳过');
+        if (lp.chromatic) console.warn('[render] 镜头色差校正尚未实现，已跳过');
+        if (!(Number(lp.vignette) || 0)) break;
+        pixels = await flushAffine();
+        if (!pixels) pixels = await materialize(sourceSharp(null, inputPath));
+        applyVignetteInPlace(pixels.data, pixels.info.width, pixels.info.height, lp.vignette, pixels.info.channels);
         break;
       }
 

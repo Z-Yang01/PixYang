@@ -803,3 +803,15 @@ Phase 1-6、8、10-14、16-17 全量落地；Phase 7（sRGB 工作空间转换 +
 - **内置预设**：港风霓虹高光洋红 [320,35]；validateBuiltinPresets 补 [hue,sat] 形状校验；applyPreset 携带 colorGrading（无则重置）。
 - **测试**：+15 例（shared 语义 8、执行器灰阶渐变逐像素 PNG Δ≤1、平铺模型/预览链 4、预设）；golden 新增 017-color-grading（PNG Δ=0）。
 - 619 例全绿；golden 17/17；lint 0 error；typecheck/build 通过。未实现清单余 hsl/masks/lens。
+
+---
+
+# 2026-09-13 功能批：镜头暗角（lens.vignette）渲染支持
+
+- **shared/lens.cjs（新）**：vignette 唯一实现——椭圆归一距离（半宽/半高），线性衰减区间 d∈[0.5,1]（角落 d>1 钳 1）；负值压暗 out=in*(1+s/100*falloff)、正值向白提亮 out=in+s/100*falloff*(255-in)。**预览端 CSS radial-gradient(ellipse farthest-side) 两 stop 渐变 + multiply/screen 混合与渲染公式严格等价（100% 精确，非近似）**——线性 falloff 恰好可被线性插值渐变表达。
+- **渲染端**：lens 移出 UNSUPPORTED（能力矩阵 preview/export/bake partial——vignette 支持，profile/distortion/chromatic 阶段内警告跳过，参数保留）；pre-crop 语义（作用于 decode 后未旋转未裁剪尺寸，管线顺序锁定）。
+- **前端**：平铺模型接入 vignette（sanitize/hasEdits/toEditParams↔lens.vignette）；editLayer 在 img 上方加 editor-vignette-overlay（独立 div，mixBlendMode 按符号选 multiply/screen，pointer-events none）；applyPreset 携带 lens（无则重置）。
+- **内置预设**：风光艳丽 vignette -20；校验补 -100..100 范围。
+- **测试**：+12 例（shared 语义 9、执行器 64x48 逐像素 PNG Δ=0、平铺模型 2、预设）；golden 新增 018-vignette（-55 暗角，PNG Δ=0）。
+- **测试基建备忘**：baseSpecStages 中新支持阶段的 `unsupported: true` 残留标记会让执行器静默跳过（colorGrading/lens 两次同坑）——新阶段转正时必须同步删标记。
+- 631 例全绿；golden 18/18；lint 0 error；typecheck/build 通过。未实现清单余 **hsl / masks**。

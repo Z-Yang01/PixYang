@@ -12,7 +12,7 @@ const BUILTIN_PRESETS = [
   { name: '复古胶片', desc: '暖调褪色，胶片灰雾感', basic: { temperature: 18, tint: 8, contrast: 5, saturation: -18, shadows: 15, blacks: -25, whites: -10 } },
   { name: '港风霓虹', desc: '夜色浓艳，洋红高光', basic: { contrast: 30, saturation: 25, temperature: -12, tint: 10, shadows: -15, highlights: 10 }, colorGrading: { shadows: [], midtones: [], highlights: [320, 35] } },
   { name: '清透人像', desc: '肤色透亮，柔和高光', basic: { exposure: 0.2, contrast: 5, highlights: -20, shadows: 25, saturation: 5, temperature: 5, blacks: -10 } },
-  { name: '风光艳丽', desc: '高饱和风光，天空深邃', basic: { contrast: 20, saturation: 30, highlights: -15, shadows: 10, whites: 15, blacks: 10 } },
+  { name: '风光艳丽', desc: '高饱和风光，天空深邃', basic: { contrast: 20, saturation: 30, highlights: -15, shadows: 10, whites: 15, blacks: 10 }, lens: { profile: '', distortion: 0, vignette: -20, chromatic: 0 } },
 ];
 
 // 名称唯一（UI key 与测试依赖）；curves/colorGrading 只验形状，语义归一化在 sanitize/normalize 层
@@ -39,6 +39,9 @@ function validateBuiltinPresets() {
           throw new Error(`内置预设 ${p.name} 分级 ${c} 非法：需 [hue, sat] 或空数组`);
         }
       }
+    }
+    if (p.lens && (!Number.isFinite(p.lens.vignette) || p.lens.vignette < -100 || p.lens.vignette > 100)) {
+      throw new Error(`内置预设 ${p.name} vignette 非法：需 -100..100 数值`);
     }
   }
   return true;

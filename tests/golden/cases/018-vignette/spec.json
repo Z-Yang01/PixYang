@@ -16,7 +16,7 @@
     {
       "kind": "whiteBalance",
       "params": {
-        "temp": -50,
+        "temp": 0,
         "tint": 0,
         "mode": "custom"
       }
@@ -89,7 +89,7 @@
       "params": {
         "profile": "",
         "distortion": 0,
-        "vignette": 0,
+        "vignette": -55,
         "chromatic": 0
       }
     },
@@ -108,7 +108,7 @@
     {
       "kind": "encode",
       "params": {
-        "format": "jpeg",
+        "format": "png",
         "quality": 92,
         "resize": null
       }
@@ -116,6 +116,6 @@
   ],
   "meta": {
     "fromEditParamsVersion": 0,
-    "generatedAt": "2026-09-13T09:01:55.098Z"
+    "generatedAt": "2026-09-13T09:01:55.483Z"
   }
 }

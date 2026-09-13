@@ -174,3 +174,19 @@ describe('colorGrading（平铺模型 + 预览链）', () => {
     expect(previewFilterChain({ exposure: 0.5 }).grading).toBeNull();
   });
 });
+
+describe('vignette（平铺模型）', () => {
+  it('sanitize 钳制 -100..100，默认 0', () => {
+    expect(sanitizeEditOps({}).vignette).toBe(0);
+    expect(sanitizeEditOps({ vignette: 150 }).vignette).toBe(100);
+    expect(sanitizeEditOps({ vignette: -40 }).vignette).toBe(-40);
+  });
+
+  it('非零 vignette 即已编辑；往返经 lens.vignette 不丢', async () => {
+    expect(hasEdits({ ...EDIT_DEFAULTS, vignette: -20 })).toBe(true);
+    const { toEditParams, fromEditParams } = await import('@/lib/editParams');
+    const params = toEditParams({ ...EDIT_DEFAULTS, vignette: -55 });
+    expect(params.lens.vignette).toBe(-55);
+    expect(fromEditParams(params).vignette).toBe(-55);
+  });
+});

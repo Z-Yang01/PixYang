@@ -2188,6 +2188,11 @@ body {
   stroke-dasharray: 4 3;
   vector-effect: non-scaling-stroke;
 }
+.editor-vignette-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
 .editor-ratio-btn {
   padding: 3px 8px;
   font-size: 11px;

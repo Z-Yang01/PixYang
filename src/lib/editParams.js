@@ -25,6 +25,7 @@ export const EDIT_DEFAULTS = {
   tint: 0,            // -100..100（绿- 品红+）
   curves: { rgb: [], r: [], g: [], b: [] },  // 点对平铺数组 [x0,y0,...]，0..1，见 shared/curves.cjs
   colorGrading: { shadows: [], midtones: [], highlights: [] },  // 每区间 [hue 0..360, sat 0..100]
+  vignette: 0,        // -100..100（负压暗/正提亮），pre-crop 语义，见 shared/lens.cjs
 };
 
 export const CROP_RATIOS = [
@@ -71,6 +72,7 @@ export function sanitizeEditOps(input = {}) {
       b: flatPoints(ops.curves?.b),
     },
     colorGrading: normalizeGrading(ops.colorGrading),
+    vignette: clamp(Number(ops.vignette) || 0, -100, 100),
   };
 }
 
@@ -79,7 +81,7 @@ export function hasEdits(ops) {
   return !!(s.rotation !== 0 || s.flipH || s.flipV || s.crop
     || s.exposure !== 0 || s.contrast !== 0 || s.saturation !== 0 || s.temperature !== 0
     || s.highlights !== 0 || s.shadows !== 0 || s.whites !== 0 || s.blacks !== 0 || s.tint !== 0
-    || hasCurveData(s.curves) || hasColorGradingData(s.colorGrading));
+    || hasCurveData(s.curves) || hasColorGradingData(s.colorGrading) || s.vignette !== 0);
 }
 
 // 色温预览：SVG feColorMatrix 逐通道增益，与 sharp 管线的 RGB 增益同数学语义
@@ -125,6 +127,7 @@ export function toEditParams(ops) {
     },
     curves: s.curves,
     colorGrading: s.colorGrading,
+    lens: { profile: '', distortion: 0, vignette: s.vignette, chromatic: 0 },
   });
 }
 
@@ -154,6 +157,7 @@ export function fromEditParams(params) {
       b: flatPoints(p.curves?.b),
     },
     colorGrading: normalizeGrading(p.colorGrading),
+    vignette: clamp(Number(p.lens?.vignette) || 0, -100, 100),
   };
 }
 

@@ -71,7 +71,7 @@ const baseSpecStages = (over = {}) => ([
   { kind: 'saturation', params: { value: 0, mono: false } },
   { kind: 'masks', params: { list: [] }, unsupported: true },
   { kind: 'detail', params: { sharpness: 0, noise: 0 } },
-  { kind: 'lens', params: {}, unsupported: true },
+  { kind: 'lens', params: {} },
   { kind: 'geometry', params: { rotate: 0, flipH: false, flipV: false } },
   { kind: 'crop', params: null },
   { kind: 'encode', params: { format: 'jpeg', quality: 92, resize: null } },
@@ -185,6 +185,48 @@ describe('curves 阶段（LUT 原位应用）', () => {
     for (let p = 0; p < pxCount; p++) {
       for (let c = 0; c < 3; c++) {
         expect(res.data[p * och + c]).toBe(src.data[p * sch + c]);
+      }
+    }
+  });
+});
+
+describe('lens 阶段（vignette raw pass）', () => {
+  it('暗角输出与 shared vignettePixel 逐像素一致（PNG 无损）', async () => {
+    const lens = require_('../../../shared/lens.cjs');
+    const W = 64;
+    const H = 48;
+    const raw = Buffer.alloc(W * H * 3);
+    for (let i = 0; i < W * H; i++) {
+      raw[i * 3] = 200;
+      raw[i * 3 + 1] = 120;
+      raw[i * 3 + 2] = 40;
+    }
+    const input = path.join(TMP, 'vig-src.png');
+    await sharp(raw, { raw: { width: W, height: H, channels: 3 } }).png().toFile(input);
+    const stages = baseSpecStages();
+    stages.find(s => s.kind === 'lens').params = { profile: '', distortion: 0, vignette: -55, chromatic: 0 };
+    stages.find(s => s.kind === 'encode').params = { format: 'png', quality: 92, resize: null };
+    const out = path.join(TMP, 'vig-out.png');
+    await renderSpecToSharp(
+      { specVersion: 1, sourceHash: 't', colorSpace: { working: 'srgb', output: 'srgb' }, stages, meta: {} },
+      input, out
+    );
+    const [src, res] = await Promise.all([
+      sharp(input).raw().toBuffer({ resolveWithObject: true }),
+      sharp(out).raw().toBuffer({ resolveWithObject: true }),
+    ]);
+    const sch = src.info.channels;
+    const och = res.info.channels;
+    for (let y = 0; y < H; y++) {
+      for (let x = 0; x < W; x++) {
+        const nx = (x + 0.5 - W / 2) / (W / 2);
+        const ny = (y + 0.5 - H / 2) / (H / 2);
+        const f = lens.vignetteFalloff(Math.sqrt(nx * nx + ny * ny));
+        const si = (y * W + x) * sch;
+        const di = (y * W + x) * och;
+        expect(res.data[di]).toBe(lens.vignettePixel(src.data[si], -55, f));
+        expect(res.data[di + 1]).toBe(lens.vignettePixel(src.data[si + 1], -55, f));
+        expect(res.data[di + 2]).toBe(lens.vignettePixel(src.data[si + 2], -55, f));
       }
     }
   });

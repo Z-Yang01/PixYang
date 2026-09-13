@@ -4,7 +4,6 @@
   "format": "jpeg",
   "unsupported": [
     "hsl",
-    "masks",
-    "lens"
+    "masks"
   ]
 }

@@ -62,6 +62,8 @@ const DetailSchema = z.object({
   noise: z.number().min(0).max(100).catch(0),
 });
 
+// 镜头校正：vignette -100..100（负压暗/正提亮）已实现（shared/lens.cjs，pre-crop 语义）；
+// profile/distortion/chromatic 预留（渲染端警告跳过）
 const LensSchema = z.object({
   profile: z.string().catch(''),
   distortion: z.number().catch(0),

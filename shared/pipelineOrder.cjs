@@ -17,14 +17,14 @@ const PIPELINE_ORDER = [
   'saturation',    // 饱和度（-100 = 黑白，mono 显式）
   'masks',         // 局部蒙版（未实现，unsupported）
   'detail',        // 锐化/降噪（锐化已实现，降噪未实现时按参数内警告）
-  'lens',          // 镜头校正（未实现，unsupported）
+  'lens',          // 镜头校正（vignette 已实现，shared/lens.cjs；profile/distortion/chromatic 阶段内警告跳过）
   'geometry',      // 旋转/翻转（90° 倍数）
   'crop',          // 裁剪（geometry 之后坐标系）
   'encode',        // 编码输出
 ];
 
 // 整个 stage 尚未实现的 kind（渲染时跳过并记录警告，而非静默丢弃）
-const UNSUPPORTED_STAGES = new Set(['hsl', 'masks', 'lens']);
+const UNSUPPORTED_STAGES = new Set(['hsl', 'masks']);
 
 function isSupportedStage(kind) {
   if (!PIPELINE_ORDER.includes(kind)) {
@@ -50,7 +50,7 @@ const CAPABILITY_MATRIX = {
   saturation:    { preview: 'supported', export: 'supported', bake: 'supported' },
   masks:         { preview: 'planned',   export: 'planned',   bake: 'planned' },
   detail:        { preview: 'partial',   export: 'partial',   bake: 'partial', note: 'sharpness supported；noiseReduction unsupported' },
-  lens:          { preview: 'planned',   export: 'planned',   bake: 'planned' },
+  lens:          { preview: 'partial',   export: 'partial',   bake: 'partial', note: 'vignette supported（预览 CSS 渐变精确对齐）；profile/distortion/chromatic unsupported (M8)' },
   geometry:      { preview: 'supported', export: 'supported', bake: 'supported' },
   crop:          { preview: 'supported', export: 'supported', bake: 'supported' },
 };
