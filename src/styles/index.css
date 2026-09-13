@@ -2397,3 +2397,40 @@ body {
   color: #fff;
   border-radius: 4px;
 }
+
+/* 历史面板 */
+.editor-history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 180px;
+  overflow-y: auto;
+}
+.editor-history-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px;
+  font-size: 11px;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+.editor-history-item:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+.editor-history-item.active {
+  background: var(--accent-color, #6366f1);
+  color: #fff;
+}
+.editor-history-item.future {
+  opacity: 0.5;
+}
+.editor-history-step {
+  min-width: 28px;
+  opacity: 0.6;
+  font-variant-numeric: tabular-nums;
+}

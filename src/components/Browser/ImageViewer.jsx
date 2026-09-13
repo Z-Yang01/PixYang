@@ -68,7 +68,7 @@ export default function ImageViewer({
   const [showExportDialog, setShowExportDialog] = useState(false);
   const [exportOpts, setExportOpts] = useState({ format: 'auto', quality: 92, maxEdge: 0 });
   const [bakeConfirm, setBakeConfirm] = useState(false);
-  const [histInfo, setHistInfo] = useState({ canUndo: false, canRedo: false });
+  const [histInfo, setHistInfo] = useState({ canUndo: false, canRedo: false, index: 0, length: 0 });
   const editImgRef = useRef(null);
   const contentRef = useRef(null);
   const cropDragRef = useRef(null);
@@ -145,7 +145,7 @@ export default function ImageViewer({
     setCropMode(false);
     setEditError('');
     setBusyKind('');
-    setHistInfo({ canUndo: false, canRedo: false });
+    setHistInfo({ canUndo: false, canRedo: false, index: 0, length: 0 });
     historyRef.current = null;
     savedBaselineRef.current = null;
     setZoom(1);
@@ -189,7 +189,7 @@ export default function ImageViewer({
             flipV: !!image.flip_v,
           };
       setEditOps(initial);
-      historyRef.current = { stack: [initial], index: 0 };
+      historyRef.current = { stack: [{ ops: initial, label: '原始' }], index: 0 };
       savedBaselineRef.current = initial;
       setEditing(true);
       setZoom(1);
@@ -203,17 +203,31 @@ export default function ImageViewer({
   // ── 撤销/重做：历史栈存完整 ops 快照 ──
   const syncHistInfo = useCallback(() => {
     const h = historyRef.current;
-    setHistInfo({ canUndo: !!h && h.index > 0, canRedo: !!h && h.index < h.stack.length - 1 });
+    setHistInfo({
+      canUndo: !!h && h.index > 0,
+      canRedo: !!h && h.index < h.stack.length - 1,
+      index: h ? h.index : 0,
+      length: h ? h.stack.length : 0,
+    });
   }, []);
 
-  const pushHistory = useCallback((snapshot) => {
+  // 历史栈条目：{ ops, label }——label 供历史面板展示
+  const pushHistory = useCallback((snapshot, label = '调整') => {
     const h = historyRef.current;
     if (!h) return;
     const json = JSON.stringify(snapshot);
-    if (json === JSON.stringify(h.stack[h.index])) return;
+    if (json === JSON.stringify(h.stack[h.index]?.ops)) return;
     h.stack = h.stack.slice(0, h.index + 1);
-    h.stack.push(snapshot);
+    h.stack.push({ ops: snapshot, label });
     h.index = h.stack.length - 1;
+    syncHistInfo();
+  }, [syncHistInfo]);
+
+  const jumpToHistory = useCallback((index) => {
+    const h = historyRef.current;
+    if (!h || index < 0 || index >= h.stack.length) return;
+    h.index = index;
+    setEditOps(h.stack[index].ops);
     syncHistInfo();
   }, [syncHistInfo]);
 
@@ -222,10 +236,8 @@ export default function ImageViewer({
     if (!h) return;
     const next = dir === 'undo' ? h.index - 1 : h.index + 1;
     if (next < 0 || next >= h.stack.length) return;
-    h.index = next;
-    setEditOps(h.stack[next]);
-    syncHistInfo();
-  }, [syncHistInfo]);
+    jumpToHistory(next);
+  }, [jumpToHistory]);
 
   // 当前编辑参数（含裁剪框）
   const composeOps = useCallback(() => (
@@ -388,7 +400,7 @@ export default function ImageViewer({
         }
       }
     }
-    pushHistory(next);
+    pushHistory(next, presetParams?.name ? `预设「${presetParams.name}」` : '应用预设');
     setEditOps(next);
     const scopeLabel = scope === 'all' ? '（含几何）' : '';
     toast.success(presetParams?.name ? `已应用预设「${presetParams.name}」${scopeLabel}` : `已应用预设${scopeLabel}`);
@@ -443,7 +455,7 @@ export default function ImageViewer({
       shadows: c.shadows, whites: c.whites, blacks: c.blacks,
       saturation: c.saturation, temperature: c.temperature, tint: c.tint,
     };
-    pushHistory(next);
+    pushHistory(next, '粘贴参数');
     setEditOps(next);
     toast.success('已粘贴参数');
   }, [pushHistory]);
@@ -453,7 +465,7 @@ export default function ImageViewer({
     if (editingRef.current) {
       setEditOps(o => {
         const next = { ...o, rotation: (o.rotation + delta + 360) % 360 };
-        pushHistory(next);
+        pushHistory(next, '旋转');
         return next;
       });
     } else {
@@ -465,7 +477,7 @@ export default function ImageViewer({
     if (editingRef.current) {
       setEditOps(o => {
         const next = axis === 'H' ? { ...o, flipH: !o.flipH } : { ...o, flipV: !o.flipV };
-        pushHistory(next);
+        pushHistory(next, axis === 'H' ? '水平翻转' : '垂直翻转');
         return next;
       });
     } else if (axis === 'H') {
@@ -477,7 +489,7 @@ export default function ImageViewer({
 
   const resetEdits = useCallback(() => {
     const next = { ...EDIT_DEFAULTS };
-    pushHistory(next);
+    pushHistory(next, '重置全部');
     setEditOps(next);
   }, [pushHistory]);
 
@@ -560,6 +572,8 @@ export default function ImageViewer({
 
   const handleCropMouseDown = useCallback((e) => {
     if (!cropMode || !editSession) return;
+    // 拖动起点入历史（拖动全程算一步：undo 回到拖动前）
+    pushHistory(editOpsRef.current, '裁剪');
     const handle = e.target.closest?.('[data-crop-handle]')?.getAttribute('data-crop-handle');
     const inBox = e.target.closest?.('.editor-crop-box');
     const cur = toImageCoords(e.clientX, e.clientY);
@@ -1078,7 +1092,7 @@ export default function ImageViewer({
                 title="双击重置"
                 onDoubleClick={() => {
                   const next = { ...editOpsRef.current, [key]: EDIT_DEFAULTS[key] };
-                  pushHistory(next);
+                  pushHistory(next, `重置${label}`);
                   setEditOps(next);
                 }}
               >
@@ -1087,7 +1101,7 @@ export default function ImageViewer({
               <input
                 type="range" min={min} max={max} step={step}
                 value={editOps[key]}
-                onPointerDown={() => pushHistory(editOpsRef.current)}
+                onPointerDown={() => pushHistory(editOpsRef.current, label)}
                 onChange={(e) => setEditOps(o => ({ ...o, [key]: Number(e.target.value) }))}
               />
               <em>{fmt(editOps[key])}</em>
@@ -1100,7 +1114,7 @@ export default function ImageViewer({
               {crop && (
                 <Button variant="ghost" size="xs" onClick={() => setEditOps(o => {
                   const next = { ...o, crop: null };
-                  pushHistory(next);
+                  pushHistory(next, '清除裁剪');
                   return next;
                 })}>
                   清除
@@ -1131,6 +1145,26 @@ export default function ImageViewer({
                 {cropRatioValueLabel(cropRatioKey) ? `按 ${cropRatioValueLabel(cropRatioKey)} 锁定比例拖拽` : '在图上拖拽框选，可拖动/调整框'}
               </p>
             )}
+          </div>
+
+          {/* 历史记录（任务书第 12 节）：点击跳转到任意步骤 */}
+          <div className="editor-crop-section">
+            <div className="editor-crop-header">
+              <span>历史</span>
+              <span className="editor-crop-hint">{histInfo.length} 步</span>
+            </div>
+            <div className="editor-history-list">
+              {(historyRef.current?.stack || []).map((entry, idx) => (
+                <button
+                  key={idx}
+                  className={`editor-history-item ${idx === histInfo.index ? 'active' : ''} ${idx > histInfo.index ? 'future' : ''}`}
+                  onClick={() => jumpToHistory(idx)}
+                >
+                  <span className="editor-history-step">{idx === 0 ? '原始' : `#${idx}`}</span>
+                  <span className="editor-history-label">{entry.label}</span>
+                </button>
+              ))}
+            </div>
           </div>
 
           {/* 预设与参数剪贴板 */}
