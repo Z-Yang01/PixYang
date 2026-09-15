@@ -932,3 +932,44 @@ Phase 1-6、8、10-14、16-17 全量落地；Phase 7（sRGB 工作空间转换 +
 
 - 输入侧 ICC→工作空间转换（LR 语义：先转 sRGB 再编辑）需 lcms/原生 ICC 访问，sharp 无此 API；当前"原生空间编辑+原标签输出"是自洽的替代语义。
 - baseSpecStages unsupported 残留的坑未再犯（本批无新阶段）；python .replace 静默 no-op 教训重演一次（hooks 插入后 lint rules-of-hooks 抓出条件调用）——hooks 类插入建议只用 Edit 工具。
+
+---
+
+# 2026-09-16 测试稳定化批：负载敏感用例超时治理 + 杂项清理
+
+## 当前状态
+
+- 分支 `optimize/architecture`；摸底首轮 coverage 跑出 1 failed（ImageViewer 曲线用例），
+  单跑与后续全量均绿——确认为 coverage 插桩负载下的时序不稳定，非代码回归。
+- 收尾 coverage 全量：**681 passed / 0 failed**，总覆盖 **90%**（语句）/ 84.9% 分支，
+  thresholds（75/70/50/75）全部达标；golden 21/21（Δ=0）；lint 0 error；typecheck/build 通过。
+
+## 已完成
+
+1. **稳定化：ImageViewer 曲线编辑器用例**（tests/unit/components/Browser/ImageViewer.test.jsx）：
+   加点/拖拽/清除链路的 3 处 `vi.waitFor` 从默认 1s 超时显式放宽至 5s。失败机制：
+   全量套件（尤其 coverage 插桩）负载下，waitFor 默认窗口偶发不足（该用例在 d512d28
+   时全绿，工作区干净复跑亦绿，最终定位为环境负载敏感）。
+2. **稳定化：golden 像素锁定用例**（tests/unit/golden/golden.test.js）：it.each 21 个
+   case 显式 30s 超时（vitest 默认 5s；单 case 独跑 ~0.5s，但 coverage 全量负载下
+   020-hsl-shift 曾出现一次失败，两次复跑未再现，防御性放宽；失败未复现前不臆断
+   像素差根因，若再现需抓取 maxΔ/meanΔ 数据）。
+3. **杂项清理**：移除仓库根目录误入库的空文件 `0`（9 月 12 日会话遗留产物）。
+
+## 决策与假设
+
+- webglPreview.js 57.5% 为最大覆盖缺口，但 GPU 路径无法在 vitest（node/happy-dom）
+  环境执行，公式已由 simulateShaderPixel 契约锁定、渲染侧由 golden 锁定——维持
+  项目既有结论，不强凑不可达行。
+- 覆盖率 90% 高于既有 76.52% 记录口径（coverage.include 范围多轮扩展所致），不作
+  跨口径直接对比。
+
+## 遗留与下一步
+
+- masks brush/range/ai 类型与拖拽创建 UI（masks 三期）；
+- agents（若开工）：Phase 7/M8 输入侧 ICC 语义；
+- 若 golden 超时类失败再现，采集数据后考虑渲染进程隔离或 sharp 并发上限。
+
+## Git Commit
+
+- `test: 负载敏感用例超时治理（ImageViewer 曲线 waitFor 5s、golden 像素锁定 30s）；chore: 移除误入库空文件 0`（未 push）

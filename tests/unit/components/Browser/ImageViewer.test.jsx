@@ -295,11 +295,12 @@ describe('ImageViewer', () => {
     expect(curveHeader.textContent).toContain('曲线');
     expect(curveHeader.querySelector('button')).toBeNull(); // 无曲线数据时无清除
     // 点击中心加锚点并拖离对角线（(60,30) → 曲线点 (0.6,0.7)，非恒等）→ 清除按钮出现
+    // 全量套件（尤其 coverage 插桩）负载下 1s 默认超时偶发不足——显式放宽
     fireEvent.mouseDown(svg, { clientX: 50, clientY: 50 });
     fireEvent.mouseMove(window, { clientX: 60, clientY: 30 });
-    await vi.waitFor(() => expect(curveHeader.querySelector('button')).toBeTruthy());
+    await vi.waitFor(() => expect(curveHeader.querySelector('button')).toBeTruthy(), { timeout: 5000 });
     fireEvent.click(curveHeader.querySelector('button'));
-    await vi.waitFor(() => expect(curveHeader.querySelector('button')).toBeNull());
+    await vi.waitFor(() => expect(curveHeader.querySelector('button')).toBeNull(), { timeout: 5000 });
     rectSpy.mockRestore();
   });
 

@@ -62,7 +62,7 @@ describe.skipIf(caseDirs.length === 0)('golden 像素锁定', () => {
     expect(d.dimensionMismatch).not.toBe(true);
     expect(d.maxDelta).toBeLessThanOrEqual(cfg.tolerance.maxDelta);
     expect(d.meanDelta).toBeLessThanOrEqual(cfg.tolerance.meanDelta);
-  });
+  }, 30_000);
 
   it('002 锁定 rotate→crop 顺序语义（400×600 输出）', () => {
     const params = JSON.parse(fs.readFileSync(path.join(CASES_DIR, '002-crop-rotate90', 'params.json'), 'utf8'));
