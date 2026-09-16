@@ -34,6 +34,7 @@ import { specToShaderUniforms } from '@/lib/previewUniforms';
 import CompareView from './CompareView';
 import CurveEditor from './CurveEditor';
 import MaskPanel from './MaskPanel';
+import MaskOverlay from './MaskOverlay';
 import ConfirmDialog from '@/components/Layout/ConfirmDialog';
 
 const clamp = (v, min, max) => Math.min(max, Math.max(min, v));
@@ -86,6 +87,7 @@ export default function ImageViewer({
   const [webglFailed, setWebglFailed] = useState(false);
   const webglCanvasRef = useRef(null);
   const [selectedMaskId, setSelectedMaskId] = useState(null); // 当前编辑的蒙版 id
+  const [maskTool, setMaskTool] = useState(null); // 拖拽绘制蒙版的激活工具（'radial' | 'linear' | null）
   const editImgRef = useRef(null);
   const contentRef = useRef(null);
   const cropDragRef = useRef(null);
@@ -161,6 +163,7 @@ export default function ImageViewer({
     setEditBaseSrc(null);
     setEditOps({ ...EDIT_DEFAULTS });
     setCropMode(false);
+    setMaskTool(null);
     setEditError('');
     setBusyKind('');
     setHistInfo({ canUndo: false, canRedo: false, index: 0, length: 0 });
@@ -392,19 +395,43 @@ export default function ImageViewer({
     setSelectedMaskId(null);
   }, [image?.id]);
 
-  // 蒙版动作：默认几何取当前底图尺寸比例；id 生成一次即稳定
-  const addMask = useCallback((type) => {
+  // 蒙版动作：默认几何取当前底图尺寸比例；id 生成一次即稳定。
+  // 拖拽绘制（MaskOverlay）走同一入口，几何项由 overlay 传入（底图像素坐标）覆盖默认值
+  const addMaskWithGeometry = useCallback((type, geometry = {}) => {
     const W = editSessionRef.current?.width || 1000;
     const H = editSessionRef.current?.height || 1000;
     const id = `mask-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    const adjustments = { exposure: -0.5, contrast: 0, saturation: 0, temperature: 0, tint: 0 };
     const mask = type === 'radial'
-      ? { type: 'radial', id, cx: W / 2, cy: H / 2, rx: Math.round(W * 0.25), ry: Math.round(H * 0.25), rotation: 0, feather: 0.5, invert: false, adjustments: { exposure: -0.5, contrast: 0, saturation: 0, temperature: 0, tint: 0 } }
-      : { type: 'linear', id, x0: 0, y0: Math.round(H * 0.3), x1: 0, y1: Math.round(H * 0.7), feather: 0.5, invert: false, adjustments: { exposure: -0.5, contrast: 0, saturation: 0, temperature: 0, tint: 0 } };
+      ? { type: 'radial', id, cx: W / 2, cy: H / 2, rx: Math.round(W * 0.25), ry: Math.round(H * 0.25), rotation: 0, feather: 0.5, invert: false, adjustments, ...geometry }
+      : { type: 'linear', id, x0: 0, y0: Math.round(H * 0.3), x1: 0, y1: Math.round(H * 0.7), feather: 0.5, invert: false, adjustments, ...geometry };
     const next = sanitizeEditOps({ ...editOpsRef.current, masks: [...(editOpsRef.current.masks || []), mask] });
     pushHistory(next, type === 'radial' ? '添加径向蒙版' : '添加线性蒙版');
     setEditOps(next);
     setSelectedMaskId(id);
   }, [pushHistory]);
+
+  const addMask = useCallback((type) => addMaskWithGeometry(type), [addMaskWithGeometry]);
+
+  // overlay 手柄拖动：实时写 editOps.masks（走 sanitizeEditOps 归一化通道），历史由 pointerup 收敛
+  const updateMaskGeometry = useCallback((id, patch) => {
+    setEditOps(o => sanitizeEditOps({
+      ...o,
+      masks: (o.masks || []).map((m) => (m.id === id ? { ...m, ...patch } : m)),
+    }));
+  }, []);
+
+  const commitMaskGesture = useCallback(() => {
+    pushHistory(editOpsRef.current, '蒙版调整');
+  }, [pushHistory]);
+
+  // 拖拽绘制工具：与裁剪编辑互斥（互切时关掉对方），同时退出对比模式（overlay 只在常规编辑层渲染）
+  const startMaskTool = useCallback((type) => {
+    setCropMode(false);
+    setShowBefore(false);
+    setCompareMode('toggle');
+    setMaskTool(cur => (cur === type ? null : type));
+  }, []);
 
   const deleteSelectedMask = useCallback(() => {
     if (!selectedMaskId) return;
@@ -943,6 +970,25 @@ export default function ImageViewer({
           <span className="editor-crop-size">{Math.round(crop.width)}×{Math.round(crop.height)}</span>
         </div>
       )}
+      {/* 蒙版 overlay：与裁剪编辑互斥（cropMode 时不渲染），仅在有蒙版或拖拽绘制中时出现 */}
+      {edited && compareMode === 'toggle' && !cropMode && (editOps.masks.length > 0 || maskTool) && (
+        <MaskOverlay
+          masks={editOps.masks}
+          selectedMaskId={selectedMaskId}
+          width={editSession?.width || 0}
+          height={editSession?.height || 0}
+          rotation={editOps.rotation}
+          flipH={editOps.flipH}
+          flipV={editOps.flipV}
+          imgRef={editImgRef}
+          tool={maskTool}
+          epoch={editEpoch}
+          onSelect={setSelectedMaskId}
+          onCreate={addMaskWithGeometry}
+          onChangeMask={updateMaskGeometry}
+          onCommit={commitMaskGesture}
+        />
+      )}
       {edited && editBusy && <Loader2 className="editor-rendering-spinner animate-spin" />}
     </div>
     );
@@ -1052,7 +1098,7 @@ export default function ImageViewer({
             <Button
               variant="ghost" size="icon"
               onClick={() => {
-                if (!cropMode) { setShowBefore(false); setCompareMode('toggle'); }
+                if (!cropMode) { setShowBefore(false); setCompareMode('toggle'); setMaskTool(null); }
                 setCropMode(m => !m);
               }}
               className={cropMode ? 'is-active' : ''}
@@ -1351,6 +1397,22 @@ export default function ImageViewer({
               <div style={{ display: 'flex', gap: 4 }}>
                 <Button variant="ghost" size="xs" onClick={() => addMask('radial')}>+ 径向</Button>
                 <Button variant="ghost" size="xs" onClick={() => addMask('linear')}>+ 线性</Button>
+                <Button
+                  variant="ghost" size="xs"
+                  className={maskTool === 'radial' ? 'is-active' : ''}
+                  onClick={() => startMaskTool('radial')}
+                  title="在图上拖拽绘制径向蒙版（再次点击退出）"
+                >
+                  拖拽径向
+                </Button>
+                <Button
+                  variant="ghost" size="xs"
+                  className={maskTool === 'linear' ? 'is-active' : ''}
+                  onClick={() => startMaskTool('linear')}
+                  title="在图上拖拽绘制线性蒙版（再次点击退出）"
+                >
+                  拖拽线性
+                </Button>
                 {selectedMaskId && (
                   <Button variant="ghost" size="xs" onClick={deleteSelectedMask}>删除</Button>
                 )}

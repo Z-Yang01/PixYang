@@ -49,8 +49,11 @@ describe('ImageViewer', () => {
     };
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     cleanup();
+    // 烘焙路径会触发二次 loadImage，其 promise 可能在 cleanup 后才 resolve；
+    // 先冲刷一轮宏任务，避免挂续的 await 读到已删除的 window.pixyang（偶发 unhandled rejection）
+    await new Promise((r) => setTimeout(r, 0));
     delete window.pixyang;
   });
 

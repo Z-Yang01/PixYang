@@ -973,3 +973,61 @@ Phase 1-6、8、10-14、16-17 全量落地；Phase 7（sRGB 工作空间转换 +
 ## Git Commit
 
 - `test: 负载敏感用例超时治理（ImageViewer 曲线 waitFor 5s、golden 像素锁定 30s）；chore: 移除误入库空文件 0`（未 push）
+
+---
+
+# 2026-09-16 masks 三期 A：拖拽创建 + 手柄编辑（夜间挂机批）
+
+## 当前状态
+
+- 分支 `optimize/architecture`；摸底 681 passed（与上轮收尾一致）→ 收尾 **731 passed / 0 failed**
+  （56 文件）；总覆盖 **90.34%** 语句 / 84.72% 分支，thresholds（75/70/50/75）全达标；
+  lint 0 error；typecheck/build 通过；golden 21/21（Δ=0）。总控亲跑复验。
+
+## 已完成
+
+1. **shared/maskGeometry.cjs（新，122 行）**：display↔image 双向坐标映射纯函数，
+   逐旋转（0/90/180/270）×翻转（H/V）×crop 组合；先翻转后旋转（与 CSS
+   `rotate() scale()` 次序及既有 toImageCoords 一致）。29 例单元测试含 16 组合
+   四角硬断言表 + roundtrip 网格。
+2. **src/components/Browser/MaskOverlay.jsx（新，217 行）**：SVG 蒙版几何 overlay
+   （radial 旋转椭圆 / linear 线段）+ 选中手柄（中心/边缘、两端点）+ 创建层 +
+   草稿虚线 + epoch 手势中断。
+3. **ImageViewer.jsx 集成**：maskTool 状态与「拖拽径向/拖拽线性」工具按钮；
+   addMask 重构为 addMaskWithGeometry（拖拽与按钮共用入口）；updateMaskGeometry
+   实时写 ops（sanitizeEditOps 通道）；commitMaskGesture（pointerup 收敛一条
+   「蒙版调整」历史）；与裁剪编辑互斥（互切复位）、对比模式下隐藏/退出。
+4. **测试基建**：ImageViewer.test.jsx afterEach 增加一轮宏任务冲刷，修既有偶发
+   unhandled rejection（烘焙测试的二次 loadImage 挂续到 delete window.pixyang 之后，
+   负载敏感、时有时无）。
+
+## 决策与假设
+
+- brush/range/ai 蒙版类型与 rotation/feather 手柄化不在本轮（类型扩展与滑杆保留在
+  MaskPanel）；蒙版不参与复制/批量同步语义不变。
+- 创建工具激活时创建层占用拖拽手势（zoom 平移暂替），再点工具退出恢复——绘制优先。
+- overlay 编辑态整图显示（crop:null），crop 视口映射分支由单测逐例验收，供后续复用。
+
+## 测试
+
+- 摸底：`npm test` → 681 passed；`npm run test:coverage` → 90%/84.9%。
+- 新增 50 例：maskGeometry 29 + MaskOverlay 14 + ImageViewer 集成 7。
+- 收尾：`npm test` → **731 passed / 0 failed**；coverage 90.34%/84.72%；
+  lint 0 error；typecheck 通过；`npm run build` 通过（electron-builder 亦成功）；
+  golden 21/21（maxΔ=0）。
+
+## 遗留与下一步
+
+- masks 三期 B：brush/range/ai 类型；rotation/feather 手柄化。
+- ImageViewer.jsx 既有 toImageCoords 与 shared/maskGeometry.cjs 语义等价，后续
+  统一到共享实现（本轮未合并以免触碰裁剪交互）。
+- webglPreview.js 57.5% 维持既有结论（GPU 路径 vitest 不可达，契约+golden 已锁）。
+
+## 疑似 Bug
+
+- 既有：tests/unit/components/Browser/ImageViewer.test.jsx 偶发 unhandled rejection
+  （本轮已按最小方式修复并验证，见上）。
+
+## Git Commit
+
+- `feat(masks): 三期 A — 蒙版拖拽创建+手柄编辑（MaskOverlay + maskGeometry 映射，+50 例）`（未 push）
