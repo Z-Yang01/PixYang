@@ -1031,3 +1031,48 @@ Phase 1-6、8、10-14、16-17 全量落地；Phase 7（sRGB 工作空间转换 +
 ## Git Commit
 
 - `feat(masks): 三期 A — 蒙版拖拽创建+手柄编辑（MaskOverlay + maskGeometry 映射，+50 例）`（未 push）
+
+---
+
+# 2026-09-17 坐标映射统一：toImageCoords 收编共享实现（夜间挂机批）
+
+## 当前状态
+
+- 分支 `optimize/architecture`；摸底 **731 passed / 0 failed**（56 文件，与上轮收尾一致）
+  → 收尾 **731 passed / 0 failed**；coverage **90.33%** 语句 / **84.84%** 分支
+  （thresholds 75/70/50/75 全达标）；lint 0 error（90 warnings 均既有基线）；
+  typecheck 通过；golden 21/21（maxΔ=0）。总控亲跑复验。
+
+## 已完成
+
+1. **ImageViewer.jsx `toImageCoords` 统一**（上轮遗留计划项）：删除手写
+   「归一化→逆旋转→逆翻转」映射，改调 `shared/maskGeometry.displayToImage`
+   （内部 clamp01 + 同式映射，编辑态无 crop 语义一致）。行为等价由裁剪交互测试
+   实证——731 例全绿，其中裁剪 pointer 流用例重度行使该函数。
+
+## 决策与假设
+
+- 属小步去重，不改行为：`displayFrameToImageFrame` 的 90/180/270 与翻转映射和原
+  手写版本逐式相同；`normalizeRotation` 对合法编辑态（0/90/180/270）与原 `%360`
+  归一等价；组件仅保留盒体/尺寸守卫。
+- masks 三期 B（brush/range/ai 类型、rotation/feather 手柄化）本轮未开工，仍为下一步。
+
+## 测试
+
+- 摸底：`npm test` → 731 passed（14.8s）。
+- 收尾：`npm test` → 731 passed / 0 failed；`vitest run --coverage` → 90.33%/84.84%；
+  `npm run lint` → 0 error；`npm run typecheck` → 通过；`npm run golden` → 21/21。
+
+## 遗留与下一步
+
+- masks 三期 B：brush/range/ai 蒙版类型与 rotation/feather 手柄化。
+- webglPreview.js 57.5% 维持既有结论（GPU 路径 vitest 不可达，契约+golden 已锁）。
+- 90 条既有 eslint warnings（react-hooks/exhaustive-deps 为主）为后续清理候选。
+
+## 疑似 Bug
+
+- 无新增。
+
+## Git Commit
+
+- `refactor(editor): toImageCoords 统一到 shared/maskGeometry.displayToImage（消除手写映射重复）`（未 push）

@@ -20,6 +20,8 @@ import {
 } from '@/lib/editParams';
 import useGalleryStore from '@/store/galleryStore';
 import builtinPresetsModule from '../../../shared/builtinPresets.cjs';
+import maskGeometry from '../../../shared/maskGeometry.cjs';
+const { displayToImage } = maskGeometry;
 const { BUILTIN_PRESETS } = builtinPresetsModule;
 import curvesLib from '../../../shared/curves.cjs';
 const { hasCurveData } = curvesLib;
@@ -574,7 +576,8 @@ export default function ImageViewer({
   }, [pushHistory]);
 
   // ── 裁剪交互 ──
-  // 鼠标坐标 → 底图像素坐标：归一化（基于变换后包围盒）→ 逆旋转 → 逆翻转
+  // 鼠标坐标 → 底图像素坐标：共享 maskGeometry.displayToImage
+  //（内部完成 0..1 钳制与先退旋转再退翻转；编辑态整图显示，无 crop）
   const toImageCoords = useCallback((clientX, clientY) => {
     const el = editImgRef.current;
     const w = editSession?.width;
@@ -582,14 +585,12 @@ export default function ImageViewer({
     if (!el || !w || !h) return null;
     const r = el.getBoundingClientRect();
     if (!r.width || !r.height) return null;
-    let nx = clamp((clientX - r.left) / r.width, 0, 1);
-    let ny = clamp((clientY - r.top) / r.height, 0, 1);
-    const rot = ((editOpsRef.current.rotation % 360) + 360) % 360;
-    let x; let y;
-    if (rot === 90) { x = ny; y = 1 - nx; } else if (rot === 180) { x = 1 - nx; y = 1 - ny; } else if (rot === 270) { x = 1 - ny; y = nx; } else { x = nx; y = ny; }
-    if (editOpsRef.current.flipH) x = 1 - x;
-    if (editOpsRef.current.flipV) y = 1 - y;
-    return { x: x * w, y: y * h };
+    const ops = editOpsRef.current;
+    return displayToImage(
+      (clientX - r.left) / r.width,
+      (clientY - r.top) / r.height,
+      { width: w, height: h, rotation: ops.rotation, flipH: ops.flipH, flipV: ops.flipV },
+    );
   }, [editSession]);
 
   // 按 mode 更新裁剪框（new/move/八向手柄），clamp 到图像边界，角手柄支持比例锁定
