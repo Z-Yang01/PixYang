@@ -403,9 +403,11 @@ export default function ImageViewer({
     const adjustments = { exposure: -0.5, contrast: 0, saturation: 0, temperature: 0, tint: 0 };
     const mask = type === 'radial'
       ? { type: 'radial', id, cx: W / 2, cy: H / 2, rx: Math.round(W * 0.25), ry: Math.round(H * 0.25), rotation: 0, feather: 0.5, invert: false, adjustments, ...geometry }
-      : { type: 'linear', id, x0: 0, y0: Math.round(H * 0.3), x1: 0, y1: Math.round(H * 0.7), feather: 0.5, invert: false, adjustments, ...geometry };
+      : type === 'range'
+        ? { type: 'range', id, center: 0.35, range: 0.25, feather: 0.25, invert: false, adjustments, ...geometry }
+        : { type: 'linear', id, x0: 0, y0: Math.round(H * 0.3), x1: 0, y1: Math.round(H * 0.7), feather: 0.5, invert: false, adjustments, ...geometry };
     const next = sanitizeEditOps({ ...editOpsRef.current, masks: [...(editOpsRef.current.masks || []), mask] });
-    pushHistory(next, type === 'radial' ? '添加径向蒙版' : '添加线性蒙版');
+    pushHistory(next, type === 'radial' ? '添加径向蒙版' : type === 'range' ? '添加亮度蒙版' : '添加线性蒙版');
     setEditOps(next);
     setSelectedMaskId(id);
   }, [pushHistory]);
@@ -1395,6 +1397,7 @@ export default function ImageViewer({
               <div style={{ display: 'flex', gap: 4 }}>
                 <Button variant="ghost" size="xs" onClick={() => addMask('radial')}>+ 径向</Button>
                 <Button variant="ghost" size="xs" onClick={() => addMask('linear')}>+ 线性</Button>
+                <Button variant="ghost" size="xs" onClick={() => addMask('range')} title="按亮度范围选择区域（暗部/中间调/高光）">+ 亮度</Button>
                 <Button
                   variant="ghost" size="xs"
                   className={maskTool === 'radial' ? 'is-active' : ''}

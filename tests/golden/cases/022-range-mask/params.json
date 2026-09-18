@@ -1,0 +1,16 @@
+{
+  "masks": [
+    {
+      "type": "range",
+      "id": "r1",
+      "center": 0.3,
+      "range": 0.2,
+      "feather": 0.15,
+      "invert": false,
+      "adjustments": { "exposure": 0.6, "saturation": -50, "temperature": -15 }
+    }
+  ],
+  "output": {
+    "format": "png"
+  }
+}

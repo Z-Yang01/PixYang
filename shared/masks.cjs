@@ -1,4 +1,5 @@
-// 蒙版（局部调整）唯一实现：radial（椭圆+羽化+反相+旋转）与 linear（渐变线 p0→p1 线性 0→1）。
+// 蒙版（局部调整）唯一实现：radial（椭圆+羽化+反相+旋转）、linear（渐变线 p0→p1 线性 0→1）
+// 与 range（亮度范围带 + 带外羽化，权重取决于像素亮度而非位置）。
 // 坐标系为 decode 后未旋转未裁剪图像（pre-crop 语义，与 lens.vignette 一致）。
 // 逐像素调整（权重 w 缩放）：曝光增益 → 色温/色调通道增益 → 对比度 → 饱和度，
 // 显示参照（gamma）空间 0..1 逐步钳制，管线序在 saturation 之后、detail 之前。
@@ -26,7 +27,7 @@ function normalizeMasks(masks) {
   if (!Array.isArray(masks)) return [];
   const out = [];
   for (const m of masks) {
-    if (!m || (m.type !== 'radial' && m.type !== 'linear')) continue;
+    if (!m || (m.type !== 'radial' && m.type !== 'linear' && m.type !== 'range')) continue;
     const adjustments = normalizeAdjustments(m.adjustments);
     if (m.type === 'radial') {
       const rx = Math.max(1, Number(m.rx) || 0);
@@ -40,6 +41,16 @@ function normalizeMasks(masks) {
         rx, ry,
         rotation: Number(m.rotation) || 0,
         feather: Math.min(1, Math.max(0, Number(m.feather) || 0)),
+        invert: !!m.invert,
+        adjustments,
+      });
+    } else if (m.type === 'range') {
+      out.push({
+        type: 'range',
+        id: typeof m.id === 'string' ? m.id : '',
+        center: clamp01(Number(m.center) || 0),
+        range: clamp01(Number(m.range) || 0),
+        feather: clamp01(Number(m.feather) || 0),
         invert: !!m.invert,
         adjustments,
       });
@@ -92,8 +103,22 @@ function linearWeight(mask, x, y) {
   return w;
 }
 
-function maskWeight(mask, x, y) {
-  return mask.type === 'radial' ? radialWeight(mask, x, y) : linearWeight(mask, x, y);
+// 亮度范围权重：|L−center| ≤ range 带内全量，带外经 feather 线性衰减到 0；
+// feather=0 硬边。L 为当前像素亮度（0..1，逐 mask 序贯应用时取已调整值）
+function rangeWeight(mask, L) {
+  const dd = Math.abs(L - mask.center);
+  const half = mask.range;
+  let w = mask.feather > 0
+    ? clamp01((half + mask.feather - dd) / mask.feather)
+    : (dd <= half ? 1 : 0);
+  if (mask.invert) w = 1 - w;
+  return w;
+}
+
+function maskWeight(mask, x, y, L = 0) {
+  if (mask.type === 'radial') return radialWeight(mask, x, y);
+  if (mask.type === 'range') return rangeWeight(mask, L);
+  return linearWeight(mask, x, y);
 }
 
 // 单像素 × 单蒙版调整（w 缩放；0..1 显示参照空间；与执行器 raw pass / 未来 shader 同公式）
@@ -141,7 +166,9 @@ function applyMasksInPlace(data, width, height, masks, channels) {
       let b = data[i + 2] / 255;
       let touched = false;
       for (const m of list) {
-        const w = maskWeight(m, x, y);
+        const w = m.type === 'range'
+          ? maskWeight(m, x, y, HSL_LUMA[0] * r + HSL_LUMA[1] * g + HSL_LUMA[2] * b)
+          : maskWeight(m, x, y);
         if (w <= 0) continue;
         [r, g, b] = applyMaskedAdjustment([r, g, b], m.adjustments, w);
         touched = true;
@@ -161,6 +188,7 @@ module.exports = {
   hasMaskData,
   radialWeight,
   linearWeight,
+  rangeWeight,
   maskWeight,
   applyMaskedAdjustment,
   applyMasksInPlace,

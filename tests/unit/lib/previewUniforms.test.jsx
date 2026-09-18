@@ -129,6 +129,7 @@ describe('masks uniforms（蒙版打包 + shader 模拟）', () => {
     masks: [
       { type: 'radial', id: 'm1', cx: 200, cy: 150, rx: 80, ry: 60, rotation: 30, feather: 0.4, invert: false, adjustments: { exposure: -0.8, saturation: -30 } },
       { type: 'linear', id: 'm2', x0: 0, y0: 0, x1: 400, y1: 0, invert: true, adjustments: { exposure: 0.5 } },
+      { type: 'range', id: 'm3', center: 0.45, range: 0.2, feather: 0.15, adjustments: { contrast: 20, temperature: -15 } },
       { type: 'brush', adjustments: {} },
     ],
   };
@@ -143,7 +144,10 @@ describe('masks uniforms（蒙版打包 + shader 模拟）', () => {
     expect(u.maskType[1]).toBe(2);
     expect(u.maskGeo[1]).toEqual([0, 0, 400, 0]);
     expect(u.maskInvert[1]).toBe(1);
-    expect(u.maskType[2]).toBe(0);
+    expect(u.maskType[2]).toBe(3);
+    expect(u.maskGeo[2]).toEqual([0.45, 0.2, 0, 0]);
+    expect(u.maskFeather[2]).toBeCloseTo(0.15);
+    expect(u.maskType[3]).toBe(0);
     expect(u.maskType[7]).toBe(0);
   });
 
@@ -152,11 +156,26 @@ describe('masks uniforms（蒙版打包 + shader 模拟）', () => {
     const norm = masksLib.normalizeMasks(MASK_PARAMS.masks);
     for (const uv of [[0.5, 0.5], [0.1, 0.9], [0.9, 0.1]]) {
       const px = [uv[0] * 400, uv[1] * 300];
-      const expected = masksLib.applyMaskedAdjustment(
-        masksLib.applyMaskedAdjustment([0.5, 0.5, 0.5], norm[0].adjustments, masksLib.maskWeight(norm[0], px[0], px[1])),
-        norm[1].adjustments, masksLib.maskWeight(norm[1], px[0], px[1])
-      ).map((v) => Math.round(clamp01(v) * 255));
+      let expected = [0.5, 0.5, 0.5];
+      for (const nm of norm) {
+        const L = 0.2126 * expected[0] + 0.7152 * expected[1] + 0.0722 * expected[2];
+        expected = masksLib.applyMaskedAdjustment(expected, nm.adjustments, masksLib.maskWeight(nm, px[0], px[1], L));
+      }
+      expected = expected.map((v) => Math.round(clamp01(v) * 255));
       const got = simulateShaderPixel([128, 128, 128], u, uv);
+      expect(got.every((v, i) => Math.abs(v - expected[i]) <= 1)).toBe(true);
+    }
+  });
+
+  it('range 蒙版（type 3）模拟与非灰底色下 shared 序贯权重一致（亮度感知）', () => {
+    const u = buildUniforms({ masks: [{ type: 'range', id: 'r', center: 0.45, range: 0.2, feather: 0.15, adjustments: { exposure: 0.6, saturation: -30 } }] }, [400, 300]);
+    const nm = masksLib.normalizeMasks([{ type: 'range', center: 0.45, range: 0.2, feather: 0.15, adjustments: { exposure: 0.6, saturation: -30 } }])[0];
+    for (const rgb255 of [[200, 100, 50], [30, 200, 90], [220, 220, 30]]) {
+      const c01 = rgb255.map((v) => v / 255);
+      const L = 0.2126 * c01[0] + 0.7152 * c01[1] + 0.0722 * c01[2];
+      const expected = masksLib.applyMaskedAdjustment(c01, nm.adjustments, masksLib.maskWeight(nm, 120, 80, L))
+        .map((v) => Math.round(clamp01(v) * 255));
+      const got = simulateShaderPixel(rgb255, u, [0.3, 0.2]);
       expect(got.every((v, i) => Math.abs(v - expected[i]) <= 1)).toBe(true);
     }
   });

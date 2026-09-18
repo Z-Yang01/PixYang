@@ -50,7 +50,7 @@ uniform float uMaskAdjSat[8];
 uniform float uMaskAdjTemp[8];
 uniform float uMaskAdjTint[8];
 
-float maskWeight(int i, vec2 px) {
+float maskWeight(int i, vec2 px, vec3 c) {
   vec4 g = uMaskGeo[i];
   float w;
   if (uMaskType[i] < 1.5) {
@@ -59,6 +59,10 @@ float maskWeight(int i, vec2 px) {
     vec2 u = vec2(d.x * cos(a) + d.y * sin(a), -d.x * sin(a) + d.y * cos(a));
     float dist = length(u / g.zw);
     w = uMaskFeather[i] > 0.0 ? clamp((1.0 - dist) / uMaskFeather[i], 0.0, 1.0) : (dist < 1.0 ? 1.0 : 0.0);
+  } else if (uMaskType[i] < 2.5) {
+    float L = dot(c, vec3(0.2126, 0.7152, 0.0722));
+    float dd = abs(L - g.x);
+    w = uMaskFeather[i] > 0.0 ? clamp((g.y + uMaskFeather[i] - dd) / uMaskFeather[i], 0.0, 1.0) : (dd <= g.y ? 1.0 : 0.0);
   } else {
     vec2 dir = g.zw - g.xy;
     float len2 = dot(dir, dir);
@@ -170,7 +174,7 @@ void main() {
     vec2 px = vUv * uImageSize;
     for (int i = 0; i < 8; i++) {
       if (uMaskType[i] < 0.5) continue;
-      float w = maskWeight(i, px);
+      float w = maskWeight(i, px, c);
       if (w > 0.0) applyMaskedAdjust(i, w, c);
     }
     c = clamp(c, 0.0, 1.0);

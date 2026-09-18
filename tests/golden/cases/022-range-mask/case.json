@@ -1,0 +1,8 @@
+{
+  "fixture": "portrait.jpg",
+  "tolerance": {
+    "maxDelta": 1,
+    "meanDelta": 0.2
+  },
+  "description": "022-range-mask（暗部亮度蒙版 +0.6EV 去饱和偏冷，PNG 无损输出）"
+}

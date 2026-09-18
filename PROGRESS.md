@@ -1208,6 +1208,75 @@ Phase 1-6、8、10-14、16-17 全量落地；Phase 7（sRGB 工作空间转换 +
 
 ---
 
+# 2026-09-19 masks 三期 B（部分）：range 亮度蒙版 + radial rotation/feather 手柄化
+
+masks 遗留三类中的 range 全链落地 + 手柄化；brush（栅格存储设计）与 ai（分割模型依赖）仍留后续。
+
+## 当前状态
+
+- 分支 `optimize/architecture`；摸底 738 passed → 收尾 **748 passed / 0 failed**
+  （57 文件，+10：shared range 3 + 执行器逐像素 2 + shader 契约 1 + MaskPanel 1 +
+  MaskOverlay 3）；coverage **89.41%** / **84.88%** 分支（thresholds 全达标）；
+  lint 0 error / 10 warnings（设计意图基线不变）；typecheck/build 通过；
+  golden **22/22**（新增 022-range-mask，maxΔ=0）。
+
+## 已完成
+
+1. **range 亮度蒙版（全链）**——权重取决于像素亮度而非位置的第三种蒙版：
+   - `shared/masks.cjs`：`rangeWeight`（|L−center| ≤ range 带内全量，带外经 feather
+     线性衰减到 0，feather=0 硬边，invert 反相）；`maskWeight` 增加 L 参数（radial/linear
+     忽略）；`applyMasksInPlace` 对 range 取当前像素亮度（序贯语义，与 shader 一致）；
+     normalizeMasks 收录 range 并钳制 center/range/feather 到 0..1（NaN 回退 0）。
+   - `shared/editSchema.cjs`：RangeMaskSchema（center 0.5/range 0.25/feather 0.25 默认）
+     并入 MaskSchema union——老数据无损（未知类型照旧丢弃），schemaVersion 不变。
+   - **WebGL2**：uniforms 打包 type 3 + geo=[center,range,0,0]；GLSL maskWeight 增加
+     range 分支（luma dot 权重，公式与 shared 逐式一致）；simulateShaderPixel 同步
+     （非灰底色下亮度感知权重可契约验证）。
+   - **UI**：蒙版区新增「+ 亮度」按钮（默认 center 0.35=偏暗部起步，无拖拽创建语义——
+     亮度域无位置几何）；MaskPanel range 分支（中心亮度/范围滑杆 0..1 百分比 + 羽化可用
+     + 反相 + 5 项调整全继承）；chip 显示「亮度」；MaskOverlay 跳过 range 形状/手柄渲染
+     （经 chip 选中）。
+2. **radial rotation/feather 手柄化**：椭圆系上方 max(rx,ry)×1.15 处旋转手柄
+   （方位角+90° 映射，输出钳 −180..180）；−x 轴 rx×(1+feather) 处羽化手柄
+   （投影超出实边界的相对比例）；选中径向蒙版叠加**虚线羽化圈**（feather ring
+   ellipse，CSS dasharray）——羽化从纯滑杆值变成可视觉把握的几何。
+3. **golden 022-range-mask**：portrait fixture + 暗部蒙版（+0.6EV 去饱和偏冷），
+   PNG 无损 Δ=0；语义锚点核验：带内（L<0.25）暗部平均变化 18.0，带外（L>0.6）仅
+   3.1（JPEG 噪声级）——蒙版空间选择性真实生效。
+
+## 测试
+
+- shared：rangeWeight 带内/feather 线性/硬边/invert + normalizeMasks 钳制与未知类型
+  丢弃 + applyMasksInPlace 灰阶梯度带内外（+3）。
+- 执行器：256 级灰阶 range 蒙版渲染 vs shared applyMasksInPlace 直接调用逐像素
+  Δ=0（含 invert 变体）——序贯亮度语义与执行器 raw pass 一致（+2）。
+- shader 契约：MASK_PARAMS 加 range 后三蒙版序贯链一致 + 非灰底色亮度感知权重
+  一致（+1，改写链式断言为循环）。
+- UI：MaskPanel range 滑杆组/羽化可用/onChange 载荷（+1）；MaskOverlay 五手柄
+  位置断言（含 rotation 90 椭圆系映射）+ 旋转/羽化拖动 + range 不渲染形状（+3，
+  其中 2 例改写既有断言）。
+
+## 决策与假设
+
+- range 无拖拽创建/手柄（亮度域无位置语义），仅按钮添加 + 滑杆调整；overlay 不渲染
+  （未来可做亮度直方图选区 UI）。
+- 序贯亮度语义：多蒙版叠加时 range 取「已应用前面蒙版后」的像素亮度（执行器、
+  shader、simulateShaderPixel 三处同语义，契约测试锁定）。
+- 一次全量跑出 1 例失败（ImageViewer 既有用例），复跑 748 全绿——负载敏感 flake
+  （2026-09-16 已记录同类），非本批回归。
+
+## 遗留与下一步
+
+- masks 三期 B 剩余：brush（栅格权重存储 + 笔刷 UI，需独立设计）、ai（分割模型，
+  外部依赖）；rotation/feather 手柄化已完成。
+- webglPreview.js 57.5% 维持既有结论。
+
+## Git Commit
+
+- `feat(masks): 三期 B — range 亮度蒙版全链（shared/schema/shader/UI/golden 022）+ radial rotation/feather 手柄化（+10 例）`（未 push）
+
+---
+
 # 2026-09-19 lint 清理批：no-useless-assignment 排查揪出 2 个真 bug（P0 渲染正确性）
 
 ## 当前状态

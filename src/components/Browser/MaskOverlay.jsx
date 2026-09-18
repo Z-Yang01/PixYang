@@ -35,7 +35,8 @@ export default function MaskOverlay({
     return displayToImage(nx, ny, { width, height, rotation, flipH, flipV, crop: null });
   }, [imgRef, width, height, rotation, flipH, flipV]);
 
-  // 手柄拖动：中心/端点取指针绝对位置（钳制在图内）；半径取指针在椭圆轴上的投影长度
+  // 手柄拖动：中心/端点取指针绝对位置（钳制在图内）；半径取指针在椭圆轴上的投影长度；
+  // 旋转取指针方位角（+90° 使手柄方向对应椭圆系上方）；羽化取 −x 轴投影与实边界的相对超出
   const applyHandle = useCallback((g, p) => {
     if (g.kind === 'center') {
       onChangeMask?.(g.id, { cx: clamp(p.x, 0, width), cy: clamp(p.y, 0, height) });
@@ -44,6 +45,21 @@ export default function MaskOverlay({
     if (g.kind === 'p0' || g.kind === 'p1') {
       const key = g.kind === 'p0' ? '0' : '1';
       onChangeMask?.(g.id, { [`x${key}`]: clamp(p.x, 0, width), [`y${key}`]: clamp(p.y, 0, height) });
+      return;
+    }
+    if (g.kind === 'rot') {
+      let deg = (Math.atan2(p.y - g.cy, p.x - g.cx) * 180) / Math.PI + 90;
+      deg = ((deg % 360) + 360) % 360;
+      if (deg > 180) deg -= 360;
+      onChangeMask?.(g.id, { rotation: Math.round(deg) });
+      return;
+    }
+    if (g.kind === 'feather') {
+      const a = ((g.rotation || 0) * Math.PI) / 180;
+      const dx = p.x - g.cx;
+      const dy = p.y - g.cy;
+      const proj = -(dx * Math.cos(a) + dy * Math.sin(a));
+      onChangeMask?.(g.id, { feather: clamp((proj - g.rx) / g.rx, 0, 1) });
       return;
     }
     const a = ((g.rotation || 0) * Math.PI) / 180;
@@ -129,8 +145,8 @@ export default function MaskOverlay({
     e.stopPropagation();
     const p = toImagePoint(e.clientX, e.clientY);
     if (!p) return;
-    // cx/cy/rotation 为拖动期间的几何基准（拖 rx/ry 时中心不动）
-    gestureRef.current = { kind, id: m.id, last: p, cx: m.cx, cy: m.cy, rotation: m.rotation };
+    // cx/cy/rotation/rx 为拖动期间的几何基准（拖 rx/ry 时中心不动）
+    gestureRef.current = { kind, id: m.id, last: p, cx: m.cx, cy: m.cy, rotation: m.rotation, rx: m.rx };
   };
 
   const shapeEl = (g, isDraft) => {
@@ -167,29 +183,45 @@ export default function MaskOverlay({
     return <line x1={g.x0} y1={g.y0} x2={g.x1} y2={g.y1} {...common} />;
   };
 
-  // 选中蒙版的手柄（底图坐标 → overlay 百分比定位，随图层变换旋转/翻转/缩放）
+  // 选中蒙版的手柄（底图坐标 → overlay 百分比定位，随图层变换旋转/翻转/缩放）。
+  // range 蒙版无位置几何（亮度域），不渲染形状与手柄，经面板 chip 选中与滑杆调整。
   const selected = masks.find((m) => m.id === selectedMaskId) || null;
   const handles = [];
   if (selected?.type === 'radial') {
     const a = ((selected.rotation || 0) * Math.PI) / 180;
+    const rotR = Math.max(selected.rx, selected.ry) * 1.15;
+    const featherR = selected.rx * (1 + (selected.feather || 0));
     handles.push({ kind: 'center', x: selected.cx, y: selected.cy, title: '中心（拖动移动）' });
     handles.push({ kind: 'rx', x: selected.cx + selected.rx * Math.cos(a), y: selected.cy + selected.rx * Math.sin(a), title: '半径 X' });
     handles.push({ kind: 'ry', x: selected.cx - selected.ry * Math.sin(a), y: selected.cy + selected.ry * Math.cos(a), title: '半径 Y' });
+    handles.push({ kind: 'rot', x: selected.cx + Math.sin(a) * rotR, y: selected.cy - Math.cos(a) * rotR, title: '旋转（拖动）' });
+    handles.push({ kind: 'feather', x: selected.cx - featherR * Math.cos(a), y: selected.cy - featherR * Math.sin(a), title: '羽化范围（拖动）' });
   } else if (selected?.type === 'linear') {
     handles.push({ kind: 'p0', x: selected.x0, y: selected.y0, title: '起点' });
     handles.push({ kind: 'p1', x: selected.x1, y: selected.y1, title: '终点' });
   }
+  const positional = masks.filter((m) => m.type === 'radial' || m.type === 'linear');
 
   return (
     <div className="editor-mask-overlay" data-mask-overlay="1" onDoubleClick={stop}>
       <svg className="editor-mask-svg" viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" aria-hidden="true">
-        {masks.map((m) => (
+        {positional.map((m) => (
           <g key={m.id}>
             {shapeEl(m, false)}
             {hitEl(m)}
           </g>
         ))}
         {draft && shapeEl({ ...draft, id: null }, true)}
+        {selected?.type === 'radial' && (
+          <ellipse
+            className="editor-mask-feather-ring"
+            cx={selected.cx} cy={selected.cy}
+            rx={Math.max(0, selected.rx * (1 + (selected.feather || 0)))}
+            ry={Math.max(0, selected.ry * (1 + (selected.feather || 0)))}
+            transform={`rotate(${selected.rotation || 0} ${selected.cx} ${selected.cy})`}
+            vectorEffect="non-scaling-stroke"
+          />
+        )}
       </svg>
       {handles.map((h) => (
         <span

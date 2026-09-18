@@ -54,7 +54,7 @@ describe('MaskOverlay（蒙版几何 overlay）', () => {
     const handles = Object.fromEntries(
       [...container.querySelectorAll('[data-mask-handle]')].map((h) => [h.getAttribute('data-mask-handle'), h]),
     );
-    expect(Object.keys(handles).sort()).toEqual(['center', 'rx', 'ry']);
+    expect(Object.keys(handles).sort()).toEqual(['center', 'feather', 'rot', 'rx', 'ry']);
     // rotation 90：rx 手柄在 (cx, cy+rx)，ry 手柄在 (cx-ry, cy)
     expect(handles.center.style.left).toBe('50%');
     expect(handles.center.style.top).toBe('50%');
@@ -62,6 +62,13 @@ describe('MaskOverlay（蒙版几何 overlay）', () => {
     expect(handles.rx.style.top).toBe('70%');
     expect(handles.ry.style.left).toBe('40%');
     expect(handles.ry.style.top).toBe('50%');
+    // 旋转手柄在椭圆系上方 max(rx,ry)*1.15 处：rotation 90 → (cx+230, cy)；
+    // 羽化手柄在 −x 轴 rx*(1+feather) 处：rotation 90 → (cx, cy−300)
+    expect(handles.rot.style.left).toBe('73%');
+    expect(handles.rot.style.top).toBe('50%');
+    expect(handles.feather.style.left).toBe('50%');
+    expect(handles.feather.style.top).toBe('20%');
+    expect(container.querySelector('ellipse.editor-mask-feather-ring')).not.toBeNull();
   });
 
   it('线性蒙版渲染线段，选中显示 p0/p1 端点手柄', () => {
@@ -173,5 +180,29 @@ describe('MaskOverlay（蒙版几何 overlay）', () => {
     fireEvent.pointerMove(window, { clientX: 500, clientY: 500 });
     fireEvent.pointerUp(window);
     expect(utils.props.onCreate).not.toHaveBeenCalled();
+  });
+
+  it('旋转手柄拖动更新 rotation（方位角+90°）；羽化手柄拖动更新 feather', () => {
+    const { container, props } = setup({ masks: [radial({ rotation: 0, feather: 0.5 })], selectedMaskId: 'm1' });
+    // 指针在中心正右方：atan2(0,300)=0° → rotation = 0+90 = 90（椭圆系上方转到指向右方）
+    fireEvent.pointerDown(container.querySelector('[data-mask-handle="rot"]'), { clientX: 500, clientY: 270 });
+    fireEvent.pointerMove(window, { clientX: 800, clientY: 500 });
+    expect(props.onChangeMask).toHaveBeenCalledWith('m1', { rotation: 90 });
+    fireEvent.pointerUp(window);
+    // 指针在 −x 轴方向距中心 400：feather = (400−200)/200 = 1（钳制）
+    fireEvent.pointerDown(container.querySelector('[data-mask-handle="feather"]'), { clientX: 200, clientY: 500 });
+    fireEvent.pointerMove(window, { clientX: 100, clientY: 500 });
+    expect(props.onChangeMask).toHaveBeenCalledWith('m1', { feather: 1 });
+    fireEvent.pointerUp(window);
+    expect(props.onCommit).toHaveBeenCalledTimes(2);
+  });
+
+  it('range 蒙版无位置几何：不渲染形状/手柄，经 chip 选中', () => {
+    const range = { type: 'range', id: 'm3', center: 0.4, range: 0.2, feather: 0.1, invert: false, adjustments: { exposure: -0.5, contrast: 0, saturation: 0, temperature: 0, tint: 0 } };
+    const { container, props } = setup({ masks: [radial(), range], selectedMaskId: 'm3' });
+    expect(container.querySelectorAll('.editor-mask-shape')).toHaveLength(1);
+    expect(container.querySelectorAll('[data-mask-handle]')).toHaveLength(0);
+    expect(container.querySelector('ellipse.editor-mask-feather-ring')).toBeNull();
+    expect(props.onSelect).not.toHaveBeenCalled();
   });
 });

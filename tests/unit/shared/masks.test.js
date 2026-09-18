@@ -106,3 +106,47 @@ describe('applyMaskedAdjustment / applyMasksInPlace', () => {
     expect(d2[0]).toBe(255);
   });
 });
+
+describe('rangeWeight / range 亮度蒙版', () => {
+  it('带内全量、带外归零、feather 区间线性衰减', () => {
+    const m = { type: 'range', center: 0.5, range: 0.2, feather: 0.1, invert: false };
+    expect(masks.rangeWeight(m, 0.5)).toBe(1);
+    expect(masks.rangeWeight(m, 0.3)).toBe(1);
+    expect(masks.rangeWeight(m, 0.25)).toBeCloseTo(0.5);
+    expect(masks.rangeWeight(m, 0.1)).toBe(0);
+    expect(masks.rangeWeight(m, 0.75)).toBeCloseTo(0.5);
+    const hard = { type: 'range', center: 0.5, range: 0.2, feather: 0, invert: false };
+    expect(masks.rangeWeight(hard, 0.3)).toBe(1);
+    expect(masks.rangeWeight(hard, 0.8)).toBe(0);
+  });
+
+  it('invert 反相；normalizeMasks 对 range 保留并钳制（非法值回退 0）', () => {
+    const m = { type: 'range', center: 0.5, range: 0.2, feather: 0, invert: true };
+    expect(masks.rangeWeight(m, 0.5)).toBe(0);
+    expect(masks.rangeWeight(m, 0.9)).toBe(1);
+    const list = masks.normalizeMasks([
+      { type: 'range', center: 2, range: -1, feather: 5, adjustments: { exposure: 0.3 } },
+      { type: 'range', adjustments: {} },
+      { type: 'gaussian', center: 0.5 },
+    ]);
+    expect(list).toHaveLength(2);
+    expect(list[0].center).toBe(1);
+    expect(list[0].range).toBe(0);
+    expect(list[0].feather).toBe(1);
+    expect(list[1].center).toBe(0);
+    expect(list[1].range).toBe(0);
+  });
+
+  it('applyMasksInPlace：亮度带内像素被调整、带外不变（灰阶梯度）', () => {
+    const m = masks.normalizeMasks([{ type: 'range', center: 0.2, range: 0.05, feather: 0, invert: false, adjustments: { exposure: 1 } }])[0];
+    const data = Buffer.from([26, 26, 26, 230, 230, 230]);
+    masks.applyMasksInPlace(data, 2, 1, [m], 3);
+    // 26/255≈0.102，|L-0.2|=0.098 > range → 不变；另一像素同理
+    expect([...data]).toEqual([26, 26, 26, 230, 230, 230]);
+    const m2 = masks.normalizeMasks([{ type: 'range', center: 0.4, range: 0.2, feather: 0, invert: false, adjustments: { exposure: 1 } }])[0];
+    const d2 = Buffer.from([102, 102, 102, 204, 204, 204]);
+    masks.applyMasksInPlace(d2, 2, 1, [m2], 3);
+    expect(d2[0]).toBe(204);
+    expect(d2[3]).toBe(204);
+  });
+});

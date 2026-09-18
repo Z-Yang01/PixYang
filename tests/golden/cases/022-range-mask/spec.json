@@ -72,7 +72,23 @@
     {
       "kind": "masks",
       "params": {
-        "list": []
+        "list": [
+          {
+            "type": "range",
+            "id": "r1",
+            "center": 0.3,
+            "range": 0.2,
+            "feather": 0.15,
+            "invert": false,
+            "adjustments": {
+              "exposure": 0.6,
+              "contrast": 0,
+              "saturation": -50,
+              "temperature": -15,
+              "tint": 0
+            }
+          }
+        ]
       }
     },
     {
@@ -95,8 +111,8 @@
       "kind": "geometry",
       "params": {
         "rotate": 0,
-        "flipH": true,
-        "flipV": true
+        "flipH": false,
+        "flipV": false
       }
     },
     {
@@ -114,6 +130,6 @@
   ],
   "meta": {
     "fromEditParamsVersion": 0,
-    "generatedAt": "2026-09-18T16:55:25.770Z"
+    "generatedAt": "2026-09-18T16:55:27.411Z"
   }
 }

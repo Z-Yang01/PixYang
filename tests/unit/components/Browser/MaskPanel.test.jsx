@@ -75,4 +75,22 @@ describe('MaskPanel（蒙版面板）', () => {
     expect(feather).toHaveLength(10);
     expect(feather[4].disabled).toBe(true);
   });
+
+  it('range 蒙版：chip 显示「亮度」；几何滑杆为中心亮度/范围，羽化可用，调整滑杆生效', () => {
+    const range = { type: 'range', id: 'm3', center: 0.35, range: 0.25, feather: 0.25, invert: false, adjustments: { exposure: 0, contrast: 0, saturation: 0, temperature: 0, tint: 0 } };
+    const { container, onChange } = setup([radial(), range], 'm3');
+    const chips = container.querySelectorAll('.editor-mask-list button');
+    expect(chips[1].textContent).toContain('亮度');
+    const sliders = [...container.querySelectorAll('.editor-slider-row input[type="range"]')];
+    // 几何 2 + 羽化 + 调整 5 = 8；羽化（第 3 个）对 range 可用
+    expect(sliders).toHaveLength(8);
+    expect(sliders[2].disabled).toBe(false);
+    expect(sliders[2].value).toBe('0.25');
+    const labels = [...container.querySelectorAll('.editor-slider-row span')].map((el) => el.textContent);
+    expect(labels).toEqual(expect.arrayContaining(['中心亮度', '范围', '羽化']));
+    fireEvent.change(sliders[0], { target: { value: '0.6' } });
+    expect(onChange).toHaveBeenCalledTimes(1);
+    const nextMasks = onChange.mock.calls[0][0];
+    expect(nextMasks.find((m) => m.id === 'm3').center).toBe(0.6);
+  });
 });

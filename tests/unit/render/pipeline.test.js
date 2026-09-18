@@ -689,6 +689,77 @@ describe('masks 阶段（径向蒙版 raw pass）', () => {
   });
 });
 
+describe('masks 阶段（range 亮度蒙版 raw pass）', () => {
+  it('range 蒙版输出与 shared applyMasksInPlace 逐像素一致（PNG 无损）', async () => {
+    const masks = require_('../../../shared/masks.cjs');
+    const W = 256;
+    const H = 4;
+    const raw = Buffer.alloc(W * H * 3);
+    for (let y = 0; y < H; y++) {
+      for (let x = 0; x < W; x++) {
+        const o = (y * W + x) * 3;
+        raw[o] = x; raw[o + 1] = x; raw[o + 2] = x;
+      }
+    }
+    const input = path.join(TMP, 'range-mask-src.png');
+    await sharp(raw, { raw: { width: W, height: H, channels: 3 } }).png().toFile(input);
+    const list = [{
+      type: 'range', id: 'r1', center: 0.4, range: 0.15, feather: 0.1, invert: false,
+      adjustments: { exposure: 0.8, contrast: 20, saturation: -40, temperature: -20, tint: 10 },
+    }];
+    const stages = baseSpecStages();
+    stages.find((s) => s.kind === 'masks').params = { list };
+    stages.find((s) => s.kind === 'encode').params = { format: 'png', quality: 92, resize: null };
+    const out = path.join(TMP, 'range-mask-out.png');
+    await renderSpecToSharp(
+      { specVersion: 1, sourceHash: 't', colorSpace: { working: 'srgb', output: 'srgb' }, stages, meta: {} },
+      input, out
+    );
+    const expected = Buffer.from(raw);
+    masks.applyMasksInPlace(expected, W, H, list, 3);
+    const res = await sharp(out).raw().toBuffer({ resolveWithObject: true });
+    expect(res.info.width).toBe(W);
+    const och = res.info.channels;
+    let maxDelta = 0;
+    for (let p = 0; p < W * H; p++) {
+      for (let c = 0; c < 3; c++) {
+        maxDelta = Math.max(maxDelta, Math.abs(res.data[p * och + c] - expected[p * 3 + c]));
+      }
+    }
+    expect(maxDelta).toBe(0);
+  });
+
+  it('invert 的 range 蒙版：带外像素被调整、带内不变', async () => {
+    const masks = require_('../../../shared/masks.cjs');
+    const W = 8;
+    const raw = Buffer.alloc(W * 3);
+    for (let x = 0; x < W; x++) { raw[x * 3] = x * 32; raw[x * 3 + 1] = x * 32; raw[x * 3 + 2] = x * 32; }
+    const input = path.join(TMP, 'range-inv-src.png');
+    await sharp(raw, { raw: { width: W, height: 1, channels: 3 } }).png().toFile(input);
+    const list = [{
+      type: 'range', id: 'r2', center: 0.5, range: 0.1, feather: 0, invert: true,
+      adjustments: { exposure: 1 },
+    }];
+    const stages = baseSpecStages();
+    stages.find((s) => s.kind === 'masks').params = { list };
+    stages.find((s) => s.kind === 'encode').params = { format: 'png', quality: 92, resize: null };
+    const out = path.join(TMP, 'range-inv-out.png');
+    await renderSpecToSharp(
+      { specVersion: 1, sourceHash: 't', colorSpace: { working: 'srgb', output: 'srgb' }, stages, meta: {} },
+      input, out
+    );
+    const expected = Buffer.from(raw);
+    masks.applyMasksInPlace(expected, W, 1, list, 3);
+    const res = await sharp(out).raw().toBuffer({ resolveWithObject: true });
+    const och = res.info.channels;
+    let maxDelta = 0;
+    for (let p = 0; p < W; p++) {
+      maxDelta = Math.max(maxDelta, Math.abs(res.data[p * och] - expected[p * 3]));
+    }
+    expect(maxDelta).toBe(0);
+  });
+});
+
 describe('宽色域 tagged 底图（ICC 标签一致性）', () => {
   it('P3 tagged 输入：输出保留原 profile（标签与原生编码值自洽），像素=原生值上施加仿射', async () => {
     const input = path.join(TMP, 'p3-src.png');

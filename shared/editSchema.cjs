@@ -71,9 +71,10 @@ const LensSchema = z.object({
   chromatic: z.number().catch(0),
 });
 
-// 蒙版 v1（shared/masks.cjs 唯一实现）：radial（椭圆+羽化+反相）与 linear（渐变线，
-// p0→p1 线性 0→1，feather 字段保留不适用）。坐标系为 decode 后未旋转未裁剪图像。
-// brush/range/ai 类型暂不支持——非法/未知类型元素在归一化层丢弃。
+// 蒙版 v2（shared/masks.cjs 唯一实现）：radial（椭圆+羽化+反相+旋转）、linear（渐变线，
+// p0→p1 线性 0→1，feather 字段保留不适用）与 range（亮度范围带：center 0..1 / range 半宽
+// 0..1 / feather 带外衰减 0..1）。坐标系为 decode 后未旋转未裁剪图像。
+// brush/ai 类型暂不支持——非法/未知类型元素在归一化层丢弃。
 const MaskAdjustmentsSchema = z.object({
   exposure: z.number().min(-2).max(2).catch(0),
   contrast: z.number().min(-50).max(50).catch(0),
@@ -107,7 +108,17 @@ const LinearMaskSchema = z.object({
   adjustments: MaskAdjustmentsSchema,
 });
 
-const MaskSchema = z.union([RadialMaskSchema, LinearMaskSchema]).nullable().catch(null);
+const RangeMaskSchema = z.object({
+  type: z.literal('range'),
+  id: z.string().catch(''),
+  center: z.number().min(0).max(1).catch(0.5),
+  range: z.number().min(0).max(1).catch(0.25),
+  feather: z.number().min(0).max(1).catch(0.25),
+  invert: z.boolean().catch(false),
+  adjustments: MaskAdjustmentsSchema,
+});
+
+const MaskSchema = z.union([RadialMaskSchema, LinearMaskSchema, RangeMaskSchema]).nullable().catch(null);
 
 const OutputSchema = z.object({
   format: z.enum(['jpeg', 'tiff', 'png', 'webp']).catch('jpeg'),

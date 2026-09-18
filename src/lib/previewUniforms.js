@@ -103,8 +103,10 @@ export function specToShaderUniforms(spec, imageSize = [0, 0]) {
   const maskAdjTemp = new Array(MASK_COUNT).fill(0);
   const maskAdjTint = new Array(MASK_COUNT).fill(0);
   maskList.forEach((m, i) => {
-    maskType[i] = m.type === 'radial' ? 1 : 2;
-    maskGeo[i] = m.type === 'radial' ? [m.cx, m.cy, m.rx, m.ry] : [m.x0, m.y0, m.x1, m.y1];
+    maskType[i] = m.type === 'radial' ? 1 : m.type === 'linear' ? 2 : 3;
+    maskGeo[i] = m.type === 'radial' ? [m.cx, m.cy, m.rx, m.ry]
+      : m.type === 'linear' ? [m.x0, m.y0, m.x1, m.y1]
+        : [m.center, m.range, 0, 0];
     maskRotation[i] = m.rotation || 0;
     maskFeather[i] = m.feather || 0;
     maskInvert[i] = m.invert ? 1 : 0;
@@ -198,13 +200,16 @@ export function simulateShaderPixel(rgb255, uniforms, uv = [0.5, 0.5]) {
   if (uniforms.maskOn) {
     const px = [uv[0] * uniforms.imageSize[0], uv[1] * uniforms.imageSize[1]];
     for (let i = 0; i < 8; i++) {
-      if (uniforms.maskType[i] === 0) continue;
+      const mt = uniforms.maskType[i];
+      if (mt === 0) continue;
+      const L = 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
       const w = masksLib.maskWeight({
-        type: uniforms.maskType[i] === 1 ? 'radial' : 'linear',
+        type: mt === 1 ? 'radial' : mt === 2 ? 'linear' : 'range',
         cx: uniforms.maskGeo[i][0], cy: uniforms.maskGeo[i][1], rx: uniforms.maskGeo[i][2], ry: uniforms.maskGeo[i][3],
         x0: uniforms.maskGeo[i][0], y0: uniforms.maskGeo[i][1], x1: uniforms.maskGeo[i][2], y1: uniforms.maskGeo[i][3],
+        center: uniforms.maskGeo[i][0], range: uniforms.maskGeo[i][1],
         rotation: uniforms.maskRotation[i], feather: uniforms.maskFeather[i], invert: uniforms.maskInvert[i] === 1,
-      }, px[0], px[1]);
+      }, px[0], px[1], L);
       if (w <= 0) continue;
       c = masksLib.applyMaskedAdjustment(c, {
         exposure: uniforms.maskAdjExposure[i], contrast: uniforms.maskAdjContrast[i],

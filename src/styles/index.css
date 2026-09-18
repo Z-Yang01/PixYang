@@ -2385,6 +2385,18 @@ body {
 .editor-mask-handle.handle-p1 {
   cursor: move;
 }
+.editor-mask-handle.handle-rot {
+  cursor: grab;
+}
+.editor-mask-handle.handle-feather {
+  cursor: ew-resize;
+}
+.editor-mask-feather-ring {
+  fill: none;
+  stroke: rgba(255, 255, 255, 0.55);
+  stroke-dasharray: 6 6;
+  pointer-events: none;
+}
 
 .editor-mask-create-layer {
   position: absolute;
