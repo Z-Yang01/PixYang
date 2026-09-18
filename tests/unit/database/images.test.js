@@ -356,9 +356,48 @@ describe('renameImage 重命名', () => {
   it('不存在的图片 id 返回 false', () => {
     expect(db.renameImage(99999999, 'x.jpg')).toBe(false);
   });
+
+  it('文件名含路径分量或非法字符时拒绝', () => {
+    expect(db.renameImage(1, '../evil.jpg').error).toBeTruthy();
+    expect(db.renameImage(1, 'a/b.jpg').error).toBeTruthy();
+    expect(db.renameImage(1, 'a\b.jpg').error).toBeTruthy();
+    expect(db.renameImage(1, '..').error).toBeTruthy();
+  });
+
+  it('NEF 跟随改名失败时回滚 JPG 改名（不留 broken 记录）', async () => {
+    const dir = tmpDir('rn3');
+    const jpg = makeImage('roll-old.jpg', dir, 'r1');
+    const nef = makeImage('roll-old.nef', dir, 'r2');
+    const [img] = await db.importImages([jpg, nef]);
+    fs.unlinkSync(img.raw_path); // raw_path 指向已消失的 NEF → 跟随改名 ENOENT
+    const res = db.renameImage(img.id, 'roll-new.jpg');
+    expect(res.error).toBeTruthy();
+    const rec = db.getImageById(img.id);
+    expect(rec.filename).toBe('roll-old.jpg'); // 回滚后记录保持原名
+    expect(rec.filepath).toBe(img.filepath);
+    expect(fs.existsSync(img.filepath)).toBe(true); // JPG 已被改回原位
+    expect(fs.existsSync(path.join(path.dirname(img.filepath), 'roll-new.jpg'))).toBe(false);
+  });
 });
 
 describe('deleteImage / batchDeleteImages / updateImages', () => {
+  it('updateImages 超过 900 张（SQLite 变量上限）分块成功不抛错', { timeout: 60000 }, async () => {
+    const dir = tmpDir('bulk');
+    const files = [];
+    for (let i = 0; i < 901; i++) {
+      files.push(makeImage(`bulk-${i}.jpg`, dir, `v${i}`));
+    }
+    const rows = await db.importImages(files);
+    expect(rows.length).toBe(901);
+    const ids = rows.map((r) => r.id);
+    const changed = db.updateImages(ids, { rating: 5 });
+    expect(changed).toBe(901);
+    const after = db.getImageById(ids[900]);
+    expect(after.rating).toBe(5);
+    expect(rows.filter((r) => r.rating === 5).length).toBe(0); // 更新前全为默认
+  });
+
+
   it('deleteImage 删除文件、缩略图与关联数据', async () => {
     const dir = tmpDir('del1');
     const jpg = makeImage('del-a.jpg', dir, 'd1');

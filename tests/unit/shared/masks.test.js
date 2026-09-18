@@ -120,7 +120,7 @@ describe('rangeWeight / range 亮度蒙版', () => {
     expect(masks.rangeWeight(hard, 0.8)).toBe(0);
   });
 
-  it('invert 反相；normalizeMasks 对 range 保留并钳制（非法值回退 0）', () => {
+  it('invert 反相；normalizeMasks 对 range 保留并钳制（缺失字段回退 schema 默认）', () => {
     const m = { type: 'range', center: 0.5, range: 0.2, feather: 0, invert: true };
     expect(masks.rangeWeight(m, 0.5)).toBe(0);
     expect(masks.rangeWeight(m, 0.9)).toBe(1);
@@ -133,8 +133,17 @@ describe('rangeWeight / range 亮度蒙版', () => {
     expect(list[0].center).toBe(1);
     expect(list[0].range).toBe(0);
     expect(list[0].feather).toBe(1);
-    expect(list[1].center).toBe(0);
-    expect(list[1].range).toBe(0);
+    // 缺失字段回退与 RangeMaskSchema 默认一致（center 0.5/range 0.25/feather 0.25）
+    expect(list[1].center).toBe(0.5);
+    expect(list[1].range).toBe(0.25);
+    expect(list[1].feather).toBe(0.25);
+  });
+
+  it('normalizeMasks 上限 8 个（与 WebGL 预览 uniform 上限一致）', () => {
+    const many = Array.from({ length: 10 }, (_, i) => (
+      { type: 'range', id: `r${i}`, center: 0.1 * i, adjustments: { exposure: 0.1 } }
+    ));
+    expect(masks.normalizeMasks(many)).toHaveLength(8);
   });
 
   it('applyMasksInPlace：亮度带内像素被调整、带外不变（灰阶梯度）', () => {

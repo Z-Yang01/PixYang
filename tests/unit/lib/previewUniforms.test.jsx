@@ -180,6 +180,24 @@ describe('masks uniforms（蒙版打包 + shader 模拟）', () => {
     }
   });
 
+
+  it('防再犯：GLSL 源串分支序与 type 编码一致（radial→linear→range）', () => {
+    // simulateShaderPixel 是 shader 的平行重实现，测不出真 GLSL 的分支错位
+    // （e0e5961 曾把 range 插在 <2.5 使 linear/range 预览互换）。此测试直接断言
+    // webglPreview.js 源码中分支体的出现次序：linear 投影标记必须先于 range 亮度标记。
+    const fs = require_('fs');
+    const path_ = require_('path');
+    const src = fs.readFileSync(path_.resolve(__dirname, '../../../src/lib/webglPreview.js'), 'utf8');
+    const linearMark = src.indexOf('vec2 dir = g.zw - g.xy;');
+    const rangeMark = src.indexOf('float dd = abs(L - g.x);');
+    expect(linearMark).toBeGreaterThan(-1);
+    expect(rangeMark).toBeGreaterThan(-1);
+    expect(linearMark).toBeLessThan(rangeMark);
+    const radialMark = src.indexOf('float dist = length(u / g.zw);');
+    expect(radialMark).toBeGreaterThan(-1);
+    expect(radialMark).toBeLessThan(linearMark);
+  });
+
   it('无蒙版时 maskOn=0 且模拟不受 imageSize 影响', () => {
     const u = buildUniforms({ basic: { exposure: 0.5 } }, [400, 300]);
     expect(u.maskOn).toBe(0);

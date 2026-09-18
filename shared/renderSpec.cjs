@@ -186,6 +186,24 @@ function buildProxySpec(spec, srcWidth, srcHeight, targetLongEdge) {
       const n = (v, floor) => Math.max(floor, Math.round((v || 0) * scale));
       return { ...s, params: { ...s.params, x: n(s.params.x, 0), y: n(s.params.y, 0), w: n(s.params.w, 1), h: n(s.params.h, 1) } };
     }
+    if (s.kind === 'masks' && Array.isArray(s.params?.list) && s.params.list.length > 0) {
+      // 蒙版坐标为 decode 后全尺寸像素，decode 已按 scale 缩放——radial/linear 等比跟随
+      //（range 的 center/range/feather 是 0..1 亮度语义，不缩放）
+      const n = (v) => Math.round((v || 0) * scale);
+      return {
+        ...s,
+        params: {
+          ...s.params,
+          list: s.params.list.map((m) => {
+            if (!m || m.type === 'range') return m;
+            if (m.type === 'radial') {
+              return { ...m, cx: n(m.cx), cy: n(m.cy), rx: Math.max(1, n(m.rx)), ry: Math.max(1, n(m.ry)) };
+            }
+            return { ...m, x0: n(m.x0), y0: n(m.y0), x1: n(m.x1), y1: n(m.y1) };
+          }),
+        },
+      };
+    }
     return s;
   });
   return { spec: { ...spec, stages }, scale };

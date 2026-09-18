@@ -12,21 +12,30 @@ const TYPE_LABEL = { radial: '径向', linear: '线性', range: '亮度' };
 const TYPE_TITLE = { radial: '径向蒙版', linear: '线性蒙版', range: '亮度范围蒙版' };
 
 // 蒙版面板（受控组件）：径向/线性/亮度范围蒙版列表 + 选中蒙版的几何与调整滑杆。
-// onChange(nextMasks) 实时更新；onCommit(label) 在手势结束/键盘调整/增删时回调（父组件入历史栈）。
-// 蒙版语义与渲染端共用 shared/masks.cjs（pre-crop 像素坐标；range 的 center/range/feather 为 0..1 亮度语义）。
+// onChange(nextMasks) 实时更新；onCommit(label, next) 在手势结束/键盘调整/增删时回调，
+// next 为本次变更后的最新列表（键盘路径 setEditOps 尚未渲染，父组件的 ops ref 是陈旧的，
+// 必须用这里传出的 next 入历史栈）。蒙版语义与渲染端共用 shared/masks.cjs。
 export default function MaskPanel({ masks, session, selectedId, onSelect, onCommit, onChange }) {
   const dragRef = useRef(null);
+  const latestRef = useRef(null);
 
   const nextMasks = (mapper) => mapper(masks.map((m) => ({ ...m, adjustments: { ...m.adjustments } })));
 
-  const updateSelected = (patch, commitLabel) => {
-    onChange(nextMasks((list) => list.map((m) => (m.id === selectedId ? { ...m, ...patch } : m))));
-    if (commitLabel) onCommit?.(commitLabel);
+  const applyNext = (mapper, commitLabel) => {
+    const next = nextMasks(mapper);
+    latestRef.current = next;
+    onChange(next);
+    if (commitLabel) onCommit?.(commitLabel, next);
+    return next;
   };
 
-  const setAdj = (key, value) => {
-    onChange(nextMasks((list) => list.map((m) => (m.id === selectedId ? { ...m, adjustments: { ...m.adjustments, [key]: value } } : m))));
-  };
+  const updateSelected = (patch, commitLabel) => (
+    applyNext((list) => list.map((m) => (m.id === selectedId ? { ...m, ...patch } : m)), commitLabel)
+  );
+
+  const setAdj = (key, value) => (
+    applyNext((list) => list.map((m) => (m.id === selectedId ? { ...m, adjustments: { ...m.adjustments, [key]: value } } : m)))
+  );
 
   const selected = masks.find((m) => m.id === selectedId) || null;
   const W = session?.width || 0;
@@ -45,10 +54,10 @@ export default function MaskPanel({ masks, session, selectedId, onSelect, onComm
     { key: 'center', label: '中心亮度', min: 0, max: 1, step: 0.01, get: () => selected.center, set: (v) => ({ center: v }), fmt: pct },
     { key: 'range', label: '范围', min: 0, max: 1, step: 0.01, get: () => selected.range, set: (v) => ({ range: v }), fmt: pct },
   ] : [
-    { key: 'x0', label: '起点 X', max: W, get: () => selected.x0, set: (v) => ({ x0: v }) },
-    { key: 'y0', label: '起点 Y', max: H, get: () => selected.y0, set: (v) => ({ y0: v }) },
-    { key: 'x1', label: '终点 X', max: W, get: () => selected.x1, set: (v) => ({ x1: v }) },
-    { key: 'y1', label: '终点 Y', max: H, get: () => selected.y1, set: (v) => ({ y1: v }) },
+    { key: 'x0', label: '起点 X', min: -W, max: W, get: () => selected.x0, set: (v) => ({ x0: v }) },
+    { key: 'y0', label: '起点 Y', min: -H, max: H, get: () => selected.y0, set: (v) => ({ y0: v }) },
+    { key: 'x1', label: '终点 X', min: -W, max: W, get: () => selected.x1, set: (v) => ({ x1: v }) },
+    { key: 'y1', label: '终点 Y', min: -H, max: H, get: () => selected.y1, set: (v) => ({ y1: v }) },
   ]) : [];
 
   const sliderRow = ({ key, label, min = 0, max, step, get, set, fmt }) => (
@@ -58,12 +67,12 @@ export default function MaskPanel({ masks, session, selectedId, onSelect, onComm
         type="range" min={min} max={max} step={step} value={Number(get()) || 0}
         onPointerDown={() => { dragRef.current = `geo-${key}`; }}
         onPointerUp={() => {
-          if (dragRef.current) { dragRef.current = null; onCommit?.('蒙版调整'); }
+          if (dragRef.current) { dragRef.current = null; onCommit?.('蒙版调整', latestRef.current); }
         }}
         onChange={(e) => {
           const v = Number(e.target.value);
-          updateSelected(set(v));
-          if (!dragRef.current) onCommit?.('蒙版调整');
+          const next = applyNext((list) => list.map((m) => (m.id === selectedId ? { ...m, ...set(v) } : m)));
+          if (!dragRef.current) onCommit?.('蒙版调整', next);
         }}
       />
       <em>{fmt ? fmt(get()) : px(get())}</em>
@@ -96,12 +105,12 @@ export default function MaskPanel({ masks, session, selectedId, onSelect, onComm
               title={selected.type === 'linear' ? '线性蒙版过渡由渐变线本身定义' : selected.type === 'range' ? '亮度带外的过渡宽度' : undefined}
               onPointerDown={() => { dragRef.current = 'feather'; }}
               onPointerUp={() => {
-                if (dragRef.current) { dragRef.current = null; onCommit?.('蒙版调整'); }
+                if (dragRef.current) { dragRef.current = null; onCommit?.('蒙版调整', latestRef.current); }
               }}
               onChange={(e) => {
                 const v = Number(e.target.value);
-                updateSelected({ feather: v });
-                if (!dragRef.current) onCommit?.('蒙版调整');
+                const next = updateSelected({ feather: v });
+                if (!dragRef.current) onCommit?.('蒙版调整', next);
               }}
             />
             <em>{pct(selected.feather)}</em>
@@ -121,11 +130,11 @@ export default function MaskPanel({ masks, session, selectedId, onSelect, onComm
                 type="range" min={min} max={max} step={step} value={selected.adjustments?.[key] ?? 0}
                 onPointerDown={() => { dragRef.current = `adj-${key}`; }}
                 onPointerUp={() => {
-                  if (dragRef.current) { dragRef.current = null; onCommit?.('蒙版调整'); }
+                  if (dragRef.current) { dragRef.current = null; onCommit?.('蒙版调整', latestRef.current); }
                 }}
                 onChange={(e) => {
-                  setAdj(key, Number(e.target.value));
-                  if (!dragRef.current) onCommit?.('蒙版调整');
+                  const next = setAdj(key, Number(e.target.value));
+                  if (!dragRef.current) onCommit?.('蒙版调整', next);
                 }}
               />
               <em>{fmt(selected.adjustments?.[key] ?? 0)}</em>

@@ -397,6 +397,10 @@ export default function ImageViewer({
   // 蒙版动作：默认几何取当前底图尺寸比例；id 生成一次即稳定。
   // 拖拽绘制（MaskOverlay）走同一入口，几何项由 overlay 传入（底图像素坐标）覆盖默认值
   const addMaskWithGeometry = useCallback((type, geometry = {}) => {
+    if ((editOpsRef.current.masks || []).length >= 8) {
+      toast.error('最多支持 8 个蒙版');
+      return;
+    }
     const W = editSessionRef.current?.width || 1000;
     const H = editSessionRef.current?.height || 1000;
     const id = `mask-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
@@ -453,6 +457,7 @@ export default function ImageViewer({
       flipH: editOpsRef.current.flipH,
       flipV: editOpsRef.current.flipV,
       crop: editOpsRef.current.crop,
+      masks: editOpsRef.current.masks,
       ...p,
       curves: presetParams.curves || EDIT_DEFAULTS.curves,
       colorGrading: presetParams.colorGrading || EDIT_DEFAULTS.colorGrading,
@@ -1216,7 +1221,7 @@ export default function ImageViewer({
             <Button
               variant="ghost" size="xs"
               className={showBeforeOn && compareMode === 'toggle' ? 'is-active' : ''}
-              onClick={() => { setShowBefore(v => !(v && compareMode === 'toggle')); setCompareMode('toggle'); setCropMode(false); }}
+              onClick={() => { setShowBefore(v => !(v && compareMode === 'toggle')); setCompareMode('toggle'); setCropMode(false); setMaskTool(null); }}
               title="整幅切换 Before/After（Before = NEF 显影/JPG 原图）"
             >
               对比
@@ -1226,7 +1231,7 @@ export default function ImageViewer({
               className={showBeforeOn && compareMode === 'split' ? 'is-active' : ''}
               onClick={() => {
                 if (compareMode === 'split') { setShowBefore(false); setCompareMode('toggle'); }
-                else { setShowBefore(true); setCompareMode('split'); setZoom(1); setPos({ x: 0, y: 0 }); setCropMode(false); }
+                else { setShowBefore(true); setCompareMode('split'); setZoom(1); setPos({ x: 0, y: 0 }); setCropMode(false); setMaskTool(null); }
               }}
               title="分屏对比（拖动分割线，左原始/右编辑）"
             >
@@ -1237,7 +1242,7 @@ export default function ImageViewer({
               className={showBeforeOn && compareMode === 'side' ? 'is-active' : ''}
               onClick={() => {
                 if (compareMode === 'side') { setShowBefore(false); setCompareMode('toggle'); }
-                else { setShowBefore(true); setCompareMode('side'); setZoom(1); setPos({ x: 0, y: 0 }); setCropMode(false); }
+                else { setShowBefore(true); setCompareMode('side'); setZoom(1); setPos({ x: 0, y: 0 }); setCropMode(false); setMaskTool(null); }
               }}
               title="并排对比（左原始/右编辑）"
             >
@@ -1424,8 +1429,8 @@ export default function ImageViewer({
               session={editSession}
               selectedId={selectedMaskId}
               onSelect={setSelectedMaskId}
-              onCommit={(label) => pushHistory(editOpsRef.current, label)}
-              onChange={(m) => setEditOps(o => ({ ...o, masks: m }))}
+              onCommit={(label, next) => pushHistory(next || editOpsRef.current, label)}
+              onChange={(m) => setEditOps(o => sanitizeEditOps({ ...o, masks: m }))}
             />
           </div>
 
@@ -1456,7 +1461,7 @@ export default function ImageViewer({
             {!cropMode && (
               <Button
                 variant="secondary" size="sm" className="w-full"
-                onClick={() => { setShowBefore(false); setCompareMode('toggle'); setCropMode(true); }}
+                onClick={() => { setShowBefore(false); setCompareMode('toggle'); setCropMode(true); setMaskTool(null); }}
               >
                 <Crop className="size-4" /> 框选裁剪区域
               </Button>

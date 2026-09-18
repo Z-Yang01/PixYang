@@ -32,7 +32,7 @@ export default function ImportDialog({ onClose, onDone, initialFiles = null }) {
 
   // 主进程 EXIF 提取的批内进度（当前批次细分显示）
   useEffect(() => {
-    if (!api.onImportProgress) return;
+    if (!api.isBridgeAvailable()) return;
     return api.onImportProgress((p) => setExifProgress(p || null));
   }, []);
 

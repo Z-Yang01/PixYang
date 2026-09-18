@@ -39,8 +39,8 @@ uniform float uMono;
 uniform float uVignette;
 uniform float uMaskOn;
 uniform vec2 uImageSize;        // 底图全尺寸（蒙版几何为 pre-crop 像素坐标）
-uniform float uMaskType[8];     // 0 none, 1 radial, 2 linear
-uniform vec4 uMaskGeo[8];       // radial: cx,cy,rx,ry / linear: x0,y0,x1,y1
+uniform float uMaskType[8];     // 0 none, 1 radial, 2 linear, 3 range（与 previewUniforms 打包一致）
+uniform vec4 uMaskGeo[8];       // radial: cx,cy,rx,ry / linear: x0,y0,x1,y1 / range: center,range,0,0
 uniform float uMaskRotation[8];
 uniform float uMaskFeather[8];
 uniform float uMaskInvert[8];
@@ -60,14 +60,14 @@ float maskWeight(int i, vec2 px, vec3 c) {
     float dist = length(u / g.zw);
     w = uMaskFeather[i] > 0.0 ? clamp((1.0 - dist) / uMaskFeather[i], 0.0, 1.0) : (dist < 1.0 ? 1.0 : 0.0);
   } else if (uMaskType[i] < 2.5) {
-    float L = dot(c, vec3(0.2126, 0.7152, 0.0722));
-    float dd = abs(L - g.x);
-    w = uMaskFeather[i] > 0.0 ? clamp((g.y + uMaskFeather[i] - dd) / uMaskFeather[i], 0.0, 1.0) : (dd <= g.y ? 1.0 : 0.0);
-  } else {
     vec2 dir = g.zw - g.xy;
     float len2 = dot(dir, dir);
     if (len2 <= 0.0) return uMaskInvert[i] > 0.5 ? 1.0 : 0.0;
     w = clamp(dot(px - g.xy, dir) / len2, 0.0, 1.0);
+  } else {
+    float L = dot(c, vec3(0.2126, 0.7152, 0.0722));
+    float dd = abs(L - g.x);
+    w = uMaskFeather[i] > 0.0 ? clamp((g.y + uMaskFeather[i] - dd) / uMaskFeather[i], 0.0, 1.0) : (dd <= g.y ? 1.0 : 0.0);
   }
   if (uMaskInvert[i] > 0.5) w = 1.0 - w;
   return w;

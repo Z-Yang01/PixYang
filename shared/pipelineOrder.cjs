@@ -48,7 +48,7 @@ const CAPABILITY_MATRIX = {
   hsl:           { preview: 'supported', export: 'supported', bake: 'supported', note: '预览经 WebGL2 shader（同公式）；SVG 回退路径不渲染 hsl' },
   colorGrading:  { preview: 'partial',    export: 'supported', bake: 'supported', note: '导出为真亮度加权；预览为逐通道 LUT 近似（通道值代替亮度）' },
   saturation:    { preview: 'supported', export: 'supported', bake: 'supported' },
-  masks:         { preview: 'partial',   export: 'supported', bake: 'supported', note: 'radial/linear v1；预览 WebGL2 shader 计划中（SVG 回退不渲染 masks）；UI 计划中' },
+  masks:         { preview: 'partial',   export: 'supported', bake: 'supported', note: 'radial/linear/range v2（上限 8 个）；预览经 WebGL2 shader（SVG 回退不渲染 masks）；UI 面板+overlay 已交付' },
   detail:        { preview: 'partial',   export: 'partial',   bake: 'partial', note: 'sharpness supported；noiseReduction unsupported' },
   lens:          { preview: 'partial',   export: 'partial',   bake: 'partial', note: 'vignette supported（预览 CSS 渐变精确对齐）；profile/distortion/chromatic unsupported (M8)' },
   geometry:      { preview: 'supported', export: 'supported', bake: 'supported' },

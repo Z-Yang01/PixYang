@@ -23,6 +23,8 @@ function normalizeAdjustments(adj = {}) {
 }
 
 // 归一化蒙版列表：非法/未知类型丢弃、几何钳制、调整量钳制
+const MAX_MASKS = 8; // 与 WebGL 预览 uniform 上限一致（第 9 个起预览/导出均不生效）
+
 function normalizeMasks(masks) {
   if (!Array.isArray(masks)) return [];
   const out = [];
@@ -48,9 +50,9 @@ function normalizeMasks(masks) {
       out.push({
         type: 'range',
         id: typeof m.id === 'string' ? m.id : '',
-        center: clamp01(Number(m.center) || 0),
-        range: clamp01(Number(m.range) || 0),
-        feather: clamp01(Number(m.feather) || 0),
+        center: clamp01(numOr(m.center, 0.5)),
+        range: clamp01(numOr(m.range, 0.25)),
+        feather: clamp01(numOr(m.feather, 0.25)),
         invert: !!m.invert,
         adjustments,
       });
@@ -68,7 +70,12 @@ function normalizeMasks(masks) {
       });
     }
   }
-  return out;
+  return out.slice(0, MAX_MASKS);
+}
+
+function numOr(v, fallback) {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : fallback;
 }
 
 function hasMaskData(masks) {

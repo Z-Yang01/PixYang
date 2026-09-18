@@ -90,7 +90,7 @@ tests/            vitest（node 环境 + per-file happy-dom pragma）
 
 ## 验证
 
-- 测试：`npm test`（vitest，57 个文件 / 748 例，含 golden 像素锁定 22 例 `node tests/golden/runner.cjs`，`--update` 刷新基线）；覆盖率：`npm run test:coverage`，门槛配置在 `vitest.config.js`（statements/lines 75、branches 70、functions 50）。
+- 测试：`npm test`（vitest，57 个文件 / 754 例，含 golden 像素锁定 22 例 `node tests/golden/runner.cjs`，`--update` 刷新基线）；覆盖率：`npm run test:coverage`，门槛配置在 `vitest.config.js`（statements/lines 75、branches 70、functions 50）。
 - Lint：`npm run lint`（ESLint flat config，`eslint.config.mjs`）；0 error 为准，warning 不阻塞。
 - 类型检查：`npm run typecheck`（tsc --noEmit，覆盖 src 下 TS/TSX）。
 - 格式检查：`npm run format:check`（Prettier 仅检查，禁止全量重排产生巨 diff）。

@@ -30,7 +30,7 @@ export default function useGalleryData({ onThumbnailsReady } = {}) {
 
   // 启动时方向回填完成后刷新列表
   useEffect(() => {
-    if (!api.onOrientationBackfill) return;
+    if (!api.isBridgeAvailable()) return;
     const off = api.onOrientationBackfill(() => {
       loadImages();
       loadStats();
@@ -40,7 +40,7 @@ export default function useGalleryData({ onThumbnailsReady } = {}) {
 
   // 后台缩略图生成完成后： bump 版本刷新缩略图 URL 并轻量刷新列表
   useEffect(() => {
-    if (!api.onThumbnailsReady) return;
+    if (!api.isBridgeAvailable()) return;
     const off = api.onThumbnailsReady(() => {
       useGalleryStore.setState(s => ({ thumbVersion: s.thumbVersion + 1 }));
       loadImages();
@@ -51,7 +51,7 @@ export default function useGalleryData({ onThumbnailsReady } = {}) {
 
   // 编辑预览缩略图生成完成（参数保存后异步渲染）：bump 版本刷新该图 URL
   useEffect(() => {
-    if (!api.onEditPreviewReady) return;
+    if (!api.isBridgeAvailable()) return;
     const off = api.onEditPreviewReady(() => {
       useGalleryStore.setState(s => ({ thumbVersion: s.thumbVersion + 1 }));
     });

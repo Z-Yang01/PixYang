@@ -12,6 +12,7 @@ const { editParamsToRenderSpec, buildProxySpec } = require('../shared/renderSpec
 const {
   initDatabase,
   closeDatabase,
+  backupDatabase,
   getImagesRoot,
   getDatabasePath,
   getThumbnailFilePath,
@@ -771,13 +772,15 @@ function setupIPC() {
     const { toImport, attachPairs, skipped } = prepareCameraSync(files);
 
     await extractExifBatch(toImport, (done, total) => sendProgress('import-progress', { done, total }));
-    scheduleThumbnailRebuild();
 
     const imported = await importImages(toImport);
     let attached = 0;
     for (const p of attachPairs) {
       if (await attachRawToImage(p.jpgId, p.nefSource, p.nefFilename)) attached++;
     }
+    // 必须在导入落库后调度：防抖触发时 getImagesForRebuild 才能查到新记录
+    //（此前放在 importImages 之前，同步进来的图片一直没有缩略图）
+    scheduleThumbnailRebuild();
 
     return {
       scanned: files.length,
@@ -839,7 +842,10 @@ function setupIPC() {
   ipcMain.handle('db:delete-broken-records', async (_event, ids) => {
     const list = ids || [];
     const removed = await deleteBrokenRecords(list);
-    for (const id of list) cleanupEditDerivedFiles(id);
+    for (const id of list) {
+      cancelEditSession(id); // 记录删除后仍打开的会话必须作废，防残留僵尸会话
+      cleanupEditDerivedFiles(id);
+    }
     return removed;
   });
 
@@ -927,7 +933,7 @@ function setupIPC() {
     });
     if (result.canceled || !result.filePath) return { success: false };
     try {
-      fs.copyFileSync(getDatabasePath(), result.filePath);
+      await backupDatabase(result.filePath);
       return { success: true, path: result.filePath };
     } catch (e) {
       return { success: false, error: e.message };

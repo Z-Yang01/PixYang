@@ -59,7 +59,9 @@ export default function MaskOverlay({
       const dx = p.x - g.cx;
       const dy = p.y - g.cy;
       const proj = -(dx * Math.cos(a) + dy * Math.sin(a));
-      onChangeMask?.(g.id, { feather: clamp((proj - g.rx) / g.rx, 0, 1) });
+      // 分母保底：rx 极小时按 16px 屏幕位移映射满量程，避免手柄 1px 跳变不可用
+      const base = Math.max(g.rx, 16);
+      onChangeMask?.(g.id, { feather: clamp((proj - g.rx) / base, 0, 1) });
       return;
     }
     const a = ((g.rotation || 0) * Math.PI) / 180;

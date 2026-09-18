@@ -123,6 +123,25 @@ describe('buildProxySpec（代理分辨率）', () => {
     expect(proxy.stages.find((s) => s.kind === 'exposure').params.ev).toBe(0.5);
   });
 
+  it('大图蒙版坐标等比缩放（radial/linear），range 亮度语义不缩放', () => {
+    const spec = build({
+      masks: [
+        { type: 'radial', cx: 3000, cy: 2000, rx: 1000, ry: 800, adjustments: { exposure: -1 } },
+        { type: 'linear', x0: 0, y0: 1000, x1: 6000, y1: 1000, adjustments: { exposure: 0.5 } },
+        { type: 'range', center: 0.35, range: 0.2, feather: 0.1, adjustments: { exposure: 0.5 } },
+      ],
+    });
+    const { spec: proxy, scale } = renderSpec.buildProxySpec(spec, 6000, 4000, 400);
+    const list = proxy.stages.find((s) => s.kind === 'masks').params.list;
+    expect(list[0].cx).toBe(Math.round(3000 * scale));
+    expect(list[0].cy).toBe(Math.round(2000 * scale));
+    expect(list[0].rx).toBeGreaterThanOrEqual(1);
+    expect(list[1].x1).toBe(Math.round(6000 * scale));
+    expect(list[1].y0).toBe(Math.round(1000 * scale));
+    expect(list[2].center).toBe(0.35);
+    expect(list[2].range).toBe(0.2);
+  });
+
   it('小图（≤target）原样返回不缩放', () => {
     const spec = build({ crop: { x: 10, y: 10, w: 50, h: 50 } });
     const { spec: proxy, scale } = renderSpec.buildProxySpec(spec, 300, 200, 400);

@@ -182,6 +182,7 @@ const dbDefaults = {
   saveDatabase: () => {},
   getImagesRoot: () => 'C:/PixYangImages',
   getDatabasePath: () => path.join(TMP_BASE, 'pixyang.db'),
+  backupDatabase: async () => {},
   getThumbnailFilePath: (id) => path.join(THUMBS, `${id}.jpg`),
   getThumbnailSmallFilePath: (id) => path.join(THUMBS, `${id}_s.jpg`),
   deleteThumbnailFile: () => {},
@@ -1112,23 +1113,24 @@ describe('缩略图重建、导出与备份', () => {
     await expect(call('fs:backup-database')).resolves.toEqual({ success: false });
   });
 
-  it('fs:backup-database：复制数据库文件到目标路径', async () => {
+  it('fs:backup-database：备份到目标路径（经在线备份 API）', async () => {
     const backupPath = path.join(TMP_BASE, 'backup.db');
     electronStub.dialog.showSaveDialog.mockResolvedValueOnce({ canceled: false, filePath: backupPath });
-    dbStub.getDatabasePath.mockReturnValueOnce(path.join(FIXTURES, 'a.jpg'));
+    dbStub.backupDatabase.mockImplementationOnce(async (dest) => { fs.copyFileSync(path.join(FIXTURES, 'a.jpg'), dest); });
     await expect(call('fs:backup-database')).resolves.toEqual({ success: true, path: backupPath });
+    expect(dbStub.backupDatabase).toHaveBeenCalledWith(backupPath);
     expect(fs.readFileSync(backupPath, 'utf8')).toBe('A');
   });
 
-  it('fs:backup-database：复制失败返回错误信息', async () => {
+  it('fs:backup-database：备份失败返回错误信息', async () => {
     electronStub.dialog.showSaveDialog.mockResolvedValueOnce({
       canceled: false,
       filePath: path.join(TMP_BASE, 'backup-fail.db'),
     });
-    dbStub.getDatabasePath.mockReturnValueOnce(path.join(TMP_BASE, 'no-such.db'));
+    dbStub.backupDatabase.mockImplementationOnce(async () => { throw new Error('backup boom'); });
     const result = await call('fs:backup-database');
     expect(result.success).toBe(false);
-    expect(typeof result.error).toBe('string');
+    expect(result.error).toContain('backup boom');
   });
 });
 

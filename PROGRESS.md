@@ -1208,6 +1208,68 @@ Phase 1-6、8、10-14、16-17 全量落地；Phase 7（sRGB 工作空间转换 +
 
 ---
 
+# 2026-09-19 多代理审查批：4 路并行审查揪出 1 P0 + 10 P1，修复 11 项
+
+四路并行子代理审查（前端架构链路 / 渲染管线与蒙版 / 数据层与主进程 / 编辑器 UI），主代理逐项核实后修复。审查确认无问题清单与存疑项见各 agent 报告（本节只记修复与遗留）。
+
+## 当前状态
+
+- 分支 `optimize/architecture`；摸底 748 passed → 收尾 **754 passed / 0 failed**
+  （57 文件，+6）；coverage **89.24%** / **85.07%** 分支（thresholds 全达标）；
+  lint 0 error / 10 warnings（设计意图基线不变）；typecheck 通过；build 通过；
+  golden 22/22（maxΔ=0）。
+
+## P0（三路交叉确认，e0e5961 引入）
+
+- **GLSL 蒙版类型分支与 uniform 编码互换**：shader 把 range 插在 `<2.5` 分支（2=range、3=linear），而打包编码是 linear=2/range=3——linear 蒙版预览全图恒 w=1（invert 全失效）、range 蒙版预览近乎全图 w=0；导出始终正确（执行器按类型字符串），预览与导出分叉。契约测试全绿因 simulateShaderPixel 是 shader 的平行重实现（同编码假设），真 GLSL 无任何测试执行——与 tone 检查点丢失同构的盲区。**修复**：分支序还原 + 注释同步；**防再犯**：源串断言测试（直接读 webglPreview.js 断言三分支标记出现次序 = 编码 1/2/3）。建档 `error/mask-type-encoding-glsl-uniform-divergence.md`。
+
+## P1（修复 10 项）
+
+**渲染/编辑器**：
+1. `buildProxySpec` 不缩放蒙版坐标——>400px 图的编辑预览缩略图（走代理渲染）中 radial/linear 蒙版整体失效（agent 探针实证 mean=128 无变化；range 天然免疫）。修复：radial cx/cy/rx/ry、linear x0..y1 按 scale 取整缩放（range 亮度语义不动）+ 单测。
+2. MaskPanel 键盘调整向历史栈提交陈旧快照（onChange 后同批次读 editOpsRef 仍旧值 → pushHistory 去重早退 → undo 失效/多退一步）。修复：onCommit 契约升级为 `(label, next)`，面板经 latestRef 传最新列表（既有预存在 bug，重写保留后由审查揪出）。
+3. applyPreset 静默清空全部蒙版（next 显式保留了几何却漏 masks → EDIT_DEFAULTS.masks=[] 生效，保存后持久化丢失）。修复：补 `masks: editOpsRef.current.masks`。
+4. MaskPanel linear 几何滑杆丢负值区间（统一 sliderRow 时默认 min=0，存量负坐标蒙版首次拖动即吸附跳变）。修复：linear 行恢复 `min: -W/-H`。
+
+**数据层**（agent 均以探针实证）：
+5. `updateImages` IN 分块失效——占位符按全量生成、按 900 分块传值，>900 张（跨页全选后批量设星/收藏）直接 RangeError 静默失败。修复：占位符按 chunk 生成；`getBatchImageTags` 同款一并修（当前不可达，潜伏排除）。回归：901 张实测。
+6. `fs:backup-database` 直接 copyFileSync 主库文件——WAL 中未 checkpoint 的提交全部丢失（探针实证：恢复备份=回退到上次 checkpoint）。修复：database.js 新增 `backupDatabase(destPath)` 走 better-sqlite3 `db.backup` 在线一致备份，handler await。
+7. `renameImage` 部分失败无回滚——JPG 已改名、NEF 改名失败 → DB 指向不存在路径（broken）且重试被「同名文件已存在」卡死。修复：NEF 失败时回滚 JPG 改名；顺带补文件名路径分量/非法字符校验（`../`、`\`、`..` 等此前可逃出托管目录）。
+8. `updateImage` 改导入日期移动文件部分失败无回滚，且源缺失时照旧 UPDATE 制造幽灵路径。修复：源缺失直接报错不动 DB；NEF 失败回滚已移动 JPG。
+9. `setImagesRoot` 文件移动在 DB 事务内执行——失败只回滚 DB 不回滚文件系统 → 已移动记录全 broken 且 IMAGES_ROOT 未变无法自救。修复：两段式——先移文件（失败反向回滚全部已移动、DB 不动），后单事务改 DB；幽灵记录（源缺失）跟随迁移改写 DB 的既有语义保留（测试锁定）。重构中该语义曾丢失，被既有测试当场抓回。
+10. 相机同步在 `importImages` 之前调度缩略图重建（防抖 800ms 触发时新行未插入）→ 同步导入的图片一直无缩略图。修复：移到导入/attach 完成后（与 db:import-images 对齐）。
+11. NEF 复制中断残留半截目标文件——`attachRawToImage` 的 existsSync 从此永久拒绝补配对（与 original_raw_path 毒化同效，5b49b53 的残留文件维度姊妹 bug）。修复：importOne 与 attachRawToImage 失败路径清理半截目标。
+
+## P2（修复 11 项）
+
+- 蒙版上限统一：normalizeMasks 截断 8（与 WebGL uniform 一致，此前「预览截 8、导出全量」静默分叉）+ UI 添加第 9 个时 toast 拒绝；缺失字段回退对齐 RangeMaskSchema 默认（center 0.5/range 0.25/feather 0.25，此前 NaN 回退 0 与 schema 分叉）。
+- maskTool 在对比/分屏/并排/框选裁剪入口统一清理（此前退出对比后创建层带激活状态恢复拦截图面点击）。
+- MaskPanel onChange 走 sanitizeEditOps（与 overlay 手柄同一写通道，历史栈不再可能收未归一化快照）。
+- 羽化手柄小半径增益保底（分母 max(rx,16)，1px 蒙版不再 1px 跳满量程）。
+- 非日期排序补 `, i.id` 次级稳定键（rating/size 并列值跨页顺序不稳定）。
+- deleteTag/deleteAlbum 两条 DELETE 包事务。
+- `db:delete-broken-records` 补 cancelEditSession（残留僵尸会话）。
+- 5 处 `!api.onXxx` 死守卫改 `isBridgeAvailable()`（passthrough 包装后恒真，能力检测已失效）。
+- CAPABILITY_MATRIX masks 文案更新（v2 全链已交付，原「计划中」为文档漂移）。
+
+## 测试
+
+- 摸底：748 passed。收尾：**754 passed / 0 failed**（+6：GLSL 源串断言、proxy 蒙版缩放、rename 校验/回滚、updateImages 901 张分块（60s 显式超时，负载敏感）、normalizeMasks 上限）；coverage 89.24%/85.07%；lint 0 error/10 warnings；typecheck/build 通过；golden 22/22。
+- updateImages 901 张用例全量负载下首跑 5s 超时（单跑 2s），按 2026-09-16 超时治理惯例显式放宽 60s。
+
+## 遗留（审查发现，本轮未修）
+
+- batchDeleteImages 文件删除在外层事务提交前（回滚窗口内「记录复活、文件已没」）——需拆 deleteImage 为 DB/文件两段，独立批次。
+- 退出时在途烘焙 `-temp` 残留无全局启动清扫；setImagesRoot 后打开中会话不 reconcile 路径；SVG 回退路径蒙版无预览且无提示；>8 蒙版 UI 无数量提示（已 toast 拒绝创建）。
+- 滑杆聚焦后快捷键整体静默（INPUT 早退）属交互设计问题，未深入。
+- importOne INSERT OR IGNORE 的并发 TOCTOU（UI 难构造，存疑记录）。
+
+## Git Commit
+
+- `fix: 多代理审查批 — GLSL 蒙版编码互换（P0，预览/导出分叉）+ buildProxySpec 蒙版缩放 + 数据层 7 项（分块/备份WAL/回滚/时序/半截文件）+ 编辑器 3 项（+6 例，error/ 建档）`（未 push）
+
+---
+
 # 2026-09-19 masks 三期 B（部分）：range 亮度蒙版 + radial rotation/feather 手柄化
 
 masks 遗留三类中的 range 全链落地 + 手柄化；brush（栅格存储设计）与 ai（分割模型依赖）仍留后续。

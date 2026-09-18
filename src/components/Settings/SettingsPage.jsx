@@ -36,7 +36,7 @@ export default function SettingsPage({ onSettingsChanged, onImagesChanged }) {
   }, []);
 
   useEffect(() => {
-    if (!api.onRebuildProgress) return;
+    if (!api.isBridgeAvailable()) return;
     return api.onRebuildProgress((p) => setRebuildProgress(p || null));
   }, []);
 
