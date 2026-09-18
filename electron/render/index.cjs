@@ -1,6 +1,5 @@
 // 渲染入口（主进程侧封装）：EditParams/RenderSpec → worker 线程执行。
 // 全尺寸解码/渲染都在 worker，不阻塞主进程（进而绝不阻塞 UI）。
-const path = require('path');
 const crypto = require('crypto');
 const fs = require('fs');
 const { editParamsToRenderSpec } = require('../../shared/renderSpec.cjs');

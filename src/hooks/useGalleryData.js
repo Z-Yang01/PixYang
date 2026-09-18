@@ -9,7 +9,7 @@ export default function useGalleryData({ onThumbnailsReady } = {}) {
     search, sortBy, sortOrder,
     filterTag, filterAlbum, filterFavorites, filterDate, dateRange,
     page, gridSettings,
-    loadImages, loadStats, loadAppData,
+    loadImages, loadStats,
   } = useGalleryStore();
 
   const lastSearchRef = useRef(search);

@@ -88,6 +88,20 @@ describe('importImages 导入', () => {
     expect(row.taken_at).toBe('');
   });
 
+  it('NEF 复制失败：raw_path 与 original_raw_path 均不落库（防相机同步去重跳过重试）', async () => {
+    const dir = tmpDir('neffail');
+    const jpg = makeImage('fail1.jpg', dir, 'jpgbytes');
+    const nef = makeImage('fail1.nef', dir, 'nefbytes');
+    fs.unlinkSync(nef.filepath);
+    const imported = await db.importImages([jpg, nef]);
+    expect(imported).toHaveLength(1);
+    const row = imported[0];
+    expect(row.raw_path).toBe('');
+    // 修复前：catch 清空被随后的无条件赋值覆盖，original_raw_path 仍指向未复制成功的源 NEF
+    expect(row.original_raw_path).toBe('');
+    expect(fs.existsSync(row.filepath)).toBe(true);
+  });
+
   it('无 jpg 配对的 nef 作为隐藏记录导入', async () => {
     const dir = tmpDir('lone');
     const nef = makeImage('solo.nef', dir, 'rawonly');

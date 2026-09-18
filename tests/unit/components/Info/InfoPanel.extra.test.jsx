@@ -208,7 +208,7 @@ describe('InfoPanel（补充：EXIF 全分支/标签操作/删除/评分收藏�
   it('删除图片：取消不删除；确认后删除并回调', async () => {
     const onClose = vi.fn();
     const onImageUpdated = vi.fn();
-    const { rerender } = renderPanel({ onClose, onImageUpdated });
+    renderPanel({ onClose, onImageUpdated });
     fireEvent.click(screen.getByTitle('删除图片'));
     const dialog = await deleteDialog();
     expect(screen.getByText(/确定要删除「sunset.jpg」吗？/)).toBeInTheDocument();

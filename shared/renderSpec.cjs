@@ -6,7 +6,7 @@
 // 2. 未实现的 stage 显式标 unsupported: true，由渲染器记录警告并跳过（禁止静默丢弃）；
 // 3. 本文件不做任何像素操作，行为由 golden 测试锁定。
 const { PIPELINE_ORDER, isSupportedStage } = require('./pipelineOrder.cjs');
-const { normalizeEdits, SCHEMA_VERSION } = require('./editSchema.cjs');
+const { normalizeEdits } = require('./editSchema.cjs');
 
 const SPEC_VERSION = 1;
 
@@ -43,7 +43,6 @@ function editParamsToRenderSpec(editParams, { sourceHash, working, output } = {}
 
 function buildStages(p) {
   const b = p.basic || {};
-  const has = (v) => v !== undefined && v !== null && v !== 0 && v !== '';
 
   const stages = [
     {

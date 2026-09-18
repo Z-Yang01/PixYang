@@ -516,12 +516,13 @@ async function importOne(root, img, { pair, hidden }) {
       if (pair.filepath !== rawDestPath) {
         await fs.promises.copyFile(pair.filepath, rawDestPath);
       }
+      rawSourcePath = pair.filepath;
     } catch (err) {
+      // 复制失败时 raw_path/original_raw_path 均不落库：
+      // original_raw_path 若指向未复制成功的源 NEF，相机同步会按它去重而永久跳过重试导入
       console.error('[导入] NEF 复制失败:', pair.filepath, err.message);
       rawDestPath = '';
-      rawSourcePath = '';
     }
-    rawSourcePath = pair.filepath;
   }
 
   db.prepare(`
@@ -848,7 +849,7 @@ async function setImagesRoot(newRoot) {
   // 整个迁移包在一个事务里：任何一步失败即回滚全部 DB 更新，避免半迁移状态
   const tx = db.transaction(() => {
     for (const img of images) {
-      let relativePath = '';
+      let relativePath;
       const normalizedOldRoot = path.resolve(oldRoot);
       const normalizedFile = path.resolve(img.filepath);
 

@@ -1205,3 +1205,80 @@ Phase 1-6、8、10-14、16-17 全量落地；Phase 7（sRGB 工作空间转换 +
 ## Git Commit
 
 - `refactor(build+ui): api 层全量迁移收口（5 文件归零）+ JSX automatic runtime（vitest esbuild 一行 + 48 文件清理无用 React 导入，lint 93→47）`（未 push）
+
+---
+
+# 2026-09-19 lint 清理批：no-useless-assignment 排查揪出 2 个真 bug（P0 渲染正确性）
+
+## 当前状态
+
+- 分支 `optimize/architecture`；摸底 **734 passed / 0 failed** → 收尾 **738 passed / 0 failed**
+  （57 文件，+4：tone 阴影逐像素回归 3 + NEF 复制失败回归 1）；coverage **89.22%** /
+  **84.81%** 分支（thresholds 全达标）；lint 0 error / **10 warnings（47 → 10，剩余全部为
+  记录在案的 exhaustive-deps 设计意图）**；typecheck 通过；`npx vite build` 通过；
+  golden 21/21（**含 shadows 的 4 个 case 基线刷新**，见下）。
+
+## 揪出并修复的真 bug
+
+### [P0] tone 阴影渲染失效（error/tone-shadows-checkpoint-lost.md 建档）
+
+- **症状**（16 级灰阶探针实证）：`shadows>0` 输出与输入逐像素相同（提亮彻底丢失）；
+  `shadows<0` 输出近整幅负片（黑→白）。烘焙/导出/编辑预览缩略图全部受害。
+- **根因**：仿射复合优化轮（63705a2a）中 `applyToneAffine` 把 gamma 边界物化的 raw
+  检查点赋给函数参数（局部变量），却只 `return affine`——调用方拿不回 pixels，外层
+  管线状态停留在 tone 之前，后续 flushAffine 用陈旧数据应用镜像 affine。**当时
+  `golden --update` 把坏输出锁进了基线**，golden 此后永远全绿。
+- **发现路径**：eslint `no-useless-assignment` 对函数内两处 `pixels` 赋值的警告正是
+  检查点丢失的直接信号——PROGRESS 2026-09-11 记录的「疑似 Bug 候选，需人工判断」
+  在本批排查时兑现为 P0。
+- **修复**：`applyToneAffine` 返回 `{ affine, pixels }`，调用方显式回接检查点。
+  修复后探针：+40 黑端纯黑/暗部提升/白端 255 保持；−40 黑端纯黑/暗部压暗/白端保持；
+  0 恒等——与 M5 设计语义一致。
+- **基线核验**：golden 4 个含 shadows 的 case（012/013/015/019）差值 meanΔ 24~137
+  坐实旧基线为坏输出；刷新后人工抽查锚点（黑端纯黑、lift/crush 方向正确、无负片特征）。
+- **防再犯**：tone 是唯一没有「执行器 vs 独立数学」交叉验证的渲染阶段（curves 起
+  其余阶段均有）——补 3 例：shadows>0 / shadows<0 / exposure+shadows 组合，独立
+  sharp 检查点链逐像素一致（Δ≤1）+ 语义锚点断言。
+- **用户影响面**：已烘焙/导出的含阴影产物是坏的；非破坏编辑参数保留，重开编辑重新
+  导出即得正确结果。预览端（WebGL2/SVG）一直按正确数学实现，修复后预览=导出首次
+  真正一致（M5 记录的 shadows「近似偏差 16.9」实为混入本 bug）。
+
+### [P1] NEF 复制失败仍写 original_raw_path（相机同步去重被毒化）
+
+- `importOne` 的 catch 清空 `rawSourcePath` 后，被 try/catch 之后的无条件
+  `rawSourcePath = pair.filepath` 覆盖——NEF 复制失败时 `original_raw_path` 仍指向
+  未复制成功的源文件，相机同步按它去重会**永久跳过**该 NEF 的重试导入。
+- 修复：赋值移入 try 成功路径（catch 只清 rawDestPath）+ 回归测试
+  （删除源 NEF 后导入，断言 raw_path 与 original_raw_path 均为空）。
+- 注：此为 sed 迁移无关的既有 bug，同为 useless-assignment 警告兑现。
+
+## lint 清理（47 → 10）
+
+- **配置完善**（误报类）：`no-unused-vars` 增 `ignoreRestSiblings`（`const { output,
+  ...rest }` 剔除键惯用法）+ `varsIgnorePattern: '^_'`（有意占位）。
+- **死代码删除**（逐项 grep 验证）：main.js 两个未用导入、render/index.cjs `path`
+  require、renderSpec `SCHEMA_VERSION`/`has` 助手、ImageViewer 死 dropdown 导入块
+  与 ChevronDown、MaskPanel 重构残留 `bind` 助手（滑杆实际用内联 props）、
+  useGalleryData `loadAppData`、测试文件 12 处未用解构/导入。
+- **死初始化**：database.js relativePath / colorGrading w / galleryStore nextOrder /
+  main.test cur 末次自增（EXIF 偏移构建器，确认其后无读取）。
+- 剩余 10 条全部为 react-hooks/exhaustive-deps（mount-only 设计意图，PROGRESS 多轮
+  记录在案），不再清理。
+
+## 测试
+
+- 摸底：`npm test` → 734 passed（与上轮一致）。
+- 收尾：`npm test` → **738 passed / 0 failed**；coverage 89.22%/84.81%；lint 0 error /
+  10 warnings；typecheck 通过；build 通过；golden 21/21（4 case 基线刷新+锚点核验）；
+  preview-baseline.json 随基线重算（该工具为 M3 CSS 线性近似，不含 shadows 语义，
+  数值不构成对齐依据，真实预览对齐由 M7 契约测试锁定）。
+
+## 遗留与下一步
+
+- masks 三期 B：brush/range/ai 蒙版类型与 rotation/feather 手柄化。
+- webglPreview.js 57.5% 维持既有结论。
+- 10 条 exhaustive-deps 警告为设计意图基线，不动。
+
+## Git Commit
+
+- `fix(render+db): tone 阴影检查点丢失（P0，golden 基线曾锁死坏输出）+ NEF 复制失败写 original_raw_path（P1）+ lint 47→10 死代码清理（+4 回归测试）`（未 push）

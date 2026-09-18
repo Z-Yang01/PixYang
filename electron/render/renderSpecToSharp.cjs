@@ -125,9 +125,12 @@ async function renderSpecToSharp(spec, inputPath, outputPath, opts = {}) {
         break;
       }
 
-      case 'tone':
-        affine = await applyToneAffine(pixels, inputPath, affine, stage.params || {}, ctx);
+      case 'tone': {
+        const tone = await applyToneAffine(pixels, inputPath, affine, stage.params || {}, ctx);
+        affine = tone.affine;
+        if (tone.pixels) pixels = tone.pixels;
         break;
+      }
 
       case 'curves': {
         // 曲线作用于显示参照（gamma）空间：先物化 pending 仿射，再在 raw 检查点上原位查表
@@ -241,9 +244,11 @@ function hasGeometry(params) {
   return rotate % 360 !== 0 || flipH || flipV;
 }
 
-// 阴影 gamma 边界的仿射处理：线性段先行复合，gamma 前物化，gamma 后的高光进入新仿射
+// 阴影 gamma 边界的仿射处理：线性段先行复合，gamma 前物化，gamma 后的高光进入新仿射。
+// 返回 { affine, pixels }：pixels 为 gamma 边界物化出的检查点（未物化时 null，调用方保持原状态）——
+// 仿射复合优化轮曾只回传 affine 导致检查点丢失（阴影恒等/负片，error/ 建档）。
 async function applyToneAffine(pixels, inputPath, affine, { contrast = 0, highlights = 0, shadows = 0, whites = 0, blacks = 0 } = {}, ctx) {
-  if (!contrast && !highlights && !shadows && !whites && !blacks) return affine;
+  if (!contrast && !highlights && !shadows && !whites && !blacks) return { affine, pixels: null };
 
   // 线性段：白场/黑场/对比度复合进 pending
   const cf = 1 + contrast / 50;
@@ -256,7 +261,7 @@ async function applyToneAffine(pixels, inputPath, affine, { contrast = 0, highli
   if (shadows === 0) {
     // 无 gamma：高光继续并入 pending
     if (highlightSlope !== 1) affine = mulAffine(affine, highlightSlope, 0);
-    return affine;
+    return { affine, pixels: null };
   }
 
   // gamma 边界：先物化线性段
@@ -268,7 +273,7 @@ async function applyToneAffine(pixels, inputPath, affine, { contrast = 0, highli
     const e = clampNum(1 - shadows / 220, 0.55, 1);
     pixels = await materialize(sourceSharp(pixels, inputPath).gamma(1, 1 / e));
     if (highlightSlope !== 1) affine = mulAffine(IDENTITY(), highlightSlope, 0);
-    return affine;
+    return { affine, pixels };
   }
 
   // 压暗阴影：镜像域三算子各自独立检查点（同管线内 linear→gamma→linear 会被 libvips 错误折叠）
@@ -276,8 +281,8 @@ async function applyToneAffine(pixels, inputPath, affine, { contrast = 0, highli
   pixels = await materialize(sourceSharp(pixels, inputPath).linear(-1, 255));
   pixels = await materialize(sourceSharp(pixels, inputPath).gamma(1, e));
   // 镜像回切 linear(-1,255) 与高光 linear 复合为单次：out = -h*x + 255h
-  if (highlightSlope !== 1) return { slope: [-highlightSlope, -highlightSlope, -highlightSlope], offset: [255 * highlightSlope, 255 * highlightSlope, 255 * highlightSlope] };
-  return { slope: [-1, -1, -1], offset: [255, 255, 255] };
+  if (highlightSlope !== 1) return { affine: { slope: [-highlightSlope, -highlightSlope, -highlightSlope], offset: [255 * highlightSlope, 255 * highlightSlope, 255 * highlightSlope] }, pixels };
+  return { affine: { slope: [-1, -1, -1], offset: [255, 255, 255] }, pixels };
 }
 
 async function flushAffineInternal(pixels, inputPath, affine, ctx) {

@@ -4,9 +4,9 @@ const path = require('path');
 const fs = require('fs');
 const exifr = require('exifr');
 const { generateThumbnailTiers, extractNefPreview, normalizeEditBase, getImageMeta, closeWorker } = require('./imageWorker');
-const { renderFromEditParams, renderFromSpec, computeSourceHash, callWorker, sendToWorker, closeRenderWorker } = require('./render/index.cjs');
+const { renderFromEditParams, computeSourceHash, callWorker, sendToWorker, closeRenderWorker } = require('./render/index.cjs');
 const {
-  getEditPreviewPath, getEditPreviewPathFor, setEditPreviewPath, clearEditPreview, enforceEditPreviewLimit,
+  getEditPreviewPath, setEditPreviewPath, clearEditPreview, enforceEditPreviewLimit,
 } = require('./database');
 const { editParamsToRenderSpec, buildProxySpec } = require('../shared/renderSpec.cjs');
 const {

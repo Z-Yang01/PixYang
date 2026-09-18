@@ -41,17 +41,6 @@ function emptyImage() {
   return { isEmpty: () => true };
 }
 
-function nonEmptyImage(width, height) {
-  return {
-    isEmpty: () => false,
-    getSize: () => ({ width, height }),
-    resize: vi.fn(() => ({
-      toJPEG: vi.fn(() => Buffer.from('thumbjpg')),
-      toPNG: vi.fn(() => Buffer.from('thumbpng')),
-    })),
-  };
-}
-
 function buildExifJpeg(options = {}) {
   const {
     orientation = 1,
@@ -114,7 +103,6 @@ function buildExifJpeg(options = {}) {
   const lensOff = cur;
   cur += lensB.length;
   const dtOff = cur;
-  cur += dtB.length;
   const ifd0Entries = [
     entry(0x010f, 2, makeB.length, u32le(makeOff)),
     entry(0x0110, 2, modelB.length, u32le(modelOff)),

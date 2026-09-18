@@ -49,7 +49,7 @@ describe('weightFor（亮度区间权重）', () => {
 describe('gradePixel / applyColorGradingInPlace', () => {
   it('黑色像素受阴影青色调（B 升 R 不动），白色不变', () => {
     const grading = { shadows: [210, 60], midtones: [], highlights: [] };
-    const [dr, dg, db] = cg.gradePixel([0, 0, 0], cg.buildGradeLuts(grading));
+    const [dr, , db] = cg.gradePixel([0, 0, 0], cg.buildGradeLuts(grading));
     expect(db).toBeGreaterThan(10);
     expect(dr).toBe(0);
     const [wr, wg, wb] = cg.gradePixel([255, 255, 255], cg.buildGradeLuts(grading));

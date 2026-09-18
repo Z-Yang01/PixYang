@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-12T07:31:31.880Z",
+  "generatedAt": "2026-09-18T16:14:38.804Z",
   "note": "前端预览近似（CSS 语义 sharp 模拟）与渲染管线输出的像素差异基线；不设通过阈值，用于 M6/M7 对齐追踪",
   "cases": {
     "003-exposure-1ev": {
@@ -35,8 +35,8 @@
       "meanDelta": 17.7002
     },
     "015-full-basic-combo": {
-      "maxDelta": 61,
-      "meanDelta": 21.5855
+      "maxDelta": 60,
+      "meanDelta": 22.733
     }
   }
 }

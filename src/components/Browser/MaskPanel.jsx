@@ -25,16 +25,6 @@ export default function MaskPanel({ masks, session, selectedId, onSelect, onComm
     onChange(nextMasks((list) => list.map((m) => (m.id === selectedId ? { ...m, adjustments: { ...m.adjustments, [key]: value } } : m))));
   };
 
-  const bind = (key) => ({
-    onPointerDown: () => { dragRef.current = key; },
-    onPointerUp: () => {
-      if (dragRef.current) {
-        dragRef.current = null;
-        onCommit?.('蒙版调整');
-      }
-    },
-  });
-
   const selected = masks.find((m) => m.id === selectedId) || null;
   const W = session?.width || 0;
   const H = session?.height || 0;

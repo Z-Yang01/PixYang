@@ -64,12 +64,13 @@ export default [
     plugins: { '@typescript-eslint': tseslint.plugin },
     rules: {
       'no-unused-vars': 'off',
-      '@typescript-eslint/no-unused-vars': ['warn', { args: 'none', caughtErrors: 'none' }],
+      '@typescript-eslint/no-unused-vars': ['warn', { args: 'none', caughtErrors: 'none', ignoreRestSiblings: true, varsIgnorePattern: '^_' }],
     },
   },
   {
     rules: {
-      'no-unused-vars': ['warn', { args: 'none', caughtErrors: 'none' }],
+      // ignoreRestSiblings：`const { output, ...rest }` 剔除键惯用法不算未用；^_ 前缀为有意占位
+      'no-unused-vars': ['warn', { args: 'none', caughtErrors: 'none', ignoreRestSiblings: true, varsIgnorePattern: '^_' }],
       // EXIF 二进制解析故意匹配控制字符（阶段 2 换 exifr 后消失）
       'no-control-regex': 'warn',
       // 累加器模式的末次自增属正常写法，待人工复核

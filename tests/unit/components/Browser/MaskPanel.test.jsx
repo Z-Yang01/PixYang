@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, fireEvent, cleanup } from '@testing-library/react';
 import MaskPanel from '@/components/Browser/MaskPanel';
 
@@ -24,7 +24,7 @@ describe('MaskPanel（蒙版面板）', () => {
   afterEach(() => cleanup());
 
   it('空列表显示占位；蒙版 chip 列表点击选中', () => {
-    const { container, onSelect } = setup();
+    const { container } = setup();
     expect(container.textContent).toContain('尚无蒙版');
     const { container: c2, onSelect: sel2 } = setup([radial(), linear], 'm1');
     expect(c2.textContent).not.toContain('尚无蒙版');
@@ -43,7 +43,7 @@ describe('MaskPanel（蒙版面板）', () => {
   });
 
   it('几何滑杆拖动实时更新，pointerup 提交一次', () => {
-    const { onCommit, onChange, container } = setup([radial()], 'm1');
+    const { onCommit, onChange } = setup([radial()], 'm1');
     const cxSlider = screen.getByLabelText(/^中心 X/);
     fireEvent.pointerDown(cxSlider);
     fireEvent.change(cxSlider, { target: { value: '220' } });
@@ -56,7 +56,7 @@ describe('MaskPanel（蒙版面板）', () => {
   });
 
   it('调整滑杆（曝光）更新 adjustments，其余蒙版不动', () => {
-    const { onChange, container } = setup([radial(), linear], 'm1');
+    const { onChange } = setup([radial(), linear], 'm1');
     const expSlider = screen.getByLabelText(/^曝光/);
     fireEvent.change(expSlider, { target: { value: '-1' } });
     const last = onChange.mock.calls.at(-1)[0];

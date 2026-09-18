@@ -6,11 +6,8 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '
 import {
   RotateCw, RotateCcw, FlipHorizontal2, FlipVertical2, Save, Heart, HeartOff,
   Star, X, ChevronLeft, ChevronRight, Camera, Calendar, Info, Pencil,
-  Crop, RotateCcwSquare, Loader2, SlidersHorizontal, Undo2, Redo2, ChevronDown,
+  Crop, RotateCcwSquare, Loader2, SlidersHorizontal, Undo2, Redo2,
 } from 'lucide-react';
-import {
-  DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem,
-} from '@/components/ui/dropdown-menu';
 import { toast } from 'sonner';
 import { matchViewerShortcut, VIEWER_ACTIONS, ratingFromViewerAction } from '@/lib/shortcuts';
 import api from '@/lib/api';

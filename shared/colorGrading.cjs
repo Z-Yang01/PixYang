@@ -43,7 +43,7 @@ function tintRgb(hue) {
 // 亮度区间权重（L 0..1，平方衰减让过渡更柔）：
 // 阴影在 L=0 全量、0.5 归零；高光镜像；中间调以 0.5 为中心 ±0.35 带通
 function weightFor(range, L) {
-  let w = 0;
+  let w;
   if (range === 'shadows') w = clamp(1 - L / 0.5, 0, 1);
   else if (range === 'highlights') w = clamp((L - 0.5) / 0.5, 0, 1);
   else w = clamp(1 - Math.abs(L - 0.5) / 0.35, 0, 1);

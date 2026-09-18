@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, fireEvent, cleanup, act } from '@testing-library/react';
+import { render, screen, fireEvent, cleanup } from '@testing-library/react';
 import ImageViewer from '@/components/Browser/ImageViewer';
 
 const testImage = {
@@ -329,7 +329,7 @@ describe('ImageViewer', () => {
 
   it('编辑模式：颜色分级滑杆更新参数与预览表，清除按钮联动', async () => {
     mockEditBridge();
-    const { container } = render(<ImageViewer {...baseProps()} />);
+    render(<ImageViewer {...baseProps()} />);
     fireEvent.click(screen.getByTitle(/编辑模式/));
     await screen.findByText('编辑');
     expect(screen.getByText('颜色分级')).toBeInTheDocument();

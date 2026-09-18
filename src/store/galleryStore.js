@@ -53,7 +53,7 @@ const useGalleryStore = create((set, get) => ({
   toggleSort: (by) => {
     const { sortBy, sortOrder } = get();
     let nextSort = sortBy;
-    let nextOrder = sortOrder;
+    let nextOrder;
     if (by === sortBy) {
       nextOrder = sortOrder === 'ASC' ? 'DESC' : 'ASC';
     } else {
