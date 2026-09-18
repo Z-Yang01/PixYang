@@ -1,6 +1,5 @@
 // @vitest-environment happy-dom
 // Label 冒烟：渲染、htmlFor 关联、className 合并、children 文案。
-import React from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/react';
 import { Label } from '@/components/ui/label';

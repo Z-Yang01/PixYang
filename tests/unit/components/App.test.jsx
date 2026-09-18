@@ -6,7 +6,6 @@
 // 任何路由下 Routes 匹配即抛 TypeError: meta.relativePath.startsWith is not a function，
 // App 挂载即崩（真实运行同样白屏）。按红线只记录不修：
 // 第 1 个用例固化崩溃现状，其余冒烟用例 skip，待 src 修复后取消 skip。
-import React from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';

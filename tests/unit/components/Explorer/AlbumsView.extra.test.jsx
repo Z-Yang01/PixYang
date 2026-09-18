@@ -1,5 +1,4 @@
 // @vitest-environment happy-dom
-import React from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, cleanup, within } from '@testing-library/react';
 import { toast } from 'sonner';

@@ -6,6 +6,9 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 // 独立于 vite.config.js，避免加载 tailwind 插件
 export default defineConfig({
+  // 与生产构建（@vitejs/plugin-react automatic runtime）对齐，
+  // JSX 不再依赖各文件手写 `import React`（2026-09-11 教训记录的根治项）
+  esbuild: { jsx: 'automatic' },
   resolve: {
     alias: {
       '@': path.resolve(__dirname, 'src'),

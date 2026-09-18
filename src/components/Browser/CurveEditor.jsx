@@ -1,4 +1,4 @@
-import React, { useRef, useState, useCallback, useEffect } from 'react';
+import { useRef, useState, useCallback, useEffect } from 'react';
 import curvesLib from '../../../shared/curves.cjs';
 
 const { normalizePoints, evalAt } = curvesLib;

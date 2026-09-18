@@ -1,6 +1,5 @@
 // @vitest-environment happy-dom
 // Sidebar 冒烟：筛选/共享数据来自 galleryStore，渲染前用 setState 预置。
-import React from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, cleanup } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';

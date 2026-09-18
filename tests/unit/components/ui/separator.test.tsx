@@ -1,6 +1,5 @@
 // @vitest-environment happy-dom
 // Separator 冒烟：默认水平/装饰性、垂直方向、非装饰时暴露 role=separator、className 合并。
-import React from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, cleanup } from '@testing-library/react';
 import { Separator } from '@/components/ui/separator';

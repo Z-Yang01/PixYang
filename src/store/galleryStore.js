@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import api from '../lib/api';
 import { buildImageQuery, createLoadSequencer } from '../lib/gallery';
 
 export const SORT_KEYS = ['import_date', 'created_at', 'filename', 'size', 'rating'];
@@ -60,8 +61,8 @@ const useGalleryStore = create((set, get) => ({
       nextOrder = by === 'filename' ? 'ASC' : 'DESC';
     }
     set({ sortBy: nextSort, sortOrder: nextOrder, page: 1 });
-    window.pixyang?.setSetting('sort_by', nextSort);
-    window.pixyang?.setSetting('sort_order', nextOrder);
+    api.setSetting('sort_by', nextSort);
+    api.setSetting('sort_order', nextOrder);
   },
 
   setSortFromSettings: (by, order) => set({
@@ -114,14 +115,14 @@ const useGalleryStore = create((set, get) => ({
   }),
 
   loadStats: async () => {
-    if (!window.pixyang) return;
-    const stats = await window.pixyang.getStats();
+    if (!api.isBridgeAvailable()) return;
+    const stats = await api.getStats();
     if (stats) set({ stats });
   },
 
   // 分页查询当前筛选下的图片；过期响应（竞态）直接丢弃
   loadImages: async (opts = {}) => {
-    if (!window.pixyang) return;
+    if (!api.isBridgeAvailable()) return;
     const state = get();
     if (!loadImagesSeq) loadImagesSeq = createLoadSequencer();
     const token = loadImagesSeq.next();
@@ -156,7 +157,7 @@ const useGalleryStore = create((set, get) => ({
             page: state.page,
             gridSettings: state.gridSettings,
           });
-      const result = await window.pixyang.getImages(options);
+      const result = await api.getImages(options);
       if (!loadImagesSeq.isCurrent(token)) return;
       set({ images: result.images, totalImages: result.total });
     } catch (err) {
@@ -171,11 +172,11 @@ const useGalleryStore = create((set, get) => ({
   setCopiedEdits: (edits) => set({ copiedEdits: edits }),
 
   loadAppData: async () => {
-    if (!window.pixyang) return;
+    if (!api.isBridgeAvailable()) return;
     const [tags, albums, importDates] = await Promise.all([
-      window.pixyang.getTags(),
-      window.pixyang.getAlbums(),
-      window.pixyang.getImportDates(),
+      api.getTags(),
+      api.getAlbums(),
+      api.getImportDates(),
     ]);
     set({ tags: tags || [], albums: albums || [], importDates: importDates || [] });
   },

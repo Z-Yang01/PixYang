@@ -1,5 +1,4 @@
 // @vitest-environment happy-dom
-import React from 'react';
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import ConfirmDialog from '@/components/Layout/ConfirmDialog';

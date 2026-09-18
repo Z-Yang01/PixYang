@@ -1,4 +1,3 @@
-import React from 'react';
 import { Star } from 'lucide-react';
 
 // 统一评分星组件（原 ImageGrid/InfoPanel/ImageViewer 三处各自实现）

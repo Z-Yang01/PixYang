@@ -1,8 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Search, Trash2, Tag } from 'lucide-react';
 import ConfirmDialog from '../Layout/ConfirmDialog';
+import api from '@/lib/api';
 
 const TAG_COLORS = ['#818cf8', '#f472b6', '#fbbf24', '#4ade80', '#f87171', '#22d3ee', '#c084fc', '#fb923c'];
 
@@ -15,14 +16,14 @@ export default function TagManager({ onSelectTag, onRefresh }) {
   useEffect(() => { loadTags(); }, []);
 
   const loadTags = async () => {
-    if (!window.pixyang) return;
-    const t = await window.pixyang.getTags();
+    if (!api.isBridgeAvailable()) return;
+    const t = await api.getTags();
     setTags(t);
   };
 
   const handleCreate = async () => {
-    if (!newName.trim() || !window.pixyang) return;
-    const tag = await window.pixyang.createTag(newName.trim(), newColor);
+    if (!newName.trim() || !api.isBridgeAvailable()) return;
+    const tag = await api.createTag(newName.trim(), newColor);
     if (tag) {
       setNewName('');
       setNewColor(TAG_COLORS[Math.floor(Math.random() * TAG_COLORS.length)]);
@@ -35,8 +36,8 @@ export default function TagManager({ onSelectTag, onRefresh }) {
     // deleteTarget 存完整 tag 对象：确认框消息需要 name，删除需要 id
     const id = deleteTarget?.id;
     setDeleteTarget(null);
-    if (!id || !window.pixyang) return;
-    await window.pixyang.deleteTag(id);
+    if (!id || !api.isBridgeAvailable()) return;
+    await api.deleteTag(id);
     await loadTags();
     onRefresh?.();
   };

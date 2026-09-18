@@ -57,6 +57,8 @@ tests/            vitest（node 环境 + per-file happy-dom pragma）
 
 - 不要添加代码注释，除非用户明确要求。
 - Electron 端使用 CommonJS（`require`/`module.exports`）；前端使用 ESM + JSX。
+- JSX 为 automatic runtime（生产走 @vitejs/plugin-react；vitest 在 `vitest.config.js` 显式 `esbuild: { jsx: 'automatic' }`）：**不要**为 JSX 写 `import React`，需要 React API 时用命名导入（如 `import { useState } from 'react'`）；仅 main.jsx 与个别测试因使用 `React.StrictMode`/`React.useState` 保留默认导入。
+- 前端组件/store **不得直调 `window.pixyang`**，一律经 `src/lib/api.js`（守卫集中在该层，桥缺失时方法返回 undefined）。
 - 错误处理保持现有风格：`try/catch` + `console.error('[xxx] ...', e.message)`。
 - IPC 通道命名遵循现有约定：`db:*`（数据库）、`fs:*`（文件系统）、`dialog:*`、`settings:*`、`shell:*`。
 - 新功能需在 `preload.js` 暴露同名 `window.pixyang` 方法。

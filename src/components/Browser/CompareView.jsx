@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 
 // Before/After 对比视图（Phase 13，独立子组件）。
 // mode：

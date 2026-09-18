@@ -1,5 +1,4 @@
 // @vitest-environment happy-dom
-import React from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, cleanup } from '@testing-library/react';
 import ImageViewer from '@/components/Browser/ImageViewer';

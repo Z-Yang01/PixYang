@@ -1,5 +1,4 @@
 // @vitest-environment happy-dom
-import React from 'react';
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, fireEvent, cleanup } from '@testing-library/react';
 import StarRating from '@/components/common/StarRating';

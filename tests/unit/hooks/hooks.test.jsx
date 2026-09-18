@@ -1,5 +1,4 @@
 // @vitest-environment happy-dom
-import React from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, fireEvent, cleanup, waitFor, act } from '@testing-library/react';
 import useGlobalShortcuts from '@/hooks/useGlobalShortcuts';

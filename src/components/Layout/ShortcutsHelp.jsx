@@ -1,4 +1,3 @@
-import React from 'react';
 import { Button } from '@/components/ui/button';
 import { X, Keyboard } from 'lucide-react';
 import { SHORTCUT_GROUPS } from '@/lib/shortcuts';

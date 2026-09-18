@@ -1,6 +1,5 @@
 // @vitest-environment happy-dom
 // Badge 冒烟：全部 cva variant 分支、className 合并、asChild(Slot) 与 badgeVariants 导出。
-import React from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/react';
 import { Badge, badgeVariants } from '@/components/ui/badge';

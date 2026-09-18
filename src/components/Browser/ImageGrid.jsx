@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react';
+import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { ImageOff } from 'lucide-react';
 import { groupImagesByDate, pageSizeOf, addRangeToSet, toggleIdInSet, createLoadSequencer, hasActiveFilters as computeHasActiveFilters } from '@/lib/gallery';

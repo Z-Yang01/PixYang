@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -10,6 +10,7 @@ import {
 } from '@/components/ui/dialog';
 import { Loader2, FileImage, CheckCircle2, Check, FolderOpen } from 'lucide-react';
 import { formatFileSize, todayStr } from '@/lib/format';
+import api from '@/lib/api';
 
 const PREVIEWABLE = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp'];
 
@@ -31,8 +32,8 @@ export default function ImportDialog({ onClose, onDone, initialFiles = null }) {
 
   // 主进程 EXIF 提取的批内进度（当前批次细分显示）
   useEffect(() => {
-    if (!window.pixyang?.onImportProgress) return;
-    return window.pixyang.onImportProgress((p) => setExifProgress(p || null));
+    if (!api.onImportProgress) return;
+    return api.onImportProgress((p) => setExifProgress(p || null));
   }, []);
 
   useEffect(() => {
@@ -50,10 +51,10 @@ export default function ImportDialog({ onClose, onDone, initialFiles = null }) {
   }, [foundFiles]);
 
   const loadPreviews = async (files) => {
-    if (!window.pixyang) return;
+    if (!api.isBridgeAvailable()) return;
     const paths = files.filter(f => PREVIEWABLE.includes(f.format)).map(f => f.filepath);
     if (paths.length === 0) return;
-    const urlMap = (await window.pixyang.toFileUrls(paths)) || {};
+    const urlMap = (await api.toFileUrls(paths)) || {};
     const next = {};
     for (const [p, url] of Object.entries(urlMap)) {
       if (url) next[p] = url;
@@ -62,14 +63,14 @@ export default function ImportDialog({ onClose, onDone, initialFiles = null }) {
   };
 
   const handleSelectDir = async () => {
-    if (!window.pixyang || importing) return;
-    const dir = await window.pixyang.selectDirectory();
+    if (!api.isBridgeAvailable() || importing) return;
+    const dir = await api.selectDirectory();
     if (dir) {
       setSelectedDir(dir);
       setScanning(true);
       setResult(null);
       setError('');
-      const files = await window.pixyang.scanDirectory(dir);
+      const files = await api.scanDirectory(dir);
       setFoundFiles(files || []);
       setScanning(false);
     }
@@ -86,7 +87,7 @@ export default function ImportDialog({ onClose, onDone, initialFiles = null }) {
   const checkedCount = checkedIds.size;
 
   const handleImport = async () => {
-    if (!window.pixyang || importing) return;
+    if (!api.isBridgeAvailable() || importing) return;
     const files = foundFiles.filter(f => checkedIds.has(f.filepath));
     if (files.length === 0) return;
     setImporting(true);
@@ -109,7 +110,7 @@ export default function ImportDialog({ onClose, onDone, initialFiles = null }) {
         }
         const batch = files.slice(i, i + batchSize);
         setCurrentFile(batch[0].filename);
-        const imported = await window.pixyang.importImages(batch, override);
+        const imported = await api.importImages(batch, override);
         allImported.push(...(imported || []));
         setProgress(Math.round(((i + batch.length) / files.length) * 100));
       }

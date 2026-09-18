@@ -1140,3 +1140,68 @@ Phase 1-6、8、10-14、16-17 全量落地；Phase 7（sRGB 工作空间转换 +
 ## Git Commit
 
 - `refactor(ui): 前端架构收尾 — ImageGrid 拆分（ImageCard/PaginationBar/GridDialogs/useMarqueeSelection）+ App 批量操作抽 useBatchActions + InfoPanel/ImageViewer/ImageGrid 直调迁 api 层（+3 例）`（未 push）
+
+---
+
+# 2026-09-18 工程化收尾批：api 层全量迁移 + JSX automatic runtime（React 导入误报根治）
+
+## 当前状态
+
+- 分支 `optimize/architecture`；摸底 **734 passed / 0 failed**（上轮收尾一致）→ 收尾
+  **734 passed / 0 failed**（57 文件，测试数不变）；coverage **89.09%** 语句 /
+  **84.78%** 分支（thresholds 全达标）；lint 0 error / **47 warnings（93 → 47，
+  -46 全部为 React 导入系统性误报清除）**；typecheck 通过；`npx vite build` 通过；
+  golden 21/21（maxΔ=0）。
+
+## 已完成
+
+1. **api 层迁移收口**（上轮遗留 5 文件）：SettingsPage 36 / AlbumsView 13 /
+   galleryStore 10 / ImportDialog 9 / TagManager 6 处 `window.pixyang` 直调 →
+   `api.*` + `api.isBridgeAvailable()` 守卫（可选链形态 `window.pixyang?.foo` →
+   `api.foo`）。**src 目录现仅 api.js 自身访问 window.pixyang**，「前端统一经
+   api 层访问桥」从约定变为全量事实。
+2. **JSX automatic runtime 迁移**（2026-09-11 教训记录的根治项）：
+   - 根因探明：生产构建（@vitejs/plugin-react）早已是 automatic；.tsx 因 esbuild
+     自动读取 tsconfig `jsx:'react-jsx'`（该机制仅对 TS 文件生效）也已 automatic；
+     唯独 .jsx 在 vitest 独立配置下走 esbuild classic 默认 → 测试必须
+     `import React`（当年删除导入导致 179 例爆红的机制，.tsx 从未受影响的原因）。
+   - 修复仅一行：vitest.config.js 显式 `esbuild: { jsx: 'automatic' }`。
+   - 清理 48 文件无用默认 React 导入（`import React, {X}` → `import {X}`、纯
+     `import React` 删整行；PaginationBar 先行金丝雀验证）；7 文件保留（确实使用
+     `React.useState/createRef/StrictMode`：main.jsx 与 6 个测试文件）。
+   - lint 警告 93 → 47：src + tests 的 React-unused 误报全部清零。
+
+## 过程修复（测试驱动抓获）
+
+- sed 首条规则把 `!window.pixyang?.onXxx`（桥方法存在性检查）误转为
+  `!api.isBridgeAvailable()?.onXxx`（布尔值取属性恒 undefined → 订阅被静默跳过），
+  ImportDialog.onImportProgress / SettingsPage.onRebuildProgress 两处——既有订阅
+  测试当场红（3 例），修正为 `!api.onXxx`（与 useGalleryData 既有模式一致）。
+  教训：多形态 sed 链中 `!window.pixyang` 规则会吞噬 `!window.pixyang?.` 复合
+  形态，可选链形态必须放在否定规则**之前**替换。
+
+## 环境教训（MSYS/Git Bash）
+
+- 本机 grep 输出行尾是 CRLF，`$(grep -l ...)` 生成的文件列表每个路径尾部带 `\r`
+  → 循环内 sed 全部 "can't read" 失败（有报错但混在大输出里易看漏）。管道必须
+  `tr -d '\r'`。延续既有规则：批量替换后必须 grep 验证归零/落地。
+
+## 测试
+
+- 摸底：`npm test` → 734 passed（与上轮收尾一致）。
+- 收尾：`npm test` → **734 passed / 0 failed**；`test:coverage` → 89.09%/84.78%/80.72%
+  （thresholds 全达标）；`npm run lint` → 0 error / 47 warnings；typecheck 通过；
+  `npx vite build` 通过；`npm run golden` → 21/21（maxΔ=0）；`format:check`
+  199 → 189 文件（删除冗余导入行顺带改善，均为基线警告）。
+
+## 遗留与下一步
+
+- masks 三期 B：brush/range/ai 蒙版类型与 rotation/feather 手柄化。
+- 剩余 47 lint warnings：electron/shared 后端为主（30 unused-vars + 7
+  useless-assignment）+ 10 exhaustive-deps（mount-only 设计意图）；src 仅 8 条
+  （ImageViewer ChevronDown / MaskPanel bind 未用变量等低危清理候选）。
+- webglPreview.js 57.5% 维持既有结论（GPU 路径 vitest 不可达，契约+golden 已锁）。
+
+## Git Commit
+
+- `refactor(build+ui): api 层全量迁移收口（5 文件归零）+ JSX automatic runtime（vitest esbuild 一行 + 48 文件清理无用 React 导入，lint 93→47）`（未 push）

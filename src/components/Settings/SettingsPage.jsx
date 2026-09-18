@@ -1,7 +1,8 @@
-import React, { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import ConfirmDialog from '../Layout/ConfirmDialog';
 import useGalleryStore from '@/store/galleryStore';
+import api from '@/lib/api';
 
 const DEFAULT_SETTINGS = { theme: 'dark', rows: 3, columns: 5, gap: 12, padding: 16 };
 
@@ -35,8 +36,8 @@ export default function SettingsPage({ onSettingsChanged, onImagesChanged }) {
   }, []);
 
   useEffect(() => {
-    if (!window.pixyang?.onRebuildProgress) return;
-    return window.pixyang.onRebuildProgress((p) => setRebuildProgress(p || null));
+    if (!api.onRebuildProgress) return;
+    return api.onRebuildProgress((p) => setRebuildProgress(p || null));
   }, []);
 
   useEffect(() => {
@@ -61,8 +62,8 @@ export default function SettingsPage({ onSettingsChanged, onImagesChanged }) {
   };
 
   const loadSettings = async () => {
-    if (!window.pixyang) return;
-    const settings = await window.pixyang.getSettings();
+    if (!api.isBridgeAvailable()) return;
+    const settings = await api.getSettings();
     const next = {
       theme: settings.theme === 'light' ? 'light' : 'dark',
       rows: clamp(settings.grid_rows, 1, 10, 3),
@@ -73,7 +74,7 @@ export default function SettingsPage({ onSettingsChanged, onImagesChanged }) {
     savedRef.current = next;
     setDraft(next);
     applyPreview(next);
-    setStoragePath(await window.pixyang.getImagesRoot());
+    setStoragePath(await api.getImagesRoot());
     setCameraFolder(settings.camera_folder || '');
   };
 
@@ -86,7 +87,7 @@ export default function SettingsPage({ onSettingsChanged, onImagesChanged }) {
   };
 
   const handleSave = async () => {
-    if (!window.pixyang) return;
+    if (!api.isBridgeAvailable()) return;
     const d = {
       theme: draft.theme,
       rows: clamp(draft.rows, 1, 10, 3),
@@ -94,11 +95,11 @@ export default function SettingsPage({ onSettingsChanged, onImagesChanged }) {
       gap: clamp(draft.gap, 0, 48, 12),
       padding: clamp(draft.padding, 0, 64, 16),
     };
-    await window.pixyang.setSetting('theme', d.theme);
-    await window.pixyang.setSetting('grid_rows', String(d.rows));
-    await window.pixyang.setSetting('grid_columns', String(d.columns));
-    await window.pixyang.setSetting('grid_gap', String(d.gap));
-    await window.pixyang.setSetting('content_padding', String(d.padding));
+    await api.setSetting('theme', d.theme);
+    await api.setSetting('grid_rows', String(d.rows));
+    await api.setSetting('grid_columns', String(d.columns));
+    await api.setSetting('grid_gap', String(d.gap));
+    await api.setSetting('content_padding', String(d.padding));
     savedRef.current = d;
     setDraft(d);
     onSettingsChanged?.();
@@ -117,13 +118,13 @@ export default function SettingsPage({ onSettingsChanged, onImagesChanged }) {
   };
 
   const handleOpenFolder = async () => {
-    if (!window.pixyang) return;
-    await window.pixyang.openPath(storagePath);
+    if (!api.isBridgeAvailable()) return;
+    await api.openPath(storagePath);
   };
 
   const handleChooseStorage = async () => {
-    if (!window.pixyang || moving) return;
-    const target = await window.pixyang.selectDirectory();
+    if (!api.isBridgeAvailable() || moving) return;
+    const target = await api.selectDirectory();
     if (!target || target === storagePath) return;
 
     const ok = window.confirm('修改图片保存路径会把当前图库里的所有图片整体移动到新路径下，确定继续吗？');
@@ -131,7 +132,7 @@ export default function SettingsPage({ onSettingsChanged, onImagesChanged }) {
 
     setMoving(true);
     setMessage('正在移动图片...');
-    const result = await window.pixyang.setImagesRoot(target);
+    const result = await api.setImagesRoot(target);
     setMoving(false);
 
     if (result?.error) {
@@ -145,19 +146,19 @@ export default function SettingsPage({ onSettingsChanged, onImagesChanged }) {
   };
 
   const handleChooseCamera = async () => {
-    if (!window.pixyang) return;
-    const dir = await window.pixyang.selectDirectory();
+    if (!api.isBridgeAvailable()) return;
+    const dir = await api.selectDirectory();
     if (!dir || dir === cameraFolder) return;
-    await window.pixyang.setSetting('camera_folder', dir);
+    await api.setSetting('camera_folder', dir);
     setCameraFolder(dir);
     showSaved('已设置相机文件夹');
   };
 
   const handleSyncCamera = async () => {
-    if (!window.pixyang || syncing) return;
+    if (!api.isBridgeAvailable() || syncing) return;
     setSyncing(true);
     setMessage('正在同步相机文件夹...');
-    const result = await window.pixyang.syncCameraFolder();
+    const result = await api.syncCameraFolder();
     setSyncing(false);
 
     if (result?.error) {
@@ -174,11 +175,11 @@ export default function SettingsPage({ onSettingsChanged, onImagesChanged }) {
   };
 
   const handleRebuildThumbnails = async () => {
-    if (!window.pixyang || rebuilding) return;
+    if (!api.isBridgeAvailable() || rebuilding) return;
     setRebuilding(true);
     setRebuildProgress({ done: 0, total: 0 });
     setMessage('正在重建缩略图...');
-    const result = await window.pixyang.rebuildThumbnails();
+    const result = await api.rebuildThumbnails();
     setRebuilding(false);
     setRebuildProgress(null);
     onImagesChanged?.();
@@ -186,27 +187,27 @@ export default function SettingsPage({ onSettingsChanged, onImagesChanged }) {
   };
 
   const handleScanBroken = async () => {
-    if (!window.pixyang || scanningBroken) return;
+    if (!api.isBridgeAvailable() || scanningBroken) return;
     setScanningBroken(true);
-    const list = await window.pixyang.scanBrokenRecords();
+    const list = await api.scanBrokenRecords();
     setScanningBroken(false);
     setBrokenRecords(list || []);
     if (!list || list.length === 0) showSaved('未发现失效记录');
   };
 
   const handleCleanBroken = async () => {
-    if (!window.pixyang || !brokenRecords) return;
+    if (!api.isBridgeAvailable() || !brokenRecords) return;
     const ids = brokenRecords.map(r => r.id);
     setBrokenRecords(null);
-    const removed = await window.pixyang.deleteBrokenRecords(ids);
+    const removed = await api.deleteBrokenRecords(ids);
     onImagesChanged?.();
     showSaved(`已清理 ${removed} 条失效记录`);
   };
 
   const handleFindDuplicates = async () => {
-    if (!window.pixyang || findingDupes) return;
+    if (!api.isBridgeAvailable() || findingDupes) return;
     setFindingDupes(true);
-    const groups = await window.pixyang.findDuplicates();
+    const groups = await api.findDuplicates();
     setFindingDupes(false);
     if (!groups || groups.length === 0) {
       showSaved('未发现重复图片');
@@ -220,7 +221,7 @@ export default function SettingsPage({ onSettingsChanged, onImagesChanged }) {
     // 批量取缩略图 URL
     const paths = [...new Set(groups.flatMap(g => g.items.map(i => i.thumbnail_path).filter(Boolean)))];
     if (paths.length > 0) {
-      const map = await window.pixyang.toFileUrls(paths);
+      const map = await api.toFileUrls(paths);
       if (map) setDupeUrls(map);
     }
   };
@@ -237,14 +238,14 @@ export default function SettingsPage({ onSettingsChanged, onImagesChanged }) {
   };
 
   const handleDeleteDuplicates = async () => {
-    if (!window.pixyang) return;
+    if (!api.isBridgeAvailable()) return;
     const ids = dupeDeleteIds();
     if (ids.length === 0) return;
     const wasted = dupGroups.reduce((sum, g, gi) => {
       return sum + g.items.filter(item => item.id !== dupeKeep[gi]).reduce((s, i) => s + (i.size || 0), 0);
     }, 0);
     setDupGroups(null);
-    await window.pixyang.batchDeleteImages(ids);
+    await api.batchDeleteImages(ids);
     onImagesChanged?.();
     const mb = (wasted / 1048576).toFixed(1);
     showSaved(`已删除 ${ids.length} 张重复图片，释放 ${mb} MB`);
@@ -253,8 +254,8 @@ export default function SettingsPage({ onSettingsChanged, onImagesChanged }) {
   const formatMb = (bytes) => `${(bytes / 1048576).toFixed(1)} MB`;
 
   const handleBackup = async () => {
-    if (!window.pixyang) return;
-    const result = await window.pixyang.backupDatabase();
+    if (!api.isBridgeAvailable()) return;
+    const result = await api.backupDatabase();
     if (result.success) {
       showSaved(`数据库已备份到 ${result.path}`);
     } else {
@@ -263,8 +264,8 @@ export default function SettingsPage({ onSettingsChanged, onImagesChanged }) {
   };
 
   const loadDbPath = async () => {
-    if (!window.pixyang) return;
-    setDbPath(await window.pixyang.getDatabasePath());
+    if (!api.isBridgeAvailable()) return;
+    setDbPath(await api.getDatabasePath());
   };
 
   useEffect(() => {

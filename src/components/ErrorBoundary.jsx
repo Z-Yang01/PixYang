@@ -1,4 +1,3 @@
-import React from 'react';
 import { Component } from 'react';
 
 // 顶层错误边界：渲染异常时给出可操作的降级界面，避免整窗白屏

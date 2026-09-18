@@ -1,6 +1,5 @@
 // @vitest-environment happy-dom
 // BatchBar 冒烟：勾选集/总数/标签来自 galleryStore。
-import React from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, cleanup } from '@testing-library/react';
 import BatchBar from '@/components/Browser/BatchBar';

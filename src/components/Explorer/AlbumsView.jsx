@@ -1,5 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { toast } from 'sonner';
+import api from '@/lib/api';
 import ConfirmDialog from '../Layout/ConfirmDialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -27,9 +28,9 @@ export default function AlbumsView({ onSelectAlbum, onRefresh }) {
   // 批量解析相册封面 URL
   useEffect(() => {
     const paths = [...new Set(albums.map(a => a.cover_path).filter(Boolean))];
-    if (paths.length === 0 || !window.pixyang) return;
+    if (paths.length === 0 || !api.isBridgeAvailable()) return;
     let alive = true;
-    window.pixyang.toFileUrls(paths).then(map => {
+    api.toFileUrls(paths).then(map => {
       if (!alive || !map) return;
       const next = {};
       for (const a of albums) {
@@ -41,14 +42,14 @@ export default function AlbumsView({ onSelectAlbum, onRefresh }) {
   }, [albums]);
 
   const loadAlbums = async () => {
-    if (!window.pixyang) return;
-    const a = await window.pixyang.getAlbums();
+    if (!api.isBridgeAvailable()) return;
+    const a = await api.getAlbums();
     setAlbums(a);
   };
 
   const handleCreate = async () => {
-    if (!newName.trim() || !window.pixyang) return;
-    await window.pixyang.createAlbum(newName.trim(), newDesc.trim());
+    if (!newName.trim() || !api.isBridgeAvailable()) return;
+    await api.createAlbum(newName.trim(), newDesc.trim());
     setNewName('');
     setNewDesc('');
     setShowCreate(false);
@@ -57,8 +58,8 @@ export default function AlbumsView({ onSelectAlbum, onRefresh }) {
   };
 
   const handleDelete = async (id) => {
-    if (!window.pixyang) return;
-    await window.pixyang.deleteAlbum(id);
+    if (!api.isBridgeAvailable()) return;
+    await api.deleteAlbum(id);
     await loadAlbums();
     onRefresh?.();
   };
@@ -69,8 +70,8 @@ export default function AlbumsView({ onSelectAlbum, onRefresh }) {
   };
 
   const handleRename = async () => {
-    if (!renameVal.trim() || !renameTarget || !window.pixyang) return;
-    await window.pixyang.renameAlbum(renameTarget.id, renameVal.trim());
+    if (!renameVal.trim() || !renameTarget || !api.isBridgeAvailable()) return;
+    await api.renameAlbum(renameTarget.id, renameVal.trim());
     setRenameTarget(null);
     setRenameVal('');
     await loadAlbums();
@@ -78,10 +79,10 @@ export default function AlbumsView({ onSelectAlbum, onRefresh }) {
   };
 
   const handleExport = async (album) => {
-    if (!window.pixyang) return;
-    const destDir = await window.pixyang.selectExportDirectory();
+    if (!api.isBridgeAvailable()) return;
+    const destDir = await api.selectExportDirectory();
     if (!destDir) return;
-    const result = await window.pixyang.exportAlbumImages(album.id, destDir);
+    const result = await api.exportAlbumImages(album.id, destDir);
     const nefText = result.nefCopied > 0 ? `，含配对 NEF ${result.nefCopied} 个` : '';
     toast.success(`已导出 ${result.copied} / ${result.total} 张图片${nefText}`);
   };

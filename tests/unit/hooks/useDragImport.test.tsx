@@ -1,7 +1,6 @@
 // @vitest-environment happy-dom
 // useDragImport 单测：dragenter/dragover/dragleave/drop、Files 类型过滤、enabled 开关、
 // 深度计数防抖（多层 enter 需等量 leave 才隐藏）、drop 收集路径调用导入回调。
-import React from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, cleanup, act } from '@testing-library/react';
 import useDragImport from '@/hooks/useDragImport';

@@ -1,6 +1,5 @@
 // @vitest-environment happy-dom
 // ImageGrid 冒烟：数据/筛选/勾选来自 galleryStore（zustand），渲染前用 setState 预置。
-import React from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, cleanup } from '@testing-library/react';
 import ImageGrid from '@/components/Browser/ImageGrid';
