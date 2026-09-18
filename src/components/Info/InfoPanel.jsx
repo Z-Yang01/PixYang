@@ -4,6 +4,7 @@ import { Input } from '@/components/ui/input';
 import { FolderOpen, Trash2, X, Heart, HeartOff, Star } from 'lucide-react';
 import ConfirmDialog from '../Layout/ConfirmDialog';
 import { formatSizeDisplay as formatSize } from '@/lib/format';
+import api from '@/lib/api';
 
 function dirname(p) {
   if (!p) return '';
@@ -35,11 +36,11 @@ export default function InfoPanel({ image, onClose, onImageUpdated }) {
 
   useEffect(() => {
     let alive = true;
-    if (!window.pixyang || !image?.thumbnail_path) {
+    if (!api.isBridgeAvailable() || !image?.thumbnail_path) {
       setThumbUrl(null);
       return;
     }
-    window.pixyang.toFileUrl(image.thumbnail_path).then(url => {
+    api.toFileUrl(image.thumbnail_path).then(url => {
       if (alive) setThumbUrl(url);
     });
     return () => { alive = false; };
@@ -49,53 +50,53 @@ export default function InfoPanel({ image, onClose, onImageUpdated }) {
   useEffect(() => {
     let alive = true;
     setExif(null);
-    if (!window.pixyang || !image?.filepath) return;
-    window.pixyang.getExif(image.filepath).then(data => {
+    if (!api.isBridgeAvailable() || !image?.filepath) return;
+    api.getExif(image.filepath).then(data => {
       if (alive) setExif(data || {});
     });
     return () => { alive = false; };
   }, [image?.id, image?.filepath]);
 
   const loadTags = async () => {
-    if (!window.pixyang || !image) return;
+    if (!api.isBridgeAvailable() || !image) return;
     const [imgT, allT] = await Promise.all([
-      window.pixyang.getImageTags(image.id),
-      window.pixyang.getTags(),
+      api.getImageTags(image.id),
+      api.getTags(),
     ]);
     setImgTags(imgT);
     setAllTags(allT);
   };
 
   const handleAddTag = async (tagId) => {
-    if (!window.pixyang) return;
-    await window.pixyang.addTagToImage(image.id, tagId);
+    if (!api.isBridgeAvailable()) return;
+    await api.addTagToImage(image.id, tagId);
     await loadTags();
     onImageUpdated?.();
     setShowAddTag(false);
   };
 
   const handleRemoveTag = async (tagId) => {
-    if (!window.pixyang) return;
-    await window.pixyang.removeTagFromImage(image.id, tagId);
+    if (!api.isBridgeAvailable()) return;
+    await api.removeTagFromImage(image.id, tagId);
     await loadTags();
     onImageUpdated?.();
   };
 
   const handleNotesSave = async () => {
-    if (!window.pixyang) return;
-    await window.pixyang.updateImage(image.id, { notes });
+    if (!api.isBridgeAvailable()) return;
+    await api.updateImage(image.id, { notes });
     onImageUpdated?.(image.id, { notes });
   };
 
   const handleDateSave = async () => {
-    if (!window.pixyang || !importDate) return;
-    await window.pixyang.updateImage(image.id, { import_date: importDate });
+    if (!api.isBridgeAvailable() || !importDate) return;
+    await api.updateImage(image.id, { import_date: importDate });
     onImageUpdated?.();
   };
 
   const handleRename = async () => {
-    if (!window.pixyang || !editName.trim()) return;
-    const result = await window.pixyang.renameImage(image.id, editName.trim());
+    if (!api.isBridgeAvailable() || !editName.trim()) return;
+    const result = await api.renameImage(image.id, editName.trim());
     if (result.error) {
       setRenameErr(result.error);
     } else {
@@ -110,13 +111,13 @@ export default function InfoPanel({ image, onClose, onImageUpdated }) {
   };
 
   const handleOpenFolder = async () => {
-    if (!window.pixyang || !image) return;
-    await window.pixyang.openPath(dirname(image.filepath));
+    if (!api.isBridgeAvailable() || !image) return;
+    await api.openPath(dirname(image.filepath));
   };
 
   const handleDelete = async () => {
-    if (!window.pixyang || !image) return;
-    await window.pixyang.deleteImage(image.id);
+    if (!api.isBridgeAvailable() || !image) return;
+    await api.deleteImage(image.id);
     onClose();
     onImageUpdated?.();
   };
@@ -356,7 +357,7 @@ export default function InfoPanel({ image, onClose, onImageUpdated }) {
                     style={{ color: n <= (image.rating || 0) ? 'var(--star)' : 'var(--text-muted)', cursor: 'pointer', display: 'inline-flex' }}
                     onClick={async () => {
                       const rating = n === image.rating ? 0 : n;
-                      await window.pixyang.updateImage(image.id, { rating });
+                      await api.updateImage(image.id, { rating });
                       onImageUpdated?.(image.id, { rating });
                     }}
                   >
@@ -372,7 +373,7 @@ export default function InfoPanel({ image, onClose, onImageUpdated }) {
                 size="xs"
                 onClick={async () => {
                   const favorite = image.favorite ? 0 : 1;
-                  await window.pixyang.updateImage(image.id, { favorite });
+                  await api.updateImage(image.id, { favorite });
                   onImageUpdated?.(image.id, { favorite });
                 }}
               >

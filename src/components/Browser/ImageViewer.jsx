@@ -119,8 +119,8 @@ export default function ImageViewer({
   useEffect(() => {
     loadImage();
     const loadId = image?.id;
-    if (!image || !window.pixyang) return;
-    window.pixyang.getImageTags(image.id).then(tags => {
+    if (!image || !api.isBridgeAvailable()) return;
+    api.getImageTags(image.id).then(tags => {
       // 快速翻页时丢弃过期标签响应
       if (image.id === loadId) setImgTags(tags || []);
     });
@@ -142,18 +142,18 @@ export default function ImageViewer({
   }, [image?.rating, image?.favorite]);
 
   const toggleFavorite = useCallback(async () => {
-    if (!window.pixyang || !image) return;
+    if (!api.isBridgeAvailable() || !image) return;
     const newFav = localFavoriteRef.current ? 0 : 1;
     setLocalFavorite(newFav);
-    await window.pixyang.updateImage(image.id, { favorite: newFav });
+    await api.updateImage(image.id, { favorite: newFav });
     onImageUpdated?.(image.id, { favorite: newFav });
   }, [image, onImageUpdated]);
 
   const setRating = useCallback(async (r) => {
-    if (!window.pixyang || !image) return;
+    if (!api.isBridgeAvailable() || !image) return;
     const newRating = r === localRating ? 0 : r;
     setLocalRating(newRating);
-    await window.pixyang.updateImage(image.id, { rating: newRating });
+    await api.updateImage(image.id, { rating: newRating });
     onImageUpdated?.(image.id, { rating: newRating });
   }, [image, localRating, onImageUpdated]);
 
@@ -749,17 +749,17 @@ export default function ImageViewer({
   // 加载策略：中图占位，原图异步替换；列表小图不用于查看器
   // bust 版本号：烘焙替代后文件内容已变而路径不变，加版本参数绕过浏览器缓存
   const loadImage = async () => {
-    if (!image || !window.pixyang) return;
+    if (!image || !api.isBridgeAvailable()) return;
     const loadId = image.id;
     const v = bustRef.current;
     setThumbSrc(null);
     setFullSrc(null);
     setFullLoaded(false);
     if (image.thumbnail_path) {
-      const thumb = await window.pixyang.toFileUrl(image.thumbnail_path);
+      const thumb = await api.toFileUrl(image.thumbnail_path);
       if (image.id === loadId && thumb) setThumbSrc(`${thumb}${thumb.includes('?') ? '&' : '?'}v=${v}`);
     }
-    const url = await window.pixyang.toFileUrl(image.filepath);
+    const url = await api.toFileUrl(image.filepath);
     if (image.id === loadId) setFullSrc(url ? `${url}${url.includes('?') ? '&' : '?'}v=${v}` : null);
   };
 
@@ -844,8 +844,8 @@ export default function ImageViewer({
   // 保存旋转/翻转（查看态：仅写元数据，前端 CSS 呈现）
   const handleSaveRotation = async (e) => {
     e.stopPropagation();
-    if (!window.pixyang || !image) return;
-    await window.pixyang.updateImage(image.id, {
+    if (!api.isBridgeAvailable() || !image) return;
+    await api.updateImage(image.id, {
       rotation,
       flipH: flipH ? 1 : 0,
       flipV: flipV ? 1 : 0,

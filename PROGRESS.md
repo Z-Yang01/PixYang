@@ -1076,3 +1076,67 @@ Phase 1-6、8、10-14、16-17 全量落地；Phase 7（sRGB 工作空间转换 +
 ## Git Commit
 
 - `refactor(editor): toImageCoords 统一到 shared/maskGeometry.displayToImage（消除手写映射重复）`（未 push）
+
+---
+
+# 2026-09-18 前端架构收尾批：ImageGrid 拆分 + useBatchActions + api 层迁移
+
+阶段 3（前端架构）遗留三项收尾，纯重构 + api 层统一，零行为变化（一处输入残留小瑕疵随拆分修正）。
+
+## 当前状态
+
+- 分支 `optimize/architecture`；摸底 **731 passed / 0 failed**（与上轮收尾一致）→ 收尾
+  **734 passed / 0 failed**（57 文件，+3 框选测试）；coverage **89.4%** 语句 /
+  **84.85%** 分支（thresholds 75/70/50/75 全达标）；lint 0 error（93 warnings =
+  90 既有基线 + 3 个新 .jsx 的 React classic-runtime 系统性误报）；typecheck 通过；
+  `npx vite build` 通过；golden 21/21（maxΔ=0）。
+
+## 已完成
+
+1. **ImageGrid.jsx 798 → 485 行拆分**（PROGRESS 阶段 3 明确遗留项）：
+   - `Browser/ImageCard.jsx`：memo 卡片整体外移（右键菜单 + 快标签 DropdownMenu + 缩略图回退链）；
+   - `Browser/PaginationBar.jsx`：store 直连分页条，pageInput 局部状态内聚；
+   - `Browser/GridDialogs.jsx`：AddToAlbumDialog / RenameDialog；新相册名与重命名输入态
+     内聚到弹窗组件（卸载即复位——旧行为中输入未创建即关闭会残留到下次打开，随拆分修正）；
+   - `hooks/useMarqueeSelection.js`：框选（4px 阈值成框、相交命中、Shift/Ctrl 追加、
+     空白点击清除）整体外移；lastSelectedRef 返回给网格与卡片 Shift 连选共用；
+   - ImageGrid 保留：URL/标签/损坏标记缓存、键盘导航、分组表头、删除确认。
+2. **App.jsx 652 → 524 行**：批量操作 8 个 handler（全选页/全选全部/导出/打标/批量更新/
+   批量同步/删除确认+执行）+ pendingBatchAction 确认态 + 同步防重入 ref 整体迁入
+   `hooks/useBatchActions.js`（App 只保留接线与 ConfirmDialog 渲染）。
+3. **api 层迁移**（阶段 3 遗留）：InfoPanel 23 处 / ImageViewer 11 处 / ImageGrid 22 处
+   `window.pixyang` 直调 → `api.*` + `api.isBridgeAvailable()` 守卫（sed 批量 + grep 验证
+   归零，替换前确认仅存在两种既有形态）。
+4. **新增 useMarqueeSelection 测试 3 例**（框选命中相交卡片 / 空白点击清除且卡片按下不启动 /
+   Shift 追加保留勾选）——框选交互此前列为未覆盖低频分支，本次首次有直接测试。
+
+## 决策与假设
+
+- RenameDialog 的 onSubmit 返回 error 字符串驱动弹窗内错误显示，父组件只保留会话对象与
+  fileUrls 缓存清理；handleCreateAndAdd 签名改为 (imageId, name)，新相册名由弹窗传值。
+- 弹窗从「常驻 + open 控制」改为条件渲染（内部输入态随卸载复位），Radix DOM 行为等价。
+- useMarqueeSelection 自 galleryStore 取 setSelectedIds，selectedIdsRef 由调用方传入
+  （网格已有该 ref，避免重复订阅）。
+- 剩余 `window.pixyang` 直调：SettingsPage 36 / AlbumsView 13 / galleryStore 10 /
+  ImportDialog 9 / TagManager 6——低频页面，留后续批次。
+- lint +3 warnings 为新 .jsx 文件 classic JSX runtime 必需的 `import React`（既有系统性
+  误报，PROGRESS 2026-09-11 已建档，根治需迁 automatic runtime）。
+
+## 测试
+
+- 摸底：`npm test` → 731 passed（与上轮收尾一致）。
+- 收尾：`npm test` → **734 passed / 0 failed**；`test:coverage` → 89.4%/84.85%/80.72%
+  （thresholds 全达标）；`npm run lint` → 0 error；typecheck 通过；`npx vite build` 通过；
+  `npm run golden` → 21/21（maxΔ=0）；`format:check` 新增文件全部干净（既有 199 文件
+  警告为仓库基线，不做全量重排）。
+
+## 遗留与下一步
+
+- masks 三期 B：brush/range/ai 蒙版类型与 rotation/feather 手柄化。
+- api 层迁移剩余 5 文件（SettingsPage/AlbumsView/galleryStore/ImportDialog/TagManager）。
+- JSX automatic runtime 迁移（React 导入系统性误报的根治项，vite+vitest 双配置）。
+- webglPreview.js 57.5% 维持既有结论（GPU 路径 vitest 不可达，契约+golden 已锁）。
+
+## Git Commit
+
+- `refactor(ui): 前端架构收尾 — ImageGrid 拆分（ImageCard/PaginationBar/GridDialogs/useMarqueeSelection）+ App 批量操作抽 useBatchActions + InfoPanel/ImageViewer/ImageGrid 直调迁 api 层（+3 例）`（未 push）

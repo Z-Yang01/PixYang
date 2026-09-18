@@ -36,12 +36,12 @@ shared/
 error/
   *.md            严重 bug 建档（Symptom/Root Cause/Fix/Prevention 格式）
 src/
-  App.jsx         组合根：路由、弹层状态、批量操作、快捷键接线
+  App.jsx         组合根：路由、弹层状态、快捷键接线（批量操作在 useBatchActions）
   store/          zustand store（galleryStore：筛选/勾选/网格设置/图片页数据/共享数据）
-  hooks/          useGalleryData（加载 wiring）/ useGlobalShortcuts / useDragImport
-  lib/            api.js（IPC 封装）/ gallery.js / shortcuts.js / format.js / utils.ts
+  hooks/          useGalleryData（加载 wiring）/ useGlobalShortcuts / useDragImport / useBatchActions（批量操作）/ useMarqueeSelection（网格框选）
+  lib/            api.js（IPC 封装，组件统一经此访问 window.pixyang）/ gallery.js / shortcuts.js / format.js / utils.ts
   components/
-    Browser/      图片网格、全屏查看器（含非破坏编辑面板）、批量操作栏、CompareView 对比视图
+    Browser/      图片网格（ImageCard/PaginationBar/GridDialogs 拆分组件）、全屏查看器（含非破坏编辑面板）、批量操作栏、CompareView 对比视图
     Explorer/     导入对话框、相册视图
     Info/         图片详情面板
     Layout/       侧边栏、顶栏、确认对话框、右键菜单、Toast
@@ -88,7 +88,7 @@ tests/            vitest（node 环境 + per-file happy-dom pragma）
 
 ## 验证
 
-- 测试：`npm test`（vitest，52 个文件 / 669 例，含 golden 像素锁定 21 例 `node tests/golden/runner.cjs`，`--update` 刷新基线）；覆盖率：`npm run test:coverage`，门槛配置在 `vitest.config.js`（statements/lines 75、branches 70、functions 50）。
+- 测试：`npm test`（vitest，57 个文件 / 734 例，含 golden 像素锁定 21 例 `node tests/golden/runner.cjs`，`--update` 刷新基线）；覆盖率：`npm run test:coverage`，门槛配置在 `vitest.config.js`（statements/lines 75、branches 70、functions 50）。
 - Lint：`npm run lint`（ESLint flat config，`eslint.config.mjs`）；0 error 为准，warning 不阻塞。
 - 类型检查：`npm run typecheck`（tsc --noEmit，覆盖 src 下 TS/TSX）。
 - 格式检查：`npm run format:check`（Prettier 仅检查，禁止全量重排产生巨 diff）。
