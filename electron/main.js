@@ -135,6 +135,26 @@ function createWindow() {
     mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
   }
 
+  // 导航围栏：跨源跳转一律拒绝（pixyang 桥在窗口任何页面上都会注入）；同源 reload（HMR）放行
+  mainWindow.webContents.on('will-navigate', (e, url) => {
+    try {
+      if (new URL(url).origin !== new URL(mainWindow.webContents.getURL() || url).origin) {
+        e.preventDefault();
+      }
+    } catch {
+      e.preventDefault();
+    }
+  });
+  mainWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+
+  // 渲染进程崩溃（OOM 等）后白屏且无菜单无快捷键：自动重载回正轨
+  mainWindow.webContents.on('render-process-gone', (e, details) => {
+    console.error('[窗口] 渲染进程异常退出:', details.reason, details.exitCode);
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.reload();
+    }
+  });
+
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
@@ -1307,7 +1327,31 @@ async function backfillOrientations() {
 
 // ── 应用生命周期 ──
 
+// 单实例：双开会击穿所有进程内互斥（导入链、重建循环、编辑会话 Map、bake 轮次），
+// 第二实例直接退出并聚焦已有窗口
+if (!app.requestSingleInstanceLock()) {
+  app.quit();
+}
+app.on('second-instance', () => {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.show();
+    mainWindow.focus();
+  }
+});
+
+function logMainError(e) {
+  const msg = e && e.stack ? e.stack : String(e);
+  console.error('[main] 未捕获异常:', msg);
+  try {
+    fs.appendFileSync(path.join(app.getPath('userData'), 'main-error.log'), `[${new Date().toISOString()}] ${msg}\n`);
+  } catch { /* 日志落盘失败不再级联 */ }
+}
+process.on('uncaughtException', logMainError);
+process.on('unhandledRejection', logMainError);
+
 app.whenReady().then(async () => {
+  if (!app.hasSingleInstanceLock()) return;
   // 移除默认菜单栏 (File/Edit/View 等)
   Menu.setApplicationMenu(null);
   await initDatabase();
@@ -1330,6 +1374,13 @@ app.whenReady().then(async () => {
       createWindow();
     }
   });
+}).catch((e) => {
+  // 启动链任一环节抛错（DB 初始化/IPC 装配）会让窗口永不出现且无提示：显式弹窗退出
+  logMainError(e);
+  if (typeof dialog.showErrorBox === 'function') {
+    dialog.showErrorBox('PixYang 启动失败', e && e.message ? e.message : String(e));
+  }
+  app.quit();
 });
 
 app.on('window-all-closed', () => {

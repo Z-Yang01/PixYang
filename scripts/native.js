@@ -60,14 +60,21 @@ if (mode === 'node') {
   fs.mkdirSync(cacheDir, { recursive: true });
 
   if (!fs.existsSync(cached) || fs.statSync(cached).size === 0) {
-    run(`curl -sL --retry 5 --retry-all-errors --retry-delay 2 --max-time 300 -o "${cached}" "${url}"`);
+    run(`curl -sL --fail --retry 5 --retry-all-errors --retry-delay 2 --max-time 300 -o "${cached}" "${url}"`);
   }
   if (!fs.existsSync(cached) || fs.statSync(cached).size === 0) {
     console.error('[native] electron 预编译下载失败:', url);
     process.exit(1);
   }
 
-  extractNodeFile(cached, path.join(pkgDir, 'build', 'Release', 'better_sqlite3.node'));
+  try {
+    extractNodeFile(cached, path.join(pkgDir, 'build', 'Release', 'better_sqlite3.node'));
+  } catch (e) {
+    // 缓存的 tar.gz 损坏/半截时删掉它，下次运行重新下载，避免永久卡在坏缓存
+    try { fs.unlinkSync(cached); } catch { /* 文件可能已被清理 */ }
+    console.error('[native] 预编译包解压失败，已删除坏缓存，请重新运行:', e.message);
+    process.exit(1);
+  }
   console.log(`[native] 已切换 better-sqlite3 到 electron ABI (v${abi})`);
 } else {
   console.error('用法: node scripts/native.js electron|node');

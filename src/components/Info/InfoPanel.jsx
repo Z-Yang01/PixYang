@@ -25,8 +25,10 @@ export default function InfoPanel({ image, onClose, onImageUpdated }) {
   const [thumbUrl, setThumbUrl] = useState(null);
   const [exif, setExif] = useState(null);
   const renameRef = useRef(null);
+  const liveImageIdRef = useRef(null);
 
   useEffect(() => {
+    liveImageIdRef.current = image?.id ?? null;
     if (!image) return;
     loadTags();
     setNotes(image.notes || '');
@@ -60,10 +62,12 @@ export default function InfoPanel({ image, onClose, onImageUpdated }) {
 
   const loadTags = async () => {
     if (!api.isBridgeAvailable() || !image) return;
+    const id = image.id;
     const [imgT, allT] = await Promise.all([
-      api.getImageTags(image.id),
+      api.getImageTags(id),
       api.getTags(),
     ]);
+    if (liveImageIdRef.current !== id) return;
     setImgTags(imgT);
     setAllTags(allT);
   };
@@ -90,7 +94,12 @@ export default function InfoPanel({ image, onClose, onImageUpdated }) {
   };
 
   const handleDateSave = async () => {
-    if (!api.isBridgeAvailable() || !importDate || importDate === image.import_date) return;
+    if (!api.isBridgeAvailable()) return;
+    if (!importDate) {
+      setImportDate(image.import_date || '');
+      return;
+    }
+    if (importDate === image.import_date) return;
     const result = await api.updateImage(image.id, { import_date: importDate });
     if (result?.error) {
       setDateErr(result.error);

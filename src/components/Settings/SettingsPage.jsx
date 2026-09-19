@@ -67,31 +67,30 @@ export default function SettingsPage({ onSettingsChanged, onImagesChanged }) {
     const next = {
       theme: settings.theme === 'light' ? 'light' : 'dark',
       rows: clamp(settings.grid_rows, 1, 10, 3),
-      columns: clamp(settings.grid_columns, 1, 10, 5),
+      columns: clamp(settings.grid_columns, 2, 10, 5),
       gap: clamp(settings.grid_gap, 0, 48, 12),
       padding: clamp(settings.content_padding, 0, 64, 16),
     };
     savedRef.current = next;
     setDraft(next);
-    applyPreview(next);
     setStoragePath(await api.getImagesRoot());
     setCameraFolder(settings.camera_folder || '');
   };
 
   const updateDraft = (patch) => {
-    setDraft(prev => {
-      const next = { ...prev, ...patch };
-      applyPreview(next);
-      return next;
-    });
+    setDraft(prev => ({ ...prev, ...patch }));
   };
+
+  useEffect(() => {
+    applyPreview(draft);
+  }, [draft]);
 
   const handleSave = async () => {
     if (!api.isBridgeAvailable()) return;
     const d = {
       theme: draft.theme,
       rows: clamp(draft.rows, 1, 10, 3),
-      columns: clamp(draft.columns, 1, 10, 5),
+      columns: clamp(draft.columns, 2, 10, 5),
       gap: clamp(draft.gap, 0, 48, 12),
       padding: clamp(draft.padding, 0, 64, 16),
     };

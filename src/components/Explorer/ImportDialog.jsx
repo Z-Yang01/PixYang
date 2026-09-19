@@ -28,6 +28,7 @@ export default function ImportDialog({ onClose, onDone, initialFiles = null }) {
   const [result, setResult] = useState(null);
   const [error, setError] = useState('');
   const cancelImportRef = useRef(false);
+  const importedAnyRef = useRef(false);
   const [exifProgress, setExifProgress] = useState(null);
 
   // 主进程 EXIF 提取的批内进度（当前批次细分显示）；相机同步的进度不属于本对话框，忽略
@@ -41,7 +42,7 @@ export default function ImportDialog({ onClose, onDone, initialFiles = null }) {
       setSelectedDir(`拖入的 ${initialFiles.length} 个文件`);
       setFoundFiles(initialFiles);
     }
-  }, []);
+  }, [initialFiles]);
 
   useEffect(() => {
     if (foundFiles.length > 0) {
@@ -95,12 +96,14 @@ export default function ImportDialog({ onClose, onDone, initialFiles = null }) {
     setError('');
     setResult(null);
     cancelImportRef.current = false;
+    importedAnyRef.current = false;
     setExifProgress(null);
 
     const override = dateMode === 'today' ? todayStr() : (dateMode === 'custom' ? customDate : null);
     const allImported = [];
     const batchSize = 20;
     let canceled = false;
+    let attempted = 0;
 
     try {
       for (let i = 0; i < files.length; i += batchSize) {
@@ -110,14 +113,17 @@ export default function ImportDialog({ onClose, onDone, initialFiles = null }) {
         }
         const batch = files.slice(i, i + batchSize);
         setCurrentFile(batch[0].filename);
+        attempted += batch.length;
         const imported = await api.importImages(batch, override);
         allImported.push(...(imported || []));
+        if (allImported.length > 0) importedAnyRef.current = true;
         setProgress(Math.round(((i + batch.length) / files.length) * 100));
       }
       setResult({
         total: files.length,
         imported: allImported.length,
-        skipped: files.length - allImported.length,
+        skipped: attempted - allImported.length,
+        left: files.length - attempted,
         canceled,
       });
     } catch (e) {
@@ -135,8 +141,15 @@ export default function ImportDialog({ onClose, onDone, initialFiles = null }) {
   const handleDone = () => onDone();
   const formatCount = (n) => n.toLocaleString();
 
+  // Esc/X/遮罩关闭同样要触发刷新：已有导入成果时走 onDone，否则图库/统计停在旧数据
+  const handleOpenChange = (o) => {
+    if (o || importing) return;
+    if (importedAnyRef.current) onDone();
+    else onClose();
+  };
+
   return (
-    <Dialog open onOpenChange={(o) => { if (!o && !importing) onClose(); }}>
+    <Dialog open onOpenChange={handleOpenChange}>
       <DialogContent className="sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>导入图片</DialogTitle>
@@ -239,7 +252,7 @@ export default function ImportDialog({ onClose, onDone, initialFiles = null }) {
               <div className="import-result-desc">
                 成功导入 {formatCount(result.imported)} 张
                 {result.skipped > 0 && `，跳过 ${formatCount(result.skipped)} 张（已存在或失败）`}
-                {result.canceled && `，剩余 ${formatCount(result.total - result.imported - result.skipped)} 张未导入`}
+                {result.canceled && `，剩余 ${formatCount(result.left)} 张未导入`}
               </div>
             </div>
           )}

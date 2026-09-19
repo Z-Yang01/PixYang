@@ -287,4 +287,33 @@ describe('InfoPanel（补充：EXIF 全分支/标签操作/删除/评分收藏�
       expect(screen.queryByText('+ 人物')).not.toBeInTheDocument();
     });
   });
+
+  it('loadTags：切换图片后晚到的旧响应被丢弃（旧图标签不串台）', async () => {
+    let resolveOld;
+    const oldPromise = new Promise((r) => { resolveOld = r; });
+    window.pixyang.getImageTags.mockImplementation((id) =>
+      id === 9 ? oldPromise : Promise.resolve([{ id: 7, name: '新页标签', color: '#22c55e' }])
+    );
+    const imageOld = { ...testImage, id: 9 };
+    const imageNew = { ...testImage, id: 10 };
+    const { rerender } = renderPanel({ image: imageOld });
+    rerender(<InfoPanel image={imageNew} onClose={vi.fn()} onImageUpdated={vi.fn()} />);
+    expect(await screen.findByText('新页标签')).toBeInTheDocument();
+    resolveOld([{ id: 8, name: '旧图标签', color: '#f59e0b' }]);
+    await vi.waitFor(() => {
+      expect(window.pixyang.getImageTags).toHaveBeenCalledWith(10);
+    });
+    expect(screen.queryByText('旧图标签')).toBeNull();
+  });
+
+  it('导入日期清空后失焦：回退为库中原值，不留下脱钩的空输入', async () => {
+    renderPanel();
+    const input = screen.getByDisplayValue('2026-01-02');
+    fireEvent.change(input, { target: { value: '' } });
+    fireEvent.blur(input);
+    await vi.waitFor(() => {
+      expect(screen.getByDisplayValue('2026-01-02')).toBeInTheDocument();
+    });
+    expect(window.pixyang.updateImage).not.toHaveBeenCalled();
+  });
 });

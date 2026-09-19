@@ -1727,3 +1727,106 @@ open/bake/export/cancel 生命周期；C：数据库底层/备份/存储 + src/l
 ## Git Commit
 
 - `fix: 多代理审查批 4 — 渲染层饱和度/crop 预览导出分叉 P0 建档 + 查看器原图永不替换/翻页串台 P0 + 蒙版容错/GLSL 钳制/手势收尾 + IPC 路径越狱/长任务错误契约（+10 例）`（未 push）
+
+# 2026-09-19 多代理审查批 5：前端状态层、组件树、Electron 底座与构建配置
+
+三路只读审查子代理并行覆盖（G：store/hooks/lib/api.js 状态层；H：App 组合根/布局/信息面板/
+相册/公共组件；I：Electron 窗口生命周期、preload、electron-builder/vite/vitest/scripts/CI），
+主代理逐项对码核实后修复 P0 2 项 + P1 全部 + 选定 P2 9 项。
+
+## 当前状态
+
+- 分支 `optimize/architecture`；**830 passed / 0 failed**（59 文件，+22 例）；
+  coverage **90.2%** 语句 / **85.38%** 分支 / **82.43%** 函数（thresholds 全达标）；
+  lint 0 error / 8 warnings（低于基线 10）；typecheck 通过；build 通过；golden 22/22。
+
+## P0（建档 error/electron-builder-files-drops-shared.md、error/modal-gating-blindspot-grid-shortcuts.md）
+
+- **I1 打包产物缺 shared/**：electron-builder `build.files` 出现自定义非忽略模式即顶掉默认
+  `**/*` 收录，列表漏 `shared/**/*`——安装包主进程 require editSchema/renderSpec 等立刻
+  MODULE_NOT_FOUND，装完即崩且 dev 永不复现。files 补 `shared/**/*` + `build/**/*`，
+  `.gitignore` 的 `build/` 改 `build/*` + 图标白名单，图标入库。
+- **H5/G2 模态门禁各自为政**：网格 keydown 只看自身 `dialogsOpen`，全局快捷键只看 App 级弹层，
+  互为盲区——导入框开着按空格：网格 `preventDefault` 吞掉 Radix 按钮激活，勾选集在看不见的
+  地方被翻转（批量删除误伤）；网格弹窗开着按 Delete 叠第二个确认框。修复：galleryStore 落
+  全局模态注册表（`modals`/`setModal`/`anyModalOpen`），App 登记 import/shortcuts/batchAction
+  （batchAction effect 置于 useBatchActions 解构后防依赖数组 TDZ），ImageGrid 登记 gridDialogs
+  并在卸载销键，两套快捷键统一消费。
+
+## P1（G/H 链：弹层与异步收尾）
+
+- **G1 全选全部陈旧窗口**：大库 `getAllImageIds` 秒级在途，期间改筛选会清勾选重查，晚到的
+  旧筛选 id 集灌回污染勾选集——请求前后各做一次筛选快照比对（JSON.stringify 七字段），
+  不一致即丢弃，读写一律取 `getState()` 最新值。
+- **H1 infoImage 幽灵对象**：`setInfoImage(prev => ({...prev, _refresh}))` 在 prev 已被置
+  null 时 `{...null}` 生成空壳重挂面板——`prev ? {...} : null` 守卫。
+- **H2/H11 导入对话框收尾**：有导入成果后 Escape/X 关闭只走 onClose，图库/统计停在旧数据；
+  结果统计把「未尝试」当「跳过」。`importedAnyRef` 记录本会话是否成功导入过，关闭时已有
+  成果走 onDone；skipped=已尝试-成功，canceled 时单列 left 剩余数。
+- **H3 viewer→info 交还标记**：closeViewer/Esc 信息分支/InfoPanel onClose 三处统一复位
+  `infoFromViewerRef`，否则查看器关面板后主面板误判来源。
+- **H4 查看器索引错位**：`setViewerIndex` 与 `setViewerImage` 无条件连发，索引有效图片为空时
+  翻页停在幽灵位——两者同以 `img && viewerImageRef.current` 为条件。
+- **G5/H7 批量删除收尾**：勾选为空仍发 IPC；`batchDeleteImages` 未预期 reject 让确认框永久
+  挂起；删除在途用户翻页/改筛选后用旧快照回写页码——空选早退、try/catch 转 `{error}` 播报、
+  await 后重取 `getState()` 算 nextTotal/nextPage。
+- **G6/G7 批量更新**：`updateImages` reject 静默吞掉；收藏页取消收藏本地 merge 留
+  「灭而未走」行——catch 转 error toast；`filterFavorites && favorite===0` 分支改勾选剪枝
+  + loadImages/loadStats 重查。
+- **G10 悬空筛选清理时机**：tags 未加载完就把「filterTag 不在列表」当悬空清除（空列表），
+  且 `tags.length > 0` 守卫挡住最后一个标签被删的清空——两 effect 门禁改 `appDataLoaded`。
+- **G8 查看器翻页纯度**：viewerPrev/Next 在 setState updater 里做副作用（StrictMode 双调用
+  双导航）——改读 `viewerIndexRef.current` 纯计算后 navigateViewer。
+- **G3/H9 标签批量拉取竞态**：`getBatchImageTags` 无 sequencer，翻页晚到响应整图覆盖——
+  接入 `createLoadSequencer` token。
+- **I2 单实例**：无 `requestSingleInstanceLock`，双开两进程写同库（WAL 单写者互踩）——
+  失锁即 quit，`second-instance` 恢复/聚焦既有窗口，whenReady 回调再查 `hasSingleInstanceLock`。
+- **I3 构建资源**：`build/`（图标）整目录被 ignore，打包机 clone 后缺 icon 构建告警。
+
+## P2（选定项）
+
+- **G4 拖拽导入竞态**：第一次 drop 的 `collectImportFiles` 在途时第二次 drop 双 resolve 互相
+  覆盖——useDragImport 加 busy 队列（在途路径入 pending 队列，循环消费到空，reject 不卡队列）；
+  App `handleDragCollect` 按 filepath 去重合并；ImportDialog initialFiles effect 依赖 `[]`→
+  `[initialFiles]`，合并结果即时刷新。
+- **G9 设置页纯度+口径**：`updateDraft` 在 setState updater 里写 store + DOM（StrictMode
+  双副作用）——applyPreview 移入 `useEffect([draft])`；columns 下限 1 对齐 GRID_LIMITS [2,10]
+  （避免落库 1 被 store 再钳成 2 的口径分叉）。
+- **H8 信息面板标签串台**：loadTags 无守卫，切图后旧响应写回——`liveImageIdRef` 渲染期更新，
+  await 后 id 不符即丢弃。
+- **H12 导入日期清空脱钩**：置空早退留下空输入框与库值脱钩——失焦显式回退原值。
+- **H13 ErrorBoundary 逃生门**：崩溃路由恰为首页时「重新加载」原地再崩——加「回到图库」
+  （hash 归位 + 状态复位）。
+- **I4 主进程日志**：`uncaughtException`/`unhandledRejection` 静默死亡——`logMainError` 追加
+  `userData/main-error.log`；whenReady 失败弹错并退出。
+- **I5 导航围栏**：`will-navigate` 跨源一律 preventDefault（同源 reload 放行 HMR），
+  `setWindowOpenHandler` deny 一切新窗口（桥在任意页面都注入）。
+- **I9 渲染进程崩溃自愈**：`render-process-gone`（OOM 等）白屏无快捷键——isDestroyed 守卫后自动 reload。
+- **I10 能力矩阵缺 encode**：CAPABILITY_MATRIX 补 encode 行，14 阶段全覆盖。
+
+## 测试
+
+- **+22 例**（808→830）：main 6（单实例锁、second-instance 恢复聚焦、will-navigate 三态、
+  open handler deny、崩溃重载、build.files 打包契约）；galleryStore 2（setModal 生命周期/
+  幻影键、anyModalOpen）；ImageGrid 3（门禁放行对照组、App 级模态禁挂网格快捷键、
+  gridDialogs 注册与卸载销键）；useDragImport 2（在途排队按序、reject 不卡队列）；
+  ImportDialog 1（合并 initialFiles 即时刷新）；InfoPanel 2（loadTags 过期丢弃、日期清空回退）；
+  hooks 6（全选全部丢弃/对照、批量删除 catch+空选、批量更新 catch、收藏剪枝重查）。
+- 改写 2 例：ImportDialog Escape 已有成果走 onDone；SettingsPage columns 0→2 新口径。
+- main.test 窗口 stub 补 `webContents.on/setWindowOpenHandler/getURL/reload` 与
+  focus/restore/isMinimized（底座新能力对齐）。
+
+## 遗留（本批核实、刻意不动）
+
+- **I6 多显示器**：显示器拔掉后持久化 bounds 屏外，窗口"消失"——需按 display metrics clamp，单独立项。
+- **I7 thumbWorker 崩溃**：在途队列整轮丢失，无重排队（启动清扫+失效扫描兜底，低频）。
+- **H10 残余静默失败**：重命名对话框 catch 吞错、createTag 返回 null 无提示、deleteImage
+  返回 false 不播报。
+- **子代理存疑未核实**：marquee 框选与弹层交互、AlbumsView 重命名焦点竞态、
+  thumbnails-ready 期间计数口径（executeBatchDelete 已重取状态部分缓解）。
+- **批 2 遗留不变**：useGalleryData 整店订阅。
+- **日期筛选语义 import_date vs taken_at**——产品口径问题，仍待用户决策。
+
+## Git Commit
+
+- `fix: 多代理审查批 5 — 打包缺 shared/模态门禁盲区双 P0 建档 + 单实例/导航围栏/崩溃自愈 + 拖拽排队、批量收尾与 12 项竞态守卫（+22 例）`（未 push）

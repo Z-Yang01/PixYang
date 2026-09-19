@@ -410,12 +410,12 @@ describe('SettingsPage（补充：存储/相机/维护/备份/重复图片等交
     window.pixyang.getSettings.mockResolvedValue({
       ...baseSettings,
       grid_rows: 'abc', // NaN → 回退 3
-      grid_columns: '0', // → 1
+      grid_columns: '0', // → 2（与 GRID_LIMITS.columns [2,10] 对齐，避免落库 1 被 store 再钳成 2 的口径分叉）
     });
     renderPage();
     await screen.findByText('C:/PixData');
     expect(screen.getByDisplayValue('3')).toBeInTheDocument();
-    expect(screen.getByDisplayValue('1')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('2')).toBeInTheDocument();
   });
 
   it('切换主题即时预览 data-theme，往返回到初始值后无未保存提示', async () => {

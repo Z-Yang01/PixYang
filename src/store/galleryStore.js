@@ -4,6 +4,9 @@ import { buildImageQuery, createLoadSequencer } from '../lib/gallery';
 
 export const SORT_KEYS = ['import_date', 'created_at', 'filename', 'size', 'rating'];
 
+// 任一模态开着（勾选门禁/快捷键门禁共用）
+export const anyModalOpen = (s) => Object.keys(s.modals).length > 0;
+
 export const GRID_LIMITS = {
   rows: [1, 10],
   columns: [2, 10],
@@ -44,6 +47,17 @@ const useGalleryStore = create((set, get) => ({
   tags: [],
   albums: [],
   importDates: [],
+  appDataLoaded: false,
+
+  // 模态注册表：网格键盘导航/全局快捷键的统一门禁，多方（App 弹层、网格弹窗…）各自注册互不覆盖，
+  // 任一键为开即视为有模态；订阅方用 anyModalOpen 选择器拿布尔值
+  modals: {},
+  setModal: (key, open) => set((state) => {
+    const next = { ...state.modals };
+    if (open) next[key] = true;
+    else delete next[key];
+    return { modals: next };
+  }),
 
   // 当前页图片数据
   images: [],
@@ -133,8 +147,12 @@ const useGalleryStore = create((set, get) => ({
 
   loadStats: async () => {
     if (!api.isBridgeAvailable()) return;
-    const stats = await api.getStats();
-    if (stats) set({ stats });
+    try {
+      const stats = await api.getStats();
+      if (stats) set({ stats });
+    } catch (e) {
+      console.error('[galleryStore] loadStats 失败:', e.message);
+    }
   },
 
   // 分页查询当前筛选下的图片；过期响应（竞态）直接丢弃
@@ -195,12 +213,16 @@ const useGalleryStore = create((set, get) => ({
 
   loadAppData: async () => {
     if (!api.isBridgeAvailable()) return;
-    const [tags, albums, importDates] = await Promise.all([
-      api.getTags(),
-      api.getAlbums(),
-      api.getImportDates(),
-    ]);
-    set({ tags: tags || [], albums: albums || [], importDates: importDates || [] });
+    try {
+      const [tags, albums, importDates] = await Promise.all([
+        api.getTags(),
+        api.getAlbums(),
+        api.getImportDates(),
+      ]);
+      set({ tags: tags || [], albums: albums || [], importDates: importDates || [], appDataLoaded: true });
+    } catch (e) {
+      console.error('[galleryStore] loadAppData 失败:', e.message);
+    }
   },
 
   refreshAppData: () => {

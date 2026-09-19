@@ -2,7 +2,7 @@
 // galleryStore 回归：网格设置归一化（字符串/NaN 不落库）、筛选互斥、
 // clearSingleFilter 重置页码、loadImages 越界页回钳。
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import useGalleryStore from '@/store/galleryStore';
+import useGalleryStore, { anyModalOpen } from '@/store/galleryStore';
 
 const initialSnapshot = useGalleryStore.getState();
 
@@ -102,5 +102,33 @@ describe('galleryStore loadImages 页码越界钳制', () => {
     useGalleryStore.setState({ page: 3, search: 'zzz' });
     await useGalleryStore.getState().loadImages();
     expect(useGalleryStore.getState().page).toBe(3);
+  });
+});
+
+describe('galleryStore 全局模态注册表', () => {
+  beforeEach(() => {
+    useGalleryStore.setState(initialSnapshot, true);
+  });
+
+  it('setModal 按 key 注册/销键，anyModalOpen 反映任一开启', () => {
+    expect(anyModalOpen(useGalleryStore.getState())).toBe(false);
+    useGalleryStore.getState().setModal('import', true);
+    expect(anyModalOpen(useGalleryStore.getState())).toBe(true);
+    useGalleryStore.getState().setModal('gridDialogs', true);
+    useGalleryStore.getState().setModal('import', false);
+    expect(anyModalOpen(useGalleryStore.getState())).toBe(true);
+    useGalleryStore.getState().setModal('gridDialogs', false);
+    expect(anyModalOpen(useGalleryStore.getState())).toBe(false);
+  });
+
+  it('未注册 key 的关闭/重复注册不产生幻影键，各 key 互不影响', () => {
+    useGalleryStore.getState().setModal('a', true);
+    useGalleryStore.getState().setModal('b', false);
+    useGalleryStore.getState().setModal('b', false);
+    expect(useGalleryStore.getState().modals).toEqual({ a: true });
+    useGalleryStore.getState().setModal('a', true);
+    expect(useGalleryStore.getState().modals).toEqual({ a: true });
+    useGalleryStore.getState().setModal('a', false);
+    expect(useGalleryStore.getState().modals).toEqual({});
   });
 });

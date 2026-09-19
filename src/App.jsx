@@ -8,9 +8,10 @@ import {
   globalIndexOfPage,
   applyLightLocalUpdate,
   removeImageFromList,
+  removeIdsFromSet,
 } from './lib/gallery';
 import api from './lib/api';
-import useGalleryStore from './store/galleryStore';
+import useGalleryStore, { anyModalOpen } from './store/galleryStore';
 import useGalleryData from './hooks/useGalleryData';
 import useGlobalShortcuts from './hooks/useGlobalShortcuts';
 import useDragImport from './hooks/useDragImport';
@@ -66,6 +67,11 @@ export default function App() {
   const viewerNavBusyRef = useRef(false);
   const infoFromViewerRef = useRef(false);
 
+  // App 级弹层注册进 store 模态门禁（网格键盘导航/全局快捷键共用，堵空格/Delete 穿透）
+  const setModal = useGalleryStore(s => s.setModal);
+  useEffect(() => { setModal('import', !!showImport); }, [setModal, showImport]);
+  useEffect(() => { setModal('shortcuts', !!showShortcuts); }, [setModal, showShortcuts]);
+
   useGalleryData();
 
   const showToast = useCallback((message, type = 'info') => {
@@ -87,6 +93,8 @@ export default function App() {
     handleBatchUpdate,
     handleSyncEdits,
   } = useBatchActions({ showToast });
+
+  useEffect(() => { setModal('batchAction', !!pendingBatchAction); }, [setModal, pendingBatchAction]);
 
   // 网格设置与排序持久化恢复 + 初始主题
   useEffect(() => {
@@ -174,20 +182,22 @@ export default function App() {
     }
   }, [location.pathname]);
 
-  // 标签/相册被删除后，清理指向它们的悬空筛选（否则图库会一直显示空的筛选结果）
+  // 标签/相册被删除后，清理指向它们的悬空筛选（否则图库会一直显示空的筛选结果）；
+  // appDataLoaded 前不过滤：启动直达带 location.state 的深链时列表还是空数组，会误清合法筛选
   const tags = useGalleryStore(s => s.tags);
   const albums = useGalleryStore(s => s.albums);
+  const appDataLoaded = useGalleryStore(s => s.appDataLoaded);
   useEffect(() => {
-    if (filterTag !== null && tags.length > 0 && !tags.some(t => t.id === filterTag)) {
+    if (appDataLoaded && filterTag !== null && !tags.some(t => t.id === filterTag)) {
       useGalleryStore.getState().setFilterTag(null);
     }
-  }, [tags, filterTag]);
+  }, [tags, filterTag, appDataLoaded]);
 
   useEffect(() => {
-    if (filterAlbum !== null && albums.length > 0 && !albums.some(a => a.id === filterAlbum)) {
+    if (appDataLoaded && filterAlbum !== null && !albums.some(a => a.id === filterAlbum)) {
       useGalleryStore.getState().setFilterAlbum(null);
     }
-  }, [albums, filterAlbum]);
+  }, [albums, filterAlbum, appDataLoaded]);
 
   // 查看器中打开详情后，翻页时详情面板跟随当前图
   useEffect(() => {
@@ -209,6 +219,8 @@ export default function App() {
   const closeViewer = useCallback(() => {
     setViewerImage(null);
     setViewerIndex(-1);
+    // 复位跟随标记：否则下次打开查看器会把详情面板自动弹回来
+    infoFromViewerRef.current = false;
   }, []);
 
   // 查看器翻页：优先用本页数据，跨页时按当前筛选+排序查询单张
@@ -239,7 +251,8 @@ export default function App() {
         offset: gIdx,
       });
       const img = result?.images?.[0];
-      if (img) {
+      // 响应落地时查看器可能已被关闭：无守卫会把查看器自己重新弹开
+      if (img && viewerImageRef.current) {
         setViewerIndex(gIdx);
         setViewerImage(img);
       }
@@ -251,17 +264,13 @@ export default function App() {
   }, []);
 
   const viewerPrev = useCallback(() => {
-    setViewerIndex(idx => {
-      if (idx > 0) navigateViewer(idx - 1);
-      return idx;
-    });
+    const idx = viewerIndexRef.current;
+    if (idx > 0) navigateViewer(idx - 1);
   }, [navigateViewer]);
 
   const viewerNext = useCallback(() => {
-    setViewerIndex(idx => {
-      if (idx < useGalleryStore.getState().totalImages - 1) navigateViewer(idx + 1);
-      return idx;
-    });
+    const idx = viewerIndexRef.current;
+    if (idx < useGalleryStore.getState().totalImages - 1) navigateViewer(idx + 1);
   }, [navigateViewer]);
 
   // 单图轻量更新（评分/收藏/备注/重命名等）：本地合并，避免全量刷新
@@ -275,6 +284,8 @@ export default function App() {
         store.setImages(prev => removeImageFromList(prev, id));
         store.setTotalImages(nextTotal);
         store.setPage(pageAfterDelete(store.page, nextTotal, store.gridSettings));
+        // 行已离开收藏列表：勾选集同步剪枝，否则批量操作打向不可见图片
+        store.setSelectedIds(removeIdsFromSet(store.selectedIds, [id]));
         store.loadStats();
         return;
       }
@@ -289,7 +300,9 @@ export default function App() {
     store.loadStats();
     store.loadAppData();
     if (infoImageRef.current) {
-      setInfoImage(prev => ({ ...prev, _refresh: Date.now() }));
+      // 同批内面板可能已被 onClose 置 null（守卫读的是渲染期 ref）：prev 为空必须保持 null，
+      // 否则 {...null} 生成 {_refresh} 幽灵对象把面板重挂成打向 undefined id 的空壳
+      setInfoImage(prev => (prev ? { ...prev, _refresh: Date.now() } : null));
     }
   }, []);
 
@@ -316,7 +329,12 @@ export default function App() {
   // 拖拽导入
   const handleDragCollect = useCallback((files) => {
     if (files && files.length > 0) {
-      setImportInitialFiles(files);
+      setImportInitialFiles(prev => {
+        if (!prev) return files;
+        const seen = new Set(prev.map(f => f.filepath));
+        const extra = files.filter(f => !seen.has(f.filepath));
+        return extra.length > 0 ? [...prev, ...extra] : prev;
+      });
       setShowImport(true);
     } else {
       showToast('拖入的内容中没有可导入的图片', 'info');
@@ -341,7 +359,7 @@ export default function App() {
 
   // 全局快捷键：实时依赖经 ref 读取，仅注册一次
   useGlobalShortcuts({
-    isModalOpen: () => !!pendingBatchActionRef.current || !!showImportRef.current,
+    isModalOpen: () => anyModalOpen(useGalleryStore.getState()),
     isViewerActive: () => !!viewerImageRef.current,
     isInfoActive: () => !!infoImageRef.current,
     hasSelection: () => selectionSizeRef.current > 0,
@@ -351,6 +369,7 @@ export default function App() {
         return true;
       }
       if (infoImageRef.current) {
+        infoFromViewerRef.current = false;
         setInfoImage(null);
         return true;
       }
@@ -375,10 +394,6 @@ export default function App() {
     onDeleteSelected: () => handleBatchDelete(),
     onClearSelection: () => useGalleryStore.getState().clearSelection(),
   });
-  const pendingBatchActionRef = useRef(null);
-  pendingBatchActionRef.current = pendingBatchAction;
-  const showImportRef = useRef(null);
-  showImportRef.current = showImport;
   const showShortcutsRef = useRef(null);
   showShortcutsRef.current = showShortcuts;
   const selectionSizeRef = useRef(0);
@@ -499,7 +514,11 @@ export default function App() {
         {infoImage && (
           <InfoPanel
             image={infoImage}
-            onClose={() => setInfoImage(null)}
+            onClose={() => {
+              // 面板被显式关闭即停止跟随查看器翻页（否则 ←/→ 把它复活）
+              infoFromViewerRef.current = false;
+              setInfoImage(null);
+            }}
             onImageUpdated={handleImageUpdated}
           />
         )}

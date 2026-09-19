@@ -3,7 +3,7 @@ import { toast } from 'sonner';
 import api from '../lib/api';
 import useGalleryStore from '../store/galleryStore';
 import { toEditParams } from '../lib/editParams';
-import { pageAfterDelete, pageSizeOf } from '../lib/gallery';
+import { pageAfterDelete, pageSizeOf, removeIdsFromSet } from '../lib/gallery';
 
 // 批量操作（勾选集驱动）：全选/导出/打标/评分收藏/删除确认 + 批量同步编辑参数。
 // 数据与勾选集都从 galleryStore 读取，弹层确认状态（pendingBatchAction）由本 hook 持有。
@@ -33,7 +33,12 @@ export default function useBatchActions({ showToast }) {
 
   const handleSelectAllAll = useCallback(async () => {
     if (!api.isBridgeAvailable()) return;
+    const snapshotFilter = (st) => JSON.stringify([
+      st.search, st.filterTag, st.filterAlbum, st.filterFavorites,
+      st.filterDate, st.dateRange.from, st.dateRange.to,
+    ]);
     const store = useGalleryStore.getState();
+    const filterKeyAtRequest = snapshotFilter(store);
     const ids = await api.getAllImageIds({
       search: store.search,
       tagId: store.filterTag,
@@ -44,15 +49,18 @@ export default function useBatchActions({ showToast }) {
       dateTo: store.dateRange.to,
     });
     if (!ids || ids.length === 0) return;
-    const next = new Set(store.selectedIds);
+    // 大库查询可达秒级：期间改筛选会清勾选并重查，晚到的旧筛选 id 集灌回会污染勾选集（批量删除误伤）
+    const cur = useGalleryStore.getState();
+    if (snapshotFilter(cur) !== filterKeyAtRequest) return;
+    const next = new Set(cur.selectedIds);
     if (ids.every((id) => next.has(id))) {
       ids.forEach((id) => next.delete(id));
-      store.setSelectedIds(next);
+      cur.setSelectedIds(next);
       showToast(`已取消全选 ${ids.length} 张图片`, 'info');
     } else {
       // 全量替换而非并集：勾选集必须严格等于当前筛选结果，
       // 并入陈旧 id（其他筛选/页面上的历史勾选、已删 id）会让批量删除误伤不可见图片
-      store.setSelectedIds(new Set(ids));
+      cur.setSelectedIds(new Set(ids));
       showToast(`已全选当前筛选下 ${ids.length} 张图片`, 'info');
     }
   }, [showToast]);
@@ -90,12 +98,23 @@ export default function useBatchActions({ showToast }) {
       const store = useGalleryStore.getState();
       const ids = [...store.selectedIds];
       if (ids.length === 0) return;
+      try {
+        await api.updateImages(ids, updates);
+      } catch (e) {
+        showToast(`批量更新失败: ${e.message}`, 'error');
+        return;
+      }
       const idSet = new Set(ids);
-      await api.updateImages(ids, updates);
-      store.setImages((prev) =>
-        prev.map((img) => (idSet.has(img.id) ? { ...img, ...updates } : img))
-      );
-      if ('favorite' in updates) store.loadStats();
+      // 收藏页取消收藏：这些行已不属于当前筛选，本地 merge 会留下「灭而未走」的行，改重查 + 剪枝
+      if (store.filterFavorites && updates.favorite === 0) {
+        store.setSelectedIds(removeIdsFromSet(store.selectedIds, ids));
+        await Promise.all([store.loadImages(), store.loadStats()]);
+      } else {
+        store.setImages((prev) =>
+          prev.map((img) => (idSet.has(img.id) ? { ...img, ...updates } : img))
+        );
+        if ('favorite' in updates) store.loadStats();
+      }
       const desc =
         'rating' in updates
           ? updates.rating > 0
@@ -166,7 +185,17 @@ export default function useBatchActions({ showToast }) {
     const store = useGalleryStore.getState();
     const deletedCount = store.selectedIds.size;
     const deletedIds = [...store.selectedIds];
-    const results = await api.batchDeleteImages(deletedIds);
+    if (deletedIds.length === 0) {
+      setPendingBatchAction(null);
+      return;
+    }
+    // 兜异常：DB 层未预期错误仍会 reject，不接住的话确认框永久挂起（弹层卡死）
+    let results;
+    try {
+      results = await api.batchDeleteImages(deletedIds);
+    } catch (e) {
+      results = { error: `批量删除失败: ${e.message}` };
+    }
     store.clearSelection();
     setPendingBatchAction(null);
     // 逐张结果可能带 error（文件被占用等）：成功数按实际统计，不再一律报全量成功
@@ -181,14 +210,16 @@ export default function useBatchActions({ showToast }) {
     } else {
       showToast(`已删除 ${deletedCount} 张图片`, 'success');
     }
-    const nextTotal = Math.max(0, store.totalImages - okCount);
-    const nextPage = pageAfterDelete(store.page, nextTotal, store.gridSettings);
-    const pageSize = pageSizeOf(store.gridSettings);
-    store.setPage(nextPage);
+    // await 后取最新状态：删除在途期间用户可能已翻页/改筛选，用旧快照回写会把他弹回旧页
+    const s = useGalleryStore.getState();
+    const nextTotal = Math.max(0, s.totalImages - okCount);
+    const nextPage = pageAfterDelete(s.page, nextTotal, s.gridSettings);
+    const pageSize = pageSizeOf(s.gridSettings);
+    s.setPage(nextPage);
     await Promise.all([
-      store.loadImages({ offset: (nextPage - 1) * pageSize, limit: pageSize }),
-      store.loadStats(),
-      store.loadAppData(),
+      s.loadImages({ offset: (nextPage - 1) * pageSize, limit: pageSize }),
+      s.loadStats(),
+      s.loadAppData(),
     ]);
   }, [showToast]);
 

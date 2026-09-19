@@ -20,6 +20,11 @@ export default class ErrorBoundary extends Component {
     window.location.reload();
   };
 
+  handleGoHome = () => {
+    this.setState({ error: null });
+    window.location.hash = '#/';
+  };
+
   render() {
     const { error } = this.state;
     const { children } = this.props;
@@ -31,13 +36,22 @@ export default class ErrorBoundary extends Component {
       }}>
         <h2 style={{ fontSize: 18 }}>界面出现问题</h2>
         <p style={{ maxWidth: 480, opacity: 0.7 }}>{String(error?.message || error)}</p>
-        <button
-          type="button"
-          onClick={this.handleReload}
-          style={{ padding: '8px 20px', cursor: 'pointer' }}
-        >
-          重新加载
-        </button>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button
+            type="button"
+            onClick={this.handleGoHome}
+            style={{ padding: '8px 20px', cursor: 'pointer' }}
+          >
+            回到图库
+          </button>
+          <button
+            type="button"
+            onClick={this.handleReload}
+            style={{ padding: '8px 20px', cursor: 'pointer' }}
+          >
+            重新加载
+          </button>
+        </div>
       </div>
     );
   }

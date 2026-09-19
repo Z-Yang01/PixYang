@@ -208,4 +208,40 @@ describe('hooks/useDragImport', () => {
     }).not.toThrow();
     expect(getPathForFile).not.toHaveBeenCalled();
   });
+
+  it('在途拖拽排队：第二次 drop 等第一次收集完成后再收集，回调按序不互相覆盖', async () => {
+    const onCollect = vi.fn();
+    let resolveFirst: ((v: string[]) => void) | undefined;
+    const first = new Promise<string[]>((r) => { resolveFirst = r; });
+    collectImportFiles.mockReturnValueOnce(first).mockResolvedValueOnce(['/b.png']);
+    render(<Harness onCollect={onCollect} />);
+    fireDrag('drop', filesData([{ path: '/a.png' }]));
+    fireDrag('drop', filesData([{ path: '/b.png' }]));
+    await act(async () => { await Promise.resolve(); });
+    expect(collectImportFiles).toHaveBeenCalledTimes(1);
+    act(() => { resolveFirst?.(['/a.png']); });
+    await vi.waitFor(() => {
+      expect(collectImportFiles).toHaveBeenCalledTimes(2);
+      expect(collectImportFiles).toHaveBeenLastCalledWith(['/b.png']);
+      expect(onCollect).toHaveBeenNthCalledWith(1, ['/a.png']);
+      expect(onCollect).toHaveBeenNthCalledWith(2, ['/b.png']);
+    });
+  });
+
+  it('收集失败不卡队列：reject 后按空集回调，后续 drop 恢复正常', async () => {
+    const onCollect = vi.fn();
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    collectImportFiles.mockRejectedValueOnce(new Error('net down'));
+    render(<Harness onCollect={onCollect} />);
+    fireDrag('drop', filesData([{ path: '/a.png' }]));
+    await vi.waitFor(() => {
+      expect(onCollect).toHaveBeenNthCalledWith(1, []);
+    });
+    collectImportFiles.mockResolvedValueOnce(['/b.png']);
+    fireDrag('drop', filesData([{ path: '/b.png' }]));
+    await vi.waitFor(() => {
+      expect(onCollect).toHaveBeenNthCalledWith(2, ['/b.png']);
+    });
+    errSpy.mockRestore();
+  });
 });

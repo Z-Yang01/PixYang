@@ -5,6 +5,8 @@ import api from '../lib/api';
 export default function useDragImport({ enabled, onCollect }) {
   const [dragImport, setDragImport] = useState(false);
   const dragDepthRef = useRef(0);
+  const busyRef = useRef(false);
+  const pendingPathsRef = useRef([]);
   const enabledRef = useRef(enabled);
   enabledRef.current = enabled;
   const onCollectRef = useRef(onCollect);
@@ -36,8 +38,28 @@ export default function useDragImport({ enabled, onCollect }) {
         } catch { /* 忽略无法取路径的项 */ }
       }
       if (paths.length === 0) return;
-      const files = await api.collectImportFiles(paths);
-      onCollectRef.current(files);
+      if (busyRef.current) {
+        pendingPathsRef.current.push(...paths);
+        return;
+      }
+      busyRef.current = true;
+      let queue = paths;
+      try {
+        do {
+          let files = [];
+          try {
+            files = (await api.collectImportFiles(queue)) || [];
+          } catch (e) {
+            console.error('[拖拽导入] 收集文件失败:', e.message);
+          }
+          onCollectRef.current(files);
+          queue = pendingPathsRef.current;
+          pendingPathsRef.current = [];
+        } while (queue.length > 0);
+      } finally {
+        busyRef.current = false;
+        pendingPathsRef.current = [];
+      }
     };
     window.addEventListener('dragover', onDragOver);
     window.addEventListener('dragenter', onDragEnter);

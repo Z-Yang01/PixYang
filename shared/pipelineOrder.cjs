@@ -54,6 +54,7 @@ const CAPABILITY_MATRIX = {
   lens:          { preview: 'partial',   export: 'partial',   bake: 'partial', note: 'vignette supported（预览 CSS 渐变精确对齐）；profile/distortion/chromatic unsupported (M8)' },
   geometry:      { preview: 'supported', export: 'supported', bake: 'supported' },
   crop:          { preview: 'supported', export: 'supported', bake: 'supported' },
+  encode:        { preview: 'supported', export: 'supported', bake: 'supported', note: 'jpeg/png/webp + quality；预览不经编码' },
 };
 
 function stageCapability(kind, target) {

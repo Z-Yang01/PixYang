@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { ImageOff } from 'lucide-react';
 import { groupImagesByDate, pageSizeOf, addRangeToSet, toggleIdInSet, removeIdsFromSet, createLoadSequencer, hasActiveFilters as computeHasActiveFilters } from '@/lib/gallery';
-import useGalleryStore from '@/store/galleryStore';
+import useGalleryStore, { anyModalOpen } from '@/store/galleryStore';
 import { matchGridShortcut, GRID_ACTIONS } from '@/lib/shortcuts';
 import api from '@/lib/api';
 import ImageCard from './ImageCard';
@@ -176,6 +176,13 @@ export default function ImageGrid({
   const activeIndexRef = useRef(-1);
   activeIndexRef.current = activeIndex;
   const dialogsOpen = !!addToAlbumImage || !!renameImage || !!deleteTarget;
+  // 网格弹窗注册进全局模态门禁；App 级弹层（导入/确认/帮助）开着也禁本网格键盘导航
+  const globalModal = useGalleryStore(anyModalOpen);
+  const setModal = useGalleryStore(s => s.setModal);
+  useEffect(() => {
+    setModal('gridDialogs', dialogsOpen);
+    return () => setModal('gridDialogs', false);
+  }, [setModal, dialogsOpen]);
 
   // 键盘导航依赖本回调，必须先于下方 useEffect 定义（此前定义在其后，
   // useEffect 依赖数组引用未初始化的 const，每次渲染抛 TDZ ReferenceError，网格整体白屏）
@@ -185,7 +192,7 @@ export default function ImageGrid({
   }, [setSelectedIds, lastSelectedRef]);
 
   useEffect(() => {
-    if (viewerActive || dialogsOpen) return;
+    if (viewerActive || dialogsOpen || globalModal) return;
     const columns = gridSettings.columns;
     const onKey = (e) => {
       const action = matchGridShortcut(e);
@@ -223,7 +230,7 @@ export default function ImageGrid({
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [viewerActive, dialogsOpen, gridSettings.columns, onView, handleCheckboxClick]);
+  }, [viewerActive, dialogsOpen, globalModal, gridSettings.columns, onView, handleCheckboxClick]);
 
   // 高亮卡片跟随滚动
   useEffect(() => {
@@ -281,10 +288,15 @@ export default function ImageGrid({
     if (Object.keys(origById).length > 0) setFileUrls(prev => ({ ...prev, ...origById }));
   };
 
+  const tagSeqRef = useRef(null);
+  if (!tagSeqRef.current) tagSeqRef.current = createLoadSequencer();
+
   const loadImageTags = async (imgs) => {
     if (!api.isBridgeAvailable()) return;
+    const token = tagSeqRef.current.next();
     const ids = imgs.map(img => img.id);
     const tagMap = await api.getBatchImageTags(ids);
+    if (!tagSeqRef.current.isCurrent(token)) return;
     setImageTags(tagMap || {});
   };
 

@@ -6,7 +6,9 @@ release/
 Thumbs.db
 
 .zcode/
-build/
+build/*
+!build/icon.ico
+!build/icon.png
 
 coverage/
 scripts/.prebuilds/

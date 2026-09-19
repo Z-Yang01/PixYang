@@ -209,3 +209,91 @@ describe('useBatchActions 全选全部', () => {
     expect([...useGalleryStore.getState().selectedIds]).toEqual([3]);
   });
 });
+
+describe('useBatchActions 异步收尾守卫', () => {
+  const out = { current: null };
+  const showToast = vi.fn();
+  function GuardHarness() {
+    out.current = useBatchActions({ showToast });
+    return null;
+  }
+
+  beforeEach(() => {
+    useGalleryStore.setState(initialSnapshot, true);
+    showToast.mockClear();
+    window.pixyang = {};
+  });
+
+  afterEach(() => {
+    cleanup();
+    delete window.pixyang;
+  });
+
+  it('全选全部：等待期间筛选变化，晚到的旧 id 集被丢弃（不污染勾选集）', async () => {
+    let resolveIds;
+    const p = new Promise((r) => { resolveIds = r; });
+    window.pixyang.getAllImageIds = vi.fn(() => p);
+    render(<GuardHarness />);
+    let task;
+    act(() => { task = out.current.handleSelectAllAll(); });
+    useGalleryStore.setState({ search: '等待期间改了筛选' });
+    resolveIds([1, 2]);
+    await act(async () => { await task; });
+    expect(useGalleryStore.getState().selectedIds.size).toBe(0);
+    expect(showToast).not.toHaveBeenCalled();
+  });
+
+  it('全选全部：筛选未变时正常灌入（对照组，守卫不过宽）', async () => {
+    window.pixyang.getAllImageIds = vi.fn().mockResolvedValue([1, 2]);
+    render(<GuardHarness />);
+    await act(async () => { await out.current.handleSelectAllAll(); });
+    expect([...useGalleryStore.getState().selectedIds].sort()).toEqual([1, 2]);
+  });
+
+  it('批量删除：IPC reject 兜成 error toast，勾选清空不卡确认框', async () => {
+    useGalleryStore.setState({
+      selectedIds: new Set([1, 2]),
+      loadImages: vi.fn(async () => {}),
+      loadStats: vi.fn(async () => {}),
+      loadAppData: vi.fn(async () => {}),
+    });
+    window.pixyang.batchDeleteImages = vi.fn().mockRejectedValue(new Error('disk yanked'));
+    render(<GuardHarness />);
+    await act(async () => { await out.current.executeBatchDelete(); });
+    expect(showToast).toHaveBeenCalledWith('批量删除失败: disk yanked', 'error');
+    expect(useGalleryStore.getState().selectedIds.size).toBe(0);
+  });
+
+  it('批量删除：勾选集已空时早退，不发 IPC', async () => {
+    window.pixyang.batchDeleteImages = vi.fn();
+    render(<GuardHarness />);
+    await act(async () => { await out.current.executeBatchDelete(); });
+    expect(window.pixyang.batchDeleteImages).not.toHaveBeenCalled();
+  });
+
+  it('批量更新：updateImages reject 转 error toast，列表不本地假更新', async () => {
+    const loadStats = vi.fn(async () => {});
+    useGalleryStore.setState({ selectedIds: new Set([1]), images: [], loadStats });
+    window.pixyang.updateImages = vi.fn().mockRejectedValue(new Error('db busy'));
+    render(<GuardHarness />);
+    await act(async () => { await out.current.handleBatchUpdate({ favorite: 1 }); });
+    expect(showToast).toHaveBeenCalledWith('批量更新失败: db busy', 'error');
+    expect(useGalleryStore.getState().images).toEqual([]);
+    expect(loadStats).not.toHaveBeenCalled();
+  });
+
+  it('收藏页取消收藏：勾选剪枝 + 重查列表与统计（不 merge 留「灭而未走」行）', async () => {
+    const loadImages = vi.fn(async () => {});
+    const loadStats = vi.fn(async () => {});
+    useGalleryStore.setState({
+      selectedIds: new Set([1, 2]), filterFavorites: true, images: [], loadImages, loadStats,
+    });
+    window.pixyang.updateImages = vi.fn().mockResolvedValue(undefined);
+    render(<GuardHarness />);
+    await act(async () => { await out.current.handleBatchUpdate({ favorite: 0 }); });
+    expect(useGalleryStore.getState().selectedIds.size).toBe(0);
+    expect(loadImages).toHaveBeenCalled();
+    expect(loadStats).toHaveBeenCalled();
+    expect(showToast).toHaveBeenCalledWith('已取消收藏（2 张）', 'success');
+  });
+});

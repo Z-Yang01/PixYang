@@ -210,19 +210,32 @@ describe('ImportDialog（补充分支）', () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
-  it('Escape 关闭：导入中不回调 onClose，空闲时回调', async () => {
+  it('Escape 关闭：导入中不收尾；已有导入成果时走 onDone 刷新图库', async () => {
     const onClose = vi.fn();
+    const onDone = vi.fn();
     const d = deferred();
     window.pixyang.importImages.mockImplementation(() => d.promise);
-    renderDialog({ onClose, initialFiles: filesFixture });
+    renderDialog({ onClose, onDone, initialFiles: filesFixture });
     fireEvent.click(screen.getByText('导入 2 张图片'));
     await screen.findByText('正在导入 a.jpg...');
     fireEvent.keyDown(document.body, { key: 'Escape' });
+    expect(onClose).not.toHaveBeenCalled();
+    expect(onDone).not.toHaveBeenCalled();
     d.resolve([{ id: 1 }]);
     await screen.findByText('导入完成');
     fireEvent.keyDown(document.body, { key: 'Escape' });
     await vi.waitFor(() => {
-      expect(onClose).toHaveBeenCalledTimes(1);
+      expect(onDone).toHaveBeenCalledTimes(1);
+      expect(onClose).not.toHaveBeenCalled();
     });
+  });
+
+  it('initialFiles 追加更新（拖拽二次合并到达）：文件列表即时刷新', () => {
+    const extra = { filepath: 'C:/import/c.jpg', filename: 'c.jpg', size: 1024, format: '.jpg' };
+    const { rerender } = renderDialog({ initialFiles: filesFixture });
+    expect(document.querySelectorAll('.import-file-card').length).toBe(2);
+    rerender(<ImportDialog onClose={vi.fn()} onDone={vi.fn()} initialFiles={[...filesFixture, extra]} />);
+    expect(document.querySelectorAll('.import-file-card').length).toBe(3);
+    expect(screen.getByText('c.jpg')).toBeInTheDocument();
   });
 });

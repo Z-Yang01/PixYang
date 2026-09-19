@@ -214,4 +214,31 @@ describe('ImageGrid', () => {
       expect(last).toContain('C:/edit/sunset.png');
     });
   });
+
+  it('键盘导航：无模态时方向键+空格切换勾选（门禁放行对照组）', () => {
+    seedStore({ images: [makeImage()], totalImages: 1 });
+    render(<ImageGrid />);
+    fireEvent.keyDown(window, { key: 'ArrowRight' });
+    fireEvent.keyDown(window, { key: ' ' });
+    expect([...useGalleryStore.getState().selectedIds]).toEqual([1]);
+  });
+
+  it('键盘导航：App 级弹层（store modals）开着时网格快捷键不生效（Space 不再吞给网格）', () => {
+    seedStore({ images: [makeImage()], totalImages: 1 });
+    useGalleryStore.setState({ modals: { import: true } });
+    render(<ImageGrid />);
+    fireEvent.keyDown(window, { key: 'ArrowRight' });
+    fireEvent.keyDown(window, { key: ' ' });
+    expect(useGalleryStore.getState().selectedIds.size).toBe(0);
+  });
+
+  it('网格自身弹窗注册进全局模态表，卸载后销键', async () => {
+    seedStore({ images: [makeImage()], totalImages: 1 });
+    const { container, unmount } = render(<ImageGrid />);
+    fireEvent.contextMenu(container.querySelector('.image-card'));
+    fireEvent.click(await screen.findByRole('menuitem', { name: /删除/ }));
+    expect(useGalleryStore.getState().modals.gridDialogs).toBe(true);
+    unmount();
+    expect(useGalleryStore.getState().modals.gridDialogs).toBeUndefined();
+  });
 });

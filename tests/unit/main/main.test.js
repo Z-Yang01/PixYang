@@ -23,11 +23,21 @@ const winInstances = [];
 
 function makeWindowInstance() {
   const inst = {
-    webContents: { send: vi.fn(), openDevTools: vi.fn() },
+    webContents: {
+      send: vi.fn(),
+      openDevTools: vi.fn(),
+      on: vi.fn(),
+      setWindowOpenHandler: vi.fn(),
+      getURL: vi.fn(() => 'file:///app/dist/index.html'),
+      reload: vi.fn(),
+    },
     loadURL: vi.fn(),
     loadFile: vi.fn(),
     on: vi.fn(),
     show: vi.fn(),
+    focus: vi.fn(),
+    restore: vi.fn(),
+    isMinimized: vi.fn(() => false),
     maximize: vi.fn(),
     isDestroyed: vi.fn(() => true),
     isMaximized: vi.fn(() => false),
@@ -157,6 +167,8 @@ const electronStub = {
     isPackaged: true,
     on: vi.fn(),
     quit: vi.fn(),
+    requestSingleInstanceLock: vi.fn(() => true),
+    hasSingleInstanceLock: () => true,
   },
   BrowserWindow: Object.assign(vi.fn(makeWindowInstance), { getAllWindows: vi.fn(() => []) }),
   ipcMain: {
@@ -474,6 +486,69 @@ describe('窗口与生命周期', () => {
     expect(() => closeCb()).not.toThrow();
 
     inst.isDestroyed.mockReturnValue(true);
+  });
+
+  it('启动即申请单实例锁', () => {
+    expect(electronStub.app.requestSingleInstanceLock).toHaveBeenCalled();
+  });
+
+  it('second-instance：已最小化的主窗口被恢复并聚焦', () => {
+    const cb = electronStub.app.on.mock.calls.find(([e]) => e === 'second-instance')?.[1];
+    expect(cb).toBeDefined();
+    const win = winInstances[winInstances.length - 1];
+    win.isDestroyed.mockReturnValue(false);
+    win.isMinimized.mockReturnValue(true);
+    cb();
+    expect(win.restore).toHaveBeenCalled();
+    expect(win.show).toHaveBeenCalled();
+    expect(win.focus).toHaveBeenCalled();
+    win.isDestroyed.mockReturnValue(true);
+    win.isMinimized.mockReturnValue(false);
+  });
+
+  it('will-navigate：跨源拒绝、同源（HMR reload）放行、坏 URL 一律拒绝', () => {
+    const win = winInstances[0];
+    const cb = win.webContents.on.mock.calls.find(([e]) => e === 'will-navigate')?.[1];
+    expect(cb).toBeDefined();
+    const cross = { preventDefault: vi.fn() };
+    cb(cross, 'https://evil.example.com/x');
+    expect(cross.preventDefault).toHaveBeenCalled();
+    const same = { preventDefault: vi.fn() };
+    cb(same, 'file:///app/dist/index.html?reload=1');
+    expect(same.preventDefault).not.toHaveBeenCalled();
+    const bad = { preventDefault: vi.fn() };
+    cb(bad, 'not a url');
+    expect(bad.preventDefault).toHaveBeenCalled();
+  });
+
+  it('setWindowOpenHandler：拒绝一切新窗口', () => {
+    const win = winInstances[0];
+    expect(win.webContents.setWindowOpenHandler).toHaveBeenCalled();
+    const handler = win.webContents.setWindowOpenHandler.mock.calls[0][0];
+    expect(handler('https://example.com')).toEqual({ action: 'deny' });
+  });
+
+  it('render-process-gone：窗口存活时自动重载', () => {
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const win = winInstances[winInstances.length - 1];
+    const cb = win.webContents.on.mock.calls.find(([e]) => e === 'render-process-gone')?.[1];
+    expect(cb).toBeDefined();
+    win.isDestroyed.mockReturnValue(false);
+    cb({}, { reason: 'oom', exitCode: 1 });
+    expect(win.webContents.reload).toHaveBeenCalled();
+    win.isDestroyed.mockReturnValue(true);
+    win.webContents.reload.mockClear();
+    errSpy.mockRestore();
+  });
+});
+
+describe('打包配置契约（electron-builder files）', () => {
+  it('build.files 覆盖主进程静态 require 的全部顶层目录（files 自定义模式会顶掉默认全收录）', () => {
+    const pkg = require('../../../package.json');
+    const files = pkg.build.files;
+    for (const dir of ['dist/**/*', 'electron/**/*', 'shared/**/*', 'package.json']) {
+      expect(files).toContain(dir);
+    }
   });
 });
 
