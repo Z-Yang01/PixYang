@@ -211,6 +211,7 @@ const dbDefaults = {
   getImagesForRebuild: () => [],
   updateImageOrientation: () => {},
   updateImage: async () => {},
+  updateImageThumbs: async () => {},
   updateImages: async () => {},
   renameImage: async () => {},
   deleteImage: async () => {},
@@ -803,6 +804,28 @@ describe('fs 工具类 handler', () => {
       dateTime: '2023:01:15 10:30:00',
     });
   });
+
+  it('fs:get-exif / fs:file-exists：托管根外文件一律拒绝（审查批 6 L4/L5）', async () => {
+    // 前缀逃逸目录：字符串前缀命中 TMP_BASE 但并非其子路径
+    const evilDir = `${TMP_BASE}-evil6`;
+    fs.mkdirSync(evilDir, { recursive: true });
+    const evilFile = path.join(evilDir, 'probe.jpg');
+    fs.writeFileSync(evilFile, 'x');
+    try {
+      // 修复前：任意本地路径可被 exiftool 读取 / existsSync 探测（存在性 oracle）
+      await expect(call('fs:get-exif', MAIN_JS)).resolves.toBeNull();
+      await expect(call('fs:get-exif', evilFile)).resolves.toBeNull();
+      await expect(call('fs:get-exif', null)).resolves.toBeNull();
+      await expect(call('fs:file-exists', MAIN_JS)).resolves.toBe(false);
+      await expect(call('fs:file-exists', evilFile)).resolves.toBe(false);
+      await expect(call('fs:file-exists', null)).resolves.toBe(false);
+      // 托管根内行为不变
+      await expect(call('fs:file-exists', randomJpg)).resolves.toBe(true);
+      await expect(call('fs:get-exif', exif1Jpg)).resolves.toMatchObject({ camera: 'NIKON CORPORATION Z 6_2' });
+    } finally {
+      fs.rmSync(evilDir, { recursive: true, force: true });
+    }
+  });
 });
 
 describe('导入与相机同步', () => {
@@ -842,6 +865,12 @@ describe('导入与相机同步', () => {
     expect(dbStub.collectImportFiles).toHaveBeenCalledWith(['C:/a']);
     await call('fs:collect-import-files', null);
     expect(dbStub.collectImportFiles).toHaveBeenLastCalledWith([]);
+  });
+
+  it('db:import-images：非数组入参归一为空列表，不进 EXIF 批解析（审查批 6 L6）', async () => {
+    await expect(call('db:import-images', 'C:/Windows')).resolves.toEqual([]);
+    expect(dbStub.importImages).toHaveBeenCalledWith([]);
+    await expect(call('db:import-images', null)).resolves.toEqual([]);
   });
 
   it('fs:scan-directory 委托 scanImageFiles', async () => {
@@ -1103,6 +1132,13 @@ describe('编辑会话（非破坏保存）', () => {
     await call('fs:edit-cancel', 77);
   });
 
+  it('fs:set-images-root：迁移抛错转 {error} 返回值而非 IPC reject（审查批 6 L7）', async () => {
+    dbStub.setImagesRoot.mockRejectedValueOnce(new Error('EPERM: operation not permitted'));
+    const r = await call('fs:set-images-root', 'D:/somewhere');
+    expect(r).toEqual({ error: expect.stringContaining('迁移失败') });
+    expect(r.error).toContain('EPERM');
+  });
+
   it('db:update-image：import_date 移动文件后打开中的会话跟随新 filepath', async () => {
     const oldPath = path.join(FIXTURES, 'editme.jpg');
     const movedPath = path.join(FIXTURES, '2033', '05', '05', 'editme.jpg');
@@ -1196,13 +1232,13 @@ describe('缩略图重建、导出与备份', () => {
       { id: 'b1', filepath: randomJpg },
     ]);
     await expect(call('db:rebuild-thumbnails')).resolves.toEqual({ total: 2, rebuilt: 2, failed: 0 });
-    expect(dbStub.updateImage).toHaveBeenNthCalledWith(1, 's1', {
+    expect(dbStub.updateImageThumbs).toHaveBeenNthCalledWith(1, 's1', {
       thumbnail_path: path.join(THUMBS, 's1.jpg'),
       thumbnail_small_path: path.join(THUMBS, 's1_s.jpg'),
       width: 4000,
       height: 2000,
     });
-    expect(dbStub.updateImage).toHaveBeenNthCalledWith(2, 'b1', {
+    expect(dbStub.updateImageThumbs).toHaveBeenNthCalledWith(2, 'b1', {
       thumbnail_path: path.join(THUMBS, 'b1.jpg'),
       thumbnail_small_path: path.join(THUMBS, 'b1_s.jpg'),
       width: 4000,
@@ -1253,6 +1289,27 @@ describe('缩略图重建、导出与备份', () => {
     const result = await call('fs:export-album-images', 4, dest);
     expect(result).toEqual({ total: 1, copied: 1, nefCopied: 1 });
     expect(dbStub.getAlbumImages).toHaveBeenCalledWith(4);
+  });
+
+  it('fs:export-images：destDir 无效返回错误契约（审查批 6）', async () => {
+    await expect(call('fs:export-images', ['1'], '')).resolves.toEqual({ error: expect.stringContaining('导出目标目录无效') });
+    await expect(call('fs:export-images', ['1'], null)).resolves.toEqual({ error: expect.stringContaining('导出目标目录无效') });
+    await expect(call('fs:export-album-images', 4, 42)).resolves.toEqual({ error: expect.stringContaining('导出目标目录无效') });
+  });
+
+  it('fs:export-images：导出名只取 basename，脏 filename 不逃出目标目录（审查批 6 L1 纵深）', async () => {
+    const dest = path.join(TMP_BASE, 'export-basename');
+    fs.mkdirSync(dest, { recursive: true });
+    dbStub.getImageById.mockImplementation((id) => (
+      {
+        'dirty': { filename: '../../../outside.jpg', filepath: path.join(FIXTURES, 'a.jpg'), raw_path: '' },
+        'blank': { filename: '', filepath: path.join(FIXTURES, 'a.jpg'), raw_path: '' },
+      }[id] || null
+    ));
+    const result = await call('fs:export-images', ['dirty', 'blank'], dest);
+    expect(result).toEqual({ total: 2, copied: 1, nefCopied: 0 });
+    expect(fs.readFileSync(path.join(dest, 'outside.jpg'), 'utf8')).toBe('A');
+    expect(fs.existsSync(path.join(TMP_BASE, 'outside.jpg'))).toBe(false);
   });
 
   it('fs:backup-database：取消保存时返回 success:false', async () => {

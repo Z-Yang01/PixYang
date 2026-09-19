@@ -3,6 +3,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Search, Trash2, Tag } from 'lucide-react';
 import ConfirmDialog from '../Layout/ConfirmDialog';
+import { isEnterSubmit } from '@/lib/shortcuts';
 import api from '@/lib/api';
 
 const TAG_COLORS = ['#818cf8', '#f472b6', '#fbbf24', '#4ade80', '#f87171', '#22d3ee', '#c084fc', '#fb923c'];
@@ -43,7 +44,7 @@ export default function TagManager({ onSelectTag, onRefresh }) {
   };
 
   const handleKeyDown = (e) => {
-    if (e.key === 'Enter') handleCreate();
+    if (isEnterSubmit(e)) handleCreate();
   };
 
   return (

@@ -131,7 +131,14 @@ export default function SettingsPage({ onSettingsChanged, onImagesChanged }) {
 
     setMoving(true);
     setMessage('正在移动图片...');
-    const result = await api.setImagesRoot(target);
+    // IPC reject（极端异常）不能把 moving 卡死：统一转错误分支收尾
+    let result;
+    try {
+      result = await api.setImagesRoot(target);
+    } catch (e) {
+      console.error('[设置] 迁移图片目录异常:', e.message);
+      result = { error: `迁移失败: ${e.message}` };
+    }
     setMoving(false);
 
     if (result?.error) {

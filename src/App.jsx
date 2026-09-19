@@ -389,9 +389,11 @@ export default function App() {
       searchInputRef.current?.select();
     },
     onToggleHelp: () => setShowShortcuts(v => !v),
-    onSelectAll: () => handleSelectAllAllRef.current(),
-    onExportSelected: () => handleExportSelected(),
-    onDeleteSelected: () => handleBatchDelete(),
+    // 勾选动作只在图库/收藏页生效：相册/标签/设置页下勾选集不可见，
+    // Ctrl+A+Delete 不应再对看不见的选择执行全选/删除
+    onSelectAll: () => { if (isGallery) handleSelectAllAllRef.current(); },
+    onExportSelected: () => { if (isGallery) handleExportSelected(); },
+    onDeleteSelected: () => { if (isGallery) handleBatchDelete(); },
     onClearSelection: () => useGalleryStore.getState().clearSelection(),
   });
   const showShortcutsRef = useRef(null);

@@ -1830,3 +1830,115 @@ open/bake/export/cancel 生命周期；C：数据库底层/备份/存储 + src/l
 ## Git Commit
 
 - `fix: 多代理审查批 5 — 打包缺 shared/模态门禁盲区双 P0 建档 + 单实例/导航围栏/崩溃自愈 + 拖拽排队、批量收尾与 12 项竞态守卫（+22 例）`（未 push）
+
+# 2026-09-19 多代理审查批 6：编辑 UI/查看器交互、标签/相册/右键菜单链、IPC 参数校验与安全边界
+
+三路只读审查子代理并行覆盖（J：编辑 UI 与查看器交互链；K：标签/相册/右键菜单/框选交互链；
+L：IPC 面参数校验与安全边界），主代理逐项对码核实后修复 P0 2 项 + P1 全部 + 选定 P2 若干。
+核实中还发现并修复了修复阶段自带的一处回归：IME Enter 谓词极性写反（详见测试段）。
+
+## 当前状态
+
+- 分支 `optimize/architecture`；**867 passed / 0 failed**（60 文件，+37 例）；
+  coverage **91.78%** 语句 / **85.17%** 分支 / **82.14%** 函数（thresholds 全达标）；
+  lint 0 error / 8 warnings；typecheck 通过；build 通过；golden 22/22。
+
+## P0（建档 error/import-filename-path-escape.md、error/album-rename-focus-race-premature-submit.md）
+
+- **L1 导入文件名路径逃逸（任意路径写）**：`importOne` 直接 `path.join(destDir, img.filename)`，
+  敌意载荷 `../../../../evil.jpg` 把文件写到图库根之外且日期迁移/导出 sink 二次放大。
+  修复：importOne 入口 basename 收敛（空/`.`/`..` 跳过不污染去重集）、`db:import-images`
+  非数组按 `[]`、`importImages` 非数组早退、导出输出名同样 basename。
+- **K1 相册重命名焦点竞态秒提交**：radix 菜单关闭强行回收焦点，刚 autoFocus 的改名框立刻收到
+  误 blur，onBlur 提交流程以原名称/半截名称触发。`onCloseAutoFocus` preventDefault 实测拦不住
+  卸载链上的焦点闪动，最终修正在语义侧：名称未变的 blur **不写库、也不收起编辑框**，
+  收起只由 Enter/Escape 驱动（preventDefault 保留作纵深）。
+
+## P1（L 链：IPC 参数校验与安全边界）
+
+- **L2 updateImage 列白名单**：renderer 可写列收敛为 rating/favorite/notes/width/height/
+  import_date/rotation/flip_h/flip_v（含 flipH/flipV 别名）；thumbnail_path 等内部列改走
+  仅内部调用的 `updateImageThumbs`，堵住"改名越狱+缩略图列注入"。
+- **L3 scanImageFiles 入参护栏**：非字符串/非绝对路径/非目录 → `[]`；深度上限 12、文件上限
+  20000，防敌意深递归与巨目录拖死扫描。
+- **L4 getTags 隐藏记录过滤**：image_count 统计 join `i.hidden = 0`，标签侧栏不再被
+  无配对的隐藏 NEF 撑大计数。
+- **L5 标签/相册入参校验**：cleanText 统一 trim/长度钳制（名称 50、描述 200），
+  createTag/renameAlbum/createAlbum 空名/纯空白拒绝，标签色非 `#rrggbb` 白名单回落默认色。
+- **L6 存在性 oracle 收口**：`fs:get-exif`/`fs:file-exists` 仅托管根（图片根+库目录）内
+  应答，根外一律 null/false，不再向被攻破的渲染进程泄露任意路径是否存在。
+- **set-images-root 错误契约**：主进程 catch 一切异常转 `{ error: '迁移失败: …' }`，
+  返回契约归一 `{path,moved}`；前端 try/catch 兜 IPC reject，moving 态不卡死。
+
+## P1（J 链：编辑 UI/查看器交互）
+
+- **J1 裁剪边手柄塌缩**：n/s/e/w 边手柄复用了角手柄的对角锚点 min/abs 语义，纯竖直拖 n 边
+  把宽度缩到 0，onUp `<8` 判空直接清空裁剪框。改为边手柄只动被拖的轴、另一轴保持原值，
+  双边各留 MIN_SIDE=8 钳制。
+- **J2 画布切换不重绘**：Before/对比切换会卸载重挂 canvas，重绘 effect 依赖缺
+  `showBefore/compareMode`，After 侧留一块空白画布盖住原图（预览≡Before）；SVG 回退链
+  同理在 `showBeforeOn` 时短路成 null，对比模式下 After ≡ Before——链改为只要 editing 就算。
+- **J3 过期绘制误闩锁 webglFailed**：`renderWebGLPreview` 在 await createImageBitmap 期间
+  被新绘制取代时返回 false，调用方据此永久禁用 WebGL。改为过期丢弃返回 true。
+- **J4 乐观写无回滚**：收藏/评分/查看态旋转翻转 `await api.updateImage` 后不查
+  `result?.error` 也不 catch，写失败时本地态与库分叉。统一 try/catch + error 抛出 +
+  本地回滚 + toast。
+- **J5 进入编辑失败无反馈**：editOpen 返回 `{error}` 时 editing 仍 false、行内错误条不渲染，
+  点击"编辑模式"毫无反应——toast 兜底。
+- **J6 enterEdit 在途卸载**：imageIdRef 停格在最后一次渲染值、卸载后恒真，晚到的会话
+  挂到已消失的组件上且 edit-cache 泄漏——`mountedRef` + `openingIdRef`，卸载兜底按
+  opening id 作废会话。
+- **忙态变换门禁**：applyRotate/applyFlip 在 opening/baking 等忙态直接拒绝，
+  并把历史 push 从 setState updater 挪出（StrictMode 双调用双入历史），改读 editOpsRef 纯计算。
+- **J13 会话残留复位**：cleanupEditSession 补 cropRatioKey/selectedMaskId/presetName/
+  applyWithGeometry 复位，比例锁与草稿预设不带进下一次编辑。
+
+## P1（K 链：勾选集与快捷键口径）
+
+- **K2 路由快捷键穿透**：Ctrl+A/Ctrl+E/Delete 在相册/标签/设置页照常作用于"看不见的"
+  图库勾选集（全选→Delete 可批量删除不在视图中的图）——三个动作统一 `if (isGallery)` 门禁。
+- **K3 标签移除勾选集失守**：网格卡片快捷移除与 InfoPanel 的 X 移除，若该图正被这个标签
+  筛选，行立即离开视图但勾选保留，后续批量操作打向不可见图——两处同步剪枝（含对照测试）。
+- **K4 IME Enter 语义**：改名/新建/分页跳转/预设命名等 8 处 `e.key === 'Enter'` 直接提交，
+  输入法合成态 Enter（上屏候选词）误触发提交。shortcuts.js 新增 `isEnterSubmit` 正向谓词
+  （排除 isComposing/keyCode 229），全部消费点接入。核实阶段发现修复阶段曾把谓词极性写反
+  （合成态才提交），对码 diff 时拦下并连同消费点一并纠正。
+- **K13 ConfirmDialog 确认连带取消**：radix Action 点击后的关闭流程补发 `onOpenChange(false)`，
+  「确认」同时执行一次「取消」——confirmedRef 隔离（本项批 6 建档在 K1 文档内）。
+
+## 测试
+
+- **+37 例**（830→867，59→60 文件）：
+  database images 7（importOne basename 逃逸/无效名跳过/importImages 形状、updateImage
+  白名单+updateImageThumbs+日期迁移 sink 纵深、scanImageFiles 护栏与深度上限）；
+  database tags 2（getTags 隐藏过滤、createTag 校验/颜色回落/长度钳制）；database albums 1
+  （create/rename 校验）；main 5（get-exif/file-exists 托管根内外+前缀逃逸目录、import-images
+  非数组、set-images-root reject→{error}、导出 destDir 无效、脏 filename 导出 basename 收敛）；
+  shortcuts 3（isEnterSubmit 真值表）；ConfirmDialog 1（K13）；ImageViewer 5（收藏 error
+  回滚、评分异常回滚、enterEdit 在途卸载、enterEdit {error} 反馈、裁剪边手柄 w/n 只动单轴）；
+  webglPreview 新文件 4（无上下文 false、正常上传+缓存命中、**过期 drawSeq 返回 true 不闩锁**、
+  createImageBitmap reject 回退）；App 2（图库 Ctrl+A 放行、非图库三键拦截）；
+  ImageGrid 2（筛选下快捷移除剪枝+对照）；InfoPanel 2（X 移除剪枝+对照）；
+  AlbumsView 2（K1 未变名误 blur 无写不收起、K4 合成 Enter 不提交）；SettingsPage 1（IPC reject 不卡 moving）。
+- 既有 2 个 database 测试改走 `updateImageThumbs`（白名单收口后 thumbnail 列不再能经
+  updateImage 写入）；AlbumsView 重命名「疑似 Bug」注释与断言固化为修后语义。
+
+## 遗留（本批核实、刻意不动）
+
+- **J7/J9/J10/J14/J15/J17-J19**：编辑 UI 链存疑项（蒙版手柄细节/历史栈容量/缩略图对比等），
+  核实为低危或需产品口径，转入下批或看板。
+- **K5-K12、K15**：标签/相册/框选链余项（右键菜单与框选交互、标签删除确认文案等）。
+- **L7 handle() 统一装饰器**：ipcMain.handle 参数校验目前逐 handler 手写，建议统一
+  wrap（校验/日志/错误契约）——架构级改动单独立项。
+- **L8 settings 写白名单**：`db:set-setting` 仍接受任意 key/value，需要键白名单+值校验。
+- **L10-L13**：IPC 面其余低危项（见审查报告）。
+- **to-file-url 任意路径读**：`fs:to-file-url` 可对托管根外路径签发 file:// URL，
+  渲染进程本就能加载任意 file://（webSecurity 未额外收紧），评估为既定边界，接受。
+- **口径待决（上报用户）**：日期筛选 import_date vs taken_at（批 2 起沿袭）；
+  J18 查看器退出后已保存参数是否应立即改变浏览预览；K12 标签管理是否提供改名能力；
+  L14 dev 模式 webSecurity:false 与 sharp 无限像素预算的发布闸门；
+  J15 查看态未保存旋转在重开/翻页时的归属。
+
+## Git Commit
+
+- `fix: 多代理审查批 6 — 导入文件名路径逃逸/相册改名焦点竞态双 P0 建档 + updateImage 白名单/托管根围栏/裁剪边手柄/乐观写回滚/勾选剪枝与 IME Enter（+37 例）`（未 push）

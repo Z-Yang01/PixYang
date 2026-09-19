@@ -121,6 +121,17 @@ describe('SettingsPage（补充：存储/相机/维护/备份/重复图片等交
     expect(screen.getByText('C:/PixData')).toBeInTheDocument();
   });
 
+  it('选择保存路径：IPC reject 不卡死 moving 态，统一转错误分支（审查批 6）', async () => {
+    window.pixyang.selectDirectory.mockResolvedValue('D:/New');
+    window.pixyang.setImagesRoot.mockRejectedValue(new Error('IPC 超时'));
+    renderPage();
+    await screen.findByText('C:/PixData');
+    fireEvent.click(screen.getByText('选择保存路径'));
+    expect(await screen.findByText(/迁移失败: IPC 超时/)).toBeInTheDocument();
+    // moving 已收尾：按钮恢复可点，不滞留在「正在移动图片...」
+    expect(screen.getByText('选择保存路径')).toBeInTheDocument();
+  });
+
   it('选择相机文件夹：成功后写入设置并启用同步按钮', async () => {
     window.pixyang.selectDirectory.mockResolvedValue('D:/DCIM');
     renderPage();

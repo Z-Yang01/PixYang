@@ -241,4 +241,52 @@ describe('ImageGrid', () => {
     unmount();
     expect(useGalleryStore.getState().modals.gridDialogs).toBeUndefined();
   });
+
+  async function openQuickTagMenu(container, cardIndex = 0) {
+    const trigger = container.querySelectorAll('.card-tag-add')[cardIndex];
+    // radix DropdownMenu 由 pointerdown 开启（与 ui/dropdown-menu 冒烟同法），click 不触发
+    fireEvent.pointerDown(trigger, { button: 0, ctrlKey: false, pointerType: 'mouse' });
+    fireEvent.click(trigger);
+    return screen.findByRole('menuitem', { name: '风景' });
+  }
+
+  it('标签筛选下快捷移除标签：该行离开视图，勾选集同步剪枝（审查批 6 K3）', async () => {
+    const tag = { id: 5, name: '风景', color: '#818cf8' };
+    window.pixyang.getTags.mockResolvedValue([tag]);
+    window.pixyang.getBatchImageTags.mockResolvedValue({ 1: [tag], 2: [tag] });
+    seedStore({
+      images: [makeImage({ id: 1 }), makeImage({ id: 2, filename: 'sunrise.png' })],
+      totalImages: 2,
+      filterTag: 5,
+      selectedIds: new Set([1, 2]),
+    });
+    const { container } = render(<ImageGrid />);
+    await screen.findByText('sunset');
+    const item = await openQuickTagMenu(container);
+    fireEvent.click(item);
+    await vi.waitFor(() => {
+      expect(window.pixyang.removeTagFromImage).toHaveBeenCalledWith(1, 5);
+      // 图 1 不再匹配 tag5 筛选会离开视图：勾选必须同步剔除，防批量操作打向不可见图
+      expect([...useGalleryStore.getState().selectedIds]).toEqual([2]);
+    });
+  });
+
+  it('非该标签筛选下移除标签：勾选集保持不动（K3 对照组）', async () => {
+    const tag = { id: 5, name: '风景', color: '#818cf8' };
+    window.pixyang.getTags.mockResolvedValue([tag]);
+    window.pixyang.getBatchImageTags.mockResolvedValue({ 1: [tag], 2: [tag] });
+    seedStore({
+      images: [makeImage({ id: 1 }), makeImage({ id: 2, filename: 'sunrise.png' })],
+      totalImages: 2,
+      selectedIds: new Set([1, 2]),
+    });
+    const { container } = render(<ImageGrid />);
+    await screen.findByText('sunset');
+    const item = await openQuickTagMenu(container);
+    fireEvent.click(item);
+    await vi.waitFor(() => {
+      expect(window.pixyang.removeTagFromImage).toHaveBeenCalledWith(1, 5);
+    });
+    expect([...useGalleryStore.getState().selectedIds].sort()).toEqual([1, 2]);
+  });
 });

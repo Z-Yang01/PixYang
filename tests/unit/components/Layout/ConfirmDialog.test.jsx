@@ -26,6 +26,16 @@ describe('ConfirmDialog', () => {
     expect(onConfirm).toHaveBeenCalledTimes(1);
   });
 
+  it('确认时 radix 关闭不再补发 onCancel（审查批 6 K13）', () => {
+    const onConfirm = vi.fn();
+    const onCancel = vi.fn();
+    render(<ConfirmDialog title="T" message="M" onConfirm={onConfirm} onCancel={onCancel} />);
+    fireEvent.click(screen.getByText('确认'));
+    // Action 点击会同时触发 onOpenChange(false)：确认路径必须吞掉它，否则 onConfirm 的副作用被 onCancel 抵消
+    expect(onConfirm).toHaveBeenCalledTimes(1);
+    expect(onCancel).not.toHaveBeenCalled();
+  });
+
   it('点击取消回调 onCancel（onClick 与 radix onOpenChange 双通道各触发一次，共 2 次）', () => {
     const onCancel = vi.fn();
     render(<ConfirmDialog title="T" message="M" onConfirm={vi.fn()} onCancel={onCancel} />);

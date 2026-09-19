@@ -30,6 +30,7 @@ const {
   getImagesForRebuild,
   updateImageOrientation,
   updateImage,
+  updateImageThumbs,
   updateImages,
   renameImage,
   deleteImage,
@@ -789,7 +790,7 @@ async function rebuildThumbnailPass() {
         if (!cur || cur.filepath !== r.filepath) continue;
         if (getBakeEpoch(r.id) !== epoch) { thumbRebuildAgain = true; continue; }
         const saved = saveThumbnailTiers(r.id, tiers);
-        await updateImage(r.id, {
+        await updateImageThumbs(r.id, {
           thumbnail_path: saved.mediumPath,
           thumbnail_small_path: saved.smallPath,
           width: tiers.width,
@@ -828,6 +829,16 @@ async function runThumbnailRebuild() {
 function scheduleThumbnailRebuild() {
   if (thumbRebuildTimer) clearTimeout(thumbRebuildTimer);
   thumbRebuildTimer = setTimeout(runThumbnailRebuild, 800);
+}
+
+// 托管根：图库目录 + 数据库所在目录（缩略图/编辑缓存均在其下）。
+// 渲染进程可被注入任意路径，文件级 IPC 一律先过此边界
+function isManagedPath(filepath) {
+  if (typeof filepath !== 'string' || !filepath) return false;
+  const target = path.resolve(filepath);
+  const roots = [getImagesRoot(), path.dirname(getDatabasePath())]
+    .filter(Boolean).map((r) => path.resolve(r));
+  return roots.some((r) => target === r || target.startsWith(r + path.sep));
 }
 
 function setupIPC() {
@@ -895,13 +906,14 @@ function setupIPC() {
 
   // 导入图片：提取日期 + 生成缩略图后写入数据库
   ipcMain.handle('db:import-images', async (_event, imageFiles, dateOverride) => {
+    const files = Array.isArray(imageFiles) ? imageFiles : [];
     return withImportLock(async () => {
       await extractExifBatch(
-        imageFiles,
+        files,
         (done, total) => sendProgress('import-progress', { done, total, task: 'import' }),
         (img, info) => { img.importDate = dateOverride || info.date; }
       );
-      const result = await importImages(imageFiles);
+      const result = await importImages(files);
       scheduleThumbnailRebuild();
       return result;
     });
@@ -924,7 +936,7 @@ function setupIPC() {
 
   // 拖拽导入：收集拖入的文件/目录为可导入的图片列表
   ipcMain.handle('fs:collect-import-files', async (_event, paths) => {
-    return collectImportFiles(paths || []);
+    return collectImportFiles(Array.isArray(paths) ? paths : []);
   });
 
   // 批量为多张图片添加同一标签
@@ -1011,7 +1023,7 @@ function setupIPC() {
             if (!cur || cur.filepath !== r.filepath) continue;
             if (getBakeEpoch(r.id) !== epoch) { thumbRebuildAgain = true; continue; }
             const saved = saveThumbnailTiers(r.id, tiers);
-            await updateImage(r.id, {
+            await updateImageThumbs(r.id, {
               thumbnail_path: saved.mediumPath,
               thumbnail_small_path: saved.smallPath,
               width: tiers.width,
@@ -1076,7 +1088,14 @@ function setupIPC() {
   });
 
   ipcMain.handle('fs:set-images-root', async (_event, dirPath) => {
-    const result = await setImagesRoot(dirPath);
+    // ensureDir/磁盘操作可抛（权限、无效路径）：不转返回值会让渲染进程的 await 直接 reject
+    let result;
+    try {
+      result = await setImagesRoot(dirPath);
+    } catch (e) {
+      console.error('[ipc] 迁移图片目录失败:', e.message);
+      return { error: `迁移失败: ${e.message}` };
+    }
     // 迁移成功后所有在途编辑会话的文件路径已过期（零拷贝会话 basePath 即原图）——逐会话跟随新路径
     if (result && result.success) {
       for (const id of editSessions.keys()) {
@@ -1086,14 +1105,15 @@ function setupIPC() {
     return result;
   });
 
-  // 获取完整 EXIF（详情面板按需读取）
+  // 获取完整 EXIF（详情面板按需读取）：仅限托管根内文件
   ipcMain.handle('fs:get-exif', async (_event, filepath) => {
+    if (!isManagedPath(filepath)) return null;
     return parseFullExif(filepath);
   });
 
-  // 检查文件是否存在
+  // 检查文件是否存在（托管根边界：防任意本地路径探测）
   ipcMain.handle('fs:file-exists', async (_event, filepath) => {
-    return fs.existsSync(filepath);
+    return isManagedPath(filepath) && fs.existsSync(filepath);
   });
 
   // ── 标签 ──
@@ -1125,16 +1145,20 @@ function setupIPC() {
 
   // 导出文件（JPG + 配对 NEF），处理重名
   async function exportFiles(images, destDir) {
+    if (typeof destDir !== 'string' || !destDir) throw new Error('导出目标目录无效');
     let copied = 0;
     let nefCount = 0;
     for (const img of images) {
+      // 纵深：导出名只取 basename，脏 filename 不能借 join 逃出目标目录
+      const outName = path.basename(img.filename || '');
+      if (!outName) continue;
       if (fs.existsSync(img.filepath)) {
-        const dest = path.join(destDir, img.filename);
+        const dest = path.join(destDir, outName);
         let finalDest = dest;
         let n = 1;
         while (fs.existsSync(finalDest)) {
-          const ext = path.extname(img.filename);
-          const base = path.basename(img.filename, ext);
+          const ext = path.extname(outName);
+          const base = path.basename(outName, ext);
           finalDest = path.join(destDir, `${base}_${n}${ext}`);
           n++;
         }
@@ -1144,7 +1168,7 @@ function setupIPC() {
 
       if (img.raw_path && fs.existsSync(img.raw_path)) {
         const rawExt = path.extname(img.raw_path);
-        const destBase = path.basename(img.filename, path.extname(img.filename));
+        const destBase = path.basename(outName, path.extname(outName));
         let rawDest = path.join(destDir, `${destBase}${rawExt}`);
         let m = 1;
         while (fs.existsSync(rawDest)) {
@@ -1289,11 +1313,8 @@ function setupIPC() {
     const { shell } = require('electron');
     try {
       if (typeof dirPath !== 'string' || !dirPath) return '无效路径';
+      if (!isManagedPath(dirPath)) return '仅允许打开图库目录';
       const target = path.resolve(dirPath);
-      const roots = [getImagesRoot(), path.dirname(getDatabasePath())]
-        .filter(Boolean).map((r) => path.resolve(r));
-      const inside = roots.some((r) => target === r || target.startsWith(r + path.sep));
-      if (!inside) return '仅允许打开图库目录';
       if (!fs.statSync(target).isDirectory()) return '目标不是目录';
       return shell.openPath(target);
     } catch (e) {

@@ -436,6 +436,7 @@ async function importImages(imageFiles) {
   // imageFiles: 从扫描结果传入，每项含 { filename, filepath(原始), size, format, ... }
   // 此函数负责：1.复制文件到管理目录 2.写入数据库
   // 同目录同主名的 jpg + nef 视为一对：jpg 作为可见记录，nef 复制到同目录并记入 raw_path
+  if (!Array.isArray(imageFiles)) return [];
   const root = getImagesRoot();
 
   const imported = [];
@@ -492,8 +493,16 @@ async function importOne(root, img, { pair, hidden }) {
   const subDir = path.join(root, ...dateStr.split('-'));
   ensureDir(subDir);
 
-  const ext = path.extname(img.filename);
-  const uniqueName = generateUniqueFilename(subDir, img.filename);
+  // 文件名只取名字部分：渲染进程传入 '../../x.jpg' 时 path.join 会拼出托管根之外，
+  // copyFile 变成任意路径覆盖写；落库后还会随日期移动/迁移/导出再次逃逸
+  const safeName = path.basename(String(img.filename || ''));
+  if (!safeName || safeName === '.' || safeName === '..') {
+    console.error('[导入] 文件名无效，跳过:', img.filepath);
+    return null;
+  }
+
+  const ext = path.extname(safeName);
+  const uniqueName = generateUniqueFilename(subDir, safeName);
   const destPath = path.join(subDir, uniqueName);
 
   try {
@@ -745,7 +754,8 @@ async function updateImage(id, updates) {
         const root = getImagesRoot();
         const subDir = path.join(root, ...newDate.split('-'));
         ensureDir(subDir);
-        const newName = generateUniqueFilename(subDir, img.filename);
+        // 纵深：历史脏数据/裸 UPDATE 可能已写入带路径分量的 filename
+        const newName = generateUniqueFilename(subDir, path.basename(img.filename));
         const newPath = path.join(subDir, newName);
         let newRawPath = img.raw_path || '';
 
@@ -792,7 +802,10 @@ async function updateImage(id, updates) {
     }
   }
 
-  const allowed = ['filename', 'rating', 'favorite', 'notes', 'width', 'height', 'thumbnail', 'thumbnail_path', 'thumbnail_small_path', 'import_date', 'rotation', 'flip_h', 'flip_v'];
+  // 渲染进程可写列的白名单：filename/thumbnail* 不在其中——文件名带路径分量会借
+  // 日期移动/迁移/导出逃逸出托管根，缩略图路径则可把任意本地文件渲染进 <img>；
+  // 内部缩略图回写走 updateImageThumbs，不经本函数
+  const allowed = ['rating', 'favorite', 'notes', 'width', 'height', 'import_date', 'rotation', 'flip_h', 'flip_v'];
   const aliases = { flipH: 'flip_h', flipV: 'flip_v' };
   const sets = [...moveSets];
   const params = [...moveParams];
@@ -812,6 +825,13 @@ async function updateImage(id, updates) {
   db.prepare(`UPDATE images SET ${sets.join(', ')} WHERE id = ?`).run(...params);
   saveDatabase();
   return dateMoved ? getImageById(id) : true;
+}
+
+// 主进程内部专用：缩略图回写不经 updateImage 白名单（渲染进程无权写这些列）
+function updateImageThumbs(id, { thumbnail_path = '', thumbnail_small_path = '', width = 0, height = 0 } = {}) {
+  db.prepare('UPDATE images SET thumbnail_path = ?, thumbnail_small_path = ?, width = ?, height = ? WHERE id = ?')
+    .run(String(thumbnail_path), String(thumbnail_small_path), Number(width) || 0, Number(height) || 0, id);
+  saveDatabase();
 }
 
 function renameImage(id, newFilename) {
@@ -930,7 +950,7 @@ async function setImagesRoot(newRoot) {
       // 前缀必须按目录边界判断：`D:\images_backup` 曾被 `D:\images`.startsWith 误判，
       // relative 出 `..\images_backup\...` 会逃出新根。越界一律回退日期目录布局。
       if (!relativePath || relativePath.startsWith('..') || path.isAbsolute(relativePath)) {
-        relativePath = path.join(getImageSubDir(img.import_date || ''), img.filename);
+        relativePath = path.join(getImageSubDir(img.import_date || ''), path.basename(img.filename));
       }
 
       let targetPath = path.join(resolvedNewRoot, relativePath);
@@ -989,17 +1009,35 @@ async function setImagesRoot(newRoot) {
 
 const VISIBLE_FORMATS = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.svg', '.tiff'];
 
+// 递归护栏：被注入的渲染进程可指向整盘/网络路径，深度与数量上限避免全盘枚举
+const SCAN_MAX_DEPTH = 12;
+const SCAN_MAX_FILES = 20000;
+
 async function scanImageFiles(dirPath, includeRaw = false) {
+  if (!dirPath || typeof dirPath !== 'string' || !path.isAbsolute(dirPath)) {
+    console.error('[扫描] 目录路径无效:', dirPath);
+    return [];
+  }
+  try {
+    if (!fs.statSync(dirPath).isDirectory()) return [];
+  } catch {
+    return [];
+  }
   const supported = includeRaw ? [...VISIBLE_FORMATS, '.nef'] : VISIBLE_FORMATS;
   const files = [];
 
-  async function scan(dir) {
+  async function scan(dir, depth) {
+    if (depth > SCAN_MAX_DEPTH || files.length >= SCAN_MAX_FILES) return;
     try {
       const entries = await fs.promises.readdir(dir, { withFileTypes: true });
       for (const entry of entries) {
+        if (files.length >= SCAN_MAX_FILES) {
+          console.error('[扫描] 达到上限，截断:', SCAN_MAX_FILES);
+          break;
+        }
         const fullPath = path.join(dir, entry.name);
         if (entry.isDirectory()) {
-          await scan(fullPath);
+          await scan(fullPath, depth + 1);
         } else if (entry.isFile()) {
           const ext = path.extname(entry.name).toLowerCase();
           if (supported.includes(ext)) {
@@ -1020,7 +1058,7 @@ async function scanImageFiles(dirPath, includeRaw = false) {
     }
   }
 
-  await scan(dirPath);
+  await scan(dirPath, 0);
 
   // 普通导入（不包含 .nef）时，为 JPG 检测同目录同名 NEF，便于导入时配对
   if (!includeRaw) {
@@ -1233,20 +1271,31 @@ function getImportDates() {
 function getTags() {
   return db
     .prepare(`
-    SELECT t.*, COUNT(it.image_id) as image_count
+    SELECT t.*, COUNT(i.id) as image_count
     FROM tags t
     LEFT JOIN image_tags it ON t.id = it.tag_id
+    LEFT JOIN images i ON i.id = it.image_id AND i.hidden = 0
     GROUP BY t.id
     ORDER BY t.name
   `)
     .all();
 }
 
+// 标签/相册等文本入参来自渲染进程：限长防撑爆 UI，颜色只放行 hex（style 注入面收敛）
+function cleanText(value, maxLen) {
+  if (typeof value !== 'string') return '';
+  return value.trim().slice(0, maxLen);
+}
+
 function createTag(name, color = '#6366f1') {
+  const cleanName = cleanText(name, 50);
+  if (!cleanName) return null;
+  const safeColor = typeof color === 'string' && /^#[0-9a-fA-F]{3,8}$/.test(color.trim())
+    ? color.trim() : '#6366f1';
   try {
-    db.prepare('INSERT INTO tags (name, color) VALUES (?, ?)').run(name, color);
+    db.prepare('INSERT INTO tags (name, color) VALUES (?, ?)').run(cleanName, safeColor);
     saveDatabase();
-    return getObject('SELECT * FROM tags WHERE name = ?', [name]);
+    return getObject('SELECT * FROM tags WHERE name = ?', [cleanName]);
   } catch {
     return null; // 重名
   }
@@ -1341,13 +1390,17 @@ function getAlbums() {
 }
 
 function createAlbum(name, description = '') {
-  db.prepare('INSERT INTO albums (name, description) VALUES (?, ?)').run(name, description);
+  const cleanName = cleanText(name, 50);
+  if (!cleanName) return null;
+  db.prepare('INSERT INTO albums (name, description) VALUES (?, ?)').run(cleanName, cleanText(description, 200));
   saveDatabase();
-  return getObject('SELECT * FROM albums WHERE name = ? ORDER BY id DESC LIMIT 1', [name]);
+  return getObject('SELECT * FROM albums WHERE name = ? ORDER BY id DESC LIMIT 1', [cleanName]);
 }
 
 function renameAlbum(id, newName) {
-  db.prepare('UPDATE albums SET name = ? WHERE id = ?').run(newName, id);
+  const cleanName = cleanText(newName, 50);
+  if (!cleanName) return { error: '相册名称无效' };
+  db.prepare('UPDATE albums SET name = ? WHERE id = ?').run(cleanName, id);
   saveDatabase();
   return true;
 }
@@ -1852,6 +1905,7 @@ module.exports = {
   getImagesForRebuild,
   updateImageOrientation,
   updateImage,
+  updateImageThumbs,
   renameImage,
   deleteImage,
   batchDeleteImages,

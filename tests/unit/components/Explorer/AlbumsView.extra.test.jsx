@@ -85,7 +85,7 @@ describe('AlbumsView（补充：CRUD 与右键菜单）', () => {
     await screen.findByText('旅行');
     await openMenu('旅行');
     fireEvent.click(screen.getByText('重命名'));
-    // 注意：菜单关闭时的焦点还原因 autofocus 立刻触发一次 onBlur，以原名称提交了一次重命名（疑似 Bug，见测试报告）。
+    // 菜单关闭会归还焦点触发一次 onBlur：K1 修复后以原名称进入即「名称未变」，守卫直接收起不发写。
     // 该异步收尾在微任务中才卸载输入框，因此这里在同一宏任务内同步完成改名与 Enter 提交。
     const input = document.querySelector('.album-card input');
     expect(input).not.toBeNull();
@@ -110,8 +110,44 @@ describe('AlbumsView（补充：CRUD 与右键菜单）', () => {
       expect(document.querySelector('.album-card input')).toBeNull();
     });
     expect(await screen.findByText('旅行')).toBeInTheDocument();
-    // 从未以改过的名称提交（菜单关闭引发的原始名称 blur 提交除外，疑似 Bug 见报告）
+    // 从未以改过的名称提交（原名称 blur 也被 K1 守卫拦成无写）
     expect(window.pixyang.renameAlbum).not.toHaveBeenCalledWith(2, '改名');
+  });
+
+  it('重命名：名称未变的误 blur 不发起写、也不收起编辑框（审查批 6 K1）', async () => {
+    renderView();
+    await screen.findByText('旅行');
+    await openMenu('旅行');
+    fireEvent.click(screen.getByText('重命名'));
+    const input = document.querySelector('.album-card input');
+    fireEvent.change(input, { target: { value: ' 旅行 ' } }); // trim 后与原名一致
+    fireEvent.blur(input);
+    expect(window.pixyang.renameAlbum).not.toHaveBeenCalled();
+    // 编辑框保持挂载：radix 关闭链的误 blur 不得把用户还没碰过的改名框收走
+    expect(document.querySelector('.album-card input')).not.toBeNull();
+    // 主动 Escape 才收起
+    fireEvent.keyDown(input, { key: 'Escape' });
+    await vi.waitFor(() => {
+      expect(document.querySelector('.album-card input')).toBeNull();
+    });
+    expect(window.pixyang.renameAlbum).not.toHaveBeenCalled();
+  });
+
+  it('重命名：输入法合成态 Enter 提交候选词而非发起改名（审查批 6 K4）', async () => {
+    renderView();
+    await screen.findByText('旅行');
+    await openMenu('旅行');
+    fireEvent.click(screen.getByText('重命名'));
+    const input = document.querySelector('.album-card input');
+    fireEvent.change(input, { target: { value: 'lvxing' } });
+    fireEvent.keyDown(input, { key: 'Enter', isComposing: true });
+    expect(window.pixyang.renameAlbum).not.toHaveBeenCalled();
+    // 编辑框保持：合成 Enter 未被当作提交
+    expect(document.querySelector('.album-card input')).not.toBeNull();
+    fireEvent.keyDown(input, { key: 'Enter' });
+    await vi.waitFor(() => {
+      expect(window.pixyang.renameAlbum).toHaveBeenCalledWith(2, 'lvxing');
+    });
   });
 
   it('重命名：空名称失焦不提交且编辑框保持', async () => {

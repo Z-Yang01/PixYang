@@ -58,9 +58,9 @@ beforeAll(async () => {
   [a2] = await db.importImages([{ ...makeImage('alb-2.jpg', dir, 'v2'), importDate: '2040-01-01' }]);
   [a3] = await db.importImages([{ ...makeImage('alb-3.jpg', dir, 'v3'), importDate: '2040-01-01' }]);
   [hiddenRec] = await db.importImages([makeImage('alb-hidden.nef', dir, 'h1')]);
-  await db.updateImage(a1.id, { thumbnail_path: 'cover-1.jpg' });
-  await db.updateImage(a3.id, { thumbnail_path: 'cover-3.jpg' });
-  await db.updateImage(hiddenRec.id, { thumbnail_path: 'cover-hidden.jpg' });
+  db.updateImageThumbs(a1.id, { thumbnail_path: 'cover-1.jpg' });
+  db.updateImageThumbs(a3.id, { thumbnail_path: 'cover-3.jpg' });
+  db.updateImageThumbs(hiddenRec.id, { thumbnail_path: 'cover-hidden.jpg' });
   albumX = db.createAlbum('旅行相册', '描述');
   db.addToAlbum(albumX.id, [a1.id, a2.id, a3.id, hiddenRec.id]);
 });
@@ -78,6 +78,18 @@ describe('相册操作', () => {
 
   it('renameAlbum 修改名称', () => {
     expect(db.renameAlbum(albumX.id, '旅行相册2')).toBe(true);
+    expect(db.getAlbums().find((a) => a.id === albumX.id).name).toBe('旅行相册2');
+  });
+
+  it('createAlbum/renameAlbum 入参清洗（审查批 6 L9）', () => {
+    expect(db.createAlbum('')).toBe(null);
+    expect(db.createAlbum('   ')).toBe(null);
+    expect(db.createAlbum(null)).toBe(null);
+    const long = db.createAlbum('y'.repeat(100), 'z'.repeat(300));
+    expect(long.name).toHaveLength(50);
+    expect(long.description).toHaveLength(200);
+    db.deleteAlbum(long.id);
+    expect(db.renameAlbum(albumX.id, '  ')).toEqual({ error: '相册名称无效' });
     expect(db.getAlbums().find((a) => a.id === albumX.id).name).toBe('旅行相册2');
   });
 

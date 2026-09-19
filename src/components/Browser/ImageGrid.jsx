@@ -369,6 +369,10 @@ export default function ImageGrid({
         ...prev,
         [imageId]: prev[imageId]?.filter(t => t.id !== tagId) || [],
       }));
+      // 图片正被该标签筛选：移除后行离开视图，勾选集同步剪枝，防批量操作打向不可见图片
+      if (filterTag === tagId) {
+        setSelectedIds(removeIdsFromSet(selectedIdsRef.current, [imageId]));
+      }
     } else {
       await api.addTagToImage(imageId, tagId);
       const tag = allTags.find(t => t.id === tagId);
@@ -380,7 +384,7 @@ export default function ImageGrid({
       }
     }
     onImageUpdated?.();
-  }, [allTags, onImageUpdated]);
+  }, [allTags, onImageUpdated, filterTag, setSelectedIds]);
 
   const handleAddToAlbum = async (imageId, albumId) => {
     if (!api.isBridgeAvailable()) return;

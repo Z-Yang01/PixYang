@@ -558,6 +558,84 @@ describe('ImageViewer', () => {
     expect(await screen.findByText(/无损格式/)).toBeInTheDocument();
     expect(screen.queryByText('质量')).toBeNull();
   });
+
+  it('收藏写入返回 error：回滚本地收藏且不通知外部（审查批 6 J4）', async () => {
+    window.pixyang.updateImage = vi.fn().mockResolvedValue({ error: 'EBUSY: locked' });
+    const onImageUpdated = vi.fn();
+    const { container } = render(<ImageViewer {...baseProps({ onImageUpdated })} />);
+    fireEvent.click(screen.getByTitle('收藏 (F)'));
+    await vi.waitFor(() => expect(window.pixyang.updateImage).toHaveBeenCalledWith(3, { favorite: 1 }));
+    // 乐观置 1 后失败必须退回 0：实心 Heart 消失、回到 HeartOff
+    await vi.waitFor(() => {
+      expect(container.querySelector('.lucide-heart')).toBeNull();
+      expect(container.querySelector('.lucide-heart-off')).toBeTruthy();
+    });
+    expect(onImageUpdated).not.toHaveBeenCalled();
+  });
+
+  it('评分写入抛异常：回滚本地评分（审查批 6 J4）', async () => {
+    window.pixyang.updateImage = vi.fn().mockRejectedValue(new Error('ipc down'));
+    const onImageUpdated = vi.fn();
+    render(<ImageViewer {...baseProps({ onImageUpdated })} />);
+    const filled = () => document.querySelectorAll('.viewer-actions button[title$=" 星"] svg[fill="currentColor"]').length;
+    expect(filled()).toBe(3); // testImage.rating=3
+    fireEvent.keyDown(window, { key: '5' });
+    expect(filled()).toBe(5); // 乐观更新即时生效
+    await vi.waitFor(() => expect(window.pixyang.updateImage).toHaveBeenCalledWith(3, { rating: 5 }));
+    await vi.waitFor(() => expect(filled()).toBe(3));
+    expect(onImageUpdated).not.toHaveBeenCalled();
+  });
+
+  it('enterEdit 在途时卸载：editCancel 作废会话，不留幽灵绑定（审查批 6 J6）', async () => {
+    mockEditBridge();
+    let resolveOpen;
+    window.pixyang.editOpen = vi.fn().mockReturnValue(new Promise((r) => { resolveOpen = r; }));
+    const { unmount } = render(<ImageViewer {...baseProps()} />);
+    fireEvent.click(screen.getByTitle(/编辑模式/));
+    unmount();
+    resolveOpen({
+      id: 3, source: 'jpg', basePath: 'C:/cache/3-base.jpg',
+      width: 1920, height: 1080, hasNef: false, savedEdits: null,
+    });
+    await vi.waitFor(() => expect(window.pixyang.editCancel).toHaveBeenCalledWith(3));
+    // 迟到的会话不得复活：不再有第二次 editOpen 或渲染编辑面板
+    expect(document.querySelector('.editor-panel')).toBeNull();
+  });
+
+  it('enterEdit 返回 error：行内错误 + 不进编辑态（审查批 6 J5）', async () => {
+    mockEditBridge();
+    window.pixyang.editOpen = vi.fn().mockResolvedValue({ error: '文件不存在' });
+    render(<ImageViewer {...baseProps()} />);
+    fireEvent.click(screen.getByTitle(/编辑模式/));
+    await vi.waitFor(() => expect(window.pixyang.editOpen).toHaveBeenCalledWith(3));
+    expect(await screen.findByText('3 / 10')).toBeInTheDocument(); // 仍是查看态
+    expect(document.querySelector('.editor-panel')).toBeNull();
+  });
+
+  it('裁剪边手柄只动被拖的轴，另一轴保持（审查批 6 J1）', async () => {
+    mockEditBridge();
+    const rectSpy = mockSquareViewport();
+    const { container } = render(<ImageViewer {...baseProps()} />);
+    await enterEdit();
+    drawCrop(); // 1000x1000 视口 (100,100)→(500,400) ⇒ 底图 left192 top108 w768 h324
+    const box = () => container.querySelector('.editor-crop-box');
+    expect(box().textContent).toContain('768×324');
+    // w 边手柄水平内拖：left/width 变，top/height 不动
+    fireEvent.mouseDown(document.querySelector('[data-crop-handle="w"]'), { clientX: 190, clientY: 250 });
+    fireEvent.mouseMove(window, { clientX: 300, clientY: 250 });
+    fireEvent.mouseUp(window);
+    await vi.waitFor(() => expect(box().textContent).toContain('384×324'));
+    expect(box().style.top).toBe('10%');
+    expect(box().style.height).toBe('30%');
+    // n 边手柄竖直上拖：仅上边移动，左/宽不受牵连（clientY 200 → 底图 y=216）
+    fireEvent.mouseDown(document.querySelector('[data-crop-handle="n"]'), { clientX: 200, clientY: 150 });
+    fireEvent.mouseMove(window, { clientX: 200, clientY: 200 });
+    fireEvent.mouseUp(window);
+    await vi.waitFor(() => expect(box().textContent).toContain('384×216'));
+    expect(box().style.left).toBe('30%');
+    expect(box().style.width).toBe('20%');
+    rectSpy.mockRestore();
+  });
 });
 
 function container_close() {

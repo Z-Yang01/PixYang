@@ -9,7 +9,7 @@ import {
   Crop, RotateCcwSquare, Loader2, SlidersHorizontal, Undo2, Redo2,
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { matchViewerShortcut, VIEWER_ACTIONS, ratingFromViewerAction } from '@/lib/shortcuts';
+import { matchViewerShortcut, VIEWER_ACTIONS, ratingFromViewerAction, isEnterSubmit } from '@/lib/shortcuts';
 import api from '@/lib/api';
 import {
   EDIT_DEFAULTS, CROP_RATIOS, sanitizeEditOps, previewFilterChain, needsMatrix,
@@ -100,6 +100,8 @@ export default function ImageViewer({
   const editBusy = busyKind !== ''; // 派生：任一忙态
   // 会话身份与生命周期：编辑会话建立/进行期间禁止换图（否则烘焙可能覆盖另一张图的原文件）
   const editPendingRef = useRef(false);
+  const mountedRef = useRef(true); // enterEdit 在途时组件被卸载：await 回来后不得再绑定会话
+  const openingIdRef = useRef(null); // 会话建立中的图片 id，供卸载兜底 editCancel
   const editSessionRef = useRef(null);
   const imageIdRef = useRef(null);
   imageIdRef.current = image?.id;
@@ -142,18 +144,34 @@ export default function ImageViewer({
 
   const toggleFavorite = useCallback(async () => {
     if (!api.isBridgeAvailable() || !image) return;
-    const newFav = localFavoriteRef.current ? 0 : 1;
+    const prev = localFavoriteRef.current;
+    const newFav = prev ? 0 : 1;
     setLocalFavorite(newFav);
-    await api.updateImage(image.id, { favorite: newFav });
-    onImageUpdated?.(image.id, { favorite: newFav });
+    try {
+      const result = await api.updateImage(image.id, { favorite: newFav });
+      if (result?.error) throw new Error(result.error);
+      onImageUpdated?.(image.id, { favorite: newFav });
+    } catch (e) {
+      console.error('[查看器] 收藏写入失败:', e.message);
+      setLocalFavorite(prev);
+      toast.error('收藏操作失败');
+    }
   }, [image, onImageUpdated]);
 
   const setRating = useCallback(async (r) => {
     if (!api.isBridgeAvailable() || !image) return;
+    const prev = localRating;
     const newRating = r === localRating ? 0 : r;
     setLocalRating(newRating);
-    await api.updateImage(image.id, { rating: newRating });
-    onImageUpdated?.(image.id, { rating: newRating });
+    try {
+      const result = await api.updateImage(image.id, { rating: newRating });
+      if (result?.error) throw new Error(result.error);
+      onImageUpdated?.(image.id, { rating: newRating });
+    } catch (e) {
+      console.error('[查看器] 评分写入失败:', e.message);
+      setLocalRating(prev);
+      toast.error('评分保存失败');
+    }
   }, [image, localRating, onImageUpdated]);
 
   // ── 编辑会话（非破坏：保存=只写参数；烘焙替代=显式动作才写像素）──
@@ -175,27 +193,37 @@ export default function ImageViewer({
     setPos({ x: 0, y: 0 });
     setShowBefore(false);
     setCompareMode('toggle');
+    // 会话级残留复位：比例锁/选中蒙版/预设草稿不带进下一次编辑
+    setCropRatioKey('free');
+    setSelectedMaskId(null);
+    setPresetName('');
+    setApplyWithGeometry(false);
   }, []);
 
   const enterEdit = useCallback(async () => {
     if (!image || editBusy || editPendingRef.current) return;
     const requestedId = image.id;
     editPendingRef.current = true; // 会话建立期间禁止翻页/换图（防烘焙覆盖另一张图）
+    openingIdRef.current = requestedId;
     setBusyKind('opening');
     setEditError('');
     try {
       const session = await api.editOpen(requestedId);
-      // await 期间用户可能已换图：会话与当前图不一致时立即作废，绝不挂错图
-      if (imageIdRef.current !== requestedId) {
+      // await 期间用户可能已换图或关闭查看器（imageIdRef 停格在最后一次渲染值，
+      // 卸载后恒真）：两种情况都必须作废会话，杜绝编辑器自开与 edit-cache 泄漏
+      if (!mountedRef.current || imageIdRef.current !== requestedId) {
         api.editCancel(requestedId);
         return;
       }
       if (!session || session.error) {
-        setEditError(session?.error || '无法进入编辑模式');
+        const msg = session?.error || '无法进入编辑模式';
+        setEditError(msg);
+        // 失败时 editing 仍为 false，行内错误条不渲染：toast 兜底保证有反馈
+        toast.error(msg);
         return;
       }
       const url = await api.toFileUrl(session.basePath);
-      if (imageIdRef.current !== requestedId) {
+      if (!mountedRef.current || imageIdRef.current !== requestedId) {
         api.editCancel(requestedId);
         return;
       }
@@ -219,8 +247,10 @@ export default function ImageViewer({
       setPos({ x: 0, y: 0 });
     } catch (e) {
       setEditError(`进入编辑失败：${e?.message || e}`);
+      toast.error(`进入编辑失败：${e?.message || e}`);
     } finally {
       editPendingRef.current = false;
+      openingIdRef.current = null;
       setBusyKind('');
     }
   }, [image, editBusy]);
@@ -558,31 +588,32 @@ export default function ImageViewer({
   }, [pushHistory]);
 
   // 编辑参数统一应用入口（查看态操作 rotation/flip state，编辑态操作 editOps + 历史）
+  // 忙态（建立会话/保存/导出/烘焙在途）拒绝变换：opening 期间改查看态旋转会与
+  // 主进程已定稿的底图转正参数分叉，baking 期间改 ops 会串入已提交的参数集
   const applyRotate = useCallback((delta) => {
+    if (editBusy) return;
     if (editingRef.current) {
-      setEditOps(o => {
-        const next = { ...o, rotation: (o.rotation + delta + 360) % 360 };
-        pushHistory(next, '旋转');
-        return next;
-      });
+      const next = { ...editOpsRef.current, rotation: (editOpsRef.current.rotation + delta + 360) % 360 };
+      pushHistory(next, '旋转');
+      setEditOps(next);
     } else {
       setRotation(r => (r + delta + 360) % 360);
     }
-  }, [pushHistory]);
+  }, [pushHistory, editBusy]);
 
   const applyFlip = useCallback((axis) => {
+    if (editBusy) return;
     if (editingRef.current) {
-      setEditOps(o => {
-        const next = axis === 'H' ? { ...o, flipH: !o.flipH } : { ...o, flipV: !o.flipV };
-        pushHistory(next, axis === 'H' ? '水平翻转' : '垂直翻转');
-        return next;
-      });
+      const o = editOpsRef.current;
+      const next = axis === 'H' ? { ...o, flipH: !o.flipH } : { ...o, flipV: !o.flipV };
+      pushHistory(next, axis === 'H' ? '水平翻转' : '垂直翻转');
+      setEditOps(next);
     } else if (axis === 'H') {
       setFlipH(f => !f);
     } else {
       setFlipV(f => !f);
     }
-  }, [pushHistory]);
+  }, [pushHistory, editBusy]);
 
   const resetEdits = useCallback(() => {
     const next = { ...EDIT_DEFAULTS };
@@ -638,8 +669,25 @@ export default function ImageViewer({
         left: clamp(orig.left + dx, 0, w - orig.width),
         top: clamp(orig.top + dy, 0, h - orig.height),
       };
+    } else if (mode.length === 1) {
+      // 边手柄只动被拖的轴，另一轴保持原值：对角锚点 min/abs 语义仅适用于角手柄，
+      // 否则 n/s 纯竖直拖动会把宽度缩到 0，onUp 判 <8 直接清空裁剪框
+      const MIN_SIDE = 8;
+      let { left, top, width, height } = orig;
+      if (mode === 'n') {
+        top = clamp(cur.y, 0, orig.top + orig.height - MIN_SIDE);
+        height = orig.top + orig.height - top;
+      } else if (mode === 's') {
+        height = clamp(cur.y - orig.top, MIN_SIDE, h - orig.top);
+      } else if (mode === 'w') {
+        left = clamp(cur.x, 0, orig.left + orig.width - MIN_SIDE);
+        width = orig.left + orig.width - left;
+      } else {
+        width = clamp(cur.x - orig.left, MIN_SIDE, w - orig.left);
+      }
+      rect = { left, top, width, height };
     } else {
-      // 八向手柄：基于对角固定点重算
+      // 角手柄：基于对角固定点重算，支持比例锁定
       const anchors = {
         n: [orig.left + orig.width / 2, orig.top + orig.height], s: [orig.left + orig.width / 2, orig.top],
         e: [orig.left, orig.top + orig.height / 2], w: [orig.left + orig.width, orig.top + orig.height / 2],
@@ -811,11 +859,18 @@ export default function ImageViewer({
   }, [closeGuardRef, requestExitEdit]);
 
   // 组件卸载兜底：无论何种路径退出（收藏页取消收藏移除图片、外部关闭等），
-  // 只要有会话就通知主进程清理，杜绝 edit-cache 底图泄漏
-  useEffect(() => () => {
-    if (editSessionRef.current) {
-      api.editCancel(editSessionRef.current.id);
-    }
+  // 只要有会话就通知主进程清理，杜绝 edit-cache 底图泄漏；
+  // 会话建立中（editOpen 在途）卸载时 editSessionRef 尚未绑定，按 openingId 作废
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      if (editSessionRef.current) {
+        api.editCancel(editSessionRef.current.id);
+      } else if (editPendingRef.current && openingIdRef.current != null) {
+        api.editCancel(openingIdRef.current);
+      }
+    };
   }, []);
 
   // 烘焙替代后强制重载像素（bust 版本号变化；id 未变所以主 effect 不会自动跑）
@@ -896,12 +951,18 @@ export default function ImageViewer({
   const handleSaveRotation = async (e) => {
     e.stopPropagation();
     if (!api.isBridgeAvailable() || !image) return;
-    await api.updateImage(image.id, {
-      rotation,
-      flipH: flipH ? 1 : 0,
-      flipV: flipV ? 1 : 0,
-    });
-    onImageUpdated?.(image.id, { rotation, flip_h: flipH ? 1 : 0, flip_v: flipV ? 1 : 0 });
+    try {
+      const result = await api.updateImage(image.id, {
+        rotation,
+        flipH: flipH ? 1 : 0,
+        flipV: flipV ? 1 : 0,
+      });
+      if (result?.error) throw new Error(result.error);
+      onImageUpdated?.(image.id, { rotation, flip_h: flipH ? 1 : 0, flip_v: flipV ? 1 : 0 });
+    } catch (err) {
+      console.error('[查看器] 旋转/翻转写入失败:', err.message);
+      toast.error('旋转/翻转保存失败');
+    }
   };
 
   // 评分
@@ -952,7 +1013,9 @@ export default function ImageViewer({
     }
     img.addEventListener('load', draw, { once: true });
     return () => img.removeEventListener('load', draw);
-  }, [webglActive, shaderUniforms, editBaseSrc, bust]);
+    // showBefore/compareMode：画布随 Before/对比视图切换而卸载重挂，新画布必须重绘，
+    // 否则 After 侧是一块空白画布盖住原图（预览 ≡ Before）
+  }, [webglActive, shaderUniforms, editBaseSrc, bust, showBefore, compareMode]);
 
   if (!image) return null;
 
@@ -969,8 +1032,9 @@ export default function ImageViewer({
   const exportSourceIsPng = (image?.format || '').toLowerCase() === 'png';
   const exportQualityHidden = exportOpts.format === 'png' || (exportOpts.format === 'auto' && exportSourceIsPng);
 
-  // 影调预览滤镜链（与分段渲染管线同序同数学）；needsMatrix 决定主矩阵原语是否渲染
-  const previewChainRaw = editing && !showBeforeOn ? previewFilterChain(editOps) : null;
+  // 影调预览滤镜链（与分段渲染管线同序同数学）；needsMatrix 决定主矩阵原语是否渲染。
+  // 注意：链只被 After 层消费——对比模式下也必须计算，否则 SVG 回退的 After ≡ Before
+  const previewChainRaw = editing ? previewFilterChain(editOps) : null;
   const previewChain = previewChainRaw ? { ...previewChainRaw, needsMatrix: needsMatrix(editOps) } : null;
 
   // 编辑态：变换（旋转/翻转/缩放/平移）应用于包裹层，图像自身无变换，裁剪框百分比定位自动跟随
@@ -1584,7 +1648,7 @@ export default function ImageViewer({
                 className="h-8 text-xs"
                 value={presetName}
                 onChange={(e) => setPresetName(e.target.value)}
-                onKeyDown={(e) => { if (e.key === 'Enter') savePreset(); }}
+                onKeyDown={(e) => { if (isEnterSubmit(e)) savePreset(); }}
                 placeholder="预设名称（保存当前影调）"
               />
               <Button size="sm" onClick={savePreset} disabled={!presetName.trim() || editBusy}>

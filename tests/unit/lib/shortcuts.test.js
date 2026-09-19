@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   isTypingTarget,
   isEditableEvent,
+  isEnterSubmit,
   matchGlobalShortcut,
   matchGridShortcut,
   matchViewerShortcut,
@@ -38,6 +39,25 @@ describe('isTypingTarget / isEditableEvent', () => {
     expect(isEditableEvent({ metaKey: true })).toBe(true);
     expect(isEditableEvent({ altKey: true })).toBe(true);
     expect(isEditableEvent({})).toBe(false);
+  });
+});
+
+describe('isEnterSubmit（审查批 6 K4：IME 合成态 Enter 不算提交）', () => {
+  it('普通 Enter 放行', () => {
+    expect(isEnterSubmit({ key: 'Enter' })).toBe(true);
+    expect(isEnterSubmit({ key: 'Enter', nativeEvent: { isComposing: false } })).toBe(true);
+  });
+
+  it('合成态 Enter 拒绝：isComposing / nativeEvent.isComposing / keyCode 229', () => {
+    expect(isEnterSubmit({ key: 'Enter', isComposing: true })).toBe(false);
+    expect(isEnterSubmit({ key: 'Enter', nativeEvent: { isComposing: true } })).toBe(false);
+    expect(isEnterSubmit({ key: 'Enter', keyCode: 229 })).toBe(false);
+  });
+
+  it('非 Enter 一律拒绝，空事件安全', () => {
+    expect(isEnterSubmit({ key: 'a' })).toBe(false);
+    expect(isEnterSubmit({})).toBe(false);
+    expect(isEnterSubmit(null)).toBe(false);
   });
 });
 

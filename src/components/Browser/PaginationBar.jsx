@@ -3,6 +3,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { totalPagesOf } from '@/lib/gallery';
+import { isEnterSubmit } from '@/lib/shortcuts';
 import useGalleryStore from '@/store/galleryStore';
 
 export default function PaginationBar() {
@@ -41,7 +42,7 @@ export default function PaginationBar() {
           value={pageInput}
           onChange={(e) => setPageInput(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === 'Enter') handlePageInputJump();
+            if (isEnterSubmit(e)) handlePageInputJump();
           }}
           onBlur={handlePageInputJump}
         />

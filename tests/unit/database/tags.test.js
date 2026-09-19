@@ -92,6 +92,33 @@ describe('标签操作', () => {
     expect(tags.indexOf(a)).toBeLessThan(tags.indexOf(b));
   });
 
+  it('getTags image_count 排除隐藏记录（审查批 6 K14）', async () => {
+    const dir = tmpDir('taghide');
+    const [hidden] = await db.importImages([makeImage('hidden-count.nef', dir, 'hc')]);
+    expect(hidden.hidden).toBe(1);
+    const tag = db.createTag('hidden-count-tag');
+    db.addTagToImage(hidden.id, tag.id);
+    db.addTagToImage(hostId, tag.id);
+    const found = db.getTags().find((t) => t.id === tag.id);
+    expect(found.image_count).toBe(1);
+    db.deleteTag(tag.id);
+  });
+
+  it('createTag 入参清洗：空名/纯空白拒绝，超长截断，颜色仅放行 hex（审查批 6 L9）', () => {
+    expect(db.createTag('')).toBe(null);
+    expect(db.createTag('   ')).toBe(null);
+    expect(db.createTag(null)).toBe(null);
+    const long = db.createTag('x'.repeat(100));
+    expect(long.name).toHaveLength(50);
+    const injected = db.createTag('bad-color', 'javascript:alert(1)');
+    expect(injected.color).toBe('#6366f1');
+    const hashed = db.createTag('good-color', ' #abc ');
+    expect(hashed.color).toBe('#abc');
+    db.deleteTag(injected.id);
+    db.deleteTag(hashed.id);
+    db.deleteTag(long.id);
+  });
+
   it('addTagToImage/getImageTags/removeTagFromImage', () => {
     const tag = db.createTag('temp-tag');
     expect(db.addTagToImage(hostId, tag.id)).toBe(true);

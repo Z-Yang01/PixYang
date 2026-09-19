@@ -296,7 +296,8 @@ export async function renderWebGLPreview(canvas, image, uniforms) {
           const bitmap = await createImageBitmap(image, { colorSpaceConversion: 'none', premultiplyAlpha: 'none' });
           if (seq !== st.drawSeq) {
             bitmap.close();
-            return false;
+            // 过期绘制 ≠ 渲染失败：返回 false 会让调用方把 webglFailed 误闩锁
+            return true;
           }
           source = bitmap;
         } catch { /* 构造失败回退直接上传（可能经浏览器色彩转换） */ }

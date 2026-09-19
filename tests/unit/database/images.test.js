@@ -578,8 +578,8 @@ describe('saveEditedImage 编辑保存', () => {
       flip_h: 1,
       width: 100,
       height: 80,
-      thumbnail_path: 'thumb-old.jpg',
     });
+    db.updateImageThumbs(img.id, { thumbnail_path: 'thumb-old.jpg' });
     const tempPath = path.join(dir, 'edited-temp.jpg');
     fs.writeFileSync(tempPath, 'edited-new-bytes');
 
@@ -717,7 +717,7 @@ describe('查询辅助函数', () => {
     const [r1] = await db.importImages([makeImage('reb-a.jpg', dir, 'x1')]);
     const [r2] = await db.importImages([makeImage('reb-b.png', dir, 'x2')]);
     const [r3] = await db.importImages([makeImage('reb-c.jpg', dir, 'x3')]);
-    await db.updateImage(r2.id, {
+    db.updateImageThumbs(r2.id, {
       thumbnail_path: 'reb-b-thumb.jpg',
       thumbnail_small_path: 'reb-b-thumb-s.jpg',
     });
@@ -928,5 +928,100 @@ describe('saveEditedImage 目标冲突护栏', () => {
     expect(fs.readFileSync(gif.filepath, 'utf8')).toBe('gif-bytes');
     expect(db.getImageById(gif.id).filepath).toBe(gif.filepath);
     expect(db.getImageById(jpg.id).filepath).toBe(jpg.filepath);
+  });
+});
+
+describe('导入文件名路径逃逸（审查批 6 L1）', () => {
+  it('文件名携带路径分量：只取 basename 落入托管根，不越界写', async () => {
+    const dir = tmpDir('escname');
+    const src = makeImage('esc-src.jpg', dir, 'ez');
+    const imported = await db.importImages([{ ...src, filename: '../../../../evil.jpg' }]);
+    expect(imported).toHaveLength(1);
+    const row = imported[0];
+    expect(row.filename).toBe('evil.jpg');
+    expect(row.filepath.startsWith(db.getImagesRoot() + path.sep)).toBe(true);
+    // 修复前：path.join(subDir, '../../../../evil.jpg') 拼出托管根外路径，copyFile 成任意覆盖写
+    expect(fs.existsSync(path.join(dir, 'evil.jpg'))).toBe(false);
+    expect(fs.existsSync(row.filepath)).toBe(true);
+  });
+
+  it('空文件名 / 纯点段：跳过不入库，也不占住 original_path 去重键', async () => {
+    const dir = tmpDir('badname');
+    const src = makeImage('bn.jpg', dir, 'bn');
+    expect(await db.importImages([{ ...src, filename: '' }])).toHaveLength(0);
+    expect(await db.importImages([{ ...src, filename: '.' }])).toHaveLength(0);
+    expect(await db.importImages([{ ...src, filename: '..' }])).toHaveLength(0);
+    // 跳过≠去重命中：合法名仍可导入同一源文件
+    const ok = await db.importImages([{ ...src, filename: 'bn-ok.jpg' }]);
+    expect(ok).toHaveLength(1);
+    expect(ok[0].filename).toBe('bn-ok.jpg');
+  });
+
+  it('importImages 非数组入参返回空，不抛错', async () => {
+    expect(await db.importImages(null)).toEqual([]);
+    expect(await db.importImages('C:/Windows')).toEqual([]);
+    expect(await db.importImages(undefined)).toEqual([]);
+  });
+});
+
+describe('updateImage 列白名单与 updateImageThumbs（审查批 6 L2）', () => {
+  it('filename/thumbnail* 经 updateImage 不可写；updateImageThumbs 内部直写生效', async () => {
+    const dir = tmpDir('wl6');
+    const [img] = await db.importImages([makeImage('wl6.jpg', dir, 'wl6')]);
+    await db.updateImage(img.id, {
+      filename: 'pwned.jpg',
+      thumbnail_path: 'C:/Windows/win.ini',
+      thumbnail_small_path: '../../escape.jpg',
+      notes: 'kept',
+    });
+    const rec = db.getImageById(img.id);
+    expect(rec.filename).toBe('wl6.jpg');
+    expect(rec.thumbnail_path).toBe('');
+    expect(rec.thumbnail_small_path).toBe('');
+    expect(rec.notes).toBe('kept');
+
+    db.updateImageThumbs(img.id, { thumbnail_path: 'ok.jpg', thumbnail_small_path: 'ok-s.jpg', width: 120, height: 90 });
+    const after = db.getImageById(img.id);
+    expect(after.thumbnail_path).toBe('ok.jpg');
+    expect(after.thumbnail_small_path).toBe('ok-s.jpg');
+    expect(after.width).toBe(120);
+    expect(after.height).toBe(90);
+    expect(() => db.updateImageThumbs(99999999, { thumbnail_path: 'x' })).not.toThrow();
+  });
+
+  it('日期移动 sink 对库内旧脏 filename 也取 basename（纵深）', async () => {
+    const dir = tmpDir('wl6b');
+    const [img] = await db.importImages([makeImage('wl6b.jpg', dir, 'wb')]);
+    // 模拟历史脏数据：filename 带路径分量（修复后入口已不可能写成这样）
+    db.__getDb().prepare('UPDATE images SET filename = ? WHERE id = ?').run('../evil.jpg', img.id);
+    const updated = await db.updateImage(img.id, { import_date: '2050-07-07' });
+    expect(typeof updated).toBe('object');
+    expect(updated.error).toBeUndefined();
+    expect(updated.filename).toBe('evil.jpg');
+    expect(updated.filepath.startsWith(db.getImagesRoot() + path.sep)).toBe(true);
+  });
+});
+
+describe('scanImageFiles 入参护栏（审查批 6 L3）', () => {
+  it('非字符串 / 相对路径 / 文件而非目录 / 不存在目录 → []', async () => {
+    expect(await db.scanImageFiles(null)).toEqual([]);
+    expect(await db.scanImageFiles(123)).toEqual([]);
+    expect(await db.scanImageFiles('relative/dir')).toEqual([]);
+    expect(await db.scanImageFiles(path.join(TMP_ROOT, 'no-such-dir-6'))).toEqual([]);
+    const dir = tmpDir('scanfile6');
+    const f = path.join(dir, 'a.jpg');
+    fs.writeFileSync(f, 'x');
+    expect(await db.scanImageFiles(f)).toEqual([]);
+  });
+
+  it('超过深度上限的子目录不再递归', async () => {
+    const dir = tmpDir('scandeep');
+    let deep = dir;
+    for (let i = 0; i < 13; i++) deep = path.join(deep, `d${i}`);
+    fs.mkdirSync(deep, { recursive: true });
+    fs.writeFileSync(path.join(deep, 'deepest.jpg'), 'deep');
+    fs.writeFileSync(path.join(dir, 'top.jpg'), 'top');
+    const files = await db.scanImageFiles(dir);
+    expect(files.map((x) => x.filename)).toEqual(['top.jpg']);
   });
 });

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { toast } from 'sonner';
 import api from '@/lib/api';
+import { isEnterSubmit } from '@/lib/shortcuts';
 import ConfirmDialog from '../Layout/ConfirmDialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -71,6 +72,9 @@ export default function AlbumsView({ onSelectAlbum, onRefresh }) {
 
   const handleRename = async () => {
     if (!renameVal.trim() || !renameTarget || !api.isBridgeAvailable()) return;
+    // 名称未变：不发无意义的写，也不收起——radix 菜单关闭时焦点会被强行回收一次，
+    // 刚 autoFocus 的改名框立刻收到误 blur；若在此收起，用户根本没机会编辑（审查批 6 K1）
+    if (renameVal.trim() === renameTarget.name) return;
     await api.renameAlbum(renameTarget.id, renameVal.trim());
     setRenameTarget(null);
     setRenameVal('');
@@ -117,7 +121,7 @@ export default function AlbumsView({ onSelectAlbum, onRefresh }) {
                 value={newName}
                 onChange={(e) => setNewName(e.target.value)}
                 placeholder="例如：旅行照片、项目截图..."
-                onKeyDown={(e) => e.key === 'Enter' && handleCreate()}
+                onKeyDown={(e) => { if (isEnterSubmit(e)) handleCreate(); }}
                 autoFocus
               />
             </div>
@@ -173,7 +177,7 @@ export default function AlbumsView({ onSelectAlbum, onRefresh }) {
                           value={renameVal}
                           onChange={(e) => setRenameVal(e.target.value)}
                           onKeyDown={(e) => {
-                            if (e.key === 'Enter') handleRename();
+                            if (isEnterSubmit(e)) handleRename();
                             if (e.key === 'Escape') setRenameTarget(null);
                           }}
                           onBlur={handleRename}
@@ -192,7 +196,11 @@ export default function AlbumsView({ onSelectAlbum, onRefresh }) {
                     </div>
                   </div>
                 </ContextMenuTrigger>
-                <ContextMenuContent>
+                <ContextMenuContent onCloseAutoFocus={(e) => {
+                  // radix 菜单关闭时把焦点强行还给 trigger，会抢走改名框的 autoFocus
+                  // 并触发 onBlur 提交未编辑/半截名称：改名期间禁止焦点归还
+                  if (renameTarget) e.preventDefault();
+                }}>
                   <ContextMenuItem onClick={() => onSelectAlbum?.(album.id)}>查看图片</ContextMenuItem>
                   <ContextMenuSeparator />
                   <ContextMenuItem onClick={() => handleRenameStart(album)}>重命名</ContextMenuItem>

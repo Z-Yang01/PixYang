@@ -8,6 +8,7 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { isEnterSubmit } from '@/lib/shortcuts';
 
 export function AddToAlbumDialog({ image, albums, onAdd, onCreateAndAdd, onClose }) {
   const [newAlbumName, setNewAlbumName] = useState('');
@@ -48,7 +49,7 @@ export function AddToAlbumDialog({ image, albums, onAdd, onCreateAndAdd, onClose
               onChange={(e) => setNewAlbumName(e.target.value)}
               placeholder="输入新相册名称"
               onKeyDown={(e) => {
-                if (e.key === 'Enter') onCreateAndAdd(image.id, newAlbumName);
+                if (isEnterSubmit(e)) onCreateAndAdd(image.id, newAlbumName);
               }}
               autoFocus
             />
@@ -95,7 +96,7 @@ export function RenameDialog({ image, onSubmit, onClose }) {
               setError('');
             }}
             onKeyDown={(e) => {
-              if (e.key === 'Enter') submit();
+              if (isEnterSubmit(e)) submit();
             }}
             autoFocus
           />

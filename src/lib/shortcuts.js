@@ -9,6 +9,12 @@ export function isEditableEvent(e) {
   return !!(e?.ctrlKey || e?.metaKey || e?.altKey);
 }
 
+// 输入法合成态的 Enter 是「上屏候选词」，不是「提交」：只放行真正的提交 Enter
+// keyCode 229 为部分浏览器合成期的兜底信号
+export function isEnterSubmit(e) {
+  return e?.key === 'Enter' && !(e.isComposing || e.nativeEvent?.isComposing || e.keyCode === 229);
+}
+
 /** 全局（非查看器）动作 */
 export const GLOBAL_ACTIONS = {
   FocusSearch: 'focusSearch',

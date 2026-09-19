@@ -171,4 +171,30 @@ describe('App 组合根冒烟', () => {
     fireEvent.keyDown(window, { key: ' ' });
     expect(useGalleryStore.getState().selectedIds.size).toBe(0);
   });
+
+  it('图库路由：Ctrl+A 全选当前筛选结果（K2 门禁正向对照）', async () => {
+    window.pixyang.getAllImageIds.mockResolvedValue([1, 2]);
+    renderApp('/');
+    await screen.findByText('sunset');
+    fireEvent.keyDown(window, { key: 'a', ctrlKey: true });
+    await waitFor(() => {
+      expect(useGalleryStore.getState().selectedIds.has(2)).toBe(true);
+    });
+    expect(window.pixyang.getAllImageIds).toHaveBeenCalledTimes(1);
+  });
+
+  it('非图库路由：Ctrl+A/Ctrl+E/Delete 被路由门禁全部拦截（审查批 6 K2）', async () => {
+    renderApp('/settings');
+    await screen.findByRole('heading', { name: '设置' });
+    // 挂载期 filterKey effect 会 clearSelection：勾选须在渲染后注入才有拦截意义
+    useGalleryStore.setState({ selectedIds: new Set([1]) });
+    fireEvent.keyDown(window, { key: 'a', ctrlKey: true });
+    fireEvent.keyDown(window, { key: 'e', ctrlKey: true });
+    fireEvent.keyDown(window, { key: 'Delete' });
+    await new Promise((r) => setTimeout(r, 50));
+    expect(window.pixyang.getAllImageIds).not.toHaveBeenCalled();
+    expect(window.pixyang.selectExportDirectory).not.toHaveBeenCalled();
+    expect(screen.queryByText('批量删除图片')).toBeNull();
+    expect(useGalleryStore.getState().selectedIds.has(1)).toBe(true);
+  });
 });

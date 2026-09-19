@@ -4,6 +4,9 @@ import { Input } from '@/components/ui/input';
 import { FolderOpen, Trash2, X, Heart, HeartOff, Star } from 'lucide-react';
 import ConfirmDialog from '../Layout/ConfirmDialog';
 import { formatSizeDisplay as formatSize } from '@/lib/format';
+import { removeIdsFromSet } from '@/lib/gallery';
+import useGalleryStore from '@/store/galleryStore';
+import { isEnterSubmit } from '@/lib/shortcuts';
 import api from '@/lib/api';
 
 function dirname(p) {
@@ -84,6 +87,11 @@ export default function InfoPanel({ image, onClose, onImageUpdated }) {
     if (!api.isBridgeAvailable()) return;
     await api.removeTagFromImage(image.id, tagId);
     await loadTags();
+    // 该图正被此标签筛选：行离开视图，勾选集同步剪枝
+    const st = useGalleryStore.getState();
+    if (st.filterTag === tagId) {
+      st.setSelectedIds(removeIdsFromSet(st.selectedIds, [image.id]));
+    }
     onImageUpdated?.();
   };
 
@@ -126,7 +134,7 @@ export default function InfoPanel({ image, onClose, onImageUpdated }) {
   };
 
   const handleRenameKeyDown = (e) => {
-    if (e.key === 'Enter') handleRename();
+    if (isEnterSubmit(e)) handleRename();
     if (e.key === 'Escape') { setEditName(image.filename); setRenameErr(''); }
   };
 

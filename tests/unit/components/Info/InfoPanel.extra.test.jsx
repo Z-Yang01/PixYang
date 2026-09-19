@@ -2,6 +2,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, cleanup, within } from '@testing-library/react';
 import InfoPanel from '@/components/Info/InfoPanel';
+import useGalleryStore from '@/store/galleryStore';
 
 const testImage = {
   id: 9,
@@ -240,6 +241,36 @@ describe('InfoPanel（补充：EXIF 全分支/标签操作/删除/评分收藏�
       expect(onImageUpdated).toHaveBeenCalled();
       expect(window.pixyang.getImageTags).toHaveBeenCalledTimes(2); // 移除后重新加载
     });
+  });
+
+  it('标签区：该图正被此标签筛选时移除后勾选集同步剪枝（审查批 6 K3）', async () => {
+    useGalleryStore.setState({ filterTag: 5, selectedIds: new Set([9, 10]) });
+    try {
+      renderPanel();
+      expect(await screen.findByText('风景')).toBeInTheDocument();
+      fireEvent.click(document.querySelector('.tag-remove'));
+      await vi.waitFor(() => {
+        expect(window.pixyang.removeTagFromImage).toHaveBeenCalledWith(9, 5);
+        expect([...useGalleryStore.getState().selectedIds]).toEqual([10]);
+      });
+    } finally {
+      useGalleryStore.setState({ filterTag: null, selectedIds: new Set() });
+    }
+  });
+
+  it('标签区：非该标签筛选下移除标签不动勾选集（K3 对照组）', async () => {
+    useGalleryStore.setState({ filterTag: 6, selectedIds: new Set([9, 10]) });
+    try {
+      renderPanel();
+      expect(await screen.findByText('风景')).toBeInTheDocument();
+      fireEvent.click(document.querySelector('.tag-remove'));
+      await vi.waitFor(() => {
+        expect(window.pixyang.removeTagFromImage).toHaveBeenCalledWith(9, 5);
+      });
+      expect([...useGalleryStore.getState().selectedIds].sort((a, b) => a - b)).toEqual([9, 10]);
+    } finally {
+      useGalleryStore.setState({ filterTag: null, selectedIds: new Set() });
+    }
   });
 
   it('标签区：全部已添加时提示「所有标签已添加」', async () => {
