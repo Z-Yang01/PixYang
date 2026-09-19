@@ -1,11 +1,12 @@
 // @vitest-environment happy-dom
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { renderWebGLPreview } from '@/lib/webglPreview';
+import { renderWebGLPreview, releaseWebGLPreview } from '@/lib/webglPreview';
 
 function makeGL() {
   const calls = [];
   const enums = new Map();
   const fns = new Map();
+  const overrides = {};
   let nextEnum = 1024;
   const result = (prop) => {
     if (prop === 'getAttribLocation') return 0;
@@ -17,7 +18,9 @@ function makeGL() {
   const gl = new Proxy({}, {
     get(_t, prop) {
       if (prop === '__calls') return calls;
+      if (prop === '__overrides') return overrides;
       if (typeof prop !== 'string') return undefined;
+      if (prop in overrides) return overrides[prop];
       if (/^[A-Z][A-Z0-9_]*$/.test(prop)) {
         if (!enums.has(prop)) enums.set(prop, nextEnum++);
         return enums.get(prop);
@@ -130,5 +133,47 @@ describe('renderWebGLPreview', () => {
     }
     // NEAREST + texture() 的 floor(u*256) 在上半值区间存在差一输入档，禁止回退
     expect(src).not.toMatch(/texture\(\s*uCurveLut/);
+  });
+});
+
+describe('上下文丢失与释放（审查批 8 P-1）', () => {
+  it('已缓存上下文丢失：返回 false（触发 CSS 回退）而非静默谎报成功', async () => {
+    const { canvas, gl } = makeCanvas();
+    globalThis.createImageBitmap = vi.fn().mockResolvedValue({ close: vi.fn() });
+    expect(await renderWebGLPreview(canvas, testImage, baseUniforms())).toBe(true);
+    gl.__overrides.isContextLost = () => true;
+    expect(await renderWebGLPreview(canvas, testImage, baseUniforms())).toBe(false);
+  });
+
+  it('丢失后同一画布重建路径：init 后再验，仍报 false 且不缓存死亡状态', async () => {
+    const { canvas, gl } = makeCanvas();
+    globalThis.createImageBitmap = vi.fn().mockResolvedValue({ close: vi.fn() });
+    expect(await renderWebGLPreview(canvas, testImage, baseUniforms())).toBe(true);
+    gl.__overrides.isContextLost = () => true;
+    expect(await renderWebGLPreview(canvas, testImage, baseUniforms())).toBe(false);
+    // 第二次调用走 initCanvas 重建：死亡上下文不得重新入缓存（drawArrays 不再新增）
+    const draws = gl.__calls.filter((c) => c.prop === 'drawArrays').length;
+    expect(await renderWebGLPreview(canvas, testImage, baseUniforms())).toBe(false);
+    expect(gl.__calls.filter((c) => c.prop === 'drawArrays').length).toBe(draws);
+  });
+
+  it('releaseWebGLPreview：删除纹理/程序 + WEBGL_lose_context 显式回收，再次渲染走重建', async () => {
+    const { canvas, gl } = makeCanvas();
+    const loseContext = vi.fn();
+    gl.__overrides.getExtension = () => ({ loseContext });
+    globalThis.createImageBitmap = vi.fn().mockResolvedValue({ close: vi.fn() });
+    expect(await renderWebGLPreview(canvas, testImage, baseUniforms())).toBe(true);
+    releaseWebGLPreview(canvas);
+    expect(gl.__calls.filter((c) => c.prop === 'deleteTexture').length).toBe(2);
+    expect(gl.__calls.filter((c) => c.prop === 'deleteProgram').length).toBe(1);
+    expect(loseContext).toHaveBeenCalledTimes(1);
+    // 释放后重绘：init 重跑（第二个 createProgram），成功返回 true
+    expect(await renderWebGLPreview(canvas, testImage, baseUniforms())).toBe(true);
+    expect(gl.__calls.filter((c) => c.prop === 'createProgram').length).toBe(2);
+  });
+
+  it('未渲染过的画布 release 不炸（无缓存直接返回）', () => {
+    const { canvas } = makeCanvas();
+    expect(() => releaseWebGLPreview(canvas)).not.toThrow();
   });
 });

@@ -3,7 +3,7 @@ import { toast } from 'sonner';
 import api from '../lib/api';
 import useGalleryStore from '../store/galleryStore';
 import { toEditParams } from '../lib/editParams';
-import { pageAfterDelete, pageSizeOf, removeIdsFromSet } from '../lib/gallery';
+import { pageAfterDelete, removeIdsFromSet } from '../lib/gallery';
 
 // 批量操作（勾选集驱动）：全选/导出/打标/评分收藏/删除确认 + 批量同步编辑参数。
 // 数据与勾选集都从 galleryStore 读取，弹层确认状态（pendingBatchAction）由本 hook 持有。
@@ -97,7 +97,17 @@ export default function useBatchActions({ showToast }) {
       if (!api.isBridgeAvailable()) return;
       const ids = [...useGalleryStore.getState().selectedIds];
       if (ids.length === 0) return;
-      await api.addTagToImages(ids, tagId);
+      // IPC reject/{error} 都必须可见：旧版不接错、Toast 照报成功（审查批 8 Q-08）
+      let result;
+      try {
+        result = await api.addTagToImages(ids, tagId);
+      } catch (e) {
+        result = { error: `批量添加标签失败: ${e.message}` };
+      }
+      if (result && result.error) {
+        showToast(result.error, 'error');
+        return;
+      }
       useGalleryStore.getState().loadAppData();
       showToast(`已为 ${ids.length} 张图片添加标签`, 'success');
     },
@@ -192,8 +202,11 @@ export default function useBatchActions({ showToast }) {
     }
   }, []);
 
+  // 删除在途互斥：ConfirmDialog 全程保持挂载，await 期间按住 Enter 会重复触发
+  // onConfirm → 二次删除 + stats 双减（勾选清理在 await 之后，审查批 8 Q-03）
+  const deletingRef = useRef(false);
   const executeBatchDelete = useCallback(async () => {
-    if (!api.isBridgeAvailable()) return;
+    if (!api.isBridgeAvailable() || deletingRef.current) return;
     const store = useGalleryStore.getState();
     const deletedCount = store.selectedIds.size;
     const deletedIds = [...store.selectedIds];
@@ -201,38 +214,41 @@ export default function useBatchActions({ showToast }) {
       setPendingBatchAction(null);
       return;
     }
-    // 兜异常：DB 层未预期错误仍会 reject，不接住的话确认框永久挂起（弹层卡死）
-    let results;
+    deletingRef.current = true;
+    let okCount;
     try {
-      results = await api.batchDeleteImages(deletedIds);
-    } catch (e) {
-      results = { error: `批量删除失败: ${e.message}` };
-    }
-    store.clearSelection();
-    setPendingBatchAction(null);
-    // 逐张结果可能带 error（文件被占用等）：成功数按实际统计，不再一律报全量成功
-    const batchError = !Array.isArray(results) && results?.error;
-    const list = Array.isArray(results) ? results : [];
-    const failedCount = batchError ? deletedIds.length : list.filter((r) => r?.error).length;
-    const okCount = deletedIds.length - failedCount;
-    if (batchError) {
-      showToast(results.error, 'error');
-    } else if (failedCount > 0) {
-      showToast(`已删除 ${okCount} 张，${failedCount} 张失败（文件可能被占用）`, 'error');
-    } else {
-      showToast(`已删除 ${deletedCount} 张图片`, 'success');
+      // 兜异常：DB 层未预期错误仍会 reject，不接住的话确认框永久挂起（弹层卡死）
+      let results;
+      try {
+        results = await api.batchDeleteImages(deletedIds);
+      } catch (e) {
+        results = { error: `批量删除失败: ${e.message}` };
+      }
+      store.clearSelection();
+      setPendingBatchAction(null);
+      // batchDeleteImages 只回推成功行（失败行不回推、无 error 元素）：
+      // 成功数 = 返回长度，失败数 = 请求数 − 成功数；ghost id 也计入失败而非静默成功（审查批 8 Q-02）
+      const batchError = !Array.isArray(results) && results?.error;
+      const list = Array.isArray(results) ? results : [];
+      const failedCount = batchError ? deletedIds.length : deletedIds.length - list.length;
+      okCount = list.length;
+      if (batchError) {
+        showToast(results.error, 'error');
+      } else if (failedCount > 0) {
+        showToast(`已删除 ${okCount} 张，${failedCount} 张失败（文件可能被占用）`, 'error');
+      } else {
+        showToast(`已删除 ${deletedCount} 张图片`, 'success');
+      }
+    } finally {
+      deletingRef.current = false;
     }
     // await 后取最新状态：删除在途期间用户可能已翻页/改筛选，用旧快照回写会把他弹回旧页
     const s = useGalleryStore.getState();
     const nextTotal = Math.max(0, s.totalImages - okCount);
     const nextPage = pageAfterDelete(s.page, nextTotal, s.gridSettings);
-    const pageSize = pageSizeOf(s.gridSettings);
     s.setPage(nextPage);
-    await Promise.all([
-      s.loadImages({ offset: (nextPage - 1) * pageSize, limit: pageSize }),
-      s.loadStats(),
-      s.loadAppData(),
-    ]);
+    // 走无参 loadImages：store 内部按 page/gridSettings 算 offset 并对超界页做钳制（审查批 8 R-9）
+    await Promise.all([s.loadImages(), s.loadStats(), s.loadAppData()]);
   }, [showToast]);
 
   return {

@@ -6,6 +6,13 @@ import api from '@/lib/api';
 
 const DEFAULT_SETTINGS = { theme: 'dark', rows: 3, columns: 5, gap: 12, padding: 16 };
 
+// 以当前生效值（store 网格设置 + DOM 主题）为草稿初值：
+// 用 DEFAULT_SETTINGS 起步会在 loadSettings 返回前把已持久化网格瞬时覆盖成默认值（审查批 8 R-1）
+const readCurrentUiSettings = () => ({
+  theme: document.documentElement.getAttribute('data-theme') === 'light' ? 'light' : 'dark',
+  ...useGalleryStore.getState().gridSettings,
+});
+
 const clamp = (v, min, max, fallback) => {
   const n = Number(v);
   return Number.isNaN(n) ? fallback : Math.max(min, Math.min(max, n));
@@ -13,8 +20,8 @@ const clamp = (v, min, max, fallback) => {
 
 export default function SettingsPage({ onSettingsChanged, onImagesChanged }) {
   const stats = useGalleryStore(st => st.stats);
-  const [draft, setDraft] = useState(DEFAULT_SETTINGS);
-  const savedRef = useRef(DEFAULT_SETTINGS);
+  const [draft, setDraft] = useState(readCurrentUiSettings);
+  const savedRef = useRef(draft);
   const [storagePath, setStoragePath] = useState('');
   const [cameraFolder, setCameraFolder] = useState('');
   const [message, setMessage] = useState('');
@@ -94,11 +101,19 @@ export default function SettingsPage({ onSettingsChanged, onImagesChanged }) {
       gap: clamp(draft.gap, 0, 48, 12),
       padding: clamp(draft.padding, 0, 64, 16),
     };
-    await api.setSetting('theme', d.theme);
-    await api.setSetting('grid_rows', String(d.rows));
-    await api.setSetting('grid_columns', String(d.columns));
-    await api.setSetting('grid_gap', String(d.gap));
-    await api.setSetting('content_padding', String(d.padding));
+    // 五项 setSetting 任一 reject（DB 忙/磁盘异常）不能静默吞掉：
+    // 半途失败时 savedRef 不推进，UI 保持「未保存」态并给出错误（审查批 8 R-8）
+    try {
+      await api.setSetting('theme', d.theme);
+      await api.setSetting('grid_rows', String(d.rows));
+      await api.setSetting('grid_columns', String(d.columns));
+      await api.setSetting('grid_gap', String(d.gap));
+      await api.setSetting('content_padding', String(d.padding));
+    } catch (e) {
+      console.error('[设置] 保存失败:', e.message);
+      setMessage(`保存失败: ${e.message}`);
+      return;
+    }
     savedRef.current = d;
     setDraft(d);
     onSettingsChanged?.();

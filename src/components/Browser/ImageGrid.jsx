@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
+import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { ImageOff } from 'lucide-react';
 import { groupImagesByDate, pageSizeOf, addRangeToSet, toggleIdInSet, removeIdsFromSet, createLoadSequencer, hasActiveFilters as computeHasActiveFilters } from '@/lib/gallery';
@@ -18,7 +19,7 @@ const EMPTY_TAGS = [];
 const preferredThumbOf = (img) => img.thumbnail_edit_path || img.thumbnail_small_path || img.thumbnail_path;
 
 export default function ImageGrid({
-  onView, onInfo, onImageUpdated, onImport,
+  onView, onInfo, onImageUpdated, onCountsChanged, onImport,
   onClearFilters, onColumnsChange, viewerActive = false,
 }) {
   // 数据与筛选/勾选/网格设置从 galleryStore 订阅，消除 App → ImageGrid 的逐层透传
@@ -197,6 +198,9 @@ export default function ImageGrid({
     const onKey = (e) => {
       const action = matchGridShortcut(e);
       if (!action) return;
+      // radix 菜单项 Enter/Space/方向键只 preventDefault 不 stopPropagation，
+      // 不设此门禁：卡片右键菜单打开时按键会穿透触发网格 Open/勾选（审查批 8 Q-01）
+      if (e.defaultPrevented) return;
       // 空格始终拦截，避免无焦点卡片时页面滚动
       if (action === GRID_ACTIONS.ToggleSelect) e.preventDefault();
       const count = imagesRef.current.length;
@@ -383,22 +387,34 @@ export default function ImageGrid({
         }));
       }
     }
-    onImageUpdated?.();
-  }, [allTags, onImageUpdated, filterTag, setSelectedIds]);
+    // 仅当行的筛选归属可能改变（按该标签筛选中/搜索词命中标签名）才整页重查，
+    // 否则只刷侧栏计数：无参全量刷新每次 6 个 IPC + 整页缩略图重载（审查批 8 R-4）
+    const st = useGalleryStore.getState();
+    const q = (st.search || '').trim().toLowerCase();
+    const searchTagHit = hasTag && q && (hasTag.name || '').toLowerCase().includes(q);
+    if (filterTag === tagId || searchTagHit) onImageUpdated?.();
+    else onCountsChanged?.();
+  }, [allTags, onImageUpdated, onCountsChanged, filterTag, setSelectedIds]);
 
   const handleAddToAlbum = async (imageId, albumId) => {
     if (!api.isBridgeAvailable()) return;
     await api.addToAlbum(albumId, [imageId]);
     setAddToAlbumImage(null);
-    onImageUpdated?.();
+    // 加入相册不会让已显示的行离开相册筛选视图，只需更新侧栏计数（审查批 8 R-4）
+    onCountsChanged?.();
   };
 
   const handleCreateAndAdd = async (imageId, name) => {
     if (!name?.trim() || !api.isBridgeAvailable()) return;
     const album = await api.createAlbum(name.trim());
+    // 失败返回 {error}：无 id 不能继续 addToAlbum(undefined)（审查批 8 Q-09）
+    if (album?.error) {
+      toast.error(album.error);
+      return;
+    }
     if (album) await api.addToAlbum(album.id, [imageId]);
     setAddToAlbumImage(null);
-    onImageUpdated?.();
+    onCountsChanged?.();
   };
 
   const handleThumbError = useCallback((id) => {

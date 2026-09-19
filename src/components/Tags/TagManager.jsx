@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Search, Trash2, Tag } from 'lucide-react';
@@ -25,6 +26,11 @@ export default function TagManager({ onSelectTag, onRefresh }) {
   const handleCreate = async () => {
     if (!newName.trim() || !api.isBridgeAvailable()) return;
     const tag = await api.createTag(newName.trim(), newColor);
+    // 失败（重名/DB 异常）从静默变为可见：输入框保留原文供改名重试（审查批 8 Q-09）
+    if (tag?.error) {
+      toast.error(tag.error);
+      return;
+    }
     if (tag) {
       setNewName('');
       setNewColor(TAG_COLORS[Math.floor(Math.random() * TAG_COLORS.length)]);
@@ -38,7 +44,11 @@ export default function TagManager({ onSelectTag, onRefresh }) {
     const id = deleteTarget?.id;
     setDeleteTarget(null);
     if (!id || !api.isBridgeAvailable()) return;
-    await api.deleteTag(id);
+    const result = await api.deleteTag(id);
+    if (result?.error) {
+      toast.error(result.error);
+      return;
+    }
     await loadTags();
     onRefresh?.();
   };

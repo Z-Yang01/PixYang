@@ -232,6 +232,26 @@ describe('ImageGrid', () => {
     expect(useGalleryStore.getState().selectedIds.size).toBe(0);
   });
 
+  it('键盘门禁：已被 radix 菜单 preventDefault 的 Enter/Space 不穿透网格（审查批 8 Q-01）', async () => {
+    const onView = vi.fn();
+    seedStore({ images: [makeImage()], totalImages: 1 });
+    render(<ImageGrid onView={onView} />);
+    await screen.findByText('sunset');
+    fireEvent.keyDown(window, { key: 'ArrowRight' }); // 高亮第 0 张（Enter 需 activeIndex>=0）
+    const mkPrevented = (key) => {
+      const ev = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true });
+      ev.preventDefault(); // 模拟 radix MenuItem click()+preventDefault 后事件继续冒泡到 window
+      return ev;
+    };
+    window.dispatchEvent(mkPrevented('Enter'));
+    window.dispatchEvent(mkPrevented(' '));
+    expect(onView).not.toHaveBeenCalled();
+    expect(useGalleryStore.getState().selectedIds.size).toBe(0);
+    // 对照组：未被 preventDefault 的 Enter 照常放行打开查看器
+    fireEvent.keyDown(window, { key: 'Enter' });
+    expect(onView).toHaveBeenCalledTimes(1);
+  });
+
   it('网格自身弹窗注册进全局模态表，卸载后销键', async () => {
     seedStore({ images: [makeImage()], totalImages: 1 });
     const { container, unmount } = render(<ImageGrid />);
@@ -288,5 +308,41 @@ describe('ImageGrid', () => {
       expect(window.pixyang.removeTagFromImage).toHaveBeenCalledWith(1, 5);
     });
     expect([...useGalleryStore.getState().selectedIds].sort()).toEqual([1, 2]);
+  });
+
+  it('快捷移除标签（非该标签筛选/无搜索）：走轻量计数刷新不整页重查（审查批 8 R-4）', async () => {
+    const tag = { id: 5, name: '风景', color: '#818cf8' };
+    window.pixyang.getTags.mockResolvedValue([tag]);
+    window.pixyang.getBatchImageTags.mockResolvedValue({ 1: [tag] });
+    const onImageUpdated = vi.fn();
+    const onCountsChanged = vi.fn();
+    seedStore({ images: [makeImage({ id: 1 })], totalImages: 1 });
+    const { container } = render(<ImageGrid onImageUpdated={onImageUpdated} onCountsChanged={onCountsChanged} />);
+    await screen.findByText('sunset');
+    const item = await openQuickTagMenu(container);
+    fireEvent.click(item);
+    await vi.waitFor(() => {
+      expect(window.pixyang.removeTagFromImage).toHaveBeenCalledWith(1, 5);
+      expect(onCountsChanged).toHaveBeenCalledTimes(1);
+      expect(onImageUpdated).not.toHaveBeenCalled();
+    });
+  });
+
+  it('标签筛选下快捷移除仍走整页重查（结构分支不回退，审查批 8 R-4）', async () => {
+    const tag = { id: 5, name: '风景', color: '#818cf8' };
+    window.pixyang.getTags.mockResolvedValue([tag]);
+    window.pixyang.getBatchImageTags.mockResolvedValue({ 1: [tag] });
+    const onImageUpdated = vi.fn();
+    const onCountsChanged = vi.fn();
+    seedStore({ images: [makeImage({ id: 1 })], totalImages: 1, filterTag: 5 });
+    const { container } = render(<ImageGrid onImageUpdated={onImageUpdated} onCountsChanged={onCountsChanged} />);
+    await screen.findByText('sunset');
+    const item = await openQuickTagMenu(container);
+    fireEvent.click(item);
+    await vi.waitFor(() => {
+      expect(window.pixyang.removeTagFromImage).toHaveBeenCalledWith(1, 5);
+      expect(onImageUpdated).toHaveBeenCalledWith();
+      expect(onCountsChanged).not.toHaveBeenCalled();
+    });
   });
 });

@@ -102,4 +102,29 @@ describe('Sidebar', () => {
     renderSidebar();
     expect(screen.queryByText('清除所有筛选')).not.toBeInTheDocument();
   });
+
+  it('点「全部图片」清空全部筛选维度而非仅收藏（审查批 8 Q-06）', () => {
+    seedStore({
+      filterTag: 5, filterAlbum: 2, filterDate: '2026-01-02',
+      dateRange: { from: '', to: '' }, filterFavorites: true, search: 'sun', page: 3,
+    });
+    renderSidebar();
+    fireEvent.click(screen.getByText('全部图片'));
+    const s = useGalleryStore.getState();
+    expect(s.filterTag).toBeNull();
+    expect(s.filterAlbum).toBeNull();
+    expect(s.filterDate).toBe('');
+    expect(s.filterFavorites).toBe(false);
+    expect(s.search).toBe('');
+    expect(s.page).toBe(1);
+  });
+
+  it('折叠态下「全部图片」同样可全清（清除控件折叠不可见的兜底路径）', () => {
+    seedStore({ filterAlbum: 2, filterFavorites: true });
+    renderSidebar({ collapsed: true });
+    fireEvent.click(screen.getByTitle('全部图片'));
+    const s = useGalleryStore.getState();
+    expect(s.filterAlbum).toBeNull();
+    expect(s.filterFavorites).toBe(false);
+  });
 });

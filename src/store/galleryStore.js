@@ -26,6 +26,9 @@ const normalizeGridValue = (k, v, fallback) => {
 };
 
 let loadImagesSeq = null;
+// images 本地写世代号：loadImages 在途期间发生的本地改动（评分/收藏/日期的 merge 写回）
+// 会被晚到的旧快照整页覆盖回滚；落地时比对世代号，不一致即丢弃该陈旧响应（审查批 8 R-2）
+let imagesLocalRev = 0;
 
 // 图库共享状态：筛选/排序/分页、勾选集、网格设置。
 // Sidebar/TopBar/ImageGrid 直接订阅，消除 App → 子组件的逐层透传。
@@ -99,9 +102,17 @@ const useGalleryStore = create((set, get) => ({
   setFilterDate: (date) => set(date
     ? { filterDate: date, dateRange: { from: '', to: '' }, filterAlbum: null, page: 1 }
     : { filterDate: '', page: 1 }),
-  setDateRange: (range) => set(range && (range.from || range.to)
-    ? { dateRange: range, filterDate: '', filterAlbum: null, page: 1 }
-    : { dateRange: { from: '', to: '' }, page: 1 }),
+  // 区间倒挂自动交换：先选结束日再选开始日跨过它时，交集恒空且无任何提示
+  setDateRange: (range) => {
+    if (!range || (!range.from && !range.to)) {
+      set({ dateRange: { from: '', to: '' }, page: 1 });
+      return;
+    }
+    let from = range.from || '';
+    let to = range.to || '';
+    if (from && to && from > to) [from, to] = [to, from];
+    set({ dateRange: { from, to }, filterDate: '', filterAlbum: null, page: 1 });
+  },
   setFilterFavorites: (v) => set({ filterFavorites: v, page: 1 }),
   setPage: (page) => set({ page }),
 
@@ -129,12 +140,15 @@ const useGalleryStore = create((set, get) => ({
   setSelectedIds: (ids) => set({ selectedIds: ids }),
   clearSelection: () => set({ selectedIds: new Set() }),
 
+  // 归一化后逐项比较：值全等时返回原引用，否则每次按键都换对象引用，
+  // wiring 按引用依赖会对着 gap/padding 触发整页重查（审查批 8 R-1）
   setGridSettings: (settings) => set((state) => {
     const next = { ...state.gridSettings };
     for (const [k, v] of Object.entries(settings || {})) {
       if (GRID_LIMITS[k]) next[k] = normalizeGridValue(k, v, next[k]);
     }
-    return { gridSettings: next };
+    const unchanged = Object.keys(GRID_LIMITS).every((k) => next[k] === state.gridSettings[k]);
+    return unchanged ? {} : { gridSettings: next };
   }),
 
   patchGridSettings: (patch) => set((state) => {
@@ -142,7 +156,8 @@ const useGalleryStore = create((set, get) => ({
     for (const [k, v] of Object.entries(patch)) {
       if (GRID_LIMITS[k]) next[k] = normalizeGridValue(k, v, next[k]);
     }
-    return { gridSettings: next };
+    const unchanged = Object.keys(GRID_LIMITS).every((k) => next[k] === state.gridSettings[k]);
+    return unchanged ? {} : { gridSettings: next };
   }),
 
   loadStats: async () => {
@@ -161,10 +176,13 @@ const useGalleryStore = create((set, get) => ({
     const state = get();
     if (!loadImagesSeq) loadImagesSeq = createLoadSequencer();
     const token = loadImagesSeq.next();
+    const revAtIssue = imagesLocalRev;
     set({ loading: true });
     try {
       const pageSize = state.gridSettings.rows * state.gridSettings.columns;
-      const override = opts.search !== undefined || opts.sortBy !== undefined || opts.limit !== undefined;
+      // 传了任何显式参数即视为 override 查询：谓词漏掉 offset/tagId/albumId 等时
+      // 这些参数会被静默丢弃、按 store 状态查询（审查批 8 R-9）
+      const override = Object.keys(opts).length > 0;
       const options = override
         ? {
             search: opts.search ?? state.search,
@@ -194,6 +212,8 @@ const useGalleryStore = create((set, get) => ({
           });
       const result = await api.getImages(options);
       if (!loadImagesSeq.isCurrent(token)) return;
+      // 在途期间有本地写：旧快照落地会把刚生效的评分/收藏/日期 merge 回滚掉，直接丢弃
+      if (imagesLocalRev !== revAtIssue) return;
       set({ images: result.images, totalImages: result.total });
       // 页码越界（外部删除后总页数变少等）：回钳到最后一页，page 变化由 wiring effect 自动重查
       if (!override && result.images.length === 0 && result.total > 0 && state.page > 1) {
@@ -230,5 +250,11 @@ const useGalleryStore = create((set, get) => ({
     get().loadAppData();
   },
 }));
+
+// loadImages 自身的整页写入也经此计数：对当前在途请求而言落地前计数即失效属自增，
+// 但落地检查先于本次 set，只有落地后才发生的本地写会拦下更晚的响应
+useGalleryStore.subscribe((state, prev) => {
+  if (state.images !== prev.images) imagesLocalRev++;
+});
 
 export default useGalleryStore;

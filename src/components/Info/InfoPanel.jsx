@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { FolderOpen, Trash2, X, Heart, HeartOff, Star } from 'lucide-react';
@@ -15,7 +16,7 @@ function dirname(p) {
   return i > 0 ? p.substring(0, i) : p;
 }
 
-export default function InfoPanel({ image, onClose, onImageUpdated }) {
+export default function InfoPanel({ image, onClose, onImageUpdated, onCountsChanged }) {
   const [imgTags, setImgTags] = useState([]);
   const [allTags, setAllTags] = useState([]);
   const [notes, setNotes] = useState('');
@@ -79,7 +80,8 @@ export default function InfoPanel({ image, onClose, onImageUpdated }) {
     if (!api.isBridgeAvailable()) return;
     await api.addTagToImage(image.id, tagId);
     await loadTags();
-    onImageUpdated?.();
+    // 加标签不会让已显示的行离开视图，只刷侧栏计数（审查批 8 R-4）
+    onCountsChanged?.();
     setShowAddTag(false);
   };
 
@@ -92,7 +94,12 @@ export default function InfoPanel({ image, onClose, onImageUpdated }) {
     if (st.filterTag === tagId) {
       st.setSelectedIds(removeIdsFromSet(st.selectedIds, [image.id]));
     }
-    onImageUpdated?.();
+    // 仅当行的筛选归属可能改变才整页重查，否则只刷计数（审查批 8 R-4）
+    const q = (st.search || '').trim().toLowerCase();
+    const removed = imgTags.find(t => t.id === tagId);
+    const searchTagHit = q && removed && (removed.name || '').toLowerCase().includes(q);
+    if (st.filterTag === tagId || searchTagHit) onImageUpdated?.();
+    else onCountsChanged?.();
   };
 
   const handleNotesSave = async () => {
@@ -123,7 +130,13 @@ export default function InfoPanel({ image, onClose, onImageUpdated }) {
   };
 
   const handleRename = async () => {
-    if (!api.isBridgeAvailable() || !editName.trim()) return;
+    if (!api.isBridgeAvailable() || !image) return;
+    // 空主名提交：恢复展示当前文件名，不留白框（审查批 8 Q-11，对照 handleDateSave）
+    if (!editName.trim()) {
+      setEditName(image.filename || '');
+      setRenameErr('');
+      return;
+    }
     const result = await api.renameImage(image.id, editName.trim());
     if (result.error) {
       setRenameErr(result.error);
@@ -145,7 +158,20 @@ export default function InfoPanel({ image, onClose, onImageUpdated }) {
 
   const handleDelete = async () => {
     if (!api.isBridgeAvailable() || !image) return;
-    await api.deleteImage(image.id);
+    const id = image.id;
+    let result;
+    try {
+      result = await api.deleteImage(id);
+    } catch (e) {
+      result = { error: `删除失败: ${e.message}` };
+    }
+    if (result?.error) {
+      toast.error(result.error);
+      return;
+    }
+    // 删除后勾选集仍含该 id：批量操作会打向死 id，须先剪枝（审查批 8 Q-10，对照 ImageGrid）
+    const st = useGalleryStore.getState();
+    st.setSelectedIds(removeIdsFromSet(st.selectedIds, [id]));
     onClose();
     onImageUpdated?.();
   };

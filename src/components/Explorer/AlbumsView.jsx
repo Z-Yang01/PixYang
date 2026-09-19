@@ -50,7 +50,12 @@ export default function AlbumsView({ onSelectAlbum, onRefresh }) {
 
   const handleCreate = async () => {
     if (!newName.trim() || !api.isBridgeAvailable()) return;
-    await api.createAlbum(newName.trim(), newDesc.trim());
+    // 写失败（{error}/reject）不再静默收表单：保留输入供重试（审查批 8 Q-09）
+    const album = await api.createAlbum(newName.trim(), newDesc.trim());
+    if (album?.error) {
+      toast.error(album.error);
+      return;
+    }
     setNewName('');
     setNewDesc('');
     setShowCreate(false);
@@ -60,7 +65,11 @@ export default function AlbumsView({ onSelectAlbum, onRefresh }) {
 
   const handleDelete = async (id) => {
     if (!api.isBridgeAvailable()) return;
-    await api.deleteAlbum(id);
+    const result = await api.deleteAlbum(id);
+    if (result?.error) {
+      toast.error(result.error);
+      return;
+    }
     await loadAlbums();
     onRefresh?.();
   };
@@ -75,7 +84,11 @@ export default function AlbumsView({ onSelectAlbum, onRefresh }) {
     // 名称未变：不发无意义的写，也不收起——radix 菜单关闭时焦点会被强行回收一次，
     // 刚 autoFocus 的改名框立刻收到误 blur；若在此收起，用户根本没机会编辑（审查批 6 K1）
     if (renameVal.trim() === renameTarget.name) return;
-    await api.renameAlbum(renameTarget.id, renameVal.trim());
+    const result = await api.renameAlbum(renameTarget.id, renameVal.trim());
+    if (result?.error) {
+      toast.error(result.error);
+      return;
+    }
     setRenameTarget(null);
     setRenameVal('');
     await loadAlbums();

@@ -130,6 +130,23 @@ export function applyLightLocalUpdate(images, id, updates) {
   return images.map((img) => (img.id === id ? { ...img, ...updates } : img));
 }
 
+// 轻量写回后复验行与当前筛选的归属（仅覆盖行数据可判定的维度：收藏/单日/区间/搜索）。
+// 搜索的标签名列无法在前端复刻，误判方向是多刷一次重查，不会漏剪枝（审查批 8 R-3）
+export function matchesListFilters(row, { filterFavorites, filterDate, dateRange, search } = {}) {
+  if (!row) return true;
+  if (filterFavorites && !row.favorite) return false;
+  if (filterDate && row.import_date !== filterDate) return false;
+  const d = row.import_date || '';
+  if (dateRange?.from && d < dateRange.from) return false;
+  if (dateRange?.to && d > dateRange.to) return false;
+  const q = (search || '').trim().toLowerCase();
+  if (q) {
+    const hay = `${row.filename || ''} ${row.notes || ''}`.toLowerCase();
+    if (!hay.includes(q)) return false;
+  }
+  return true;
+}
+
 export function removeImageFromList(images, id) {
   return images.filter((img) => img.id !== id);
 }

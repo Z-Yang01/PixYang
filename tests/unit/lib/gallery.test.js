@@ -13,6 +13,7 @@ import {
   pageAfterDelete,
   hasActiveFilters,
   applyLightLocalUpdate,
+  matchesListFilters,
   removeImageFromList,
   createLoadSequencer,
 } from '@/lib/gallery';
@@ -202,5 +203,41 @@ describe('createLoadSequencer', () => {
     const t2 = seq.next();
     expect(seq.isCurrent(t1)).toBe(false);
     expect(seq.isCurrent(t2)).toBe(true);
+  });
+});
+
+describe('matchesListFilters 轻量写回后成员回归校验（审查批 8 R-3）', () => {
+  it('单日筛选下改日期掉出视图', () => {
+    const row = { import_date: '2026-05-05', filename: 'a.jpg' };
+    expect(matchesListFilters(row, { filterDate: '2026-05-05' })).toBe(true);
+    expect(matchesListFilters({ ...row, import_date: '2026-06-06' }, { filterDate: '2026-05-05' })).toBe(false);
+  });
+
+  it('区间筛选按字符串日期比较两端', () => {
+    const f = { dateRange: { from: '2026-01-01', to: '2026-06-30' } };
+    expect(matchesListFilters({ import_date: '2026-03-01' }, f)).toBe(true);
+    expect(matchesListFilters({ import_date: '2026-07-01' }, f)).toBe(false);
+    expect(matchesListFilters({ import_date: '' }, f)).toBe(false);
+    expect(matchesListFilters({ import_date: '' }, { dateRange: { from: '', to: '' } })).toBe(true);
+  });
+
+  it('搜索词命中文件名或备注之一即保留，两边都不中才判掉出', () => {
+    const f = { search: 'sun' };
+    expect(matchesListFilters({ filename: 'sunset.jpg', notes: '' }, f)).toBe(true);
+    expect(matchesListFilters({ filename: 'moon.jpg', notes: 'a sunny day' }, f)).toBe(true);
+    expect(matchesListFilters({ filename: 'moon.jpg', notes: 'cold' }, f)).toBe(false);
+    expect(matchesListFilters({ filename: 'MOON.jpg' }, { search: ' mo' })).toBe(true);
+  });
+
+  it('收藏页取消收藏判掉出；非收藏页不受 favorite 影响', () => {
+    expect(matchesListFilters({ favorite: 0 }, { filterFavorites: true })).toBe(false);
+    expect(matchesListFilters({ favorite: 1 }, { filterFavorites: true })).toBe(true);
+    expect(matchesListFilters({ favorite: 0 }, { filterFavorites: false })).toBe(true);
+  });
+
+  it('无行 / 无筛选恒为保留（不误伤缺数据）', () => {
+    expect(matchesListFilters(null, { filterDate: '2026-01-01' })).toBe(true);
+    expect(matchesListFilters({ id: 1 }, {})).toBe(true);
+    expect(matchesListFilters({ id: 1 })).toBe(true);
   });
 });

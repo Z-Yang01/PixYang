@@ -253,6 +253,7 @@ const dbDefaults = {
   getSetting: () => null,
   setSetting: () => {},
   getAllSettings: () => ({}),
+  closeDatabase: () => {},
 };
 
 const dbStub = {};
@@ -276,6 +277,7 @@ const renderModuleStub = {
   callWorker: vi.fn(async () => ({ ok: true, width: 400, height: 300 })),
   sendToWorker: vi.fn(),
   closeRenderWorker: vi.fn(async () => {}),
+  cleanupInterruptedRenders: vi.fn(() => 0),
 };
 
 require.cache[require.resolve('electron')] = {
@@ -384,6 +386,8 @@ function setDefaultMocks() {
   renderModuleStub.callWorker.mockImplementation(async () => ({ ok: true, width: 400, height: 300 }));
   renderModuleStub.sendToWorker.mockReset();
   renderModuleStub.sendToWorker.mockImplementation(() => {});
+  renderModuleStub.cleanupInterruptedRenders.mockReset();
+  renderModuleStub.cleanupInterruptedRenders.mockImplementation(() => 0);
   dbStub.getEdits.mockReset();
   dbStub.getEdits.mockImplementation(() => null);
   dbStub.saveEdits.mockReset();
@@ -506,6 +510,23 @@ describe('窗口与生命周期', () => {
     expect(win.focus).toHaveBeenCalled();
     win.isDestroyed.mockReturnValue(true);
     win.isMinimized.mockReturnValue(false);
+  });
+
+  it('before-quit：结算在途编辑会话并清在途渲染残留（审查批 8 P-2/P-3）', async () => {
+    fs.writeFileSync(path.join(FIXTURES, 'quitme.jpg'), 'img');
+    dbStub.getImageById.mockImplementation((id) => (id === 88
+      ? { id: 88, filename: 'quitme.jpg', filepath: path.join(FIXTURES, 'quitme.jpg'), hidden: 0, raw_path: '', width: 2000, height: 1200 }
+      : null));
+    expect((await call('fs:edit-open', 88)).error).toBeUndefined();
+    const cb = electronStub.app.on.mock.calls.find(([e]) => e === 'before-quit')?.[1];
+    expect(cb).toBeDefined();
+    cb();
+    expect(renderModuleStub.cleanupInterruptedRenders).toHaveBeenCalled();
+    expect(workerStub.closeWorker).toHaveBeenCalled();
+    expect(renderModuleStub.closeRenderWorker).toHaveBeenCalled();
+    expect(dbStub.closeDatabase).toHaveBeenCalled();
+    // 会话已被结算：同 id 烘焙报会话不存在
+    expect((await call('fs:edit-bake', 88, {})).error).toBe('编辑会话不存在');
   });
 
   it('will-navigate：跨源拒绝、同源（HMR reload）放行、坏 URL 一律拒绝', () => {
@@ -674,6 +695,36 @@ describe('写入委托类 handler', () => {
     expect(dbStub.addTagToImages).toHaveBeenCalledWith([1, 2], 5);
     await call('db:add-tag-to-images', null, 5);
     expect(dbStub.addTagToImages).toHaveBeenLastCalledWith([], 5);
+  });
+
+  it('db:add-tag-to-images：DB 抛错转 {error}，成功原样透传计数（审查批 8 Q-08）', async () => {
+    dbStub.addTagToImages.mockImplementationOnce(() => { throw new Error('DB busy'); });
+    await expect(call('db:add-tag-to-images', [1], 5)).resolves.toEqual({ error: expect.stringContaining('DB busy') });
+    dbStub.addTagToImages.mockReturnValueOnce(0);
+    await expect(call('db:add-tag-to-images', [1, 2], 5)).resolves.toBe(0);
+  });
+
+  it('db:create-tag：重名 null 与 DB 抛错都转 {error}（审查批 8 Q-09）', async () => {
+    dbStub.createTag.mockReturnValueOnce(null);
+    await expect(call('db:create-tag', '风景', '#fff')).resolves.toEqual({ error: '创建标签失败：名称重复或无效' });
+    dbStub.createTag.mockImplementationOnce(() => { throw new Error('disk full'); });
+    await expect(call('db:create-tag', '风景', '#fff')).resolves.toEqual({ error: expect.stringContaining('disk full') });
+  });
+
+  it('db:delete-tag / db:create-album / db:delete-album / db:rename-album 抛错统一 {error}（审查批 8 Q-09）', async () => {
+    dbStub.deleteTag.mockImplementationOnce(() => { throw new Error('locked'); });
+    await expect(call('db:delete-tag', 4)).resolves.toEqual({ error: expect.stringContaining('locked') });
+    dbStub.createAlbum.mockImplementationOnce(() => { throw new Error('no mem'); });
+    await expect(call('db:create-album', '相册', '')).resolves.toEqual({ error: expect.stringContaining('no mem') });
+    dbStub.createAlbum.mockReturnValueOnce(null); // 空名
+    await expect(call('db:create-album', '  ', '')).resolves.toEqual({ error: '创建相册失败：名称无效' });
+    dbStub.deleteAlbum.mockImplementationOnce(() => { throw new Error('busy'); });
+    await expect(call('db:delete-album', 2)).resolves.toEqual({ error: expect.stringContaining('busy') });
+    dbStub.renameAlbum.mockImplementationOnce(() => { throw new Error('busy'); });
+    await expect(call('db:rename-album', 2, '新名')).resolves.toEqual({ error: expect.stringContaining('busy') });
+    // 成功路径形状不回退：renameAlbum 的 true / {error} 语义原样透传
+    dbStub.renameAlbum.mockReturnValueOnce(true);
+    await expect(call('db:rename-album', 2, '新名')).resolves.toBe(true);
   });
 
   it('db:create-tag 透传名称与颜色', async () => {

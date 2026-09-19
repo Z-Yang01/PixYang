@@ -263,7 +263,9 @@ export default function ImportDialog({ onClose, onDone, initialFiles = null }) {
             <Button onClick={handleDone}>完成</Button>
           ) : (
             <>
-              <Button variant="ghost" onClick={onClose} disabled={importing}>取消</Button>
+              {/* 取消也走 handleOpenChange：直连 onClose 会绕过 importedAnyRef 的 onDone 收尾，
+                  部分导入后点取消图库停在旧数据（审查批 8 Q-04） */}
+              <Button variant="ghost" onClick={() => handleOpenChange(false)} disabled={importing}>取消</Button>
               {importing ? (
                 <Button variant="secondary" onClick={handleCancelImport}>停止导入</Button>
               ) : (

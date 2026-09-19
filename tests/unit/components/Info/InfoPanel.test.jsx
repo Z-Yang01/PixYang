@@ -86,13 +86,16 @@ describe('InfoPanel', () => {
 
   it('展开标签区并点击「+ 风景」添加标签', async () => {
     const onImageUpdated = vi.fn();
-    renderPanel({ onImageUpdated });
+    const onCountsChanged = vi.fn();
+    renderPanel({ onImageUpdated, onCountsChanged });
     fireEvent.click(screen.getByText('+ 添加标签'));
     const addChip = await screen.findByText('+ 风景');
     fireEvent.click(addChip);
     await vi.waitFor(() => {
       expect(window.pixyang.addTagToImage).toHaveBeenCalledWith(9, 5);
-      expect(onImageUpdated).toHaveBeenCalled();
+      // 加标签不改变行的筛选归属：只刷侧栏计数，不整页重查（审查批 8 R-4）
+      expect(onCountsChanged).toHaveBeenCalled();
+      expect(onImageUpdated).not.toHaveBeenCalled();
     });
   });
 

@@ -53,3 +53,12 @@ Space 在网格导航里**无条件 preventDefault**（防页面滚动），弹�
   禁止再引入组件私有的「快捷键门禁布尔」。
 - 网格快捷键对 Space 的 preventDefault 保持在门禁之后：门禁命中即整体 return，
   不得先吞默认行为再判断弹层。
+
+## 后续（审查批 8 Q-01）
+
+模态注册表挡不住「事件已在弹层内部被处理」的穿透：Radix MenuItem 对 Enter/Space
+`click()+preventDefault()` 但不 stopPropagation，卡片右键菜单开着时按键仍冒到
+window 级网格处理器，对陈旧高亮卡片二次触发 Open/勾选。修复：网格 keydown 处理器
+与批 6 useGlobalShortcuts 同构补 `if (e.defaultPrevented) return;`。
+契约沉淀：**所有 window 级快捷键处理器都必须带 defaultPrevented 门禁**，
+模态注册表与它互补（一个管"有没有弹层"，一个管"这键已被消费"）。

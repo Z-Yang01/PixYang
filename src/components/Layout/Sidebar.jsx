@@ -34,7 +34,6 @@ export default function Sidebar({
   const setFilterTag = useGalleryStore(s => s.setFilterTag);
   const setFilterAlbum = useGalleryStore(s => s.setFilterAlbum);
   const setFilterDate = useGalleryStore(s => s.setFilterDate);
-  const setFilterFavorites = useGalleryStore(s => s.setFilterFavorites);
   const clearFilters = useGalleryStore(s => s.clearFilters);
   const navigate = useNavigate();
   const location = useLocation();
@@ -81,8 +80,9 @@ export default function Sidebar({
         {/* 图库 */}
         <div className="nav-section">
           {!collapsed && <div className="nav-section-title">图库</div>}
+          {/* 只清收藏会残留标签/相册/日期筛选且折叠态无处可清，「全部图片」应回到无筛选视图（审查批 8 Q-06） */}
           <NavLink to="/" end className={({ isActive }) => `nav-item ${isActive && !filterFavorites ? 'active' : ''}`}
-            onClick={() => setFilterFavorites(false)} title="全部图片">
+            onClick={() => clearFilters()} title="全部图片">
             <LayoutGrid strokeWidth={1.75} />
             {!collapsed && <span>全部图片</span>}
             {!collapsed && <span className="nav-badge">{stats.totalImages}</span>}

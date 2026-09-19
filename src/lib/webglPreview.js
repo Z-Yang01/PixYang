@@ -263,9 +263,13 @@ function initCanvas(canvas) {
 // 色彩转换——导出在原生编码值上编辑，预览纹理也必须取原生值，宽色域 tagged 图才一致）。
 export async function renderWebGLPreview(canvas, image, uniforms) {
   let st = stateByCanvas.get(canvas);
-  if (!st || !st.gl) {
+  if (st && st.gl && st.gl.isContextLost()) stateByCanvas.delete(canvas);
+  if (!st || !st.gl || st.gl.isContextLost()) {
     st = initCanvas(canvas);
     if (!st) return false;
+    // 丢失的上下文上 getContext 返回同一具尸体且不抛错：init 后必须再验一次，
+    // 否则照常走完静默绘制并谎报成功（true），画布永久空白且 CSS 回退永不触发（审查批 8 P-1）
+    if (st.gl.isContextLost()) return false;
     stateByCanvas.set(canvas, st);
   }
   const { gl, locs } = st;
@@ -363,5 +367,27 @@ export async function renderWebGLPreview(canvas, image, uniforms) {
   } catch (e) {
     console.error('[webgl] 预览渲染失败:', e.message);
     return false;
+  }
+}
+
+// 主动释放画布的 GL 资源与上下文：canvas 卸载（切换 showBefore/对比模式、退出编辑、
+// 卸载查看器）不会自动回收 WebGL 上下文，浏览器对每页活动上下文数有上限（约 16），
+// 反复进出编辑重挂画布会耗尽配额导致 initCanvas 拿不到上下文（审查批 8 P-1）
+export function releaseWebGLPreview(canvas) {
+  const st = stateByCanvas.get(canvas);
+  if (!st) return;
+  stateByCanvas.delete(canvas);
+  const { gl, program, texture, lutTexture } = st;
+  if (!gl) return;
+  try {
+    if (!gl.isContextLost()) {
+      if (texture) gl.deleteTexture(texture);
+      if (lutTexture) gl.deleteTexture(lutTexture);
+      if (program) gl.deleteProgram(program);
+    }
+    const lose = gl.getExtension('WEBGL_lose_context');
+    if (lose) lose.loseContext();
+  } catch (e) {
+    console.error('[webgl] 资源释放失败:', e.message);
   }
 }

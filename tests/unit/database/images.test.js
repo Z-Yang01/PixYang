@@ -172,6 +172,38 @@ describe('importImages 导入', () => {
     expect(fs.readFileSync(row.raw_path, 'utf8')).toBe('adrnef');
   });
 
+  it('配对 NEF 目标名被可见记录占用：派生避让，绝不覆盖他人 RAW（审查批 8 批7残留）', async () => {
+    // 主名同为 v 但主文件扩展名不同（v.png / v.jpg）：JPG 目标名互不冲突，
+    // NEF 目标名 v.nef 却被前一条可见记录的 raw_path 占据——旧版按 filepath 单列查询漏判，copyFile 直接覆盖
+    const dirA = tmpDir('rawoccupyA');
+    const dirB = tmpDir('rawoccupyB');
+    const png = makeImage('v.png', dirA, 'PNGV');
+    const nefA = makeImage('v.nef', dirA, 'NEF-V-ORIGINAL');
+    const [recV] = await db.importImages([png, nefA]);
+    expect(recV.raw_path).not.toBe('');
+
+    const jpg = makeImage('v.jpg', dirB, 'JPGV');
+    const nefB = makeImage('v.nef', dirB, 'NEF-B-NEW');
+    const [recW] = await db.importImages([jpg, nefB]);
+    // 前主记录的 RAW 字节完好
+    expect(fs.readFileSync(recV.raw_path, 'utf8')).toBe('NEF-V-ORIGINAL');
+    // 新记录绑定避让后的派生名，内容是自己的 NEF；两行不指向同一文件
+    expect(recW.raw_path).not.toBe(recV.raw_path);
+    expect(path.basename(recW.raw_path)).toMatch(/^v_\d+\.nef$/);
+    expect(fs.readFileSync(recW.raw_path, 'utf8')).toBe('NEF-B-NEW');
+    expect(db.getImageById(recV.id).raw_path).toBe(recV.raw_path);
+    // 再来一发同名导入：避让链继续递增，不吞掉任何一条
+    const dirC = tmpDir('rawoccupyC');
+    const jpg2 = makeImage('v.jpg', dirC, 'JPGW');
+    const nefC = makeImage('v.nef', dirC, 'NEF-C-NEW');
+    const [recX] = await db.importImages([jpg2, nefC]);
+    expect(recX.raw_path).not.toBe(recV.raw_path);
+    expect(recX.raw_path).not.toBe(recW.raw_path);
+    expect(fs.readFileSync(recV.raw_path, 'utf8')).toBe('NEF-V-ORIGINAL');
+    expect(fs.readFileSync(recW.raw_path, 'utf8')).toBe('NEF-B-NEW');
+    expect(fs.readFileSync(recX.raw_path, 'utf8')).toBe('NEF-C-NEW');
+  });
+
   it('主文件复制失败清理半截文件：目标名不被占住，重试按原名导入', async () => {
     const dir = tmpDir('mainfail');
     const jpg = makeImage('mcf.jpg', dir, 'mcfbytes');

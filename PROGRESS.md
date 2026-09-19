@@ -2031,3 +2031,119 @@ O 链以真库探针定案）后修复 P0 2 项 + P1 全部 + 选定 P2 若干�
 
 - `fix: 多代理审查批 7 — 裁剪映射flip/rotate次序+烘焙temp同名双P0建档 + 路径查重盘∪库/迁移回滚/整盘离线熔断/批量导出互斥与失败计数（+29 例）`（未 push）
 
+
+# 2026-09-19 多代理审查批 8：资源生命周期与泄漏、交互链遗留项捞回、图库数据刷新与进度事件链
+
+三链路 P（资源）、Q（交互遗留）、R（刷新/竞态），26 项发现（P0×0、P1×11、P2×14、口径×1），
+全量对码核实后修复 P1×10 + 选定 P2×12；N11 核实为不成立关闭（对比态 Before 层不施变换是刻意设计）。
+
+## P1（P 链：资源泄漏）
+
+- **P-1 WebGL 上下文丢失/泄漏**：全仓零 `isContextLost` 检查——丢失后 GL 调用静默无操作且
+  不抛异常，`renderWebGLPreview` 谎报成功（true），`webglFailed` 永不闩锁、CSS 回退不触发，
+  画布永久空白；且 canvas 卸载不回收上下文（每页上限约 16），反复切 Before/对比、进出编辑攒满
+  后新画布拿不到上下文。修：入口 + initCanvas 后双重 `isContextLost` 检查（丢失即弃缓存报 false）；
+  导出 `releaseWebGLPreview`（删资源 + `WEBGL_lose_context`），ImageViewer canvas 改回调 ref
+  挂新释旧。建档 `error/webgl-context-lost-and-leak.md`。
+- **P-2 编辑底图退出泄漏**：编辑中直接关窗/渲染进程 reload，edit-cache 全尺寸 `{id}-base.jpg`
+  + meta 无人清理（before-quit 只关 worker/db；启动清扫只覆盖 thumbnails/*.render.jpg）。
+  修：before-quit 先 `for (const id of [...editSessions.keys()]) cancelEditSession(id)`
+  （含零拷贝守卫）。刻意不做启动清扫——底图跨会话缓存按 mtime+size 校验复用是设计。
+
+## P1（Q 链：交互遗留）
+
+- **Q-01 网格快捷键穿透**：radix MenuItem Enter/Space 只 preventDefault 不 stopPropagation，
+  卡片右键菜单开着时按键穿透到 window 级网格处理器，对陈旧高亮卡二次触发 Open/勾选。
+  修：`if (e.defaultPrevented) return;`（批 6 useGlobalShortcuts 同构契约），并入
+  `error/modal-gating-blindspot-grid-shortcuts.md`「后续」节。
+- **Q-02 批量删除成功数虚报**：batchDeleteImages 只回推成功行，前端却按 `r?.error` 过滤计失败
+  ——死代码恒 0，ghost id 计入成功、toast/nextTotal/页码全被抬高。修：`okCount = list.length`、
+  失败数 = 请求数 − 返回数。
+- **Q-03 批量删除无在途互斥**：ConfirmDialog 在 await 期间全程挂载且勾选清理在 await 之后，
+  按住 Enter 重复触发 onConfirm → 二次删除 + stats 双减。修：deletingRef 互斥（对齐 exportingRef）。
+- **Q-04 导入对话框取消逃逸收尾**：部分导入后 catch 无 result，页脚「取消」直连 onClose 绕过
+  handleOpenChange 的 importedAnyRef→onDone 分诊，图库/统计停在旧数据。修：取消统一走
+  `handleOpenChange(false)`。
+
+## P1（R 链：刷新与竞态）
+
+- **R-1 设置页按键即重查 + 挂载瞬覆**：setGridSettings/patchGridSettings 等值也换对象引用，
+  wiring 按引用依赖——每个按键（含 gap/padding 这类与分页无关的）触发整页 getImages；
+  且草稿初值是 DEFAULT_SETTINGS，进 /settings 瞬间把已持久化网格覆盖成默认。修：setter 归一化后
+  全等短路返回原引用；wiring 依赖降为原始值（rows×columns 乘积、dateRange.from/to）；
+  草稿以当前 store 网格 + DOM 主题初始化。
+- **R-2 陈旧快照回滚本地写**：sequencer 只管响应新旧，管不到「发出后本地被改过」——
+  翻页查询在途时点星/切收藏，晚到快照整页覆盖回滚刚生效的乐观写（收藏页还复活已删行）。
+  修：模块级 `imagesLocalRev` 世代号（subscribe 侦 images 引用变化自增），发起捕获、落地比对、
+  不一致即丢弃。建档 `error/loadimages-stale-snapshot-rolls-back-local-writes.md`。
+- **R-3 孤儿勾选边界集（并入 Q-07）**：轻路径（改日期/重命名/备注）写回后从不复核行是否仍属
+  当前筛选——被勾选的行隐身留在集合，批量操作打向视图外图片；且日期改从不 `loadAppData()`，
+  侧栏日期桶停在旧数据。修：`matchesListFilters` 纯函数 + handleImageUpdated 掉出即
+  剪枝+重查+loadStats；`import_date` 恒刷 appData；InfoPanel 删除补勾选剪枝（Q-10）。
+- **R-4 快打标/进相册 6 IPC 全量刷**：无参 `onImageUpdated?.()` 每次点按 = 3 组查询 + 整页
+  缩略图重载。修：新增 `onCountsChanged`（仅 loadAppData）轻信号；仅当行归属可能改变
+  （filterTag === tagId / 搜索词命中标签名）才走结构重查。
+- **R-5/R-6 冷启动重复查询 + 预览事件串**：orientation 回填标志置位后恒返回 0 仍无条件广播
+  `orientation-backfill-done`（前端零消费方），每次冷启动白白多发一轮 loadImages+loadStats——
+  改 count>0 才广播；`edit-preview-ready` 无论载荷是否页内一律 bump thumbVersion，
+  批量同步 N 图 = N 次整页缩略图重载——改仅页内成员 bump（无载荷不 bump，锁定用例同步更新）。
+- **R-9 override 参数地雷**：loadImages override 谓词只认 search/sortBy/limit 三键，
+  `{offset,tagId,albumId}` 被静默丢弃按 store 状态重查；且 override 跳过越界钳制，
+  批量删除收尾按估计 nextTotal 自管 offset 可落进瞬时空页无兜底。修：谓词改
+  「传了任何键即 override」；删除收尾改无参 `loadImages()`（恢复钳制 + 与 wiring 去重）。
+
+## 选定 P2
+
+- **P-3 在途导出残留**：worker 在 outputPath 旁写 `{out}.part`/`{out}.icc`，退出 terminate
+  worker 两条清理路径都不执行，用户导出目录留半截垃圾。修：renderFromSpec 登记在途输出集，
+  before-quit `cleanupInterruptedRenders()` 逐个 unlink。
+- **P-4 sourceHashCache 单调增长**：key 含 mtime，每轮编辑会话重写底图新增一条且永不逐出。
+  修：LRU 式上限 2000（命中移队尾、满额逐出最久未用）。
+- **Q-05 拖入暂存不清理**：对话框关闭路径不清 importInitialFiles，下次拖拽与旧列表合并、
+  ImportDialog 全量重勾上次取消勾选的文件。修：onClose/onDone 双路径置 null。
+- **Q-06 侧栏「全部图片」只清收藏**：残留标签/相册/日期筛选且折叠态无处可清。修：onClick 走
+  clearFilters() 全清（含页码归 1）。
+- **Q-08 批量打标静默失败**：handleBatchTag 不接错、Toast 照报成功。修：前端 try/catch +
+  `{error}` 消费（数字 0 不误判失败）；`db:add-tag-to-images` 主进程包 {error} 契约。
+- **Q-09 静默失败家族（选定）**：标签/相册 5 个写 IPC 统一 guardDb 收口 `{error}`
+  （createTag 重名 null 转专门文案）；TagManager/AlbumsView/ImageGrid(createAndAdd)/
+  InfoPanel(删除) 四处前端消费——失败可见、输入保留、不推进成功收尾。
+- **Q-11 重命名空主名**：提交空串只早退留白框。修：恢复展示当前文件名（对照 handleDateSave）。
+- **Q-12 日期区间倒挂**：先选结束再选开始跨过它 = 交集恒空且无提示。修：store 单点 setDateRange
+  自动交换两端。
+- **批7残留 importOne NEF 可见占用**：配对 NEF 目标名占用判定只查 filepath 单列——
+  占位者以 raw_path 挂该 NEF 时漏判，copyFile 直接覆盖销毁另一张图的 RAW。修：查
+  filepath ∪ raw_path 两列（COLLATE NOCASE）+ 磁盘；可见/孤儿占用派生避让，隐藏记录维持收养。
+  建档 `error/import-nef-raw-path-occupant-overwrite.md`。
+
+## 测试
+
+- **+42 例**（896→938，61 文件持平）：store +12（Q-12 交换/单端点/互斥保持、R-1 引用短路×2、
+  R-2 世代丢弃/对照/非 images 不拦、R-9 参数透传/override 不钳制）；lib/gallery +5
+  （matchesListFilters 五分支）；hooks +6（Q-02 成功数按行数+无参收尾、全成功对照、Q-03 在途互斥
+  与释放、Q-08 三态、R-6 非页内不 bump）；main +5（Q-08/Q-09 IPC 契约×4、P-2/P-3 before-quit
+  结算会话+清残留+关 worker/db，renderModuleStub 补 cleanupInterruptedRenders、dbStub 补 closeDatabase）；
+  webglPreview +4（丢失谎报/死亡缓存不回收/release 资源与 loseContext/空画布不炸）；ImageGrid +3
+  （Q-01 defaultPrevented 门禁+对照、R-4 轻/结构分流×2）；InfoPanel 更新 3 + 新增 2（R-4 契约、
+  Q-10 剪枝、Q-09 删除失败不关面板）；ImportDialog +1（Q-04 部分导入取消走 onDone）；
+  Sidebar +2（Q-06 全清+折叠态）；SettingsPage +2（R-1 草稿初始化、R-8 保存半途失败）；
+  TagManager +2、AlbumsView +1（{error} toast 可见且输入保留）；database +1（NEF 可见占用避让链）。
+- lint 0 error（新增 okCount warning 已消）；typecheck 过；golden 23/23；覆盖率 91.8/85.29/82.26；vite build 过。
+
+## 遗留（本批核实、需产品口径或下批）
+
+- **R-7 App 全量重渲染**（useGalleryData 整 store 解构 + App 内联 lambda 击穿 ImageCard memo）：
+  纯性能，改造面大，继续挂账（批 5 遗留）。
+- **R-8 预览即生效 vs 「需点击保存生效」文案矛盾**（含 Ctrl+滚轮只持久化列数的混合态）：
+  方向属产品口径，本批只落了非口径部分（保存失败可见）。
+- **Q-13 框选滚动中松手**：命中集按 pointerup 时布局计算正确、blur 有兜底；滚动边缘自动滚动=口径。
+- **L8 settings:set 仅拦 images_root**：其余键无命名空间防御，维持现状观察。
+- **P-4 上限分支 / R-5 广播条件**：需 2000 次哈希或真实启动时序才能触达，未建自动化用例，
+  逻辑由代码审查 + before-quit 用例间接锁定。
+- **口径待决（上报用户）**：日期筛选 import_date vs taken_at（沿袭）；J18；K12；L14 发布闸门；
+  J15；R-8 方向选择。
+- **N11 核实为不成立（关闭）**：对比模式仅在编辑中存在，Before 层刻意不施变换（展示原图）。
+
+## Git Commit
+
+- `fix: 多代理审查批 8 — WebGL上下文丢失/泄漏+编辑底图退出泄漏建档 + 本地写世代防陈旧快照回滚/NEF可见占用避让/批量删除互斥与真实计数（+42 例）`（未 push）

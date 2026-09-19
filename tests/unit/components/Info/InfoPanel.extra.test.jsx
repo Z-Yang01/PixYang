@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, cleanup, within } from '@testing-library/react';
+import { toast } from 'sonner';
 import InfoPanel from '@/components/Info/InfoPanel';
 import useGalleryStore from '@/store/galleryStore';
 
@@ -198,12 +199,13 @@ describe('InfoPanel（补充：EXIF 全分支/标签操作/删除/评分收藏�
     expect(screen.queryByText('文件名已存在')).not.toBeInTheDocument();
   });
 
-  it('重命名：空白名称不提交', () => {
+  it('重命名：空白名称不提交并恢复展示原文件名（审查批 8 Q-11）', () => {
     renderPanel();
     const input = screen.getByDisplayValue('sunset.jpg');
     fireEvent.change(input, { target: { value: '   ' } });
     fireEvent.blur(input);
     expect(window.pixyang.renameImage).not.toHaveBeenCalled();
+    expect(screen.getByDisplayValue('sunset.jpg')).toBeInTheDocument();
   });
 
   it('删除图片：取消不删除；确认后删除并回调', async () => {
@@ -230,15 +232,64 @@ describe('InfoPanel（补充：EXIF 全分支/标签操作/删除/评分收藏�
     });
   });
 
+  it('删除成功：勾选集剪枝该 id，批量操作不打向死 id（审查批 8 Q-10）', async () => {
+    useGalleryStore.setState({ selectedIds: new Set([9, 10]) });
+    try {
+      const onImageUpdated = vi.fn();
+      renderPanel({ onImageUpdated });
+      fireEvent.click(screen.getByTitle('删除图片'));
+      const dialog = await deleteDialog();
+      fireEvent.click(within(dialog).getByText('删除'));
+      await vi.waitFor(() => {
+        expect(window.pixyang.deleteImage).toHaveBeenCalledWith(9);
+        expect([...useGalleryStore.getState().selectedIds]).toEqual([10]);
+        expect(onImageUpdated).toHaveBeenCalled();
+      });
+    } finally {
+      useGalleryStore.setState({ selectedIds: new Set() });
+    }
+  });
+
+  it('删除失败（{error}/reject）：toast 可见且面板不关闭（审查批 8 Q-09）', async () => {
+    const errSpy = vi.spyOn(toast, 'error').mockImplementation(() => {});
+    try {
+      window.pixyang.deleteImage.mockResolvedValueOnce({ error: '文件被占用' });
+      const onClose = vi.fn();
+      renderPanel({ onClose });
+      fireEvent.click(screen.getByTitle('删除图片'));
+      const dialog = await deleteDialog();
+      fireEvent.click(within(dialog).getByText('删除'));
+      await vi.waitFor(() => {
+        expect(errSpy).toHaveBeenCalledWith('文件被占用');
+      });
+      expect(onClose).not.toHaveBeenCalled();
+
+      errSpy.mockClear();
+      window.pixyang.deleteImage = vi.fn().mockRejectedValueOnce(new Error('ipc down'));
+      fireEvent.click(screen.getByTitle('删除图片'));
+      const dialog2 = await deleteDialog();
+      fireEvent.click(within(dialog2).getByText('删除'));
+      await vi.waitFor(() => {
+        expect(errSpy).toHaveBeenCalledWith('删除失败: ipc down');
+      });
+      expect(onClose).not.toHaveBeenCalled();
+    } finally {
+      errSpy.mockRestore();
+    }
+  });
+
   it('标签区：显示已有标签并可通过 X 移除', async () => {
     const onImageUpdated = vi.fn();
-    renderPanel({ onImageUpdated });
+    const onCountsChanged = vi.fn();
+    renderPanel({ onImageUpdated, onCountsChanged });
     expect(await screen.findByText('1 个标签')).toBeInTheDocument();
     expect(screen.getByText('风景')).toBeInTheDocument();
     fireEvent.click(document.querySelector('.tag-remove'));
     await vi.waitFor(() => {
       expect(window.pixyang.removeTagFromImage).toHaveBeenCalledWith(9, 5);
-      expect(onImageUpdated).toHaveBeenCalled();
+      // 无标签筛选/搜索命中：移除走轻量计数刷新（审查批 8 R-4）
+      expect(onCountsChanged).toHaveBeenCalled();
+      expect(onImageUpdated).not.toHaveBeenCalled();
       expect(window.pixyang.getImageTags).toHaveBeenCalledTimes(2); // 移除后重新加载
     });
   });
@@ -294,13 +345,15 @@ describe('InfoPanel（补充：EXIF 全分支/标签操作/删除/评分收藏�
 
   it('标签区：点击未使用标签添加（addTagToImage 后关闭候选区）', async () => {
     const onImageUpdated = vi.fn();
-    renderPanel({ onImageUpdated });
+    const onCountsChanged = vi.fn();
+    renderPanel({ onImageUpdated, onCountsChanged });
     await screen.findByText('1 个标签');
     fireEvent.click(screen.getByText('+ 添加标签'));
     fireEvent.click(await screen.findByText('+ 人物'));
     await vi.waitFor(() => {
       expect(window.pixyang.addTagToImage).toHaveBeenCalledWith(9, 6);
-      expect(onImageUpdated).toHaveBeenCalled();
+      expect(onCountsChanged).toHaveBeenCalled(); // 轻量计数路径（审查批 8 R-4）
+      expect(onImageUpdated).not.toHaveBeenCalled();
     });
     // 添加成功后候选区收起
     await vi.waitFor(() => {

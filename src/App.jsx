@@ -9,6 +9,7 @@ import {
   applyLightLocalUpdate,
   removeImageFromList,
   removeIdsFromSet,
+  matchesListFilters,
 } from './lib/gallery';
 import api from './lib/api';
 import useGalleryStore, { anyModalOpen } from './store/galleryStore';
@@ -291,6 +292,19 @@ export default function App() {
       }
       store.setImages(prev => applyLightLocalUpdate(prev, id, updates));
       if ('favorite' in updates) store.loadStats();
+      // 改日期会新增/清空日期桶：侧栏日期列表与计数不重拉就停在旧数据（审查批 8 Q-07）
+      if ('import_date' in updates) store.loadAppData();
+      // 日期/文件名/备注写回可能让行掉出当前筛选：勾选剪枝 + 重查，
+      // 否则被勾选的行隐身留在集合里，批量操作打向视图外图片（审查批 8 R-3）
+      if ('import_date' in updates || 'filename' in updates || 'notes' in updates) {
+        const cur = useGalleryStore.getState();
+        const row = cur.images.find((img) => img.id === id);
+        if (row && !matchesListFilters(row, cur)) {
+          cur.setSelectedIds(removeIdsFromSet(cur.selectedIds, [id]));
+          cur.loadImages();
+          cur.loadStats();
+        }
+      }
       if (infoImageRef.current?.id === id) {
         setInfoImage(prev => ({ ...prev, ...updates }));
       }
@@ -306,6 +320,11 @@ export default function App() {
     }
   }, []);
 
+  // 归属不变的结构外变更（加标签/进相册）：只刷侧栏计数，不整页重查（审查批 8 R-4）
+  const handleCountsChanged = useCallback(() => {
+    useGalleryStore.getState().loadAppData();
+  }, []);
+
   const openImport = useCallback(() => {
     setImportInitialFiles(null);
     setShowImport(true);
@@ -313,6 +332,9 @@ export default function App() {
 
   const handleImportDone = useCallback(() => {
     setShowImport(false);
+    // 关闭即清拖入暂存：否则下次拖拽与旧列表合并，ImportDialog 对 initialFiles 变更
+    // 会全量重勾，用户上次取消勾选的文件被静默加回（审查批 8 Q-05）
+    setImportInitialFiles(null);
     // 清除所有筛选，确保新导入的图片在「全部图片」中可见；
     // 有筛选被清除时防抖 effect 会自动重新加载，无筛选变化时这里兜底加载一次，避免双重请求
     const store = useGalleryStore.getState();
@@ -417,6 +439,7 @@ export default function App() {
         setInfoImage(img);
       }}
       onImageUpdated={handleImageUpdated}
+      onCountsChanged={handleCountsChanged}
       onImport={openImport}
       onClearFilters={() => { useGalleryStore.getState().clearFilters(); navigate('/'); }}
       onColumnsChange={handleColumnsChange}
@@ -522,12 +545,13 @@ export default function App() {
               setInfoImage(null);
             }}
             onImageUpdated={handleImageUpdated}
+            onCountsChanged={handleCountsChanged}
           />
         )}
 
         {showImport && (
           <ImportDialog
-            onClose={() => setShowImport(false)}
+            onClose={() => { setShowImport(false); setImportInitialFiles(null); }}
             onDone={handleImportDone}
             initialFiles={importInitialFiles}
           />

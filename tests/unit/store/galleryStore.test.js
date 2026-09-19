@@ -132,3 +132,121 @@ describe('galleryStore 全局模态注册表', () => {
     expect(useGalleryStore.getState().modals).toEqual({});
   });
 });
+
+describe('galleryStore 日期区间归一化（审查批 8 Q-12）', () => {
+  beforeEach(() => {
+    useGalleryStore.setState(initialSnapshot, true);
+  });
+
+  it('from > to 自动交换，不再产生静默空列表', () => {
+    useGalleryStore.getState().setDateRange({ from: '2026-06-01', to: '2026-01-01' });
+    expect(useGalleryStore.getState().dateRange).toEqual({ from: '2026-01-01', to: '2026-06-01' });
+  });
+
+  it('单端点不交换；顺序合法原样保留', () => {
+    useGalleryStore.getState().setDateRange({ from: '2026-06-01', to: '' });
+    expect(useGalleryStore.getState().dateRange).toEqual({ from: '2026-06-01', to: '' });
+    useGalleryStore.getState().setDateRange({ from: '2026-01-01', to: '2026-06-01' });
+    expect(useGalleryStore.getState().dateRange).toEqual({ from: '2026-01-01', to: '2026-06-01' });
+  });
+
+  it('交换归一后仍保留与相册/单日的互斥', () => {
+    const s = useGalleryStore.getState();
+    s.setFilterAlbum(4);
+    s.setDateRange({ from: '2026-06-01', to: '2026-01-01' });
+    const st = useGalleryStore.getState();
+    expect(st.filterAlbum).toBeNull();
+    expect(st.dateRange).toEqual({ from: '2026-01-01', to: '2026-06-01' });
+  });
+});
+
+describe('galleryStore 网格设置引用短路（审查批 8 R-1）', () => {
+  beforeEach(() => {
+    useGalleryStore.setState(initialSnapshot, true);
+  });
+
+  it('值全等时不更换 gridSettings 引用（按键式重复 set 不触发按引用依赖的重查）', () => {
+    const before = useGalleryStore.getState().gridSettings;
+    useGalleryStore.getState().patchGridSettings({ gap: before.gap });
+    expect(useGalleryStore.getState().gridSettings).toBe(before);
+    useGalleryStore.getState().setGridSettings({ ...before });
+    expect(useGalleryStore.getState().gridSettings).toBe(before);
+    // 字符串等值归一后也算不变
+    useGalleryStore.getState().patchGridSettings({ columns: String(before.columns) });
+    expect(useGalleryStore.getState().gridSettings).toBe(before);
+  });
+
+  it('真实变化仍换新引用', () => {
+    const before = useGalleryStore.getState().gridSettings;
+    useGalleryStore.getState().patchGridSettings({ gap: before.gap + 6 });
+    expect(useGalleryStore.getState().gridSettings).not.toBe(before);
+    expect(useGalleryStore.getState().gridSettings.gap).toBe(before.gap + 6);
+  });
+});
+
+describe('galleryStore loadImages 本地写世代（审查批 8 R-2）', () => {
+  afterEach(() => {
+    delete window.pixyang;
+  });
+
+  it('在途期间发生本地写：陈旧快照落地被丢弃，本地改动不回滚，loading 不卡死', async () => {
+    let resolveFirst;
+    window.pixyang = { getImages: vi.fn().mockImplementation(() => new Promise((r) => { resolveFirst = r; })) };
+    useGalleryStore.setState(initialSnapshot, true);
+    const p = useGalleryStore.getState().loadImages();
+    useGalleryStore.getState().setImages([{ id: 1, filename: 'a.jpg', rating: 5 }]);
+    resolveFirst({ images: [{ id: 1, filename: 'a.jpg', rating: 0 }], total: 1 });
+    await p;
+    const st = useGalleryStore.getState();
+    expect(st.images[0].rating).toBe(5);
+    expect(st.totalImages).toBe(initialSnapshot.totalImages);
+    expect(st.loading).toBe(false);
+  });
+
+  it('在途无本地写：正常落地整页快照（对照组）', async () => {
+    let resolveFirst;
+    window.pixyang = { getImages: vi.fn().mockImplementation(() => new Promise((r) => { resolveFirst = r; })) };
+    useGalleryStore.setState(initialSnapshot, true);
+    const p = useGalleryStore.getState().loadImages();
+    resolveFirst({ images: [{ id: 2, filename: 'b.jpg' }], total: 1 });
+    await p;
+    const st = useGalleryStore.getState();
+    expect(st.images.map((i) => i.id)).toEqual([2]);
+    expect(st.totalImages).toBe(1);
+  });
+
+  it('thumbVersion 等其他字段的变化不拦响应（仅 images 引用敏感）', async () => {
+    let resolveFirst;
+    window.pixyang = { getImages: vi.fn().mockImplementation(() => new Promise((r) => { resolveFirst = r; })) };
+    useGalleryStore.setState(initialSnapshot, true);
+    const p = useGalleryStore.getState().loadImages();
+    useGalleryStore.setState((s) => ({ thumbVersion: s.thumbVersion + 1 }));
+    resolveFirst({ images: [{ id: 3 }], total: 1 });
+    await p;
+    expect(useGalleryStore.getState().images.map((i) => i.id)).toEqual([3]);
+  });
+});
+
+describe('galleryStore loadImages override 谓词（审查批 8 R-9）', () => {
+  afterEach(() => {
+    delete window.pixyang;
+  });
+
+  it('只传 tagId/offset 也走 override 并透传参数，不再被静默丢弃', async () => {
+    window.pixyang = { getImages: vi.fn().mockResolvedValue({ images: [], total: 0 }) };
+    useGalleryStore.setState(initialSnapshot, true);
+    useGalleryStore.setState({ filterTag: 99 });
+    await useGalleryStore.getState().loadImages({ tagId: 7, offset: 3, albumId: 4 });
+    expect(window.pixyang.getImages).toHaveBeenCalledWith(
+      expect.objectContaining({ tagId: 7, albumId: 4, offset: 3 })
+    );
+  });
+
+  it('override 查询不参与越界钳制（自管 offset 的调用方页码不动）', async () => {
+    window.pixyang = { getImages: vi.fn().mockResolvedValue({ images: [], total: 7 }) };
+    useGalleryStore.setState(initialSnapshot, true);
+    useGalleryStore.setState({ page: 9 });
+    await useGalleryStore.getState().loadImages({ offset: 100, limit: 2 });
+    expect(useGalleryStore.getState().page).toBe(9);
+  });
+});

@@ -4,7 +4,7 @@ const path = require('path');
 const fs = require('fs');
 const exifr = require('exifr');
 const { generateThumbnailTiers, extractNefPreview, normalizeEditBase, getImageMeta, closeWorker } = require('./imageWorker');
-const { renderFromEditParams, computeSourceHash, callWorker, sendToWorker, closeRenderWorker } = require('./render/index.cjs');
+const { renderFromEditParams, computeSourceHash, callWorker, sendToWorker, closeRenderWorker, cleanupInterruptedRenders } = require('./render/index.cjs');
 const {
   getEditPreviewPath, setEditPreviewPath, clearEditPreview, enforceEditPreviewLimit,
 } = require('./database');
@@ -672,13 +672,23 @@ function bumpEditPreviewGeneration(id) {
 
 // 底图内容哈希缓存（key 含 mtime/size，路径复用时自动失效；避免每次保存同步读整图卡主进程）
 const sourceHashCache = new Map();
+// key 含 mtime：每轮编辑会话重写底图都新增一条，无上限即单调泄漏（审查批 8 P-4）
+const SOURCE_HASH_CACHE_MAX = 2000;
 async function computeSourceHashCached(inputPath) {
   const stat = fs.statSync(inputPath);
   const key = `${inputPath}:${stat.mtimeMs}:${stat.size}`;
   const hit = sourceHashCache.get(key);
-  if (hit) return hit;
+  if (hit) {
+    // 命中移到队尾：满额时优先逐出最久未用的条目
+    sourceHashCache.delete(key);
+    sourceHashCache.set(key, hit);
+    return hit;
+  }
   const hash = await computeSourceHash(inputPath);
   sourceHashCache.set(key, hash);
+  while (sourceHashCache.size > SOURCE_HASH_CACHE_MAX) {
+    sourceHashCache.delete(sourceHashCache.keys().next().value);
+  }
   return hash;
 }
 
@@ -944,9 +954,14 @@ function setupIPC() {
     return collectImportFiles(Array.isArray(paths) ? paths : []);
   });
 
-  // 批量为多张图片添加同一标签
+  // 批量为多张图片添加同一标签（成功返回新增关联数，失败返回 {error}，审查批 8 Q-08）
   ipcMain.handle('db:add-tag-to-images', async (_event, imageIds, tagId) => {
-    return addTagToImages(imageIds || [], tagId);
+    try {
+      return addTagToImages(imageIds || [], tagId);
+    } catch (e) {
+      console.error('[db:add-tag-to-images] 失败:', e.message);
+      return { error: `批量添加标签失败: ${e.message}` };
+    }
   });
 
   // 批量更新字段（评分/收藏）
@@ -1147,9 +1162,22 @@ function setupIPC() {
   });
 
   // ── 标签 ──
+  // 标签/相册写操作统一错误契约：ipcRenderer.invoke 的 reject 对无 catch 的调用点
+  // 完全静默（表单看似成功），失败必须回 {error}（审查批 8 Q-09）
+  const guardDb = (label, fn) => async (_event, ...args) => {
+    try {
+      return await fn(...args);
+    } catch (e) {
+      console.error(`[${label}] 失败:`, e.message);
+      return { error: `${label}失败: ${e.message}` };
+    }
+  };
   ipcMain.handle('db:get-tags', async () => getTags());
-  ipcMain.handle('db:create-tag', async (_event, name, color) => createTag(name, color));
-  ipcMain.handle('db:delete-tag', async (_event, id) => deleteTag(id));
+  ipcMain.handle('db:create-tag', guardDb('创建标签', (name, color) => {
+    const tag = createTag(name, color);
+    return tag || { error: '创建标签失败：名称重复或无效' };
+  }));
+  ipcMain.handle('db:delete-tag', guardDb('删除标签', (id) => deleteTag(id)));
   ipcMain.handle('db:add-tag-to-image', async (_event, imageId, tagId) => addTagToImage(imageId, tagId));
   ipcMain.handle('db:remove-tag-from-image', async (_event, imageId, tagId) => removeTagFromImage(imageId, tagId));
   ipcMain.handle('db:get-image-tags', async (_event, imageId) => getImageTags(imageId));
@@ -1157,11 +1185,14 @@ function setupIPC() {
 
   // ── 相册 ──
   ipcMain.handle('db:get-albums', async () => getAlbums());
-  ipcMain.handle('db:create-album', async (_event, name, description) => createAlbum(name, description));
-  ipcMain.handle('db:delete-album', async (_event, id) => deleteAlbum(id));
+  ipcMain.handle('db:create-album', guardDb('创建相册', (name, description) => {
+    const album = createAlbum(name, description);
+    return album || { error: '创建相册失败：名称无效' };
+  }));
+  ipcMain.handle('db:delete-album', guardDb('删除相册', (id) => deleteAlbum(id)));
   ipcMain.handle('db:add-to-album', async (_event, albumId, imageIds) => addToAlbum(albumId, imageIds));
   ipcMain.handle('db:remove-from-album', async (_event, albumId, imageId) => removeFromAlbum(albumId, imageId));
-  ipcMain.handle('db:rename-album', async (_event, id, newName) => renameAlbum(id, newName));
+  ipcMain.handle('db:rename-album', guardDb('重命名相册', (id, newName) => renameAlbum(id, newName)));
 
   // ── 导出 ──
   ipcMain.handle('dialog:select-export-directory', async () => {
@@ -1420,12 +1451,14 @@ app.whenReady().then(async () => {
   setupIPC();
   createWindow();
 
-  // 后台回填历史图片方向标记，完成后通知渲染进程刷新
+  // 后台回填历史图片方向标记，完成后通知渲染进程刷新。
+  // 仅在真正更新了记录时广播：回填标志置位后恒返回 0，无条件广播会让每次冷启动
+  // 都多一发 loadImages+loadStats（与 wiring 首查重复，审查批 8 R-5）
   setTimeout(async () => {
     const staleTemps = cleanupStaleBakeTemps();
     if (staleTemps) console.log(`[编辑清理] 已清除 ${staleTemps} 个烘焙 temp 残留`);
-    await backfillOrientations();
-    if (mainWindow && !mainWindow.isDestroyed()) {
+    const backfilled = await backfillOrientations();
+    if (backfilled > 0 && mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send('orientation-backfill-done');
     }
   }, 800);
@@ -1451,6 +1484,10 @@ app.on('window-all-closed', () => {
 });
 
 app.on('before-quit', () => {
+  // 在途编辑会话结算：编辑中直接关窗会让全尺寸底图（edit-cache 的 {id}-base.jpg + meta）
+  // 永久残留。只放退出路径、不做启动清扫——底图跨会话缓存按 mtime+size 校验复用是刻意设计（审查批 8 P-2）
+  for (const id of [...editSessions.keys()]) cancelEditSession(id);
+  cleanupInterruptedRenders();
   closeWorker();
   closeRenderWorker();
   closeDatabase();

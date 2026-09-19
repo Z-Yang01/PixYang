@@ -28,7 +28,7 @@ import lensLib from '../../../shared/lens.cjs';
 const { vignettePreviewStyle } = lensLib;
 import renderSpecModule from '../../../shared/renderSpec.cjs';
 const { editParamsToRenderSpec } = renderSpecModule;
-import { isWebGL2Available, renderWebGLPreview } from '@/lib/webglPreview';
+import { isWebGL2Available, renderWebGLPreview, releaseWebGLPreview } from '@/lib/webglPreview';
 import { specToShaderUniforms } from '@/lib/previewUniforms';
 import CompareView from './CompareView';
 import CurveEditor from './CurveEditor';
@@ -87,6 +87,13 @@ export default function ImageViewer({
   const webglAvailable = useRef(isWebGL2Available()).current;
   const [webglFailed, setWebglFailed] = useState(false);
   const webglCanvasRef = useRef(null);
+  // 画布卸载/重挂时释放旧 canvas 的 GL 上下文：上下文不随元素卸载回收，
+  // 每页活动上限约 16，反复切换 Before/对比或进出编辑会耗尽配额（审查批 8 P-1）
+  const setWebglCanvas = useCallback((el) => {
+    const prev = webglCanvasRef.current;
+    if (prev && prev !== el) releaseWebGLPreview(prev);
+    webglCanvasRef.current = el;
+  }, []);
   const [selectedMaskId, setSelectedMaskId] = useState(null); // 当前编辑的蒙版 id
   const [maskTool, setMaskTool] = useState(null); // 拖拽绘制蒙版的激活工具（'radial' | 'linear' | null）
   const editImgRef = useRef(null);
@@ -1076,7 +1083,7 @@ export default function ImageViewer({
         }}
       />
       {/* M7 WebGL2 预览层：覆盖底图，shader 内完成影调/曲线/HSL/分级/饱和度/暗角 */}
-      {useWebgl && <canvas ref={webglCanvasRef} className="editor-webgl-canvas" aria-hidden="true" />}
+      {useWebgl && <canvas ref={setWebglCanvas} className="editor-webgl-canvas" aria-hidden="true" />}
       {/* 暗角 overlay：CSS 渐变与渲染端 raw pass 同数学（multiply/screen 精确等价；WebGL 时由 shader 内渲染） */}
       {vignetteStyle && (
         <div

@@ -531,24 +531,51 @@ async function importOne(root, img, { pair, hidden }) {
   let rawDestPath = '';
   let rawSourcePath = '';
   if (pair) {
-    const rawName = `${path.basename(uniqueName, ext)}${path.extname(pair.filename)}`;
-    rawDestPath = path.join(subDir, rawName);
-    // 目标名被隐藏 NEF 记录占用（该 NEF 曾以独立记录导入）：收养——删隐藏记录，
-    // 其文件由本次配对复制覆盖，避免两行记录指向同一文件
-    const owner = getObject('SELECT id, hidden FROM images WHERE filepath = ?', [rawDestPath]);
-    if (owner && owner.hidden === 1) deleteImageRecord(owner.id);
+    const rawExt = path.extname(pair.filename);
+    const rawBase = path.basename(uniqueName, ext);
+    // 配对 NEF 目标名占用判定要查 filepath ∪ raw_path 两列外加磁盘：
+    // 旧版只按 filepath 列查——占用者是以 raw_path 挂该 NEF 的可见记录时漏判，
+    // copyFile 直接覆盖 = 销毁另一张图的 RAW 文件（审查批 8 批7残留）。
+    // 可见占用一律派生避让；仅隐藏记录可收养（删记录，文件由本次配对复制覆盖）
+    let candidate = `${rawBase}${rawExt}`;
+    let collision = 0;
+    for (;;) {
+      const target = path.join(subDir, candidate);
+      const owner = getObject(
+        'SELECT id, hidden FROM images WHERE filepath = ? COLLATE NOCASE OR raw_path = ? COLLATE NOCASE',
+        [target, target]
+      );
+      if (owner && owner.hidden === 1) {
+        deleteImageRecord(owner.id);
+        rawDestPath = target;
+        break;
+      }
+      if (!owner && (target === pair.filepath || !fs.existsSync(target))) {
+        rawDestPath = target;
+        break;
+      }
+      collision++;
+      if (collision > 9999) break;
+      candidate = `${rawBase}_${collision}${rawExt}`;
+    }
+    if (!rawDestPath) {
+      console.error('[导入] NEF 同名占用过多，放弃配对导入:', pair.filepath);
+    }
     try {
-      if (pair.filepath !== rawDestPath) {
+      if (rawDestPath && pair.filepath !== rawDestPath) {
         await fs.promises.copyFile(pair.filepath, rawDestPath);
       }
       rawSourcePath = pair.filepath;
     } catch (err) {
       // 复制失败时 raw_path/original_raw_path 均不落库，并清理半截目标文件
       //（残留会占住目标名，attachRawToImage 的 existsSync 从此永久拒绝补配对）
-      try { fs.unlinkSync(rawDestPath); } catch { /* 清理失败可忽略（目标本不存在） */ }
+      if (rawDestPath) {
+        try { fs.unlinkSync(rawDestPath); } catch { /* 清理失败可忽略（目标本不存在） */ }
+      }
       // original_raw_path 若指向未复制成功的源 NEF，相机同步会按它去重而永久跳过重试导入
       console.error('[导入] NEF 复制失败:', pair.filepath, err.message);
       rawDestPath = '';
+      rawSourcePath = '';
     }
   }
 

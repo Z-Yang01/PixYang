@@ -109,4 +109,30 @@ describe('SettingsPage', () => {
     renderPage({ stats: { ...statsFixture, totalImages: 12345 } });
     expect(screen.getByText('12,345 张')).toBeInTheDocument();
   });
+
+  it('草稿以当前生效网格初始化：getSettings 晚到不把已存配置瞬覆成默认（审查批 8 R-1）', async () => {
+    useGalleryStore.setState({ gridSettings: { rows: 2, columns: 4, gap: 8, padding: 4 } });
+    let resolveSettings;
+    window.pixyang.getSettings = vi.fn(() => new Promise((r) => { resolveSettings = r; }));
+    renderPage();
+    // getSettings 未返回前，挂载的 applyPreview(draft) 不得把 store 覆盖回 3x5 默认
+    expect(useGalleryStore.getState().gridSettings).toEqual({ rows: 2, columns: 4, gap: 8, padding: 4 });
+    resolveSettings({
+      theme: 'dark', grid_rows: 2, grid_columns: 4, grid_gap: 8, content_padding: 4, camera_folder: '',
+    });
+    await screen.findByText('C:/PixData');
+    expect(screen.queryByText('有未保存的修改')).not.toBeInTheDocument();
+  });
+
+  it('setSetting 半途 reject：保存失败可见且未保存态保持（审查批 8 R-8）', async () => {
+    window.pixyang.setSetting = vi.fn()
+      .mockResolvedValueOnce(undefined) // theme 成功
+      .mockRejectedValueOnce(new Error('db locked'));
+    renderPage();
+    await screen.findByText('C:/PixData');
+    fireEvent.click(screen.getByText('浅色'));
+    fireEvent.click(screen.getByText('保存'));
+    expect(await screen.findByText('保存失败: db locked')).toBeInTheDocument();
+    expect(screen.getByText('有未保存的修改')).toBeInTheDocument();
+  });
 });

@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, cleanup } from '@testing-library/react';
+import { toast } from 'sonner';
 import TagManager from '@/components/Tags/TagManager';
 
 describe('TagManager', () => {
@@ -76,5 +77,44 @@ describe('TagManager', () => {
       expect(window.pixyang.deleteTag).toHaveBeenCalledWith(5);
       expect(onRefresh).toHaveBeenCalled();
     });
+  });
+
+  it('创建失败（{error}）：toast 可见且输入保留供改名重试（审查批 8 Q-09）', async () => {
+    const errSpy = vi.spyOn(toast, 'error').mockImplementation(() => {});
+    try {
+      const onRefresh = vi.fn();
+      window.pixyang.createTag.mockResolvedValueOnce({ error: '创建标签失败：名称重复或无效' });
+      render(<TagManager onSelectTag={vi.fn()} onRefresh={onRefresh} />);
+      await screen.findByText('风景');
+      const input = screen.getByPlaceholderText('输入新标签名称...');
+      fireEvent.change(input, { target: { value: '风景' } });
+      fireEvent.click(screen.getByText('创建标签'));
+      await vi.waitFor(() => {
+        expect(errSpy).toHaveBeenCalledWith('创建标签失败：名称重复或无效');
+      });
+      expect(screen.getByDisplayValue('风景')).toBeInTheDocument();
+      expect(onRefresh).not.toHaveBeenCalled();
+    } finally {
+      errSpy.mockRestore();
+    }
+  });
+
+  it('删除失败（{error}）：toast 可见且不回调刷新（审查批 8 Q-09）', async () => {
+    const errSpy = vi.spyOn(toast, 'error').mockImplementation(() => {});
+    try {
+      const onRefresh = vi.fn();
+      window.pixyang.deleteTag.mockResolvedValueOnce({ error: '删除标签失败: locked' });
+      render(<TagManager onSelectTag={vi.fn()} onRefresh={onRefresh} />);
+      await screen.findByText('风景');
+      fireEvent.click(screen.getAllByTitle('删除标签')[0]);
+      await screen.findByText(/确定要删除标签/);
+      fireEvent.click(screen.getByText('删除', { selector: 'button' }));
+      await vi.waitFor(() => {
+        expect(errSpy).toHaveBeenCalledWith('删除标签失败: locked');
+      });
+      expect(onRefresh).not.toHaveBeenCalled();
+    } finally {
+      errSpy.mockRestore();
+    }
   });
 });

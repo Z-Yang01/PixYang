@@ -118,6 +118,21 @@ describe('ImportDialog（补充分支）', () => {
     expect(await screen.findByText('导入过程中出现错误')).toBeInTheDocument();
   });
 
+  it('部分导入后抛错：页脚取消走 onDone 收尾而非 onClose 逃逸（审查批 8 Q-04）', async () => {
+    const onClose = vi.fn();
+    const onDone = vi.fn();
+    window.pixyang.importImages
+      .mockResolvedValueOnce(manyFiles.slice(0, 20).map((f, i) => ({ id: i + 1 })))
+      .mockRejectedValueOnce(new Error('disk yanked'));
+    renderDialog({ onClose, onDone, initialFiles: manyFiles });
+    fireEvent.click(screen.getByText('导入 21 张图片'));
+    expect(await screen.findByText('disk yanked')).toBeInTheDocument();
+    expect(screen.queryByText('导入完成')).toBeNull(); // 无 result：页脚仍是取消按钮
+    fireEvent.click(screen.getByText('取消'));
+    expect(onDone).toHaveBeenCalledTimes(1);
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
   it('importImages 返回空：全部计为跳过', async () => {
     window.pixyang.importImages.mockResolvedValueOnce(undefined);
     renderDialog({ initialFiles: filesFixture });
@@ -203,7 +218,7 @@ describe('ImportDialog（补充分支）', () => {
     expect(screen.getByText('导入 2 张图片')).toBeEnabled();
   });
 
-  it('页脚取消按钮直接回调 onClose', () => {
+  it('无导入成果时取消仍走 onClose（批 8 Q-04 后取消统一经 handleOpenChange 分诊）', () => {
     const onClose = vi.fn();
     renderDialog({ onClose });
     fireEvent.click(screen.getByText('取消'));
