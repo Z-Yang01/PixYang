@@ -7,3 +7,5 @@
 - 工具链：cargo/rustc 1.98.1 可用。
 - 01:14-01:18 R1 完成：src-tauri 零依赖骨架 + naming.rs（唯一命名算法移植，6 测试）。
   cargo 6/6；vitest 946/946。详见 NIGHTLY_PROGRESS.md。
+- 02:00-02:22 R2 完成：image_group.rs（导入分组/日期围栏/安全文件名移植，10 测试）。
+  镜像测试抓到并修复 2 处移植错误（扩展名小写、日期横线索引）。cargo 16/16；vitest 946/946。

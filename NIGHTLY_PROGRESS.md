@@ -17,10 +17,10 @@
 | 模块 | 来源（JS 语义） | 状态 |
 |---|---|---|
 | src-tauri/src/naming.rs | electron/database.js 唯一命名（盘∪库查重）+ pairBase | ✅ R1 完成，6 测试 |
+| src-tauri/src/image_group.rs | importImages 分组（dirname::pairBase 键/插入序/raw_source 合成配对）+ 日期围栏 + 安全文件名 | ✅ R2 完成，10 测试 |
 | src-tauri/src/error.rs | —（错误类型，待文件操作模块引入时一并建） | 未开始 |
 | src-tauri tauri 依赖 + 命令壳 | —（首次编译重，单独一轮） | 未开始 |
 | src/lib/tauriBridge.js | window.__TAURI__ 全局探测封装 | 未开始 |
-| 候选移植：日期目录路径 dateStr→yyy/MM/dd | electron/database.js getDateDir | 未开始 |
 
 ## 轮次记录
 
@@ -31,3 +31,12 @@
   派生 `主名_N 扩展名` 从 1 起）。
 - 测试 6 例全过；期间修正一处测试数据错误（taken 集按契约存已小写键）。
 - 验证：cargo 6/6 ✅；vitest 946/946 ✅。
+
+### R2（02:00-02:22，用时 22 分钟）
+- image_group.rs：ImportFile/PairGroup + group_import_files（镜像 JS 分组：键 = `dirname::pair_base`、
+  首次出现插入序、`.nef` 小写判定入 nef 槽、jpg 的 raw_source/raw_filename 合成配对且组内已有 nef 不覆盖）
+  + effective_import_date（^\d{4}-\d{2}-\d{2}$ 否则回退今天）+ safe_basename（剥末段拒 ''/'.'/'..'）
+  + dirname/basename（node 常用情形镜像）。
+- 镜像测试抓到两处移植错误并修复：扩展名漏 toLowerCase（.NEF 错入 jpg 槽，连带 3 例失败）、
+  日期正则横线索引写错（4 非 3）。
+- 验证：cargo 16/16 ✅；vitest 946/946 ✅。
