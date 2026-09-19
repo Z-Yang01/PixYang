@@ -1248,6 +1248,25 @@ describe('thumbWorker 取消链路（真实 worker_threads）', () => {
     expect(fs.existsSync(out)).toBe(true);
   });
 
+  it('tiers：alpha 输入压平白底成功（P0 回归：composite 非法 blend 名曾令 alpha 缩略图必败）', async () => {
+    const alphaPng = path.join(TMP, 'worker-alpha.png');
+    // 非方形 + 半透明：旧实现方形白底 SVG 叠入被 extend:'avoid' 拒绝，且 destination-over 非法
+    await sharp({ create: { width: 60, height: 30, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0.5 } } })
+      .png()
+      .toFile(alphaPng);
+    const r = await hw.call({ type: 'tiers', filepath: alphaPng });
+    expect(r).toBeTruthy();
+    expect(r.width).toBe(60);
+    expect(r.height).toBe(30);
+    const meta = await sharp(r.medium).metadata();
+    expect(meta.format).toBe('jpeg');
+    expect(meta.hasAlpha).toBeFalsy();
+    // 50% 黑压平白底 → 灰（约 128），而非默认黑底合成的 0
+    const px = await sharp(r.medium).raw().toBuffer();
+    expect(px[0]).toBeGreaterThan(90);
+    expect(px[0]).toBeLessThan(180);
+  });
+
   it('渲染请求发出前收到 cancel：立即中止且不写输出', async () => {
     const out = path.join(TMP, 'worker-cancel-out.jpg');
     hw.send({ type: 'render-cancel', requestSeq: 101 });

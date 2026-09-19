@@ -81,9 +81,9 @@ describe('相册操作', () => {
     expect(db.getAlbums().find((a) => a.id === albumX.id).name).toBe('旅行相册2');
   });
 
-  it('getAlbums 返回 cover_path 与 image_count', () => {
+  it('getAlbums 返回 cover_path 与 image_count（hidden 记录不计数，与 getAlbumImages 口径一致）', () => {
     const found = db.getAlbums().find((a) => a.id === albumX.id);
-    expect(found.image_count).toBe(4);
+    expect(found.image_count).toBe(3);
     expect(found.cover_path).toBe('cover-3.jpg');
   });
 
@@ -96,7 +96,7 @@ describe('相册操作', () => {
   it('addToAlbum 重复添加幂等', () => {
     db.addToAlbum(albumX.id, [a1.id, a3.id]);
     expect(db.getAlbumImages(albumX.id)).toHaveLength(3);
-    expect(db.getAlbums().find((a) => a.id === albumX.id).image_count).toBe(4);
+    expect(db.getAlbums().find((a) => a.id === albumX.id).image_count).toBe(3);
   });
 
   it('removeFromAlbum 移除单张', () => {
@@ -104,7 +104,7 @@ describe('相册操作', () => {
     const images = db.getAlbumImages(albumX.id);
     expect(images.map((i) => i.id)).not.toContain(a2.id);
     expect(images).toHaveLength(2);
-    expect(db.getAlbums().find((a) => a.id === albumX.id).image_count).toBe(3);
+    expect(db.getAlbums().find((a) => a.id === albumX.id).image_count).toBe(2);
   });
 
   it('getImages 支持 albumId 筛选', () => {

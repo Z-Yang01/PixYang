@@ -168,7 +168,9 @@ async function readExifInfo(filepath) {
   let date = '';
   let takenAt = '';
   const m = rawDate.match(/^(\d{4}):(\d{2}):(\d{2})(?:[ T](\d{2}):(\d{2}))?/);
-  if (m) {
+  // EXIF 占位日期（0000:00:00、月/日为 0）常见于损坏元数据：视为无效，走 mtime 回退
+  const validYmd = m && Number(m[2]) >= 1 && Number(m[2]) <= 12 && Number(m[3]) >= 1 && Number(m[3]) <= 31;
+  if (validYmd) {
     date = `${m[1]}-${m[2]}-${m[3]}`;
     if (m[4]) takenAt = `${date} ${m[4]}:${m[5]}`;
   } else {
@@ -262,6 +264,14 @@ function saveThumbnailTiers(id, tiers) {
 // ── IPC 处理 ──
 
 let thumbRebuildTimer = null;
+// 后台重建互斥：生成窗口可达秒级，期间记录可能被删/改名/烘焙。running 期间新调度
+// 只置 again 标记，本轮跑完补一轮；bakeEpoch 使「生成期间发生过烘焙」的陈旧写回作废。
+let thumbRebuildRunning = false;
+let thumbRebuildAgain = false;
+let manualRebuildRunning = false;
+const bakeEpochs = new Map(); // id -> 烘焙次数（记录删除时清）
+function bumpBakeEpoch(id) { bakeEpochs.set(id, (bakeEpochs.get(id) || 0) + 1); }
+function getBakeEpoch(id) { return bakeEpochs.get(id) || 0; }
 // 批量并发提取 EXIF（分批让出事件循环），可选覆盖导入日期，并按批回调进度
 async function extractExifBatch(files, onProgress, assignDate) {
   const total = files.length;
@@ -288,18 +298,25 @@ function sendProgress(channel, payload) {
   }
 }
 
-// 清理编辑派生文件：预览缩略图（含 meta 侧车）+ 编辑底图缓存（含变体与 meta）
-function cleanupEditDerivedFiles(id) {
-  clearEditPreview(id);
+// 编辑底图缓存文件（含 alpha 变体与 meta 侧车）：烘焙/取消后必须整组清除——
+// renderEditPreviewOnce 的兜底分支会从「当时像素」重建 {id}-base.jpg，残留即陈旧底图
+function cleanupEditBaseCache(id) {
   for (const name of [`${id}-base.jpg`, `${id}-base.jpg.png`, `${id}-base.jpg.meta.json`]) {
     try {
       const p = path.join(getEditCacheDir(), name);
       if (fs.existsSync(p)) fs.unlinkSync(p);
     } catch { /* 清理失败无碍 */ }
   }
+}
+
+// 清理编辑派生文件：预览缩略图（含 meta 侧车）+ 编辑底图缓存（含变体与 meta）
+function cleanupEditDerivedFiles(id) {
+  clearEditPreview(id);
+  cleanupEditBaseCache(id);
   editPreviewStates.delete(id);
   editPreviewRenderSeq.delete(id);
   editPreviewGeneration.delete(id);
+  bakeEpochs.delete(id);
 }
 
 // 清理上次进程崩溃残留的编辑渲染中间文件（thumbnails/*.render.jpg*）
@@ -424,7 +441,12 @@ async function openEditSession(id) {
     return { error: `准备编辑底图失败：${e.message}` };
   }
   const { basePath, source } = baseInfo;
-  const dims = await getImageMeta(basePath);
+  let dims;
+  try {
+    dims = await getImageMeta(basePath);
+  } catch (e) {
+    return { error: `读取底图尺寸失败：${e.message}` };
+  }
 
   editSessions.set(id, {
     id,
@@ -498,7 +520,11 @@ async function bakeEditSession(id, edits) {
   } catch (e) {
     return { error: `保存失败：${e.message}（像素可能已替换，请重新进入编辑确认）` };
   }
-  if (saved.error) return saved;
+  if (saved.error) {
+    try { if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath); } catch { /* 清理失败无碍 */ }
+    return saved;
+  }
+  bumpBakeEpoch(id); // 令以「烘焙前像素」开跑的在途缩略图重建写回作废
 
   // 烘焙后原图已是参数效果：编辑预览缩略图失去意义，清掉（缩略图由 rebuild 重生成）；
   // 递增世代使任何在途预览渲染作废
@@ -510,11 +536,7 @@ async function bakeEditSession(id, edits) {
     // 零拷贝会话的 basePath 就是原图本身——绝不可删
     if (fs.existsSync(session.basePath) && session.basePath !== session.filepath) fs.unlinkSync(session.basePath);
   } catch { /* 缓存清理失败无碍 */ }
-  try {
-    // 底图 meta 侧车一并清理（残留无害但会累积）
-    const metaPath = editBaseMetaPath(id);
-    if (fs.existsSync(metaPath)) fs.unlinkSync(metaPath);
-  } catch { /* 清理失败无碍 */ }
+  cleanupEditBaseCache(id); // 零拷贝会话下预览兜底分支留下的烘焙前底图同样陈旧
 
   scheduleThumbnailRebuild();
   return { ok: true, image: saved };
@@ -535,7 +557,12 @@ async function exportEditSession(id, edits, destDir, output = null) {
   const extMap = { jpeg: '.jpg', png: '.png', webp: '.webp' };
   const ext = extMap[outFormat];
   const maxEdge = Number(output?.maxEdge) > 0 ? Number(output.maxEdge) : null;
-  const meta = await getImageMeta(session.basePath);
+  let meta;
+  try {
+    meta = await getImageMeta(session.basePath);
+  } catch (e) {
+    return { error: `读取底图尺寸失败：${e.message}` };
+  }
   const resize = maxEdge && meta.width && Math.max(meta.width, meta.height) > maxEdge
     ? { width: maxEdge, height: maxEdge }
     : null;
@@ -584,6 +611,7 @@ function cancelEditSession(id) {
     } catch (e) {
       console.error('[编辑] 清理失败:', e.message);
     }
+    cleanupEditBaseCache(id); // 预览兜底分支可能已重建 {id}-base，随会话一并作废
     editSessions.delete(id);
   }
   return { ok: true };
@@ -631,9 +659,14 @@ async function computeSourceHashCached(inputPath) {
 async function renderEditPreviewOnce(id, params, generation) {
   const img = getImageById(id);
   if (!img || img.hidden) return null;
-  // 底图可能是 jpg（默认）或 .jpg.png（alpha 输入被 normalizeBase 改写），两者取先存在者
-  let basePath = path.join(getEditCacheDir(), `${id}-base.jpg`);
-  if (!fs.existsSync(basePath)) basePath = `${basePath}.png`;
+  // 在会话底图上渲染（与烘焙/导出同源像素）；无会话再走缓存底图：
+  // 可能是 jpg（默认）或 .jpg.png（alpha 输入被 normalizeBase 改写），两者取先存在者
+  const session = editSessions.get(id);
+  let basePath = session && fs.existsSync(session.basePath) ? session.basePath : '';
+  if (!basePath) {
+    basePath = path.join(getEditCacheDir(), `${id}-base.jpg`);
+    if (!fs.existsSync(basePath)) basePath = `${basePath}.png`;
+  }
   if (!fs.existsSync(basePath)) {
     const fallback = path.join(getEditCacheDir(), `${id}-base.jpg`);
     let source = img.filepath;
@@ -658,13 +691,18 @@ async function renderEditPreviewOnce(id, params, generation) {
       return previewPath;
     }
   } catch { /* 无缓存元数据，继续渲染 */ }
-  const spec = editParamsToRenderSpec(params, { sourceHash: await computeSourceHashCached(basePath) });
-  // 代理分辨率（任务书第 20 节）：预览渲染在 decode 后缩到 400 长边再跑后续算子，
-  // crop 坐标同步等比缩放——批量同步/连续保存的预览渲染耗时降一个数量级
-  const baseDims = await getImageMeta(basePath);
-  const { spec: proxySpec } = buildProxySpec(spec, baseDims.width, baseDims.height, 400);
-  const renderResult = await callWorker({ type: 'edit-preview', srcPath: basePath, outPath: previewPath, spec: proxySpec, requestSeq });
-  editPreviewRenderSeq.delete(id);
+  let renderResult;
+  try {
+    const spec = editParamsToRenderSpec(params, { sourceHash: await computeSourceHashCached(basePath) });
+    // 代理分辨率（任务书第 20 节）：预览渲染在 decode 后缩到 400 长边再跑后续算子，
+    // crop 坐标同步等比缩放——批量同步/连续保存的预览渲染耗时降一个数量级
+    const baseDims = await getImageMeta(basePath);
+    const { spec: proxySpec } = buildProxySpec(spec, baseDims.width, baseDims.height, 400);
+    renderResult = await callWorker({ type: 'edit-preview', srcPath: basePath, outPath: previewPath, spec: proxySpec, requestSeq });
+  } finally {
+    // 抛错时也必须摘掉在途序号，否则残留 seq 会让后续 cancel 误杀无关渲染
+    editPreviewRenderSeq.delete(id);
+  }
   // Phase 9：被取消的渲染（烘焙/取消会话触发）不写路径不发事件
   if (renderResult && renderResult.cancelled) {
     try {
@@ -672,15 +710,19 @@ async function renderEditPreviewOnce(id, params, generation) {
     } catch { /* 清理失败无碍 */ }
     return null;
   }
-  try {
-    fs.writeFileSync(previewMetaPath, JSON.stringify({ editVersion: version, renderVersion: RENDER_VERSION }));
-  } catch (e) { console.error('[编辑预览] 缓存元数据写入失败:', e.message); }
   // 世代校验：烘焙/取消已发生则本次渲染作废（不复活被清掉的预览）
   if (editPreviewGeneration.get(id) !== generation) {
     try {
       if (fs.existsSync(previewPath)) fs.unlinkSync(previewPath);
     } catch { /* 清理失败无碍 */ }
     return null;
+  }
+  // 渲染期间 edits.version 已前进：本帧像素无法可靠配对版本号，不写缓存 meta
+  // （写了会让下次打开误命中陈旧预览），交给 dirty 补渲的正确帧配对
+  if ((getEdits(id)?.version || 0) === version) {
+    try {
+      fs.writeFileSync(previewMetaPath, JSON.stringify({ editVersion: version, renderVersion: RENDER_VERSION }));
+    } catch (e) { console.error('[编辑预览] 缓存元数据写入失败:', e.message); }
   }
   setEditPreviewPath(id, previewPath);
   enforceEditPreviewLimit();
@@ -711,40 +753,61 @@ async function refreshEditPreview(id, params) {
   return null;
 }
 
-// 后台为缺失缩略图的图片补生成（防抖，分批让出事件循环避免阻塞主进程）
-function scheduleThumbnailRebuild() {
-  if (thumbRebuildTimer) clearTimeout(thumbRebuildTimer);
-  thumbRebuildTimer = setTimeout(async () => {
-    thumbRebuildTimer = null;
-    try {
-      const rows = getImagesForRebuild();
-      const readyIds = [];
-      for (let i = 0; i < rows.length; i++) {
-        const r = rows[i];
-        const tiers = await generateThumbnailTiers(r.filepath);
-        if (tiers) {
-          try {
-            const saved = saveThumbnailTiers(r.id, tiers);
-            await updateImage(r.id, {
-              thumbnail_path: saved.mediumPath,
-              thumbnail_small_path: saved.smallPath,
-              width: tiers.width,
-              height: tiers.height,
-            });
-            readyIds.push(r.id);
-          } catch (e) {
-            console.error('[缩略图] 写入失败:', e.message);
-          }
-        }
-        if (i % 3 === 0) await new Promise(res => setImmediate(res));
+// 后台为缺失缩略图的图片补生成（防抖，分批让出事件循环避免阻塞主进程）。
+// 写回前逐条再核验：记录已被删除/改名则跳过（陈旧像素不写新路径）；
+// 生成期间该图发生过烘焙（bakeEpoch 变化）则本轮作废写回并补跑一轮（对新像素重建）。
+async function rebuildThumbnailPass() {
+  const rows = getImagesForRebuild();
+  const readyIds = [];
+  for (let i = 0; i < rows.length; i++) {
+    const r = rows[i];
+    const epoch = getBakeEpoch(r.id);
+    const tiers = await generateThumbnailTiers(r.filepath);
+    if (tiers) {
+      try {
+        const cur = getImageById(r.id);
+        if (!cur || cur.filepath !== r.filepath) continue;
+        if (getBakeEpoch(r.id) !== epoch) { thumbRebuildAgain = true; continue; }
+        const saved = saveThumbnailTiers(r.id, tiers);
+        await updateImage(r.id, {
+          thumbnail_path: saved.mediumPath,
+          thumbnail_small_path: saved.smallPath,
+          width: tiers.width,
+          height: tiers.height,
+        });
+        readyIds.push(r.id);
+      } catch (e) {
+        console.error('[缩略图] 写入失败:', e.message);
       }
+    }
+    if (i % 3 === 0) await new Promise(res => setImmediate(res));
+  }
+  return readyIds;
+}
+
+async function runThumbnailRebuild() {
+  thumbRebuildTimer = null;
+  // 手动重建独占期间后台轮让位，置 again 由手动轮收尾时补跑
+  if (thumbRebuildRunning || manualRebuildRunning) { thumbRebuildAgain = true; return; }
+  thumbRebuildRunning = true;
+  try {
+    do {
+      thumbRebuildAgain = false;
+      const readyIds = await rebuildThumbnailPass();
       if (readyIds.length > 0 && mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send('thumbnails-ready', readyIds);
       }
-    } catch (e) {
-      console.error('[缩略图] 后台生成失败:', e.message);
-    }
-  }, 800);
+    } while (thumbRebuildAgain);
+  } catch (e) {
+    console.error('[缩略图] 后台生成失败:', e.message);
+  } finally {
+    thumbRebuildRunning = false;
+  }
+}
+
+function scheduleThumbnailRebuild() {
+  if (thumbRebuildTimer) clearTimeout(thumbRebuildTimer);
+  thumbRebuildTimer = setTimeout(runThumbnailRebuild, 800);
 }
 
 function setupIPC() {
@@ -782,7 +845,7 @@ function setupIPC() {
       const files = await scanImageFiles(cameraDir, true);
       const { toImport, attachPairs, skipped } = prepareCameraSync(files);
 
-      await extractExifBatch(toImport, (done, total) => sendProgress('import-progress', { done, total }));
+      await extractExifBatch(toImport, (done, total) => sendProgress('import-progress', { done, total, task: 'camera-sync' }));
 
       const imported = await importImages(toImport);
       let attached = 0;
@@ -809,7 +872,7 @@ function setupIPC() {
     return withImportLock(async () => {
       await extractExifBatch(
         imageFiles,
-        (done, total) => sendProgress('import-progress', { done, total }),
+        (done, total) => sendProgress('import-progress', { done, total, task: 'import' }),
         (img, info) => { img.importDate = dateOverride || info.date; }
       );
       const result = await importImages(imageFiles);
@@ -855,12 +918,12 @@ function setupIPC() {
 
   ipcMain.handle('db:delete-broken-records', async (_event, ids) => {
     const list = ids || [];
-    const removed = await deleteBrokenRecords(list);
-    for (const id of list) {
+    const { removed, unbound } = await deleteBrokenRecords(list);
+    for (const id of removed) {
       cancelEditSession(id); // 记录删除后仍打开的会话必须作废，防残留僵尸会话
       cleanupEditDerivedFiles(id);
     }
-    return removed;
+    return { removed: removed.length, unbound: unbound.length };
   });
 
   // 重复图片检测（元数据粗分组 + 快速哈希验证）
@@ -898,40 +961,53 @@ function setupIPC() {
 
   // ── 重建缩略图 ──
   ipcMain.handle('db:rebuild-thumbnails', async () => {
-    const rows = getImagesForRebuild(true);
-    let rebuilt = 0;
-    let failed = 0;
-    for (let i = 0; i < rows.length; i++) {
-      const r = rows[i];
-      const tiers = await generateThumbnailTiers(r.filepath);
-      if (tiers) {
-        try {
-          const saved = saveThumbnailTiers(r.id, tiers);
-          await updateImage(r.id, {
-            thumbnail_path: saved.mediumPath,
-            thumbnail_small_path: saved.smallPath,
-            width: tiers.width,
-            height: tiers.height,
-          });
-          rebuilt++;
-        } catch (e) {
+    if (manualRebuildRunning || thumbRebuildRunning) return { error: '重建进行中，请稍候' };
+    manualRebuildRunning = true;
+    try {
+      const rows = getImagesForRebuild(true);
+      let rebuilt = 0;
+      let failed = 0;
+      for (let i = 0; i < rows.length; i++) {
+        const r = rows[i];
+        const epoch = getBakeEpoch(r.id);
+        const tiers = await generateThumbnailTiers(r.filepath);
+        if (tiers) {
+          try {
+            // 写回再核验：记录被删/改名则跳过；生成期间发生烘焙则放弃陈旧写回，
+            // 结束后交给后台重建轮（saveEditedImage 已清空该图缩略图路径）
+            const cur = getImageById(r.id);
+            if (!cur || cur.filepath !== r.filepath) continue;
+            if (getBakeEpoch(r.id) !== epoch) { thumbRebuildAgain = true; continue; }
+            const saved = saveThumbnailTiers(r.id, tiers);
+            await updateImage(r.id, {
+              thumbnail_path: saved.mediumPath,
+              thumbnail_small_path: saved.smallPath,
+              width: tiers.width,
+              height: tiers.height,
+            });
+            rebuilt++;
+          } catch (e) {
+            failed++;
+          }
+        } else {
           failed++;
         }
-      } else {
-        failed++;
-      }
-      if (i % 3 === 0) {
-        await new Promise(res => setImmediate(res));
-        if (mainWindow && !mainWindow.isDestroyed()) {
-          mainWindow.webContents.send('rebuild-progress', { done: i + 1, total: rows.length });
+        if (i % 3 === 0) {
+          await new Promise(res => setImmediate(res));
+          if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.webContents.send('rebuild-progress', { done: i + 1, total: rows.length });
+          }
         }
       }
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('rebuild-progress', { done: rows.length, total: rows.length });
+        mainWindow.webContents.send('thumbnails-ready');
+      }
+      return { total: rows.length, rebuilt, failed };
+    } finally {
+      manualRebuildRunning = false;
+      if (thumbRebuildAgain) { thumbRebuildAgain = false; scheduleThumbnailRebuild(); }
     }
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.webContents.send('rebuild-progress', { done: rows.length, total: rows.length });
-      mainWindow.webContents.send('thumbnails-ready');
-    }
-    return { total: rows.length, rebuilt, failed };
   });
 
   // ── 数据库备份 ──

@@ -94,7 +94,8 @@ export const SHORTCUT_GROUPS = [
 export function matchGlobalShortcut(e) {
   if (isTypingTarget(e.target)) return null;
   const key = e.key;
-  if ((e.ctrlKey || e.metaKey) && !e.altKey) {
+  // Shift 修饰必须排除：Ctrl+Shift+A 等系统/浏览器组合键不应触发全选/导出
+  if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey) {
     const k = key.toLowerCase();
     if (k === 'a') return GLOBAL_ACTIONS.SelectAll;
     if (k === 'e') return GLOBAL_ACTIONS.ExportSelected;

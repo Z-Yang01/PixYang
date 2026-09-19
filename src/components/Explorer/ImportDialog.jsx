@@ -30,10 +30,10 @@ export default function ImportDialog({ onClose, onDone, initialFiles = null }) {
   const cancelImportRef = useRef(false);
   const [exifProgress, setExifProgress] = useState(null);
 
-  // 主进程 EXIF 提取的批内进度（当前批次细分显示）
+  // 主进程 EXIF 提取的批内进度（当前批次细分显示）；相机同步的进度不属于本对话框，忽略
   useEffect(() => {
     if (!api.isBridgeAvailable()) return;
-    return api.onImportProgress((p) => setExifProgress(p || null));
+    return api.onImportProgress((p) => setExifProgress(p && p.task !== 'camera-sync' ? p : null));
   }, []);
 
   useEffect(() => {

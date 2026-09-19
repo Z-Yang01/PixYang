@@ -855,9 +855,63 @@ describe('编辑数据删除一致性（edits / edit_history）', () => {
     const [img] = await db.importImages([makeImage('broken-ed.jpg', dir, 'b1')]);
     db.saveEdits(img.id, { basic: { exposure: 0.5 } }, { label: '曝光' });
     fs.unlinkSync(img.filepath);
-    expect(db.deleteBrokenRecords([img.id])).toBe(1);
+    expect(db.deleteBrokenRecords([img.id])).toEqual({ removed: [img.id], unbound: [] });
     expect(db.getEdits(img.id)).toBeNull();
     expect(db.getEditHistory(img.id)).toEqual([]);
+  });
+});
+
+describe('搜索转义与更新语义（审查批 3）', () => {
+  it('搜索词中的 % 与 _ 按字面转义（LIKE ESCAPE）', async () => {
+    const dir = tmpDir('like-esc');
+    await db.importImages([makeImage('100%.jpg', dir, 'a'), makeImage('100x.jpg', dir, 'b')]);
+    const hit = db.getImages({ search: '100%', limit: 50 });
+    expect(hit.images.map((i) => i.filename)).toEqual(['100%.jpg']);
+    // 未转义时 %100_% 会以通配符同时命中 100x.jpg 与 100%.jpg
+    expect(db.getImages({ search: '100_', limit: 50 }).images.map((i) => i.filename)).toEqual([]);
+  });
+
+  it('updateImage：非法 import_date 直接拒绝，不移动任何文件', async () => {
+    const dir = tmpDir('upd-badate');
+    const [img] = await db.importImages([makeImage('bad.jpg', dir, 'x')]);
+    const before = db.getImageById(img.id);
+    const res = await db.updateImage(img.id, { import_date: 'not-a-date' });
+    expect(res).toEqual({ error: expect.stringContaining('日期格式无效') });
+    const after = db.getImageById(img.id);
+    expect(after.import_date).toBe(before.import_date);
+    expect(after.filepath).toBe(before.filepath);
+    expect(fs.existsSync(after.filepath)).toBe(true);
+  });
+
+  it('updateImages：批量写评分同时刷新 updated_at（未知字段过滤）', async () => {
+    const dir = tmpDir('updimg-ts');
+    const imgs = await db.importImages([makeImage('t1.jpg', dir, '1'), makeImage('t2.jpg', dir, '2')]);
+    db.__getDb()
+      .prepare("UPDATE images SET updated_at = '2000-01-01 00:00:00' WHERE id IN (?, ?)")
+      .run(imgs[0].id, imgs[1].id);
+    expect(db.updateImages(imgs.map((i) => i.id), { rating: 4, bogus: 1 })).toBe(2);
+    for (const i of imgs) {
+      const rec = db.getImageById(i.id);
+      expect(rec.rating).toBe(4);
+      expect(rec.updated_at).not.toBe('2000-01-01 00:00:00');
+    }
+  });
+
+  it('saveEditedImage 托管改名（gif→jpg）：filename 跟随新主名', async () => {
+    const dir = tmpDir('edit-rename-fn');
+    const [gif] = await db.importImages([makeImage('shot.gif', dir, 'gif-bytes')]);
+    const managedGif = db.getImageById(gif.id).filepath;
+    const temp = path.join(dir, 'shot-temp.jpg');
+    fs.writeFileSync(temp, 'baked');
+    const saved = db.saveEditedImage(gif.id, temp, { width: 10, height: 10 });
+    expect(saved.error).toBeUndefined();
+    expect(saved.filename).toBe('shot.jpg');
+    expect(saved.format).toBe('.jpg');
+    expect(saved.filepath.toLowerCase().endsWith('shot.jpg')).toBe(true);
+    expect(fs.existsSync(managedGif)).toBe(false);
+    expect(fs.existsSync(saved.filepath)).toBe(true);
+    // 导入是复制：源目录原件不动
+    expect(fs.existsSync(path.join(dir, 'shot.gif'))).toBe(true);
   });
 });
 

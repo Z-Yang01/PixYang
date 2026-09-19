@@ -6,15 +6,12 @@ import {
   totalPagesOf,
   clampPage,
   globalIndexOfPage,
-  pageIndexOfGlobal,
   buildImageQuery,
   toggleIdInSet,
   addRangeToSet,
-  intersectIds,
   removeIdsFromSet,
   pageAfterDelete,
   hasActiveFilters,
-  shouldPreferThumb,
   applyLightLocalUpdate,
   removeImageFromList,
   createLoadSequencer,
@@ -63,6 +60,15 @@ describe('分页计算', () => {
     expect(pageSizeOf(undefined)).toBe(1);
   });
 
+  it('pageSizeOf/totalPagesOf/clampPage 对脏值免疫（NaN 不向除法传播）', () => {
+    expect(pageSizeOf({ rows: 'abc', columns: 5 })).toBe(1);
+    expect(pageSizeOf({ rows: '3', columns: '5' })).toBe(15);
+    expect(totalPagesOf(NaN, grid)).toBe(1);
+    expect(totalPagesOf('16', grid)).toBe(2);
+    expect(clampPage(5, NaN)).toBe(1);
+    expect(clampPage(5, undefined)).toBe(1);
+  });
+
   it('totalPagesOf 向上取整且至少 1', () => {
     expect(totalPagesOf(0, grid)).toBe(1);
     expect(totalPagesOf(15, grid)).toBe(1);
@@ -76,11 +82,9 @@ describe('分页计算', () => {
     expect(clampPage('x', 3)).toBe(1);
   });
 
-  it('全局/页内索引互转', () => {
+  it('全局索引换算按页大小偏移', () => {
     expect(globalIndexOfPage(2, grid, 0)).toBe(15);
     expect(globalIndexOfPage(2, grid, 4)).toBe(19);
-    expect(pageIndexOfGlobal(15, grid)).toBe(1);
-    expect(pageIndexOfGlobal(14, grid)).toBe(0);
   });
 
   it('删除末页最后一页后回退页码', () => {
@@ -151,16 +155,13 @@ describe('选择集合操作', () => {
     expect([...up].sort((a, b) => a - b)).toEqual([2, 3, 4, 5]);
   });
 
-  it('intersectIds 返回裁剪后的集合，无命中时保持原引用', () => {
-    const a = new Set([1, 2, 3]);
-    expect(intersectIds(a, [1, 3, 9])).toEqual(new Set([2]));
-    expect(intersectIds(a, [9])).toBe(a);
-  });
-
-  it('removeIdsFromSet 移除指定 id', () => {
+  it('removeIdsFromSet 移除指定 id（数组与 Set 入参皆可）', () => {
     const a = new Set([1, 2, 3]);
     expect(removeIdsFromSet(a, [2, 3])).toEqual(new Set([1]));
+    expect(removeIdsFromSet(a, new Set([2]))).toEqual(new Set([1, 3]));
     expect(removeIdsFromSet(a, [])).toBe(a);
+    expect(removeIdsFromSet(a, new Set())).toBe(a);
+    expect(removeIdsFromSet(a, null)).toBe(a);
   });
 });
 
@@ -174,13 +175,6 @@ describe('筛选与更新', () => {
     expect(hasActiveFilters({ dateRange: { from: '2024-01-01' } })).toBe(true);
     expect(hasActiveFilters({ dateRange: { to: '2024-01-01' } })).toBe(true);
     expect(hasActiveFilters({ filterFavorites: true })).toBe(true);
-  });
-
-  it('shouldPreferThumb 仅 orientation=1 使用缩略图', () => {
-    expect(shouldPreferThumb({ orientation: 1 })).toBe(true);
-    expect(shouldPreferThumb({ orientation: '1' })).toBe(true);
-    expect(shouldPreferThumb({ orientation: 6 })).toBe(false);
-    expect(shouldPreferThumb({})).toBe(false);
   });
 
   it('applyLightLocalUpdate 只更新命中 id，保持其他引用稳定', () => {

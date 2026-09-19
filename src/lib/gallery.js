@@ -19,25 +19,26 @@ export function groupImagesByDate(images) {
 }
 
 export function pageSizeOf(gridSettings) {
-  return Math.max(1, (gridSettings?.rows || 1) * (gridSettings?.columns || 1));
+  // 设置值来自 localStorage/IPC，'abc' || 1 这类真值脏数据会一路乘出 NaN
+  const n = Number(gridSettings?.rows) * Number(gridSettings?.columns);
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : 1;
 }
 
 export function totalPagesOf(totalImages, gridSettings) {
-  return Math.max(1, Math.ceil((totalImages || 0) / pageSizeOf(gridSettings)));
+  const t = Number(totalImages);
+  if (!Number.isFinite(t) || t <= 0) return 1;
+  return Math.max(1, Math.ceil(t / pageSizeOf(gridSettings)));
 }
 
 export function clampPage(page, totalPages) {
   const n = Number(page);
   if (!Number.isFinite(n)) return 1;
-  return Math.max(1, Math.min(Math.max(1, totalPages), Math.floor(n)));
+  const tp = Number.isFinite(totalPages) ? Math.max(1, totalPages) : 1;
+  return Math.max(1, Math.min(tp, Math.floor(n)));
 }
 
 export function globalIndexOfPage(page, gridSettings, indexInPage) {
   return (page - 1) * pageSizeOf(gridSettings) + indexInPage;
-}
-
-export function pageIndexOfGlobal(globalIndex, gridSettings) {
-  return Math.floor(globalIndex / pageSizeOf(gridSettings));
 }
 
 export function buildImageQuery({
@@ -91,22 +92,12 @@ export function addRangeToSet(set, images, lastId, currentIndex) {
   return next;
 }
 
-export function intersectIds(selectedIds, ids) {
-  const next = new Set(selectedIds);
-  let changed = false;
-  ids.forEach((id) => {
-    if (next.has(id)) {
-      next.delete(id);
-      changed = true;
-    }
-  });
-  return changed ? next : selectedIds;
-}
-
 export function removeIdsFromSet(set, ids) {
-  if (!ids?.length) return set;
+  // ids 可能是 Set（无 length）：用迭代协议统一取元素，空集合才保持原引用
+  const list = Array.isArray(ids) ? ids : ids ? [...ids] : [];
+  if (list.length === 0) return set;
   const next = new Set(set);
-  ids.forEach((id) => next.delete(id));
+  list.forEach((id) => next.delete(id));
   return next;
 }
 
@@ -132,10 +123,6 @@ export function hasActiveFilters({
     dateRange?.to ||
     filterFavorites
   );
-}
-
-export function shouldPreferThumb(image) {
-  return Number(image?.orientation) === 1;
 }
 
 export function applyLightLocalUpdate(images, id, updates) {

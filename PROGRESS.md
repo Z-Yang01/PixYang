@@ -1542,3 +1542,94 @@ masks 遗留三类中的 range 全链落地 + 手柄化；brush（栅格存储�
 ## Git Commit
 
 - `fix: 多代理审查批 2 — 大写扩展名 NEF 配对 P0 建档 + 导入锁/半截文件/收养/失效分类 + 页码钳制/筛选清勾选/grid 归一 + viewerActive/infoImage 对齐（+26 例）`（未 push）
+
+---
+
+# 2026-09-19 多代理审查批 3：缩略图/EXIF worker 链、编辑会话生命周期、数据底层/存储与 src/lib
+
+三路只读审查子代理并行覆盖剩余链路（A：缩略图/EXIF worker 与进度事件；B：编辑会话
+open/bake/export/cancel 生命周期；C：数据库底层/备份/存储 + src/lib 纯函数），主代理逐项
+核实后修复 P0 1 项 + P1 全部 + 选定 P2；其中缩略图重建重入是批 2 遗留项的兑现。
+
+## 当前状态
+
+- 分支 `optimize/architecture`；**798 passed / 0 failed**（58 文件，+13 例）；
+  coverage **90.26%** 语句 / **85.2%** 分支 / **81.92%** 函数（thresholds 全达标）；
+  lint 0 error / 10 warnings（基线不变）；typecheck 通过；build 通过；golden 22/22。
+
+## P0：含 alpha 图片缩略图生成必败（建档 error/alpha-thumb-composite-broken.md）
+
+- `generateTiers` 的 alpha 分支用「白底 SVG composite」：blend 名 `destination-over` 不是
+  libvips 合法昵称（应为 `dest-over`），且方形底板配 `extend:'avoid'` 叠不进非方形产物——
+  该分支**从未成功过**，所有透明 PNG 双档缩略图 100% 抛错，被 worker 逐条吞错长期掩盖。
+- 修复：`if (meta.hasAlpha) p = p.flatten({ background: '#ffffff' })`；真实 worker harness 端到端锁定。
+
+## P1：数据底层/存储（C 链）
+
+- **NOCASE 等值查询走不上索引**：`= ? COLLATE NOCASE` 无法命中 BINARY 索引，去重查询全表扫描；
+  建表达式索引 `idx_images_original_path_nc` / `idx_images_original_raw_path_nc`（EXPLAIN QUERY PLAN 锁定）。
+- **migrateSchema 逐列容错**：整体 try/catch 时代一列失败（如非常量默认 CURRENT_TIMESTAMP 在
+  有数据表必抛）吞掉其后所有列；改逐列 addColumn + 可空列回填 `COALESCE(created_at,…)`。
+- **LIKE 通配符注入**：搜索词含 `%`/`_` 时按通配符生效（`100%` 命中一切）；`likePattern` 转义 +
+  `ESCAPE '\'`（getImages 与 getAllVisibleIds 两处）。
+- **safeLimit 边界**：NaN/负数 LIMIT 不再抛 datatype mismatch 或全量返回，钳制 1..2000。
+- **deleteBrokenRecords 再核验 + 结构化返回**：扫描与删除之间文件可能回位，逐条 `existsSync`
+  重核验；返回 `{removed:[ids], unbound:[ids]}`，main.js 只对真正删除的 id 清理派生文件，
+  解绑记录不动（设置页分别播报两条数）。
+- **setImagesRoot 目录边界判定**：旧根前缀匹配用 `startsWith(oldRoot)` 把 `images_backup` 误判为
+  根内，`path.relative` 出 `..\` 逃出新根；改 `root + path.sep` 边界判断，越界回退日期布局。
+- **cleanupStaleBakeTemps 形态补全**：`.bake-tmp` 旁路复制残留与 `-temp.*(part|icc)` 中间产物
+  纳入清扫，受管文件与无匹配主名仍不动。
+- **updateImages 分块入事务 + 刷新 updated_at**（此前评分批量写不触 updated_at）；
+  **getAlbums image_count 过滤 hidden**（与 getAlbumImages 口径一致）；
+  **saveEditedImage 改名时 filename 跟随新主名**；**updateImage 非法 import_date 直接拒绝**
+  （批 2 的回退今天语义改为显式报错）。
+- **initDatabase 重开前先关旧句柄**：Windows 下泄漏句柄锁死 .db（测试 afterAll EBUSY 的根因，
+  生产自愈重连同样适用）。
+
+## P1：worker/编辑会话链（A/B 链）
+
+- **缩略图重建循环互斥 + 陈旧写回守卫**：`thumbRebuildRunning/Again` 模块互斥（重入改为补一轮），
+  手动全量重建独立 `manualRebuildRunning` 守卫并让后台循环让位；`bakeEpochs` 每图计数在烘焙成功
+  时 bump，重建循环逐行三查（记录存在、filepath 未变、epoch 未变）才写回，杜绝烘焙后旧像素覆盖新图。
+- **烘焙后孤儿编辑底图**：零拷贝会话下 render 兜底分支会从烘焙前像素重建 `edit-cache/{id}-base.jpg`
+  且烘焙从不删除——下次进编辑洗掉已烘焙效果；新增 `cleanupEditBaseCache`（bake/cancel/delete 三处），
+  预览取底图改为**会话优先**。
+- **编辑预览写回时序**：generation 检查移到写 meta 之前；meta 写入前再校验 `edits.version` 未变；
+  `editPreviewRenderSeq` 移入 finally；晚到 cancel 与序号复用不误伤（既有测试回归锁定）。
+- **编辑 IPC 静默失败**：openEditSession/exportEditSession 读底图尺寸失败显式返回错误；前端
+  ImageViewer 进入/保存/导出/烘焙四条链补 catch + 面板错误文案（此前失败无任何提示）。
+
+## P2（选定项）
+
+- 全局快捷键排除 Shift/Ctrl+Alt 组合（Ctrl+Shift+A 不再触发全选）。
+- format 补 GB 档（详细/紧凑两函数，>1GiB 此前显示 1024.0MB）。
+- gallery.js 脏值防御（pageSizeOf/totalPagesOf/clampPage NaN、removeIdsFromSet 非可迭代）+
+  死代码删除（intersectIds/pageIndexOfGlobal/shouldPreferThumb）。
+- EXIF 拍摄日期日历合法性校验（月 1..12、日 1..31），非法回退 mtime。
+- import-progress 载荷带 `task`，导入对话框只采纳非 camera-sync 的进度（相机同步后台跑时
+  导入页进度条不再被劫持）。
+
+## 测试
+
+- **+13 例**（785→798）：pipeline alpha tiers 端到端；init NOCASE 索引 EQP/迁移逐列容错/
+  limit 钳制；maintenance 删除再核验、setImagesRoot 越界、bake 残留清扫三形态；images 搜索
+  转义、非法日期拒绝、updateImages updated_at、烘焙改名 filename；main 失效记录只清 removed；
+  SettingsPage 解绑播报、重建进行中提示；shortcuts Ctrl+Shift；format GB 档断言。
+- 契约同步更新：albums image_count、deleteBrokenRecords 结构、main.test dbStub 默认值等 5 文件。
+
+## 遗留（本批核实、刻意不动）
+
+- **B3 烘焙尺寸同义反复**（导出校验的期望尺寸与渲染同源，严格化需会话侧传期望值——改动面大）。
+- **B8/B9/B12 编辑链中档项**、**B11 editSchema 字段级 catch+日志**（单字段坏丢整包参数，需配套设计）。
+- **C5 全局 IPC handler 包装器**（统一 try/catch + 日志前缀，重构面大）、**C8 saveEditedImage 多步原子性**、
+  **C12 before-quit 等待在途烘焙/重建**。
+- **F5 callWorker 无超时看门狗**（卡死项停摆整链，需超时后队列推进策略）、**F6 坏文件失败哨兵**
+  （每次导入重跑全库坏文件）、**F7 导入时 width/height 恒为 0**（仅缩略图 worker 写入）、
+  **F9 computeSourceHash 同步整图读**、**F12 worker 消息不串行 + NEF 整文件读入峰值内存**、
+  **F13 启动 EXIF 方向回填列无前端消费者**。
+- **日期筛选语义 import_date vs taken_at**——产品口径问题，仍待用户决策。
+
+## Git Commit
+
+- `fix: 多代理审查批 3 — alpha 缩略图必败 P0 建档 + NOCASE 索引/迁移容错/LIKE 转义/失效再核验/根目录越界 + 重建循环互斥与陈旧写回守卫/烘焙孤儿底图/编辑 IPC 显式失败（+13 例）`（未 push）

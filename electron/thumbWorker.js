@@ -6,19 +6,16 @@ const path = require('path');
 const THUMB_SMALL_SIZE = 160;
 const THUMB_MEDIUM_SIZE = 400;
 
-// 缩略图双档：含 alpha 的输入与白底合成（默认黑底在深色 UI 外不可预期）
+// 缩略图双档：含 alpha 的输入压平到白底（JPEG 输出必去 alpha，深色 UI 下黑底不可预期）
+// 曾用 composite 白底 SVG + destination-over：blend 名非法（libvips 昵称是 dest-over），
+// 且方形底板叠不进非方形产物（extend:'avoid' 拒绝），alpha 图缩略图 100% 抛错
 async function generateTiers(filepath) {
   const meta = await sharp(filepath, { failOn: 'none' }).metadata();
   if (!meta.width || !meta.height) return null;
   // rotate() 无参按 EXIF 方向转正，竖图也能产出方向正确的缩略图
   const make = (maxSide) => {
     let p = sharp(filepath, { failOn: 'none' }).rotate().resize({ width: maxSide, height: maxSide, fit: 'inside' });
-    if (meta.hasAlpha) {
-      p = p.composite([{
-        input: Buffer.from(`<svg width="${maxSide}" height="${maxSide}"><rect width="100%" height="100%" fill="#ffffff"/></svg>`),
-        blend: 'destination-over',
-      }]);
-    }
+    if (meta.hasAlpha) p = p.flatten({ background: '#ffffff' });
     return p.jpeg({ quality: 80 }).toBuffer();
   };
   const [small, medium] = await Promise.all([make(THUMB_SMALL_SIZE), make(THUMB_MEDIUM_SIZE)]);

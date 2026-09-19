@@ -217,7 +217,7 @@ const dbDefaults = {
   clearEditPreview: () => {},
   enforceEditPreviewLimit: () => 0,
   findBrokenRecords: () => [],
-  deleteBrokenRecords: async () => [],
+  deleteBrokenRecords: async () => ({ removed: [], unbound: [] }),
   findDuplicates: () => [],
   getImportDates: () => [],
   getTags: () => [],
@@ -637,7 +637,8 @@ describe('写入委托类 handler', () => {
     const broken = [{ id: 9 }];
     dbStub.findBrokenRecords.mockReturnValueOnce(broken);
     await expect(call('db:scan-broken-records')).resolves.toBe(broken);
-    await call('db:delete-broken-records', [9]);
+    dbStub.deleteBrokenRecords.mockResolvedValueOnce({ removed: [9], unbound: [] });
+    await expect(call('db:delete-broken-records', [9])).resolves.toEqual({ removed: 1, unbound: 0 });
     expect(dbStub.deleteBrokenRecords).toHaveBeenCalledWith([9]);
     await call('db:delete-broken-records', null);
     expect(dbStub.deleteBrokenRecords).toHaveBeenLastCalledWith([]);
@@ -1054,10 +1055,13 @@ describe('编辑会话（非破坏保存）', () => {
     expect(await call('fs:edit-bake', 77, sampleEdits)).toEqual({ error: '编辑会话不存在' });
   });
 
-  it('db:delete-broken-records：清理被删记录的编辑派生文件', async () => {
-    await call('db:delete-broken-records', [11, 12]);
+  it('db:delete-broken-records：仅对真正删除的记录清理派生文件，解绑记录不动', async () => {
+    dbStub.deleteBrokenRecords.mockResolvedValueOnce({ removed: [11], unbound: [12] });
+    const r = await call('db:delete-broken-records', [11, 12]);
+    expect(r).toEqual({ removed: 1, unbound: 1 });
     expect(dbStub.clearEditPreview).toHaveBeenCalledWith(11);
-    expect(dbStub.clearEditPreview).toHaveBeenCalledWith(12);
+    // 12 只是解绑缺失 NEF：可见记录与会话仍在，不得清理其派生文件/作废会话
+    expect(dbStub.clearEditPreview).not.toHaveBeenCalledWith(12);
   });
 
   it('fs:edit-export：webp 源缺省导出 webp（跟随原图格式，与烘焙一致）', async () => {
@@ -1095,6 +1099,8 @@ describe('缩略图重建、导出与备份', () => {
       width: 4000,
       height: 2000,
     }));
+    // 写回前再核验会重读记录：路径一致才写，缺失即视为陈旧
+    dbStub.getImageById.mockImplementation((id) => ({ id, filepath: randomJpg }));
     dbStub.getImagesForRebuild.mockReturnValueOnce([
       { id: 's1', filepath: randomJpg },
       { id: 'b1', filepath: randomJpg },

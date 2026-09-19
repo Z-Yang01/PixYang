@@ -1,18 +1,20 @@
 // 字节/数值格式化（原散布在 InfoPanel/ImageViewer/ImportDialog/SettingsPage 四处）
 
-// 详细格式：123 B / 12.3 KB / 1.2 MB（详情面板、查看器）
+// 详细格式：123 B / 12.3 KB / 1.2 MB / 3.4 GB（详情面板、查看器）
 export function formatSizeDisplay(bytes, emptyLabel = '') {
   if (!bytes) return emptyLabel;
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1048576) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / 1048576).toFixed(1)} MB`;
+  if (bytes < 1073741824) return `${(bytes / 1048576).toFixed(1)} MB`;
+  return `${(bytes / 1073741824).toFixed(2)} GB`;
 }
 
-// 紧凑格式：0KB / 3KB / 1.2MB（导入列表、设置统计）
+// 紧凑格式：0KB / 3KB / 1.2MB / 2.5GB（导入列表、设置统计）
 export function formatFileSize(bytes) {
   if (!bytes || bytes <= 0) return '0KB';
   if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))}KB`;
-  return `${(bytes / 1024 / 1024).toFixed(1)}MB`;
+  if (bytes < 1024 * 1048576) return `${(bytes / 1024 / 1024).toFixed(1)}MB`;
+  return `${(bytes / 1024 / 1048576).toFixed(1)}GB`;
 }
 
 export function todayStr() {

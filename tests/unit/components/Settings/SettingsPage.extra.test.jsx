@@ -197,6 +197,17 @@ describe('SettingsPage（补充：存储/相机/维护/备份/重复图片等交
     expect(screen.getByRole('button', { name: '重建缩略图' })).toBeInTheDocument();
   });
 
+  it('重建缩略图：主进程返回进行中时提示错误且不播报结果', async () => {
+    const onImagesChanged = vi.fn();
+    window.pixyang.rebuildThumbnails.mockResolvedValue({ error: '重建进行中，请稍候' });
+    renderPage({ onImagesChanged });
+    await screen.findByText('C:/PixData');
+    fireEvent.click(screen.getByRole('button', { name: '重建缩略图' }));
+    expect(await screen.findByText('重建进行中，请稍候')).toBeInTheDocument();
+    expect(screen.queryByText(/重建完成/)).not.toBeInTheDocument();
+    expect(onImagesChanged).not.toHaveBeenCalled();
+  });
+
   it('扫描失效记录：发现记录弹确认框，取消不清理', async () => {
     window.pixyang.scanBrokenRecords.mockResolvedValue([
       { id: 1, filename: 'gone.jpg' },
@@ -218,7 +229,7 @@ describe('SettingsPage（补充：存储/相机/维护/备份/重复图片等交
   it('扫描失效记录：确认后清理并列出 ID、刷新图库', async () => {
     const onImagesChanged = vi.fn();
     window.pixyang.scanBrokenRecords.mockResolvedValue([{ id: 11, filename: 'only.jpg' }]);
-    window.pixyang.deleteBrokenRecords.mockResolvedValue(1);
+    window.pixyang.deleteBrokenRecords.mockResolvedValue({ removed: 1, unbound: 0 });
     renderPage({ onImagesChanged });
     await screen.findByText('C:/PixData');
     fireEvent.click(screen.getByText('扫描失效记录'));
@@ -229,6 +240,16 @@ describe('SettingsPage（补充：存储/相机/维护/备份/重复图片等交
     expect(await screen.findByText(/已清理 1 条失效记录/)).toBeInTheDocument();
     expect(window.pixyang.deleteBrokenRecords).toHaveBeenCalledWith([11]);
     expect(onImagesChanged).toHaveBeenCalled();
+  });
+
+  it('扫描失效记录：解绑（仅原图缺失）条数单独播报', async () => {
+    window.pixyang.scanBrokenRecords.mockResolvedValue([{ id: 1 }, { id: 2 }]);
+    window.pixyang.deleteBrokenRecords.mockResolvedValue({ removed: 1, unbound: 1 });
+    renderPage();
+    await screen.findByText('C:/PixData');
+    fireEvent.click(screen.getByText('扫描失效记录'));
+    fireEvent.click(await screen.findByText('清理 2 条'));
+    expect(await screen.findByText(/已清理 1 条失效记录，另解绑 1 条仅原图缺失的记录/)).toBeInTheDocument();
   });
 
   it('扫描失效记录：无失效时提示且不弹框', async () => {

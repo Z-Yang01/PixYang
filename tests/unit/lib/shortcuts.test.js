@@ -56,6 +56,13 @@ describe('matchGlobalShortcut', () => {
     expect(matchGlobalShortcut(keyEvent('Escape'))).toBe(GLOBAL_ACTIONS.ClearSelection);
   });
 
+  it('Ctrl+Shift 组合不触发全局动作（审查批 3）', () => {
+    expect(matchGlobalShortcut(keyEvent('a', { ctrlKey: true, shiftKey: true }))).toBeNull();
+    expect(matchGlobalShortcut(keyEvent('e', { metaKey: true, shiftKey: true }))).toBeNull();
+    expect(matchGlobalShortcut(keyEvent('a', { ctrlKey: true, altKey: true }))).toBeNull();
+    expect(matchGlobalShortcut(keyEvent('a', { ctrlKey: true }))).toBe(GLOBAL_ACTIONS.SelectAll);
+  });
+
   it('输入框内不触发', () => {
     const e = keyEvent('/', { target: { tagName: 'INPUT' } });
     expect(matchGlobalShortcut(e)).toBeNull();

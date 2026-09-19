@@ -126,6 +126,11 @@ function chunkIds(ids, size = 900) {
 
 async function initDatabase() {
   fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
+  // 重复初始化（测试/自愈重连）先关旧句柄：Windows 下泄漏的句柄会锁死 .db 导致删除/备份 EBUSY
+  if (db) {
+    try { db.close(); } catch (e) { console.error('[数据库] 重开前关闭旧句柄失败:', e.message); }
+    db = null;
+  }
   db = new Database(DB_PATH);
 
   // WAL 模式：写操作即时持久化并具备崩溃恢复能力，不再整库序列化落盘
@@ -281,6 +286,10 @@ async function initDatabase() {
   db.exec('CREATE INDEX IF NOT EXISTS idx_images_filename ON images(filename)');
   db.exec('CREATE INDEX IF NOT EXISTS idx_images_original_path ON images(original_path)');
   db.exec('CREATE INDEX IF NOT EXISTS idx_images_original_raw_path ON images(original_raw_path)');
+  // 去重查询带 COLLATE NOCASE（Windows 路径大小写不敏感），BINARY 索引不被 SQLite 用于
+  // NOCASE 比较会退化为全表扫描——必须另建表达式索引
+  db.exec('CREATE INDEX IF NOT EXISTS idx_images_original_path_nc ON images(original_path COLLATE NOCASE)');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_images_original_raw_path_nc ON images(original_raw_path COLLATE NOCASE)');
   db.exec('CREATE INDEX IF NOT EXISTS idx_images_hidden_import_date ON images(hidden, import_date)');
   db.exec('CREATE INDEX IF NOT EXISTS idx_images_hidden_taken_at ON images(hidden, taken_at)');
   db.exec('CREATE INDEX IF NOT EXISTS idx_images_hidden_favorite ON images(hidden, favorite)');
@@ -303,65 +312,40 @@ async function initDatabase() {
 }
 
 function migrateSchema() {
-  try {
-    // 检查是否需要添加新列
-    const cols = db.pragma('table_info(images)');
-    if (cols.length > 0) {
-      const colNames = cols.map(v => v.name);
-      if (!colNames.includes('import_date')) {
-        db.exec('ALTER TABLE images ADD COLUMN import_date TEXT DEFAULT ""');
-      }
-      if (!colNames.includes('taken_at')) {
-        db.exec('ALTER TABLE images ADD COLUMN taken_at TEXT DEFAULT ""');
-      }
-      if (!colNames.includes('original_path')) {
-        db.exec('ALTER TABLE images ADD COLUMN original_path TEXT DEFAULT ""');
-      }
-      if (!colNames.includes('raw_path')) {
-        db.exec('ALTER TABLE images ADD COLUMN raw_path TEXT DEFAULT ""');
-      }
-      if (!colNames.includes('original_raw_path')) {
-        db.exec('ALTER TABLE images ADD COLUMN original_raw_path TEXT DEFAULT ""');
-      }
-      if (!colNames.includes('hidden')) {
-        db.exec('ALTER TABLE images ADD COLUMN hidden INTEGER DEFAULT 0');
-      }
-      if (!colNames.includes('orientation')) {
-        db.exec('ALTER TABLE images ADD COLUMN orientation INTEGER DEFAULT 1');
-      }
-      if (!colNames.includes('rotation')) {
-        db.exec('ALTER TABLE images ADD COLUMN rotation INTEGER DEFAULT 0');
-      }
-      if (!colNames.includes('flip_h')) {
-        db.exec('ALTER TABLE images ADD COLUMN flip_h INTEGER DEFAULT 0');
-      }
-      if (!colNames.includes('flip_v')) {
-        db.exec('ALTER TABLE images ADD COLUMN flip_v INTEGER DEFAULT 0');
-      }
-      if (!colNames.includes('updated_at')) {
-        db.exec('ALTER TABLE images ADD COLUMN updated_at DATETIME DEFAULT CURRENT_TIMESTAMP');
-      }
-      if (!colNames.includes('thumbnail_path')) {
-        db.exec('ALTER TABLE images ADD COLUMN thumbnail_path TEXT DEFAULT ""');
-      }
-      if (!colNames.includes('thumbnail_small_path')) {
-        db.exec('ALTER TABLE images ADD COLUMN thumbnail_small_path TEXT DEFAULT ""');
-      }
-      // 非破坏编辑：内容哈希（缓存失效/去重）与旗标
-      if (!colNames.includes('hash')) {
-        db.exec('ALTER TABLE images ADD COLUMN hash TEXT DEFAULT ""');
-      }
-      if (!colNames.includes('flag')) {
-        db.exec('ALTER TABLE images ADD COLUMN flag INTEGER DEFAULT 0');
-      }
-      // 编辑预览缩略图（非破坏保存后反映参数效果；原图像素不动）
-      if (!colNames.includes('thumbnail_edit_path')) {
-        db.exec('ALTER TABLE images ADD COLUMN thumbnail_edit_path TEXT DEFAULT ""');
-      }
+  // 逐列独立容错：单条 ALTER 失败不得阻断后续列（旧实现整体 try/catch，
+  // updated_at 的 CURRENT_TIMESTAMP 非常量默认在旧库必抛，其后 5 列被静默吞掉）
+  const cols = db.pragma('table_info(images)');
+  if (cols.length === 0) return;
+  const colNames = cols.map(v => v.name);
+  const addColumn = (name, ddl, backfill) => {
+    if (colNames.includes(name)) return;
+    try {
+      db.exec(ddl);
+      if (backfill) db.exec(backfill);
+    } catch (e) {
+      console.error(`[迁移] 添加列 ${name} 失败:`, e.message);
     }
-  } catch (e) {
-    console.log('[迁移] 可能是旧版数据库，尝试添加列:', e.message);
-  }
+  };
+  addColumn('import_date', 'ALTER TABLE images ADD COLUMN import_date TEXT DEFAULT ""');
+  addColumn('taken_at', 'ALTER TABLE images ADD COLUMN taken_at TEXT DEFAULT ""');
+  addColumn('original_path', 'ALTER TABLE images ADD COLUMN original_path TEXT DEFAULT ""');
+  addColumn('raw_path', 'ALTER TABLE images ADD COLUMN raw_path TEXT DEFAULT ""');
+  addColumn('original_raw_path', 'ALTER TABLE images ADD COLUMN original_raw_path TEXT DEFAULT ""');
+  addColumn('hidden', 'ALTER TABLE images ADD COLUMN hidden INTEGER DEFAULT 0');
+  addColumn('orientation', 'ALTER TABLE images ADD COLUMN orientation INTEGER DEFAULT 1');
+  addColumn('rotation', 'ALTER TABLE images ADD COLUMN rotation INTEGER DEFAULT 0');
+  addColumn('flip_h', 'ALTER TABLE images ADD COLUMN flip_h INTEGER DEFAULT 0');
+  addColumn('flip_v', 'ALTER TABLE images ADD COLUMN flip_v INTEGER DEFAULT 0');
+  // 可空 + 回填代替 DEFAULT CURRENT_TIMESTAMP：SQLite 禁止有数据行的表添加非常量默认列
+  addColumn('updated_at', 'ALTER TABLE images ADD COLUMN updated_at DATETIME',
+    "UPDATE images SET updated_at = COALESCE(created_at, '1970-01-01 00:00:00') WHERE updated_at IS NULL");
+  addColumn('thumbnail_path', 'ALTER TABLE images ADD COLUMN thumbnail_path TEXT DEFAULT ""');
+  addColumn('thumbnail_small_path', 'ALTER TABLE images ADD COLUMN thumbnail_small_path TEXT DEFAULT ""');
+  // 非破坏编辑：内容哈希（缓存失效/去重）与旗标
+  addColumn('hash', 'ALTER TABLE images ADD COLUMN hash TEXT DEFAULT ""');
+  addColumn('flag', 'ALTER TABLE images ADD COLUMN flag INTEGER DEFAULT 0');
+  // 编辑预览缩略图（非破坏保存后反映参数效果；原图像素不动）
+  addColumn('thumbnail_edit_path', 'ALTER TABLE images ADD COLUMN thumbnail_edit_path TEXT DEFAULT ""');
 }
 
 // 一次性迁移：把 thumbnail 列中的 base64 缩略图写入文件并清空该列
@@ -575,6 +559,11 @@ async function importOne(root, img, { pair, hidden }) {
   return db.prepare('SELECT * FROM images WHERE filepath = ?').get(destPath) || null;
 }
 
+// 搜索词转 LIKE 模式：% _ 与转义符本身需反斜杠转义（配合 ESCAPE '\'），否则「%」命中全库
+function likePattern(term) {
+  return `%${String(term).replace(/[\\%_]/g, (c) => '\\' + c)}%`;
+}
+
 function getImages(options = {}) {
   const {
     tagId = null,
@@ -589,6 +578,12 @@ function getImages(options = {}) {
     limit = 200,
     offset = 0,
   } = options;
+
+  // IPC 边界夹取：负 LIMIT 在 SQLite 语义为「无限制」，NaN 直接 datatype mismatch 抛错
+  const limitNum = Number(limit);
+  const offsetNum = Number(offset);
+  const safeLimit = Number.isFinite(limitNum) ? Math.max(1, Math.min(Math.floor(limitNum), 2000)) : 200;
+  const safeOffset = Number.isFinite(offsetNum) ? Math.max(0, Math.floor(offsetNum)) : 0;
 
   let query = 'SELECT DISTINCT i.* FROM images i';
   const params = [];
@@ -628,8 +623,9 @@ function getImages(options = {}) {
   }
 
   if (search) {
-    conditions.push('(i.filename LIKE ? OR i.notes LIKE ? OR i.id IN (SELECT it.image_id FROM image_tags it JOIN tags t ON t.id = it.tag_id WHERE t.name LIKE ?))');
-    params.push(`%${search}%`, `%${search}%`, `%${search}%`);
+    conditions.push("(i.filename LIKE ? ESCAPE '\\' OR i.notes LIKE ? ESCAPE '\\' OR i.id IN (SELECT it.image_id FROM image_tags it JOIN tags t ON t.id = it.tag_id WHERE t.name LIKE ? ESCAPE '\\'))");
+    const pat = likePattern(search);
+    params.push(pat, pat, pat);
   }
 
   const joinClause = joins.join(' ');
@@ -656,7 +652,7 @@ function getImages(options = {}) {
     query += ` ORDER BY i.${safeSort} ${safeOrder}, i.id ${tie}`;
   }
   query += ' LIMIT ? OFFSET ?';
-  params.push(limit, offset);
+  params.push(safeLimit, safeOffset);
 
   const images = db.prepare(query).all(...params);
 
@@ -722,8 +718,9 @@ function getAllVisibleIds(options = {}) {
     conditions.push('i.favorite = 1');
   }
   if (search) {
-    conditions.push('(i.filename LIKE ? OR i.notes LIKE ? OR i.id IN (SELECT it.image_id FROM image_tags it JOIN tags t ON t.id = it.tag_id WHERE t.name LIKE ?))');
-    params.push(`%${search}%`, `%${search}%`, `%${search}%`);
+    conditions.push("(i.filename LIKE ? ESCAPE '\\' OR i.notes LIKE ? ESCAPE '\\' OR i.id IN (SELECT it.image_id FROM image_tags it JOIN tags t ON t.id = it.tag_id WHERE t.name LIKE ? ESCAPE '\\'))");
+    const pat = likePattern(search);
+    params.push(pat, pat, pat);
   }
 
   query += ` ${joins.join(' ')} WHERE ${conditions.join(' AND ')}`;
@@ -734,10 +731,15 @@ function getAllVisibleIds(options = {}) {
 
 async function updateImage(id, updates) {
   let dateMoved = false;
+  const moveSets = [];
+  const moveParams = [];
   // 修改导入日期时，将文件移动到新日期目录（JPG 与配对 NEF 一起移动）
   if (updates.import_date) {
     const newDate = String(updates.import_date).trim();
-    if (newDate && /^\d{4}-\d{2}-\d{2}$/.test(newDate)) {
+    if (newDate && !/^\d{4}-\d{2}-\d{2}$/.test(newDate)) {
+      return { error: '日期格式无效（应为 YYYY-MM-DD）' };
+    }
+    if (newDate) {
       const img = getImageById(id);
       if (img && img.import_date !== newDate) {
         const root = getImagesRoot();
@@ -746,7 +748,6 @@ async function updateImage(id, updates) {
         const newName = generateUniqueFilename(subDir, img.filename);
         const newPath = path.join(subDir, newName);
         let newRawPath = img.raw_path || '';
-        dateMoved = true;
 
         if (!fs.existsSync(img.filepath)) {
           // 源文件缺失时不动 DB：照旧 UPDATE 会把记录改写成必然不存在的新路径
@@ -783,16 +784,18 @@ async function updateImage(id, updates) {
           return { error: `移动文件失败：${err.message}` };
         }
 
-        db.prepare('UPDATE images SET filename = ?, filepath = ?, raw_path = ? WHERE id = ?')
-          .run(path.basename(newPath), newPath, newRawPath, id);
+        dateMoved = true;
+        // 不单独 UPDATE：并入下方同一语句，杜绝两条语句间的半写窗口
+        moveSets.push('filename = ?', 'filepath = ?', 'raw_path = ?');
+        moveParams.push(path.basename(newPath), newPath, newRawPath);
       }
     }
   }
 
   const allowed = ['filename', 'rating', 'favorite', 'notes', 'width', 'height', 'thumbnail', 'thumbnail_path', 'thumbnail_small_path', 'import_date', 'rotation', 'flip_h', 'flip_v'];
   const aliases = { flipH: 'flip_h', flipV: 'flip_v' };
-  const sets = [];
-  const params = [];
+  const sets = [...moveSets];
+  const params = [...moveParams];
 
   for (const [key, value] of Object.entries(updates)) {
     const column = aliases[key] || key;
@@ -921,9 +924,12 @@ async function setImagesRoot(newRoot) {
       let relativePath;
       const normalizedFile = path.resolve(img.filepath);
 
-      if (normalizedFile.startsWith(normalizedOldRoot)) {
+      if (normalizedFile === normalizedOldRoot || normalizedFile.startsWith(normalizedOldRoot + path.sep)) {
         relativePath = path.relative(normalizedOldRoot, normalizedFile);
-      } else {
+      }
+      // 前缀必须按目录边界判断：`D:\images_backup` 曾被 `D:\images`.startsWith 误判，
+      // relative 出 `..\images_backup\...` 会逃出新根。越界一律回退日期目录布局。
+      if (!relativePath || relativePath.startsWith('..') || path.isAbsolute(relativePath)) {
         relativePath = path.join(getImageSubDir(img.import_date || ''), img.filename);
       }
 
@@ -1324,9 +1330,10 @@ function getAlbums() {
          JOIN album_images ai ON ai.image_id = i.id
         WHERE ai.album_id = a.id AND i.hidden = 0 AND i.thumbnail_path != ''
         ORDER BY ai.image_id DESC LIMIT 1) AS cover_path,
-      COUNT(ai.image_id) as image_count
+      COUNT(vi.id) as image_count
     FROM albums a
     LEFT JOIN album_images ai ON ai.album_id = a.id
+    LEFT JOIN images vi ON vi.id = ai.image_id AND vi.hidden = 0
     GROUP BY a.id
     ORDER BY a.created_at DESC
   `)
@@ -1463,16 +1470,20 @@ function saveEditedImage(id, tempPath, { width, height }) {
     }
   }
 
+  // 托管改名（gif 等源烘焙为 jpg）时 filename 必须跟随新主名，否则重命名/配对逻辑
+  // 拿着旧扩展名找新文件
+  const renamed = targetPath !== img.filepath;
   db.transaction(() => {
     db.prepare(`
       UPDATE images
       SET width = ?, height = ?, size = ?,
-          filepath = ?, format = ?,
+          filepath = ?, format = ?${renamed ? ', filename = ?' : ''},
           rotation = 0, flip_h = 0, flip_v = 0,
           thumbnail = '', thumbnail_path = '', thumbnail_small_path = '', thumbnail_edit_path = '',
           updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
-    `).run(width || img.width, height || img.height, size, targetPath, targetFormat, id);
+    `).run(...[width || img.width, height || img.height, size, targetPath, targetFormat,
+      ...(renamed ? [path.basename(targetPath)] : []), id]);
   })();
 
   deleteThumbnailFile(id);
@@ -1611,12 +1622,16 @@ function updateImages(imageIds, updates) {
   if (sets.length === 0 || !Array.isArray(imageIds) || imageIds.length === 0) return 0;
 
   let changed = 0;
-  // 占位符必须按 chunk 长度生成：按全量生成会让超过变量上限时占位符与参数个数不匹配直接抛错
-  for (const chunk of chunkIds(imageIds)) {
-    const stmt = db.prepare(`UPDATE images SET ${sets.join(', ')} WHERE id IN (${chunk.map(() => '?').join(',')})`);
-    const info = stmt.run(...params, ...chunk);
-    changed += info.changes;
-  }
+  // 多 chunk 必须同事务：中途抛错会留下"前半已写、后半未写"的半批状态
+  const tx = db.transaction(() => {
+    // 占位符按 chunk 长度生成：按全量生成会在超过变量上限时占位符与参数个数不匹配直接抛错
+    for (const chunk of chunkIds(imageIds)) {
+      const stmt = db.prepare(`UPDATE images SET ${sets.join(', ')}, updated_at = CURRENT_TIMESTAMP WHERE id IN (${chunk.map(() => '?').join(',')})`);
+      const info = stmt.run(...params, ...chunk);
+      changed += info.changes;
+    }
+  });
+  tx();
   saveDatabase();
   return changed;
 }
@@ -1638,11 +1653,14 @@ function findBrokenRecords() {
   return broken;
 }
 
-// 清理失效记录：主文件已没的删数据库条目与缩略图残留；主文件仍在（仅 raw 丢失）
-// 只解绑 raw_path/original_raw_path，保留可见记录；不碰磁盘上仍存在的文件
+// 清理失效记录：删除时逐条重新核验文件状态（扫描到点击之间文件可能已被恢复/下载回来），
+// 主文件已没的删数据库条目与缩略图残留并计入 removed；主文件仍在（仅 raw 丢失）只解绑
+// raw_path/original_raw_path、计入 unbound，保留可见记录；不碰磁盘上仍存在的文件。
+// 返回 removed/unbound 两个 id 列表：调用方仅对 removed 做会话取消与派生文件清理。
 function deleteBrokenRecords(ids) {
-  if (!Array.isArray(ids)) return 0;
-  let removed = 0;
+  if (!Array.isArray(ids)) return { removed: [], unbound: [] };
+  const removed = [];
+  const unbound = [];
   const tx = db.transaction(() => {
     for (const id of ids) {
       const img = getImageById(id);
@@ -1650,7 +1668,7 @@ function deleteBrokenRecords(ids) {
       if (fs.existsSync(img.filepath)) {
         if (img.raw_path && !fs.existsSync(img.raw_path)) {
           db.prepare("UPDATE images SET raw_path = '', original_raw_path = '' WHERE id = ?").run(id);
-          removed++;
+          unbound.push(id);
         }
         continue;
       }
@@ -1660,12 +1678,12 @@ function deleteBrokenRecords(ids) {
       db.prepare('DELETE FROM edit_history WHERE image_id = ?').run(id);
       db.prepare('DELETE FROM images WHERE id = ?').run(id);
       deleteThumbnailFile(id);
-      removed++;
+      removed.push(id);
     }
   });
   tx();
   saveDatabase();
-  return removed;
+  return { removed, unbound };
 }
 
 // 启动清扫烘焙残留 -temp（原名-temp.jpg/png/webp，与 saveEditedImage 替代流程的中间产物同名）：
@@ -1691,8 +1709,16 @@ function cleanupStaleBakeTemps() {
         names = fs.readdirSync(dir);
       } catch { continue; /* 目录不可读（已删除/离线盘）跳过 */ }
       for (const name of names) {
-        const m = /^(.*)-temp\.(jpe?g|png|webp)$/i.exec(name);
-        if (!m || !bases.has(m[1].toLowerCase())) continue;
+        // -temp.(jpg|png|webp)[.part|.icc]（替代流程中间产物）与 主名.ext.bake-tmp
+        // （rename 撞占用时的旁路复制残留）两种形态都在清扫范围
+        let baseKey = null;
+        const m = /^(.*)-temp\.(jpe?g|png|webp)(?:\.(?:part|icc))?$/i.exec(name);
+        if (m) baseKey = m[1].toLowerCase();
+        else {
+          const m2 = /^(.*)\.(jpe?g|png|webp|gif|bmp|tiff|nef)\.bake-tmp$/i.exec(name);
+          if (m2) baseKey = m2[1].toLowerCase();
+        }
+        if (baseKey === null || !bases.has(baseKey)) continue;
         const full = path.join(dir, name);
         if (managed.has(full.toLowerCase())) continue;
         try {

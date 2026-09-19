@@ -182,6 +182,7 @@ export default function SettingsPage({ onSettingsChanged, onImagesChanged }) {
     const result = await api.rebuildThumbnails();
     setRebuilding(false);
     setRebuildProgress(null);
+    if (result?.error) { showSaved(result.error); return; }
     onImagesChanged?.();
     showSaved(`缩略图重建完成：${result.rebuilt} 成功，${result.failed} 失败（共 ${result.total} 张）`);
   };
@@ -199,9 +200,13 @@ export default function SettingsPage({ onSettingsChanged, onImagesChanged }) {
     if (!api.isBridgeAvailable() || !brokenRecords) return;
     const ids = brokenRecords.map(r => r.id);
     setBrokenRecords(null);
-    const removed = await api.deleteBrokenRecords(ids);
+    const result = await api.deleteBrokenRecords(ids);
     onImagesChanged?.();
-    showSaved(`已清理 ${removed} 条失效记录`);
+    const removed = result?.removed ?? 0;
+    const unbound = result?.unbound ?? 0;
+    showSaved(unbound > 0
+      ? `已清理 ${removed} 条失效记录，另解绑 ${unbound} 条仅原图缺失的记录`
+      : `已清理 ${removed} 条失效记录`);
   };
 
   const handleFindDuplicates = async () => {

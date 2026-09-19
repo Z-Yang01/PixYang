@@ -271,3 +271,47 @@ describe('非破坏编辑表迁移（edits / edit_history / presets）', () => {
     expect(fs.existsSync(`${previewPath}.meta.json`)).toBe(false);
   });
 });
+
+describe('索引与迁移回归（审查批 3）', () => {
+  it('NOCASE 去重查询走表达式索引，不退化为全表扫描', () => {
+    const raw = db.__getDb();
+    for (const col of ['original_path', 'original_raw_path']) {
+      const plan = raw
+        .prepare(`EXPLAIN QUERY PLAN SELECT id FROM images WHERE ${col} = ? COLLATE NOCASE`)
+        .all('x')
+        .map((r) => r.detail)
+        .join(' | ');
+      expect(plan, `${col}: ${plan}`).toContain(`idx_images_${col}_nc`);
+      expect(plan, `${col}: ${plan}`).not.toMatch(/SCAN images/);
+    }
+  });
+
+  it('有数据表重跑 initDatabase：updated_at 被丢弃后逐列容错补列并回填 created_at', async () => {
+    const raw = db.__getDb();
+    expect(raw.prepare('SELECT COUNT(*) c FROM images').get().c).toBeGreaterThan(0);
+    raw.exec('ALTER TABLE images DROP COLUMN updated_at');
+    await db.initDatabase();
+    // initDatabase 会关闭旧句柄并重开，断言必须走新句柄
+    const reopened = db.__getDb();
+    const cols = reopened.pragma('table_info(images)').map((c) => c.name);
+    expect(cols).toContain('updated_at');
+    // 非常量默认在有人数据的表必抛——迁移用可空列 + 回填，回填后不得残留 NULL
+    expect(reopened.prepare('SELECT COUNT(*) c FROM images WHERE updated_at IS NULL').get().c).toBe(0);
+    // 逐列容错：单列失败不得吞掉其后所有列（旧实现整体 try/catch 的真实病灶）
+    expect(cols).toEqual(expect.arrayContaining(['thumbnail_edit_path', 'hash', 'flag', 'thumbnail_small_path']));
+  });
+
+  it('getImages limit/offset 脏值在边界钳制：负 LIMIT（SQLite 语义=无限制）与 NaN 不再抛错或全量返回', async () => {
+    const dir = fs.mkdtempSync(path.join(TMP_ROOT, 'limit-'));
+    for (let i = 0; i < 3; i++) {
+      const src = path.join(dir, `l${i}.jpg`);
+      fs.writeFileSync(src, 'x');
+      await db.importImages([{ filename: `l${i}.jpg`, filepath: src, size: 1, format: '.jpg', width: 0, height: 0 }]);
+    }
+    const neg = db.getImages({ limit: -100, offset: 0 });
+    expect(neg.images.length).toBeLessThanOrEqual(1);
+    const nan = db.getImages({ limit: NaN, offset: NaN });
+    expect(Array.isArray(nan.images)).toBe(true);
+    expect(nan.images.length).toBeGreaterThan(0);
+  });
+});

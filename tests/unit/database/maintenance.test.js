@@ -245,8 +245,9 @@ describe('失效记录维护', () => {
     fs.writeFileSync(healthy.filepath, 'h');
     const pairedBefore = db.getImageById(pairedId);
     expect(pairedBefore).not.toBe(null);
-    const removed = db.deleteBrokenRecords(brokenIds);
-    expect(removed).toBe(brokenIds.length);
+    const res = db.deleteBrokenRecords(brokenIds);
+    expect(res.removed).toEqual([missingId]);
+    expect(res.unbound).toEqual([pairedId]);
     expect(db.getImageById(missingId)).toBe(null);
     // 回归：可见图片仅配对 NEF 丢失时曾被整条删除——现在记录保留、只解绑 raw
     const pairedRec = db.getImageById(pairedId);
@@ -256,8 +257,19 @@ describe('失效记录维护', () => {
     expect(fs.existsSync(pairedRec.filepath)).toBe(true);
     expect(db.getImageById(healthyId)).not.toBe(null);
     expect(fs.existsSync(healthy.filepath)).toBe(true);
-    expect(db.deleteBrokenRecords('not-array')).toBe(0);
-    expect(db.deleteBrokenRecords([99999999])).toBe(0);
+    expect(db.deleteBrokenRecords('not-array')).toEqual({ removed: [], unbound: [] });
+    expect(db.deleteBrokenRecords([99999999])).toEqual({ removed: [], unbound: [] });
+  });
+
+  it('删除时逐条重核验：扫描后文件回位的记录不被误删', async () => {
+    const dir = tmpDir('restored');
+    const [rec] = await db.importImages([makeImage('back.jpg', dir, 'b')]);
+    fs.unlinkSync(rec.filepath);
+    expect(db.findBrokenRecords().some((r) => r.id === rec.id)).toBe(true);
+    fs.writeFileSync(rec.filepath, 'b'); // 扫描与点击之间文件回来了
+    const res = db.deleteBrokenRecords([rec.id]);
+    expect(res).toEqual({ removed: [], unbound: [] });
+    expect(db.getImageById(rec.id)).not.toBe(null);
   });
 });
 
@@ -325,5 +337,55 @@ describe('setImagesRoot 存储目录迁移', () => {
     const ghostRec = db.getImageById(ghost.id);
     expect(ghostRec.filepath.startsWith(path.resolve(newRoot))).toBe(true);
     expect(fs.existsSync(ghostRec.filepath)).toBe(false);
+  });
+
+  it('旧根同前缀目录（images_backup）按目录边界判定越界，回退日期布局不逃出新根', async () => {
+    const oldRoot = path.resolve(db.getImagesRoot());
+    const dir = tmpDir('esc-src');
+    const [img] = await db.importImages([makeImage('esc.jpg', dir, 'e')]);
+    const outDir = path.join(oldRoot + '_backup', '2026-06');
+    fs.mkdirSync(outDir, { recursive: true });
+    const outPath = path.join(outDir, 'esc.jpg');
+    fs.renameSync(img.filepath, outPath);
+    db.__getDb().prepare('UPDATE images SET filepath = ? WHERE id = ?').run(outPath, img.id);
+    const newRoot = path.resolve(tmpDir('esc-dst'));
+    const res = await db.setImagesRoot(newRoot);
+    expect(res.success).toBe(true);
+    const rec = db.getImageById(img.id);
+    // 旧实现 startsWith('…\\images') 误判 '…\\images_backup' 在旧根内，relative 出 '..' 逃到新根之外
+    expect(rec.filepath.startsWith(newRoot + path.sep)).toBe(true);
+    expect(fs.existsSync(rec.filepath)).toBe(true);
+  });
+});
+
+describe('cleanupStaleBakeTemps 启动清扫（审查批 3）', () => {
+  it('-temp 两种扩展形态与 .bake-tmp 残留清扫；受管文件与无匹配主名不动', async () => {
+    const dir = tmpDir('baketemp');
+    await db.importImages([
+      makeImage('pair.jpg', dir, 'p'),
+      makeImage('x.jpg', dir, 'x'),
+      makeImage('x-temp.jpg', dir, 'xt'),
+    ]);
+    const rec = db.getAllImagePaths().find((r) => r.filepath.endsWith('pair.jpg'));
+    const bdir = path.dirname(rec.filepath);
+    const L = (n) => path.join(bdir, n);
+    writeFile(L('pair-temp.jpg'), 't1');
+    writeFile(L('pair-temp.jpeg.part'), 't2');
+    writeFile(L('pair.jpg.bake-tmp'), 't3');
+    writeFile(L('zombie-temp.jpg'), 'keep1'); // 主名 zombie 无对应图片：用户同名文件
+    writeFile(L('w.nef.bake-tmp'), 'keep2'); // 主名 w 无对应图片
+    expect(path.basename(bdir)).not.toBe('');
+
+    const removed = db.cleanupStaleBakeTemps();
+    expect(removed).toBeGreaterThanOrEqual(3);
+    expect(fs.existsSync(L('pair-temp.jpg'))).toBe(false);
+    expect(fs.existsSync(L('pair-temp.jpeg.part'))).toBe(false);
+    expect(fs.existsSync(L('pair.jpg.bake-tmp'))).toBe(false);
+    expect(fs.existsSync(L('zombie-temp.jpg'))).toBe(true);
+    expect(fs.existsSync(L('w.nef.bake-tmp'))).toBe(true);
+    expect(fs.existsSync(L('x-temp.jpg'))).toBe(true); // 受管文件：主名 x 命中但路径在管，跳过
+    expect(fs.readFileSync(L('x-temp.jpg'), 'utf8')).toBe('xt');
+
+    expect(db.cleanupStaleBakeTemps()).toBe(0); // 幂等：无残留可再删
   });
 });

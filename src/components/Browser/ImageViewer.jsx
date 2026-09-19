@@ -214,6 +214,8 @@ export default function ImageViewer({
       setEditing(true);
       setZoom(1);
       setPos({ x: 0, y: 0 });
+    } catch (e) {
+      setEditError(`进入编辑失败：${e?.message || e}`);
     } finally {
       editPendingRef.current = false;
       setBusyKind('');
@@ -289,6 +291,8 @@ export default function ImageViewer({
       }
       savedBaselineRef.current = ops;
       toast.success('已保存编辑参数');
+    } catch (e) {
+      setEditError(`保存失败：${e?.message || e}`);
     } finally {
       setBusyKind('');
     }
@@ -321,6 +325,8 @@ export default function ImageViewer({
         return;
       }
       toast.success(`已导出到 ${result.path}`);
+    } catch (e) {
+      setEditError(`导出失败：${e?.message || e}`);
     } finally {
       setBusyKind('');
     }
@@ -348,6 +354,8 @@ export default function ImageViewer({
       toast.success('已烘焙并替代原图');
       // 结构性变化：像素/尺寸/缩略图已变，走全量刷新（查看器内 image 由 App 同步 effect 更新）
       onImageUpdated?.();
+    } catch (e) {
+      setEditError(`烘焙失败：${e?.message || e}`);
     } finally {
       setBusyKind('');
     }
