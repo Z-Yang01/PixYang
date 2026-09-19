@@ -65,19 +65,31 @@ export default function useBatchActions({ showToast }) {
     }
   }, [showToast]);
 
+  // 导出在途拒绝再次触发：并发双批会往同一目录各写一份重复文件（审查批 7 N3）
+  const exportingRef = useRef(false);
   const handleExportSelected = useCallback(async () => {
-    if (!api.isBridgeAvailable()) return;
+    if (!api.isBridgeAvailable() || exportingRef.current) return;
     const selected = useGalleryStore.getState().selectedIds;
     if (selected.size === 0) return;
     const dir = await api.selectExportDirectory();
     if (!dir) return;
-    const result = await api.exportImages([...selected], dir);
-    if (!result || result.error) {
-      showToast(result?.error || '导出失败', 'error');
-      return;
+    exportingRef.current = true;
+    try {
+      const result = await api.exportImages([...selected], dir);
+      if (!result || result.error) {
+        showToast(result?.error || '导出失败', 'error');
+        return;
+      }
+      const nefText = result.nefCopied > 0 ? `，含配对 NEF ${result.nefCopied} 个` : '';
+      const base = `已导出 ${result.copied} / ${result.total} 张图片${nefText}`;
+      if (result.failed?.length) showToast(`${base}，${result.failed.length} 个文件失败`, 'error');
+      else showToast(base, 'success');
+    } catch (e) {
+      console.error('[batch] 导出失败:', e.message);
+      showToast(`导出失败: ${e.message}`, 'error');
+    } finally {
+      exportingRef.current = false;
     }
-    const nefText = result.nefCopied > 0 ? `，含配对 NEF ${result.nefCopied} 个` : '';
-    showToast(`已导出 ${result.copied} / ${result.total} 张图片${nefText}`, 'success');
   }, [showToast]);
 
   const handleBatchTag = useCallback(

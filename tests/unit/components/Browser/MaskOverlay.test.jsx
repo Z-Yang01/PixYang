@@ -210,4 +210,26 @@ describe('MaskOverlay（蒙版几何 overlay）', () => {
     expect(container.querySelector('ellipse.editor-mask-feather-ring')).toBeNull();
     expect(props.onSelect).not.toHaveBeenCalled();
   });
+
+  it('创建手势无 up 直接 blur 也结算（Alt+Tab 切走兜底，审查批 7 M3）', () => {
+    const { container, props } = setup({ tool: 'radial' });
+    fireEvent.pointerDown(container.querySelector('[data-mask-create]'), { clientX: 100, clientY: 100 });
+    fireEvent.pointerMove(window, { clientX: 500, clientY: 400 });
+    fireEvent.blur(window);
+    expect(props.onCreate).toHaveBeenCalledWith('radial', { cx: 100, cy: 100, rx: 400, ry: 300, rotation: 0 });
+    expect(container.querySelector('.is-draft')).toBeNull();
+    fireEvent.blur(window); // 无手势时不重复结算
+    expect(props.onCreate).toHaveBeenCalledTimes(1);
+  });
+
+  it('手柄拖动无 up 直接 blur 收敛为一条历史', () => {
+    const { container, props } = setup({ masks: [radial()], selectedMaskId: 'm1' });
+    fireEvent.pointerDown(container.querySelector('[data-mask-handle="center"]'), { clientX: 500, clientY: 500 });
+    fireEvent.pointerMove(window, { clientX: 600, clientY: 600 });
+    fireEvent.blur(window);
+    expect(props.onChangeMask).toHaveBeenCalledWith('m1', { cx: 600, cy: 600 });
+    expect(props.onCommit).toHaveBeenCalledTimes(1);
+    fireEvent.blur(window);
+    expect(props.onCommit).toHaveBeenCalledTimes(1);
+  });
 });

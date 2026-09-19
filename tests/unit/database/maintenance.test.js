@@ -389,3 +389,85 @@ describe('cleanupStaleBakeTemps 启动清扫（审查批 3）', () => {
     expect(db.cleanupStaleBakeTemps()).toBe(0); // 幂等：无残留可再删
   });
 });
+
+describe('审查批 7 O 链：唯一名连 DB 查重与改名/迁移一致性', () => {
+  it('generateUniqueFilename：DB 占名但盘上无文件也派生 _1；excludeId 可豁免自身', async () => {
+    const dir = tmpDir('taken');
+    const [rec] = await db.importImages([makeImage('takenx.jpg', dir, 'tk')]);
+    fs.unlinkSync(rec.filepath); // 记录仍占 filepath，盘上已无文件
+    expect(db.generateUniqueFilename(path.dirname(rec.filepath), 'takenx.jpg')).toBe('takenx_1.jpg');
+    expect(db.generateUniqueFilename(path.dirname(rec.filepath), 'takenx.jpg', { excludeId: rec.id })).toBe('takenx.jpg');
+  });
+
+  it('renameImage 拒绝改扩展名（含仅大小写漂移），等扩展名才放行', async () => {
+    const dir = tmpDir('extguard');
+    const [rec] = await db.importImages([makeImage('extg.jpg', dir, 'eg')]);
+    expect(db.renameImage(rec.id, 'extg.png')).toEqual({ error: '不允许修改扩展名' });
+    expect(db.renameImage(rec.id, 'extg.JPG')).toEqual({ error: '不允许修改扩展名' });
+    expect(db.renameImage(rec.id, 'extg2.jpg')).toMatchObject({ success: true });
+    expect(fs.existsSync(path.join(path.dirname(rec.filepath), 'extg2.jpg'))).toBe(true);
+  });
+
+  it('renameImage 目标名被失效记录占用（盘上不存在）时报同名冲突，文件不动', async () => {
+    const dir = tmpDir('rmtaken');
+    const [ghost] = await db.importImages([makeImage('ghostt.jpg', dir, 'gh')]);
+    const [src] = await db.importImages([makeImage('srcmm.jpg', dir, 'sr')]);
+    fs.unlinkSync(ghost.filepath);
+    expect(db.renameImage(src.id, 'ghostt.jpg')).toEqual({ error: '同名文件已存在' });
+    expect(fs.existsSync(src.filepath)).toBe(true);
+    expect(db.getImageById(src.id).filepath).toBe(src.filepath);
+  });
+
+  it('改日期：目标 NEF 名被占位文件抢占时整体回滚，JPG/NEF 停在原位', async () => {
+    const dir = tmpDir('datesquat');
+    const [rec] = await db.importImages([makeImage('sq.jpg', dir, 's'), makeImage('sq.nef', dir, 'sn')]);
+    const subDir = path.join(db.getImagesRoot(), '2032', '03', '03');
+    writeFile(path.join(subDir, 'sq.nef'), 'squatter');
+    const res = await db.updateImage(rec.id, { import_date: '2032-03-03' });
+    expect(res.error).toContain('目标 NEF 文件名已被占用');
+    expect(fs.existsSync(rec.filepath)).toBe(true);
+    expect(fs.existsSync(rec.raw_path)).toBe(true);
+    expect(db.getImageById(rec.id).filepath).toBe(rec.filepath);
+    expect(fs.readFileSync(path.join(subDir, 'sq.nef'), 'utf8')).toBe('squatter');
+  });
+
+  it('迁移：主图缺失但 NEF 在盘——NEF 跟随迁移且绑定保留（旧实现 raw_path 写死空串）', async () => {
+    const dir = tmpDir('mvraw');
+    const [rec] = await db.importImages([makeImage('mvn.jpg', dir, 'm'), makeImage('mvn.nef', dir, 'mn')]);
+    fs.unlinkSync(rec.filepath);
+    const oldRaw = rec.raw_path;
+    const newRoot = tmpDir('mvraw-dst');
+    const res = await db.setImagesRoot(newRoot);
+    expect(res.success).toBe(true);
+    const after = db.getImageById(rec.id);
+    expect(after.raw_path.startsWith(path.resolve(newRoot))).toBe(true);
+    expect(fs.existsSync(after.raw_path)).toBe(true);
+    expect(fs.readFileSync(after.raw_path, 'utf8')).toBe('mn');
+    expect(fs.existsSync(oldRaw)).toBe(false);
+    expect(fs.existsSync(after.filepath)).toBe(false);
+  });
+
+  it('迁移：两条记录规划到同一目标（一破一存）→ 后到者派生 _1，事务不再撞 UNIQUE', async () => {
+    const dirA = tmpDir('dupA');
+    const dirB = tmpDir('dupB');
+    const [a] = await db.importImages([makeImage('dup.jpg', dirA, 'aaa')]);
+    const [b] = await db.importImages([makeImage('dup.jpg', dirB, 'bbb')]);
+    fs.unlinkSync(a.filepath);
+    const raw = db.__getDb();
+    const outA = path.join(dirA, 'ghost', 'dup.jpg');
+    const outB = path.join(dirB, 'ghost', 'dup.jpg');
+    writeFile(outB, 'bbb');
+    raw.prepare('UPDATE images SET filepath = ?, import_date = ? WHERE id = ?').run(outA, '2034-01-01', a.id);
+    raw.prepare('UPDATE images SET filepath = ?, import_date = ? WHERE id = ?').run(outB, '2034-01-01', b.id);
+    const newRoot = tmpDir('dup-dst');
+    const res = await db.setImagesRoot(newRoot);
+    expect(res.success).toBe(true);
+    const ra = db.getImageById(a.id);
+    const rb = db.getImageById(b.id);
+    expect(ra.filepath).toBe(path.join(path.resolve(newRoot), '2034', '01', '01', 'dup.jpg'));
+    expect(rb.filepath).toBe(path.join(path.resolve(newRoot), '2034', '01', '01', 'dup_1.jpg'));
+    expect(fs.existsSync(rb.filepath)).toBe(true);
+    expect(fs.readFileSync(rb.filepath, 'utf8')).toBe('bbb');
+    expect(fs.existsSync(ra.filepath)).toBe(false);
+  });
+});

@@ -1,4 +1,4 @@
-import { useRef } from 'react';
+import { useEffect, useRef } from 'react';
 
 const MASK_ADJ_SLIDERS = [
   { key: 'exposure', label: '曝光', min: -2, max: 2, step: 0.05, fmt: (v) => `${v > 0 ? '+' : ''}${v.toFixed(2)}` },
@@ -18,6 +18,18 @@ const TYPE_TITLE = { radial: '径向蒙版', linear: '线性蒙版', range: '亮
 export default function MaskPanel({ masks, session, selectedId, onSelect, onCommit, onChange }) {
   const dragRef = useRef(null);
   const latestRef = useRef(null);
+
+  // Alt+Tab 切走/窗口外松手时滑杆收不到 up：blur 兜底结算并清 dragRef，
+  // 否则残留的真值让后续键盘调整永远跳过 onCommit（改动不入历史，退出即丢）
+  useEffect(() => {
+    const onBlur = () => {
+      if (!dragRef.current) return;
+      dragRef.current = null;
+      if (latestRef.current) onCommit?.('蒙版调整', latestRef.current);
+    };
+    window.addEventListener('blur', onBlur);
+    return () => window.removeEventListener('blur', onBlur);
+  }, [onCommit]);
 
   const nextMasks = (mapper) => mapper(masks.map((m) => ({ ...m, adjustments: { ...m.adjustments } })));
 

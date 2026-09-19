@@ -1942,3 +1942,92 @@ L：IPC 面参数校验与安全边界），主代理逐项对码核实后修复
 ## Git Commit
 
 - `fix: 多代理审查批 6 — 导入文件名路径逃逸/相册改名焦点竞态双 P0 建档 + updateImage 白名单/托管根围栏/裁剪边手柄/乐观写回滚/勾选剪枝与 IME Enter（+37 例）`（未 push）
+
+# 2026-09-19 多代理审查批 7：蒙版/裁剪几何与预览一致性、CompareView/导出/设置页链、数据库与文件树一致性
+
+三路只读审查子代理并行覆盖（M：蒙版/裁剪/分级几何与预览一致性；N：CompareView/导出对话框/
+设置页链；O：数据库备份/失效扫描/文件树一致性），主代理逐项对码核实（M1 以像素探针、
+O 链以真库探针定案）后修复 P0 2 项 + P1 全部 + 选定 P2 若干。O7/O8、M5/M7 核实为已覆盖，未动刀。
+
+## 当前状态
+
+- 分支 `optimize/architecture`；**896 passed / 0 failed**（61 文件，+29 例）；
+  coverage **91.56%** 语句 / **85.03%** 分支 / **81.98%** 函数（thresholds 全达标）；
+  lint 0 error / 10 warnings；typecheck 通过；build 通过；golden 23/23（新增 023）。
+
+## P0（建档 error/crop-flip-rotate-order-divergence.md、error/edit-temp-managed-name-collision.md、error/unique-name-disk-only-db-ghost-occupied.md）
+
+- **M1 crop 映射 flip/rotate 复合顺序写反**：批 4 收口的「crop = base 坐标 + 执行器映射」契约里，
+  `mapCropThroughGeometry` 假设 sharp `rotate(θ).flip()` 是先旋转后翻转；像素探针实测真实语义是
+  **先翻转后旋转（T = R∘F，rot90+单 flip 两序不交换）**，rot∈{90,270} 且带 flip 时导出裁剪窗口
+  镜像错位。flip 反射提前到 rotate 映射之前，预览（CSS/WebGL）/导出/映射三方同序；golden 023 专打该组合。
+- **O1 烘焙 temp 与托管记录同名**：`原名-temp.ext` 派生名撞上库里另一条记录的文件时，
+  openEdit 残留清理**误删无辜图**、bake 渲染**覆写无辜图像素**。新增 `isManagedImagePath`
+  （filepath NOCASE 单行查询）作唯一判据，openEdit 清理与 bake 渲染前两处围栏。
+- **O2 「唯一文件名」只查盘不查库**：filepath 列是 UNIQUE，DB 有记录但文件已不在盘上（失效/损坏）
+  时导入复制成功再 INSERT 撞约束——半截状态或 `INSERT OR IGNORE` 静默跳过；改日期/重命名同理
+  「文件已到位、记录仍指旧路」，迁移整棵树失败零回滚。新增 `isPathTaken`（盘 ∪ DB ∪ 计划目标集）
+  统一判重，日期改/rename/setImagesRoot 的在途 UPDATE 失败全部逆序回滚文件并返回 `{ error }`。
+
+## P1（M 链：几何与预览一致性）
+
+- **M2 WebGL 曲线 LUT 采样分叉**：shader 用 NEAREST `texture()` + `floor(u*256)` 取 LUT，
+  与执行器 `data[byte]` 口径差半格（u=k/255 落在 texel 边界被 floor 拉下一档）。改逐通道
+  `texelFetch(uCurveLut, ivec2(int(x*255.0+0.5),0),0)`，契约测试禁止回退 texture() 采样。
+- **M3 拖拽手势丢 up 卡死**：MaskOverlay/CurveEditor 只监听 pointerup/mouseup，Alt+Tab 切走或
+  窗口外松手时事件不送达，手势与草稿常驻。补 blur 兜底结算（与裁剪拖动既有范式一致）。
+- **M5/M7 核实已覆盖**：8 蒙版上限 addMaskWithGeometry 已 toast 拒绝；feather 基准已是 16px 屏幕像素。
+
+## P1（N 链：导出与设置页）
+
+- **N1 导出/烘焙按钮门禁修正**：`!editDirty` 把「按当前参数导出原图副本」这一合法出口一并锁死，
+  改为只拦 editBusy。
+- **N2 导出/烘焙在途禁退出**：requestExitEdit/放弃更改会 editCancel 删编辑底图，正在渲染的读取
+  随即失败且结果无人可见——editBusy 门禁 + toast 提示稍候。
+- **N3 批量导出在途互斥 + 失败可见**：exportingRef 拒绝二次触发（并发双批往同一目录各写一份）；
+  `exportFiles` 改 COPYFILE_EXCL 逐个避让 `_n` 后缀并收集 failed，返回
+  `{total,copied,nefCopied,failed}`；useBatchActions 与 AlbumsView 两处前端消费失败计数、
+  IPC reject 兜成 error toast。
+- **N4 查重异常不卡按钮**：`db:find-duplicates` 抛穿转 `{ error }`；SettingsPage 查重/失效扫描
+  消费 error 并复位 findingDupes/scanning 态，不再永久转圈。
+
+## P1（O 链：数据库与文件树一致性）
+
+- **O3 迁移断链修复**：setImagesRoot 主图缺失分支原本写 `raw_path: ''` 弄丢 NEF 绑定；
+  现在 NEF 目标先于缺失分支计算并保留绑定，NEF 照常随迁。
+- **O4 迁移与导入串行**：`fs:set-images-root` 纳入 `withImportLock`，杜绝迁移与导入并发互相占名。
+- **O5 renameImage 禁改扩展名**：filename 扩展名与 filepath 不一致会打断 temp 派生/缩略图逻辑。
+- **O6 整盘离线熔断**：`imagesRootUnreachable()`（托管根本身不可达）时失效扫描/清理直接拒绝——
+  否则拔盘后全库被判失效，一键清理将删光记录与标签/相册/评分关联。
+- **O7/O8 核实不动**：备份目标本就来自原生保存对话框（用户亲选，无任意路径写面）；
+  CORRUPT 启动自愈与 whenReady 兜底批 5 已落地。
+
+## 选定 P2
+
+- **M4 MaskPanel 滑杆 blur 结算**：拖拽中途丢 up 时 dragRef 残留为真，后续键盘调整永远跳过
+  onCommit——改动不入历史、退出即丢。blur 兜底提交并清空 dragRef。
+
+## 测试
+
+- **+29 例**（867→896，60→61 文件）+ golden `023-rot90-fliph-crop`（总 23/23）：
+  render/cropGeometry 新文件 7（flip×rotate 组合映射真值表）；maintenance O 链真库 6
+  （幽灵占名派生 `_1`+excludeId、扩展名守卫、rename 冲突、日期改 NEF 占位回滚字节完好、
+  NEF 随迁保绑定、计划目标相撞）；main +4（O1 双围栏、N4 `{error}`、O6 熔断，另 4 例导出
+  契约补 `failed: []`、getImagesRoot 桩改 FIXTURES 适配熔断）；webglPreview 1（LUT texelFetch
+  契约）；MaskOverlay 2 + CurveEditor 1 + MaskPanel 1（blur 结算与不误提交）；
+  SettingsPage.extra 3（查重 `{error}`/reject、失效扫描熔断不出清理按钮）；hooks 3
+  （N3 在途互斥、failed 计数 toast、reject 释放互斥）。
+- lint 清零：exportFiles 避让耗尽错误补 `{ cause: e }`（preserve-caught-error）。
+
+## 遗留（本批核实、需产品口径或下批）
+
+- **importOne rawDestPath 相撞避让只查盘**：占位者是可见记录时会被覆盖（窄窗口，下批 P2 候选）。
+- 日期改/重命名与在途迁移不互斥（existsSync 失败安全，窗口窄，暂不动）。
+- **口径待决（上报用户）**：日期筛选 import_date vs taken_at（沿袭）；J18 查看器退出后已保存参数
+  是否立即改变浏览预览；K12 标签管理是否提供改名；L14 dev webSecurity:false 与 sharp 无限像素预算
+  的发布闸门；J15 查看态未保存旋转归属；N11 对比态旋转翻转疑似只作用 After 侧。
+
+## Git Commit
+
+- `fix: 多代理审查批 7 — 裁剪映射flip/rotate次序+烘焙temp同名双P0建档 + 路径查重盘∪库/迁移回滚/整盘离线熔断/批量导出互斥与失败计数（+29 例）`（未 push）
+

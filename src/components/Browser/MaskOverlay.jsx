@@ -114,10 +114,13 @@ export default function MaskOverlay({
     window.addEventListener('pointerup', onUp);
     // 触摸被系统接管等场景只有 pointercancel 没有 pointerup，不结算会卡住手势与草稿
     window.addEventListener('pointercancel', onUp);
+    // Alt+Tab 切走/窗口外松手时 up 不送达，blur 兜底结算（与裁剪拖动范式一致，审查批 7 M3）
+    window.addEventListener('blur', onUp);
     return () => {
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', onUp);
       window.removeEventListener('pointercancel', onUp);
+      window.removeEventListener('blur', onUp);
     };
   }, [toImagePoint, applyHandle, onCreate, onCommit]);
 

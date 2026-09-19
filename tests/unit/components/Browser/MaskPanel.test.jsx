@@ -76,6 +76,21 @@ describe('MaskPanel（蒙版面板）', () => {
     expect(feather[4].disabled).toBe(true);
   });
 
+  it('拖动无 pointerup 时 blur 结算，dragRef 清空后键盘调整恢复即提交（审查批 7 M4）', () => {
+    const { onCommit } = setup([radial()], 'm1');
+    const cxSlider = screen.getByLabelText(/^中心 X/);
+    fireEvent.pointerDown(cxSlider);
+    fireEvent.change(cxSlider, { target: { value: '220' } });
+    expect(onCommit).not.toHaveBeenCalled();
+    fireEvent.blur(window);
+    expect(onCommit).toHaveBeenCalledTimes(1);
+    expect(onCommit.mock.calls[0][1].find((m) => m.id === 'm1').cx).toBe(220);
+    fireEvent.blur(window); // 无手势的二次 blur 不重复结算
+    expect(onCommit).toHaveBeenCalledTimes(1);
+    fireEvent.change(cxSlider, { target: { value: '240' } });
+    expect(onCommit).toHaveBeenCalledTimes(2); // 键盘路径即时提交，不再被残留 dragRef 吞掉
+  });
+
   it('range 蒙版：chip 显示「亮度」；几何滑杆为中心亮度/范围，羽化可用，调整滑杆生效', () => {
     const range = { type: 'range', id: 'm3', center: 0.35, range: 0.25, feather: 0.25, invert: false, adjustments: { exposure: 0, contrast: 0, saturation: 0, temperature: 0, tint: 0 } };
     const { container, onChange } = setup([radial(), range], 'm3');

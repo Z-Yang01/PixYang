@@ -410,13 +410,23 @@ function ensureDir(dirPath) {
   }
 }
 
-function generateUniqueFilename(targetDir, originalName) {
+// filepath 列是 UNIQUE：只查盘的「唯一名」会漏掉 DB 有记录但文件已不在盘上的失效/损坏记录，
+// 复制/移动成功后落库撞 UNIQUE，留下文件已到位、记录仍指旧路的半截状态（静默失败或抛穿）
+function isPathTaken(fullPath, excludeId, taken) {
+  if (taken && taken.has(fullPath.toLowerCase())) return true;
+  if (fs.existsSync(fullPath)) return true;
+  return excludeId === undefined
+    ? !!getObject('SELECT 1 FROM images WHERE filepath = ? COLLATE NOCASE', [fullPath])
+    : !!getObject('SELECT 1 FROM images WHERE filepath = ? COLLATE NOCASE AND id != ?', [fullPath, excludeId]);
+}
+
+function generateUniqueFilename(targetDir, originalName, opts = {}) {
   const ext = path.extname(originalName);
   const base = path.basename(originalName, ext);
 
   let candidate = originalName;
   let counter = 1;
-  while (fs.existsSync(path.join(targetDir, candidate))) {
+  while (isPathTaken(path.join(targetDir, candidate), opts.excludeId, opts.taken)) {
     candidate = `${base}_${counter}${ext}`;
     counter++;
   }
@@ -740,6 +750,7 @@ function getAllVisibleIds(options = {}) {
 
 async function updateImage(id, updates) {
   let dateMoved = false;
+  const movedFiles = [];
   const moveSets = [];
   const moveParams = [];
   // 修改导入日期时，将文件移动到新日期目录（JPG 与配对 NEF 一起移动）
@@ -755,7 +766,7 @@ async function updateImage(id, updates) {
         const subDir = path.join(root, ...newDate.split('-'));
         ensureDir(subDir);
         // 纵深：历史脏数据/裸 UPDATE 可能已写入带路径分量的 filename
-        const newName = generateUniqueFilename(subDir, path.basename(img.filename));
+        const newName = generateUniqueFilename(subDir, path.basename(img.filename), { excludeId: id });
         const newPath = path.join(subDir, newName);
         let newRawPath = img.raw_path || '';
 
@@ -764,11 +775,10 @@ async function updateImage(id, updates) {
           return { error: '源文件不存在，无法修改导入日期' };
         }
 
-        const moved = [];
         try {
           if (img.filepath !== newPath) {
             await moveFileSafe(img.filepath, newPath);
-            moved.push({ from: img.filepath, to: newPath });
+            movedFiles.push({ from: img.filepath, to: newPath });
           }
           if (img.raw_path && fs.existsSync(img.raw_path)) {
             const targetBase = path.basename(newPath, path.extname(newPath));
@@ -776,15 +786,18 @@ async function updateImage(id, updates) {
             newRawPath = path.join(subDir, `${targetBase}${rawExt}`);
             if (img.raw_path !== newRawPath) {
               try {
+                // POSIX 下 rename 会静默覆盖占用者：主图/其他记录的 NEF 目标名被占必须改走回滚分支
+                if (fs.existsSync(newRawPath)) throw new Error('目标 NEF 文件名已被占用');
                 await moveFileSafe(img.raw_path, newRawPath);
-                moved.push({ from: img.raw_path, to: newRawPath });
+                movedFiles.push({ from: img.raw_path, to: newRawPath });
               } catch (rawErr) {
                 // NEF 移动失败时把已移动的 JPG 移回原位：绝不留下 DB 指向不存在路径的 broken 记录
-                for (const m of moved.reverse()) {
+                for (const m of movedFiles.slice().reverse()) {
                   try { await moveFileSafe(m.to, m.from); } catch (backErr) {
                     console.error('[日期] 回滚移动失败:', m.to, backErr.message);
                   }
                 }
+                movedFiles.length = 0;
                 throw rawErr;
               }
             }
@@ -822,7 +835,19 @@ async function updateImage(id, updates) {
   if (sets.length === 0) return dateMoved ? getImageById(id) : true;
 
   params.push(id);
-  db.prepare(`UPDATE images SET ${sets.join(', ')} WHERE id = ?`).run(...params);
+  try {
+    db.prepare(`UPDATE images SET ${sets.join(', ')} WHERE id = ?`).run(...params);
+  } catch (err) {
+    // 日期移动已把文件落到新路径，UPDATE 抛穿会留下「文件在新路、记录在旧路」的半截状态：
+    // 与 NEF 失败分支同款回滚，让记录与磁盘一起停在原地
+    for (const m of movedFiles.slice().reverse()) {
+      try { await moveFileSafe(m.to, m.from); } catch (backErr) {
+        console.error('[日期] 回滚移动失败:', m.to, backErr.message);
+      }
+    }
+    console.error('[日期] 更新失败:', err.message);
+    return { error: `更新失败：${err.message}` };
+  }
   saveDatabase();
   return dateMoved ? getImageById(id) : true;
 }
@@ -846,11 +871,17 @@ function renameImage(id, newFilename) {
     return { error: '文件名含有非法字符' };
   }
 
+  // 扩展名必须与原名完全一致：改成 .png 之类会让磁盘字节与扩展名分叉（解码/缩略图链按扩展名走），
+  // 大小写漂移（.jpg→.JPG）还会撕裂 NEF 配对主名（basename 剥离按精确后缀匹配区分大小写）
+  if (path.extname(newFilename) !== path.extname(img.filename)) {
+    return { error: '不允许修改扩展名' };
+  }
+
   const oldPath = img.filepath;
   const newPath = path.join(path.dirname(oldPath), newFilename);
 
-  // 检查是否已存在同名文件
-  if (fs.existsSync(newPath) && oldPath !== newPath) {
+  // 同名检查必须连 DB 一起查：失效记录占着的 filepath 不在盘上，只查盘会漏
+  if (oldPath !== newPath && isPathTaken(newPath, id)) {
     return { error: '同名文件已存在' };
   }
 
@@ -888,8 +919,23 @@ function renameImage(id, newFilename) {
     return { error: '重命名失败: ' + err.message };
   }
 
-  db.prepare('UPDATE images SET filename = ?, filepath = ?, raw_path = ? WHERE id = ?')
-    .run(newFilename, newPath, newRawPath, id);
+  try {
+    db.prepare('UPDATE images SET filename = ?, filepath = ?, raw_path = ? WHERE id = ?')
+      .run(newFilename, newPath, newRawPath, id);
+  } catch (err) {
+    // 磁盘改名已完成、DB 写入抛穿 = 文件与记录分叉：把两个文件一起改回原位
+    try {
+      if (img.raw_path && newRawPath !== img.raw_path) fs.renameSync(newRawPath, img.raw_path);
+    } catch (backErr) {
+      console.error('[重命名] 回滚 NEF 失败:', backErr.message);
+    }
+    try {
+      if (oldPath !== newPath) fs.renameSync(newPath, oldPath);
+    } catch (backErr) {
+      console.error('[重命名] 回滚 JPG 失败:', newPath, backErr.message);
+    }
+    return { error: '重命名失败: ' + err.message };
+  }
   saveDatabase();
   return { success: true, newFilename, newPath };
 }
@@ -916,6 +962,14 @@ function moveFileSafeSync(oldPath, newPath) {
   }
 }
 
+function rollbackMoves(moves) {
+  for (const m of moves.slice().reverse()) {
+    try { moveFileSafeSync(m.to, m.from); } catch (backErr) {
+      console.error('[迁移] 回滚移动失败:', m.to, backErr.message);
+    }
+  }
+}
+
 async function setImagesRoot(newRoot) {
   if (!newRoot || typeof newRoot !== 'string') {
     return { error: '保存路径无效' };
@@ -938,6 +992,7 @@ async function setImagesRoot(newRoot) {
   // 回滚已移动文件（尽力），DB 保持原状。
   const plans = [];
   const moves = [];
+  const plannedTargets = new Set();
   const normalizedOldRoot = path.resolve(oldRoot);
   try {
     for (const img of images) {
@@ -955,38 +1010,48 @@ async function setImagesRoot(newRoot) {
 
       let targetPath = path.join(resolvedNewRoot, relativePath);
       const targetDir = path.dirname(targetPath);
-      const uniqueName = generateUniqueFilename(targetDir, path.basename(targetPath));
+      // taken 集合补上「本轮已规划但未落盘」的目标：失效记录的目标路径不在盘上，
+      // 后续真实文件若与之同名会规划到同一路径，tx 里撞 UNIQUE 或互相覆盖
+      const uniqueName = generateUniqueFilename(targetDir, path.basename(targetPath), { excludeId: img.id, taken: plannedTargets });
       targetPath = path.join(targetDir, uniqueName);
+      plannedTargets.add(targetPath.toLowerCase());
+
+      // NEF 目标先算：源主图缺失时若 NEF 仍在盘上也要跟随迁移并保留绑定
+      //（旧实现 raw_path 直接写 ''，「主图没了但 NEF 还在」的记录配对被永久丢弃）
+      let newRawPath = '';
+      if (img.raw_path) {
+        const targetBase = path.basename(targetPath, path.extname(targetPath));
+        const rawExt = path.extname(img.raw_path);
+        newRawPath = path.join(targetDir, `${targetBase}${rawExt}`);
+        plannedTargets.add(newRawPath.toLowerCase());
+        if (newRawPath !== img.raw_path && fs.existsSync(newRawPath)) {
+          throw new Error(`目标 NEF 名已被占用（${path.basename(newRawPath)}）`);
+        }
+      }
 
       if (!fs.existsSync(img.filepath)) {
         // 源缺失的记录（broken）仍跟随迁移改写 DB 到新根（保持整库路径语义一致，测试锁定），
-        // 只是没有文件可移动
-        plans.push({ id: img.id, filename: path.basename(targetPath), filepath: targetPath, raw_path: '', movedFile: false });
+        // 只是没有主文件可移动；NEF 存在则照常移动
+        if (newRawPath && img.raw_path && fs.existsSync(img.raw_path)) {
+          moveFileSafeSync(img.raw_path, newRawPath);
+          moves.push({ from: img.raw_path, to: newRawPath });
+        }
+        plans.push({ id: img.id, filename: path.basename(targetPath), filepath: targetPath, raw_path: newRawPath, movedFile: false });
         continue;
       }
 
       moveFileSafeSync(img.filepath, targetPath);
       moves.push({ from: img.filepath, to: targetPath });
 
-      let newRawPath = '';
-      if (img.raw_path && fs.existsSync(img.raw_path)) {
-        const targetBase = path.basename(targetPath, path.extname(targetPath));
-        const rawExt = path.extname(img.raw_path);
-        newRawPath = path.join(targetDir, `${targetBase}${rawExt}`);
-        if (img.raw_path !== newRawPath) {
-          moveFileSafeSync(img.raw_path, newRawPath);
-          moves.push({ from: img.raw_path, to: newRawPath });
-        }
+      if (newRawPath && img.raw_path && fs.existsSync(img.raw_path) && img.raw_path !== newRawPath) {
+        moveFileSafeSync(img.raw_path, newRawPath);
+        moves.push({ from: img.raw_path, to: newRawPath });
       }
 
       plans.push({ id: img.id, filename: path.basename(targetPath), filepath: targetPath, raw_path: newRawPath, movedFile: true });
     }
   } catch (err) {
-    for (const m of moves.reverse()) {
-      try { moveFileSafeSync(m.to, m.from); } catch (backErr) {
-        console.error('[迁移] 回滚移动失败:', m.to, backErr.message);
-      }
-    }
+    rollbackMoves(moves);
     return { error: `移动失败：${err.message}` };
   }
 
@@ -996,7 +1061,15 @@ async function setImagesRoot(newRoot) {
         .run(plan.filename, plan.filepath, plan.raw_path, plan.id);
     }
   });
-  tx();
+  try {
+    tx();
+  } catch (err) {
+    // 事务失败 DB 自动回到旧根：已搬到新根的文件必须一起搬回，
+    // 否则整库记录指向已不存在的旧路径，且下次失效扫描会把好文件判成残留
+    rollbackMoves(moves);
+    console.error('[迁移] 事务写入失败:', err.message);
+    return { error: `迁移写库失败：${err.message}` };
+  }
   const moved = plans.filter((p) => p.movedFile).length;
 
   IMAGES_ROOT = resolvedNewRoot;
@@ -1787,6 +1860,14 @@ function cleanupStaleBakeTemps() {
   }
 }
 
+// 某绝对路径是否正是图库记录管理的图片文件（Windows 路径大小写不敏感，NOCASE 比对）。
+// 编辑 temp（原名-temp.ext）与托管记录同名时的删/写围栏——启动清扫有同款判定，
+// 运行期入口同样必须有，否则 unlink/渲染覆写会直接毁掉另一条记录的文件（审查批 7 O1）
+function isManagedImagePath(filepath) {
+  if (!filepath) return false;
+  return !!getObject('SELECT 1 FROM images WHERE filepath = ? COLLATE NOCASE', [filepath]);
+}
+
 // 重复图片检测：按 (大小, 尺寸) 粗分组，组内用首尾 64KB 快速哈希精确验证
 function findDuplicates() {
   const rows = db.prepare('SELECT id, filename, filepath, size, width, height, format, thumbnail_path FROM images WHERE hidden = 0').all();
@@ -1925,6 +2006,7 @@ module.exports = {
   enforceEditPreviewLimit,
   findBrokenRecords,
   deleteBrokenRecords,
+  isManagedImagePath,
   findDuplicates,
   getImportDates,
   getTags,

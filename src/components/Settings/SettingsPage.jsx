@@ -205,6 +205,7 @@ export default function SettingsPage({ onSettingsChanged, onImagesChanged }) {
       return;
     }
     setScanningBroken(false);
+    if (list?.error) { setMessage(list.error); return; }
     setBrokenRecords(list);
     if (list.length === 0) showSaved('未发现失效记录');
   };
@@ -226,8 +227,15 @@ export default function SettingsPage({ onSettingsChanged, onImagesChanged }) {
   const handleFindDuplicates = async () => {
     if (!api.isBridgeAvailable() || findingDupes) return;
     setFindingDupes(true);
-    const groups = await api.findDuplicates();
+    let groups;
+    try {
+      groups = await api.findDuplicates();
+    } catch (e) {
+      console.error('[settings] 查重失败:', e.message);
+      groups = { error: `检测失败: ${e.message}` };
+    }
     setFindingDupes(false);
+    if (groups?.error) { setMessage(groups.error); return; }
     if (!groups || groups.length === 0) {
       showSaved('未发现重复图片');
       return;

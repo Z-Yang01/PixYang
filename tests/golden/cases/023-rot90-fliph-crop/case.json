@@ -1,0 +1,8 @@
+{
+  "fixture": "landscape.jpg",
+  "tolerance": {
+    "maxDelta": 0,
+    "meanDelta": 0
+  },
+  "description": "023-rot90-fliph-crop"
+}

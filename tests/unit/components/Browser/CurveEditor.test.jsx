@@ -57,6 +57,19 @@ describe('CurveEditor（曲线编辑器）', () => {
     expect(onChange).toHaveBeenCalledTimes(2);
   });
 
+  it('拖点无 mouseup 直接 blur 也结算（Alt+Tab 切走兜底，审查批 7 M3）', () => {
+    const { onCommit, onChange, svg } = setup();
+    fireEvent.mouseDown(svg, { clientX: 50, clientY: 50 });
+    fireEvent.mouseMove(window, { clientX: 60, clientY: 40 });
+    expect(onCommit).not.toHaveBeenCalled();
+    fireEvent.blur(window);
+    expect(onCommit).toHaveBeenCalledTimes(1);
+    fireEvent.blur(window); // 无手势时不重复结算
+    expect(onCommit).toHaveBeenCalledTimes(1);
+    fireEvent.mouseMove(window, { clientX: 90, clientY: 10 }); // 手势已清空，不再实时更新
+    expect(onChange).toHaveBeenCalledTimes(2);
+  });
+
   it('内部锚点拖出面板即删除', () => {
     const { onCommit, onChange, svg } = setup({ rgb: [0, 0, 0.5, 0.5, 1, 1], r: [], g: [], b: [] });
     // 命中中间点 (0.5,0.5) → 屏幕 (50,50)

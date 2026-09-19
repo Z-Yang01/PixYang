@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { toast } from 'sonner';
 import api from '@/lib/api';
 import { isEnterSubmit } from '@/lib/shortcuts';
@@ -82,17 +82,28 @@ export default function AlbumsView({ onSelectAlbum, onRefresh }) {
     onRefresh?.();
   };
 
+  const exportingRef = useRef(false);
   const handleExport = async (album) => {
-    if (!api.isBridgeAvailable()) return;
+    if (!api.isBridgeAvailable() || exportingRef.current) return;
     const destDir = await api.selectExportDirectory();
     if (!destDir) return;
-    const result = await api.exportAlbumImages(album.id, destDir);
-    if (!result || result.error) {
-      toast.error(result?.error || '导出失败');
-      return;
+    exportingRef.current = true;
+    try {
+      const result = await api.exportAlbumImages(album.id, destDir);
+      if (!result || result.error) {
+        toast.error(result?.error || '导出失败');
+        return;
+      }
+      const nefText = result.nefCopied > 0 ? `，含配对 NEF ${result.nefCopied} 个` : '';
+      const base = `已导出 ${result.copied} / ${result.total} 张图片${nefText}`;
+      if (result.failed?.length) toast.error(`${base}，${result.failed.length} 个文件失败`);
+      else toast.success(base);
+    } catch (e) {
+      console.error('[albums] 导出失败:', e.message);
+      toast.error(`导出失败: ${e.message}`);
+    } finally {
+      exportingRef.current = false;
     }
-    const nefText = result.nefCopied > 0 ? `，含配对 NEF ${result.nefCopied} 个` : '';
-    toast.success(`已导出 ${result.copied} / ${result.total} 张图片${nefText}`);
   };
 
   return (

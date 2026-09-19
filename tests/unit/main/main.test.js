@@ -192,7 +192,7 @@ const electronStub = {
 const dbDefaults = {
   initDatabase: async () => {},
   saveDatabase: () => {},
-  getImagesRoot: () => 'C:/PixYangImages',
+  getImagesRoot: () => FIXTURES,
   getDatabasePath: () => path.join(TMP_BASE, 'pixyang.db'),
   backupDatabase: async () => {},
   getThumbnailFilePath: (id) => path.join(THUMBS, `${id}.jpg`),
@@ -231,6 +231,7 @@ const dbDefaults = {
   enforceEditPreviewLimit: () => 0,
   findBrokenRecords: () => [],
   deleteBrokenRecords: async () => ({ removed: [], unbound: [] }),
+  isManagedImagePath: () => false,
   findDuplicates: () => [],
   getImportDates: () => [],
   getTags: () => [],
@@ -617,7 +618,7 @@ describe('查询委托类 handler', () => {
   });
 
   it('fs:get-images-root / fs:get-database-path 透传', async () => {
-    await expect(call('fs:get-images-root')).resolves.toBe('C:/PixYangImages');
+    await expect(call('fs:get-images-root')).resolves.toBe(FIXTURES);
     expect(dbStub.getImagesRoot).toHaveBeenCalled();
     await expect(call('fs:get-database-path')).resolves.toBe(path.join(TMP_BASE, 'pixyang.db'));
     expect(dbStub.getDatabasePath).toHaveBeenCalled();
@@ -739,6 +740,19 @@ describe('写入委托类 handler', () => {
     const groups = [{ hash: 'aa', ids: [1, 2] }];
     dbStub.findDuplicates.mockReturnValueOnce(groups);
     await expect(call('db:find-duplicates')).resolves.toBe(groups);
+  });
+
+  it('db:find-duplicates：IPC 异常转 { error } 不 reject（批 7 N4）', async () => {
+    dbStub.findDuplicates.mockImplementationOnce(() => { throw new Error('CORRUPT'); });
+    await expect(call('db:find-duplicates')).resolves.toEqual({ error: expect.stringContaining('CORRUPT') });
+  });
+
+  it('整盘离线熔断：根目录不可达时 scan/delete-broken 直接拒绝，全库不被误判失效（批 7 O6）', async () => {
+    dbStub.getImagesRoot.mockReturnValue(path.join(TMP_BASE, 'no-such-root-o6'));
+    await expect(call('db:scan-broken-records')).resolves.toEqual({ error: expect.stringContaining('已中止扫描') });
+    await expect(call('db:delete-broken-records', [1, 2])).resolves.toEqual({ error: expect.stringContaining('已中止清理') });
+    expect(dbStub.findBrokenRecords).not.toHaveBeenCalled();
+    expect(dbStub.deleteBrokenRecords).not.toHaveBeenCalled();
   });
 });
 
@@ -1160,6 +1174,40 @@ describe('编辑会话（非破坏保存）', () => {
     await call('fs:edit-cancel', 77);
   });
 
+  it('fs:edit-open：temp 名撞另一条托管记录的文件时不清理（审查批 7 O1）', async () => {
+    fs.writeFileSync(path.join(FIXTURES, 'editme.jpg'), 'img');
+    fs.writeFileSync(path.join(FIXTURES, 'editme-temp.jpg'), 'someone-elses-photo');
+    dbStub.getImageById.mockReturnValueOnce(editImage());
+    dbStub.isManagedImagePath.mockImplementation((p) => p.toLowerCase().endsWith('editme-temp.jpg'));
+    try {
+      const session = await call('fs:edit-open', 77);
+      expect(session.error).toBeUndefined();
+      expect(fs.existsSync(path.join(FIXTURES, 'editme-temp.jpg'))).toBe(true);
+      expect(fs.readFileSync(path.join(FIXTURES, 'editme-temp.jpg'), 'utf8')).toBe('someone-elses-photo');
+      await call('fs:edit-cancel', 77);
+    } finally {
+      fs.rmSync(path.join(FIXTURES, 'editme-temp.jpg'), { force: true });
+    }
+  });
+
+  it('fs:edit-bake：temp 与托管记录同名时拒绝渲染，不覆写他人文件（审查批 7 O1）', async () => {
+    fs.writeFileSync(path.join(FIXTURES, 'editme.jpg'), 'img');
+    fs.writeFileSync(path.join(FIXTURES, 'editme-temp.jpg'), 'someone-elses-photo');
+    dbStub.getImageById.mockReturnValueOnce(editImage());
+    dbStub.isManagedImagePath.mockImplementation((p) => p.toLowerCase().endsWith('editme-temp.jpg'));
+    try {
+      await call('fs:edit-open', 77);
+      renderModuleStub.renderFromEditParams.mockClear();
+      const r = await call('fs:edit-bake', 77, sampleEdits);
+      expect(r.error).toContain('冲突');
+      expect(renderModuleStub.renderFromEditParams).not.toHaveBeenCalled();
+      expect(fs.readFileSync(path.join(FIXTURES, 'editme-temp.jpg'), 'utf8')).toBe('someone-elses-photo');
+      await call('fs:edit-cancel', 77);
+    } finally {
+      fs.rmSync(path.join(FIXTURES, 'editme-temp.jpg'), { force: true });
+    }
+  });
+
   it('db:delete-image：删除后取消打开中的编辑会话并清理派生文件', async () => {
     fs.writeFileSync(path.join(FIXTURES, 'editme.jpg'), 'img');
     dbStub.getImageById.mockReturnValueOnce(editImage());
@@ -1258,7 +1306,7 @@ describe('缩略图重建、导出与备份', () => {
       }[id] || null
     ));
     const result = await call('fs:export-images', ['1', '2', '3'], dest);
-    expect(result).toEqual({ total: 2, copied: 1, nefCopied: 1 });
+    expect(result).toEqual({ total: 2, copied: 1, nefCopied: 1, failed: [] });
     expect(fs.readFileSync(path.join(dest, 'a.jpg'), 'utf8')).toBe('A');
     expect(fs.readFileSync(path.join(dest, 'a.nef'), 'utf8')).toBe('RAW-A');
   });
@@ -1274,7 +1322,7 @@ describe('缩略图重建、导出与备份', () => {
         : null
     ));
     const result = await call('fs:export-images', ['c'], dest);
-    expect(result).toEqual({ total: 1, copied: 1, nefCopied: 1 });
+    expect(result).toEqual({ total: 1, copied: 1, nefCopied: 1, failed: [] });
     expect(fs.readFileSync(path.join(dest, 'c_1.jpg'), 'utf8')).toBe('C');
     expect(fs.readFileSync(path.join(dest, 'c_1.nef'), 'utf8')).toBe('RAW-C');
     expect(fs.readFileSync(path.join(dest, 'c.jpg'), 'utf8')).toBe('OLD');
@@ -1287,7 +1335,7 @@ describe('缩略图重建、导出与备份', () => {
       { filename: 'a.jpg', filepath: path.join(FIXTURES, 'a.jpg'), raw_path: path.join(FIXTURES, 'a.nef') },
     ]);
     const result = await call('fs:export-album-images', 4, dest);
-    expect(result).toEqual({ total: 1, copied: 1, nefCopied: 1 });
+    expect(result).toEqual({ total: 1, copied: 1, nefCopied: 1, failed: [] });
     expect(dbStub.getAlbumImages).toHaveBeenCalledWith(4);
   });
 
@@ -1307,7 +1355,7 @@ describe('缩略图重建、导出与备份', () => {
       }[id] || null
     ));
     const result = await call('fs:export-images', ['dirty', 'blank'], dest);
-    expect(result).toEqual({ total: 2, copied: 1, nefCopied: 0 });
+    expect(result).toEqual({ total: 2, copied: 1, nefCopied: 0, failed: [] });
     expect(fs.readFileSync(path.join(dest, 'outside.jpg'), 'utf8')).toBe('A');
     expect(fs.existsSync(path.join(TMP_BASE, 'outside.jpg'))).toBe(false);
   });

@@ -278,6 +278,34 @@ describe('SettingsPage（补充：存储/相机/维护/备份/重复图片等交
     expect(await screen.findByText(/未发现重复图片/)).toBeInTheDocument();
   });
 
+  it('查找重复图片：{error} 返回值显式提示且不卡在「查找中」（审查批 7 N4）', async () => {
+    window.pixyang.findDuplicates.mockResolvedValue({ error: '检测失败: 数据库忙' });
+    renderPage();
+    await screen.findByText('C:/PixData');
+    fireEvent.click(screen.getByText('查找重复图片'));
+    expect(await screen.findByText('检测失败: 数据库忙')).toBeInTheDocument();
+    expect(await screen.findByText('查找重复图片')).toBeInTheDocument(); // 按钮复位可重试
+  });
+
+  it('查找重复图片：IPC reject 前端接住转错误，不卡死（审查批 7 N4）', async () => {
+    window.pixyang.findDuplicates.mockRejectedValue(new Error('IPC 超时'));
+    renderPage();
+    await screen.findByText('C:/PixData');
+    fireEvent.click(screen.getByText('查找重复图片'));
+    expect(await screen.findByText('检测失败: IPC 超时')).toBeInTheDocument();
+    expect(await screen.findByText('查找重复图片')).toBeInTheDocument();
+  });
+
+  it('失效记录扫描：整盘离线熔断返回 {error} 时提示而非全库判失效（审查批 7 O6）', async () => {
+    window.pixyang.scanBrokenRecords.mockResolvedValue({ error: '图片根目录不可访问（磁盘可能离线），已中止扫描' });
+    renderPage();
+    await screen.findByText('C:/PixData');
+    fireEvent.click(screen.getByText('扫描失效记录'));
+    expect(await screen.findByText('图片根目录不可访问（磁盘可能离线），已中止扫描')).toBeInTheDocument();
+    expect(screen.queryByText('清理失效记录')).not.toBeInTheDocument(); // 不进入清理态
+    expect(window.pixyang.deleteBrokenRecords).not.toHaveBeenCalled();
+  });
+
   it('查找重复图片：分组展示、切换保留项并删除释放空间', async () => {
     const onImagesChanged = vi.fn();
     const groups = [{

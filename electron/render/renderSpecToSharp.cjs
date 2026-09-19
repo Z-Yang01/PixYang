@@ -457,12 +457,15 @@ async function encodeAndWrite(pixels, inputPath, outputPath, encodeStage, spec, 
   return outputPath;
 }
 
-// 底图（geometry 前）裁剪矩形 → 变换后坐标系：与 applyGeometry 的
-// rotate(顺时针 90 倍数) → flipV → flipH 次序严格一致
+// 底图（geometry 前）裁剪矩形 → 变换后坐标系。sharp 实测：`rotate(θ).flip()/.flop()`
+// 的真实语义是先在底图帧翻转、再旋转（T = R∘F，rot90+单 flip 与反序不交换），
+// 与 CSS `rotate() scale()` 及 shared/maskGeometry 先翻转后旋转同式，故映射同序
 function mapCropThroughGeometry(p, g) {
   let { x, y, w, h } = p;
   let W = g.w;
   let H = g.h;
+  if (g.flipV) y = H - y - h;
+  if (g.flipH) x = W - x - w;
   const rot = ((Math.round((g.rotate || 0) % 360) + 360) % 360);
   if (rot === 90 || rot === 270) {
     const nx = rot === 90 ? H - y - h : y;
@@ -474,8 +477,6 @@ function mapCropThroughGeometry(p, g) {
     x = W - x - w;
     y = H - y - h;
   }
-  if (g.flipV) y = H - y - h;
-  if (g.flipH) x = W - x - w;
   return { ...p, x, y, w, h };
 }
 

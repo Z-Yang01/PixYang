@@ -36,6 +36,7 @@ const {
   deleteImage,
   batchDeleteImages,
   cleanupStaleBakeTemps,
+  isManagedImagePath,
   saveEditedImage,
   getEdits,
   saveEdits,
@@ -446,11 +447,11 @@ async function openEditSession(id) {
 
   const ext = path.extname(img.filepath).toLowerCase();
 
-  // 清理上次烘焙中断的残留 temp（各格式变体）
+  // 清理上次烘焙中断的残留 temp（各格式变体）；托管记录同名的文件不是残留，绝不删
   for (const variant of ['.jpg', '.png', '.webp']) {
     try {
       const staleTemp = editTempPathFor(img.filepath, variant);
-      if (fs.existsSync(staleTemp)) fs.unlinkSync(staleTemp);
+      if (fs.existsSync(staleTemp) && !isManagedImagePath(staleTemp)) fs.unlinkSync(staleTemp);
     } catch { /* 占用中跳过 */ }
   }
 
@@ -502,6 +503,10 @@ async function bakeEditSession(id, edits) {
   const outFormat = session.format === '.png' ? 'png' : (session.format === '.webp' ? 'webp' : 'jpeg');
   const outExt = outFormat === 'png' ? '.png' : (outFormat === 'webp' ? '.webp' : '.jpg');
   const tempPath = editTempPathFor(session.filepath, outExt);
+  // temp 名撞上另一条托管记录的文件时渲染覆写会毁掉那张图——先围栏后渲染（审查批 7 O1）
+  if (isManagedImagePath(tempPath)) {
+    return { error: `临时文件名与图库中另一图片冲突（${path.basename(tempPath)}），请重命名冲突图片后重试` };
+  }
   let dims;
   try {
     dims = await renderFromEditParams(
@@ -950,11 +955,20 @@ function setupIPC() {
   });
 
   // ── 失效记录维护 ──
+  // 整盘离线熔断：托管根本身不可达时所有 filepath 的 existsSync 都是 false，
+  // 扫描会把全库判成失效、一键清理将删光记录与标签/相册/评分关联（文件无辜，元数据有损）
+  function imagesRootUnreachable() {
+    const root = getImagesRoot();
+    return !!root && !fs.existsSync(root);
+  }
+
   ipcMain.handle('db:scan-broken-records', async () => {
+    if (imagesRootUnreachable()) return { error: '图片根目录不可访问（磁盘可能离线），已中止扫描' };
     return findBrokenRecords();
   });
 
   ipcMain.handle('db:delete-broken-records', async (_event, ids) => {
+    if (imagesRootUnreachable()) return { error: '图片根目录不可访问（磁盘可能离线），已中止清理' };
     try {
       const list = ids || [];
       const { removed, unbound } = await deleteBrokenRecords(list);
@@ -971,26 +985,41 @@ function setupIPC() {
 
   // 重复图片检测（元数据粗分组 + 快速哈希验证）
   ipcMain.handle('db:find-duplicates', async () => {
-    return findDuplicates();
+    try {
+      return findDuplicates();
+    } catch (e) {
+      console.error('[ipc] 重复检测失败:', e.message);
+      return { error: `检测失败: ${e.message}` };
+    }
   });
 
   // 更新图片字段（import_date 变更会移动文件：打开中的编辑会话路径需同步）
   ipcMain.handle('db:update-image', async (_event, id, updates) => {
-    const result = await updateImage(id, updates);
-    if (result && !result.error && updates && updates.import_date) {
-      reconcileEditSessionPaths(id, getImageById(id));
+    try {
+      const result = await updateImage(id, updates || {});
+      if (result && !result.error && updates && updates.import_date) {
+        reconcileEditSessionPaths(id, getImageById(id));
+      }
+      return result;
+    } catch (e) {
+      console.error('[ipc] 更新图片失败:', e.message);
+      return { error: `更新失败: ${e.message}` };
     }
-    return result;
   });
 
   // 重命名图片（同时更新文件名和磁盘文件；打开中的编辑会话路径同步，避免烘焙报底图丢失）
   ipcMain.handle('db:rename-image', async (_event, id, newFilename) => {
-    const result = await renameImage(id, newFilename);
-    if (result === false) return { error: '记录不存在或已被删除' };
-    if (result && result.success) {
-      reconcileEditSessionPaths(id, getImageById(id));
+    try {
+      const result = await renameImage(id, newFilename);
+      if (result === false) return { error: '记录不存在或已被删除' };
+      if (result && result.success) {
+        reconcileEditSessionPaths(id, getImageById(id));
+      }
+      return result;
+    } catch (e) {
+      console.error('[ipc] 重命名失败:', e.message);
+      return { error: `重命名失败: ${e.message}` };
     }
-    return result;
   });
 
   // 删除图片（含编辑派生文件清理：预览缩略图、编辑底图缓存，并取消打开中的编辑会话）
@@ -1089,9 +1118,10 @@ function setupIPC() {
 
   ipcMain.handle('fs:set-images-root', async (_event, dirPath) => {
     // ensureDir/磁盘操作可抛（权限、无效路径）：不转返回值会让渲染进程的 await 直接 reject
+    // 迁移与导入共用串行锁：迁移快照 DB 后逐张搬文件，期间落库的新导入记录指向已被搬走的旧根
     let result;
     try {
-      result = await setImagesRoot(dirPath);
+      result = await withImportLock(() => setImagesRoot(dirPath));
     } catch (e) {
       console.error('[ipc] 迁移图片目录失败:', e.message);
       return { error: `迁移失败: ${e.message}` };
@@ -1143,50 +1173,60 @@ function setupIPC() {
     return result.filePaths[0];
   });
 
-  // 导出文件（JPG + 配对 NEF），处理重名
+  // 导出文件（JPG + 配对 NEF），处理重名。
+  // 冲突避让用 COPYFILE_EXCL 独占创建：existsSync+copyFile 在并发导出（批量/相册两路
+  // 或用户连点）下会算出同一目标互相覆盖，EXCL 的 EEXIST 才是真预约（审查批 7 N3）。
+  // 逐文件 try/catch：单张失败不废整批，failed 清单回传前端播报（审查批 7 N12）
   async function exportFiles(images, destDir) {
     if (typeof destDir !== 'string' || !destDir) throw new Error('导出目标目录无效');
+    const copyExclusive = async (src, dest) => {
+      const ext = path.extname(dest);
+      const base = path.basename(dest, ext);
+      let finalDest = dest;
+      let n = 1;
+      for (;;) {
+        try {
+          await fs.promises.copyFile(src, finalDest, fs.constants.COPYFILE_EXCL);
+          return;
+        } catch (e) {
+          if (e.code !== 'EEXIST') throw e;
+          finalDest = path.join(path.dirname(dest), `${base}_${n}${ext}`);
+          n++;
+          if (n > 9999) throw new Error('目标目录同名文件过多，避让失败', { cause: e });
+        }
+      }
+    };
     let copied = 0;
     let nefCount = 0;
+    const failed = [];
     for (const img of images) {
       // 纵深：导出名只取 basename，脏 filename 不能借 join 逃出目标目录
       const outName = path.basename(img.filename || '');
       if (!outName) continue;
-      if (fs.existsSync(img.filepath)) {
-        const dest = path.join(destDir, outName);
-        let finalDest = dest;
-        let n = 1;
-        while (fs.existsSync(finalDest)) {
-          const ext = path.extname(outName);
-          const base = path.basename(outName, ext);
-          finalDest = path.join(destDir, `${base}_${n}${ext}`);
-          n++;
+      try {
+        if (fs.existsSync(img.filepath)) {
+          await copyExclusive(img.filepath, path.join(destDir, outName));
+          copied++;
         }
-        await fs.promises.copyFile(img.filepath, finalDest);
-        copied++;
-      }
-
-      if (img.raw_path && fs.existsSync(img.raw_path)) {
-        const rawExt = path.extname(img.raw_path);
-        const destBase = path.basename(outName, path.extname(outName));
-        let rawDest = path.join(destDir, `${destBase}${rawExt}`);
-        let m = 1;
-        while (fs.existsSync(rawDest)) {
-          rawDest = path.join(destDir, `${destBase}_${m}${rawExt}`);
-          m++;
+        if (img.raw_path && fs.existsSync(img.raw_path)) {
+          const rawExt = path.extname(img.raw_path);
+          const destBase = path.basename(outName, path.extname(outName));
+          await copyExclusive(img.raw_path, path.join(destDir, `${destBase}${rawExt}`));
+          nefCount++;
         }
-        await fs.promises.copyFile(img.raw_path, rawDest);
-        nefCount++;
+      } catch (e) {
+        failed.push(`${outName}: ${e.message}`);
       }
     }
-    return { copied, nefCount };
+    if (failed.length) console.warn(`[导出] ${failed.length} 个文件失败:`, failed.join('; '));
+    return { copied, nefCount, failed };
   }
 
   ipcMain.handle('fs:export-album-images', async (_event, albumId, destDir) => {
     try {
       const images = getAlbumImages(albumId);
       const r = await exportFiles(images, destDir);
-      return { total: images.length, copied: r.copied, nefCopied: r.nefCount };
+      return { total: images.length, copied: r.copied, nefCopied: r.nefCount, failed: r.failed };
     } catch (e) {
       console.error('[ipc] 相册导出失败:', e.message);
       return { error: `导出失败: ${e.message}` };
@@ -1202,7 +1242,7 @@ function setupIPC() {
         if (img) images.push(img);
       }
       const r = await exportFiles(images, destDir);
-      return { total: images.length, copied: r.copied, nefCopied: r.nefCount };
+      return { total: images.length, copied: r.copied, nefCopied: r.nefCount, failed: r.failed };
     } catch (e) {
       console.error('[ipc] 导出失败:', e.message);
       return { error: `导出失败: ${e.message}` };

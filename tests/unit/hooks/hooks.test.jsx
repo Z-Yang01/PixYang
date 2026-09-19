@@ -297,3 +297,66 @@ describe('useBatchActions 异步收尾守卫', () => {
     expect(showToast).toHaveBeenCalledWith('已取消收藏（2 张）', 'success');
   });
 });
+
+describe('useBatchActions 批量导出（批 7 N3：在途互斥 + failed 计数 + reject 兜底）', () => {
+  const out = { current: null };
+  const showToast = vi.fn();
+  function ExportHarness() {
+    out.current = useBatchActions({ showToast });
+    return null;
+  }
+
+  beforeEach(() => {
+    useGalleryStore.setState(initialSnapshot, true);
+    useGalleryStore.setState({ selectedIds: new Set([1, 2]) });
+    showToast.mockClear();
+    window.pixyang = {};
+  });
+
+  afterEach(() => {
+    cleanup();
+    delete window.pixyang;
+  });
+
+  it('exportImages 在途时再次触发被拒绝，不发第二批（同目录重复导出）', async () => {
+    let resolveDir;
+    let resolveExp;
+    window.pixyang.selectExportDirectory = vi.fn(() => new Promise((r) => { resolveDir = r; }));
+    window.pixyang.exportImages = vi.fn(() => new Promise((r) => { resolveExp = r; }));
+    render(<ExportHarness />);
+    let t1;
+    act(() => { t1 = out.current.handleExportSelected(); });
+    await act(async () => { resolveDir('C:/out'); });
+    expect(window.pixyang.exportImages).toHaveBeenCalledTimes(1);
+    let t2;
+    act(() => { t2 = out.current.handleExportSelected(); });
+    expect(window.pixyang.exportImages).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      resolveExp({ total: 2, copied: 2, nefCopied: 0, failed: [] });
+      await Promise.all([t1, t2]);
+    });
+    expect(showToast).toHaveBeenCalledTimes(1);
+    expect(showToast).toHaveBeenCalledWith('已导出 2 / 2 张图片', 'success');
+  });
+
+  it('部分文件失败：toast 带失败数且类型为 error', async () => {
+    window.pixyang.selectExportDirectory = vi.fn().mockResolvedValue('C:/out');
+    window.pixyang.exportImages = vi.fn().mockResolvedValue({ total: 2, copied: 1, nefCopied: 0, failed: ['a.jpg: EPERM'] });
+    render(<ExportHarness />);
+    await act(async () => { await out.current.handleExportSelected(); });
+    expect(showToast).toHaveBeenCalledWith('已导出 1 / 2 张图片，1 个文件失败', 'error');
+  });
+
+  it('IPC reject：兜成 error toast 且释放互斥，下一次导出可正常发起', async () => {
+    window.pixyang.selectExportDirectory = vi.fn().mockResolvedValue('C:/out');
+    window.pixyang.exportImages = vi.fn()
+      .mockRejectedValueOnce(new Error('disk yanked'))
+      .mockResolvedValueOnce({ total: 2, copied: 2, nefCopied: 1, failed: [] });
+    render(<ExportHarness />);
+    await act(async () => { await out.current.handleExportSelected(); });
+    expect(showToast).toHaveBeenCalledWith('导出失败: disk yanked', 'error');
+    await act(async () => { await out.current.handleExportSelected(); });
+    expect(window.pixyang.exportImages).toHaveBeenCalledTimes(2);
+    expect(showToast).toHaveBeenCalledWith('已导出 2 / 2 张图片，含配对 NEF 1 个', 'success');
+  });
+});

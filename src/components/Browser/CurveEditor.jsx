@@ -99,9 +99,12 @@ export default function CurveEditor({ curves, onCommit, onChange, epoch = 0 }) {
     };
     window.addEventListener('mousemove', onMove);
     window.addEventListener('mouseup', onUp);
+    // 窗口失焦（Alt+Tab 等）时 mouseup 不会送达，兜底结算避免拖点卡住/历史漏记（审查批 7 M3）
+    window.addEventListener('blur', onUp);
     return () => {
       window.removeEventListener('mousemove', onMove);
       window.removeEventListener('mouseup', onUp);
+      window.removeEventListener('blur', onUp);
     };
   }, [writePoints, onCommit]);
 

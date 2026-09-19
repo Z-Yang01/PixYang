@@ -395,7 +395,12 @@ export default function ImageViewer({
   }, [image, editBusy, onImageUpdated, cleanupEditSession, composeOps]);
 
   // 退出编辑：有未保存的参数变更时先确认（放弃=不写参数，原图/像素均不受影响）
+  // 导出/烘焙在途禁止退出：editCancel 会删编辑底图，渲染中的读取随即失败且结果无人可见（审查批 7 N2）
   const requestExitEdit = useCallback(() => {
+    if (editBusy) {
+      toast.info('导出/保存进行中，请稍候');
+      return;
+    }
     if (opsChanged(composeOps(), savedBaselineRef.current)) {
       setExitConfirm(true);
       return;
@@ -403,9 +408,10 @@ export default function ImageViewer({
     api.editCancel(image?.id);
     setEditing(false);
     cleanupEditSession();
-  }, [image?.id, cleanupEditSession, composeOps]);
+  }, [image?.id, editBusy, cleanupEditSession, composeOps]);
 
   const discardEditAndExit = useCallback(async () => {
+    if (editBusy) return;
     setExitConfirm(false);
     await api.editCancel(image?.id);
     setEditing(false);
@@ -414,7 +420,7 @@ export default function ImageViewer({
     setRotation(Number(image?.rotation) || 0);
     setFlipH(!!image?.flip_h);
     setFlipV(!!image?.flip_v);
-  }, [image, cleanupEditSession]);
+  }, [image, editBusy, cleanupEditSession]);
 
   // ── 预设 / 复制粘贴 ──
   const [presets, setPresets] = useState([]);
@@ -1693,7 +1699,7 @@ export default function ImageViewer({
             <div className="editor-footer-row">
               <Button
                 variant="secondary" size="sm" className="w-full"
-                disabled={editBusy || !editDirty}
+                disabled={editBusy}
                 onClick={openExportDialog}
                 title="按当前参数渲染新文件到所选目录，绝不覆盖原图"
               >
@@ -1701,7 +1707,7 @@ export default function ImageViewer({
               </Button>
               <Button
                 variant="destructive" size="sm" className="w-full"
-                disabled={editBusy || !editDirty}
+                disabled={editBusy}
                 onClick={() => setBakeConfirm(true)}
                 title="渲染当前效果并覆盖原图文件（不可逆，NEF 底片保留）"
               >

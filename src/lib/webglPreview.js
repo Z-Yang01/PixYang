@@ -142,10 +142,12 @@ void main() {
   }
   if (uHighlightsSlope != 1.0) c *= uHighlightsSlope;
   if (uCurveLutOn > 0.5) {
+    // texelFetch 显式最近邻取整（round 语义），与执行器 applyCurveLutsInPlace 的
+    // data[byte] 同式；NEAREST+floor(u*256) 在上半值区间存在差一输入档的采样分叉
     c = vec3(
-      texture(uCurveLut, vec2(c.r, 0.5)).r,
-      texture(uCurveLut, vec2(c.g, 0.5)).g,
-      texture(uCurveLut, vec2(c.b, 0.5)).b
+      texelFetch(uCurveLut, ivec2(int(c.r * 255.0 + 0.5), 0), 0).r,
+      texelFetch(uCurveLut, ivec2(int(c.g * 255.0 + 0.5), 0), 0).g,
+      texelFetch(uCurveLut, ivec2(int(c.b * 255.0 + 0.5), 0), 0).b
     );
   }
   if (uHslOn > 0.5) {

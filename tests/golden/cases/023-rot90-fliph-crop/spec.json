@@ -1,0 +1,126 @@
+{
+  "specVersion": 1,
+  "sourceHash": "golden",
+  "colorSpace": {
+    "working": "srgb",
+    "output": "srgb"
+  },
+  "stages": [
+    {
+      "kind": "decode",
+      "params": {
+        "raw": false,
+        "halfSize": 0
+      }
+    },
+    {
+      "kind": "whiteBalance",
+      "params": {
+        "temp": 0,
+        "tint": 0,
+        "mode": "custom"
+      }
+    },
+    {
+      "kind": "exposure",
+      "params": {
+        "ev": 0
+      }
+    },
+    {
+      "kind": "tone",
+      "params": {
+        "contrast": 0,
+        "highlights": 0,
+        "shadows": 0,
+        "whites": 0,
+        "blacks": 0
+      }
+    },
+    {
+      "kind": "curves",
+      "params": {
+        "rgb": [],
+        "r": [],
+        "g": [],
+        "b": []
+      }
+    },
+    {
+      "kind": "hsl",
+      "params": {
+        "hue": [],
+        "sat": [],
+        "lum": []
+      }
+    },
+    {
+      "kind": "colorGrading",
+      "params": {
+        "shadows": [],
+        "midtones": [],
+        "highlights": []
+      }
+    },
+    {
+      "kind": "saturation",
+      "params": {
+        "value": 0,
+        "mono": false
+      }
+    },
+    {
+      "kind": "masks",
+      "params": {
+        "list": []
+      }
+    },
+    {
+      "kind": "detail",
+      "params": {
+        "sharpness": 0,
+        "noise": 0
+      }
+    },
+    {
+      "kind": "lens",
+      "params": {
+        "profile": "",
+        "distortion": 0,
+        "vignette": 0,
+        "chromatic": 0
+      }
+    },
+    {
+      "kind": "geometry",
+      "params": {
+        "rotate": 90,
+        "flipH": true,
+        "flipV": false
+      }
+    },
+    {
+      "kind": "crop",
+      "params": {
+        "x": 100,
+        "y": 200,
+        "w": 400,
+        "h": 600,
+        "ratio": "free",
+        "angle": 0
+      }
+    },
+    {
+      "kind": "encode",
+      "params": {
+        "format": "png",
+        "quality": 92,
+        "resize": null
+      }
+    }
+  ],
+  "meta": {
+    "fromEditParamsVersion": 0,
+    "generatedAt": "2026-09-19T11:36:12.891Z"
+  }
+}

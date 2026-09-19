@@ -117,4 +117,18 @@ describe('renderWebGLPreview', () => {
     const uploaded = gl.__calls.filter((c) => c.prop === 'texImage2D');
     expect(uploaded.some((c) => c.args.includes(testImage))).toBe(true);
   });
+
+  it('曲线 LUT 采样用 texelFetch + round 语义，与执行器 data[byte] 同式（审查批 7 M2）', async () => {
+    const { canvas, gl } = makeCanvas();
+    globalThis.createImageBitmap = vi.fn().mockResolvedValue({ close: vi.fn() });
+    expect(await renderWebGLPreview(canvas, testImage, baseUniforms())).toBe(true);
+    const frag = gl.__calls.find((c) => c.prop === 'shaderSource' && String(c.args[1]).includes('uCurveLut'));
+    expect(frag).toBeTruthy();
+    const src = String(frag.args[1]);
+    for (const ch of ['r', 'g', 'b']) {
+      expect(src).toContain(`texelFetch(uCurveLut, ivec2(int(c.${ch} * 255.0 + 0.5), 0), 0).${ch}`);
+    }
+    // NEAREST + texture() 的 floor(u*256) 在上半值区间存在差一输入档，禁止回退
+    expect(src).not.toMatch(/texture\(\s*uCurveLut/);
+  });
 });
