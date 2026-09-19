@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { renderWebGLPreview, releaseWebGLPreview } from '@/lib/webglPreview';
+import { renderWebGLPreview, releaseWebGLPreview, previewDrawSize } from '@/lib/webglPreview';
 
 function makeGL() {
   const calls = [];
@@ -175,5 +175,62 @@ describe('上下文丢失与释放（审查批 8 P-1）', () => {
   it('未渲染过的画布 release 不炸（无缓存直接返回）', () => {
     const { canvas } = makeCanvas();
     expect(() => releaseWebGLPreview(canvas)).not.toThrow();
+  });
+});
+
+describe('draft 草稿帧与上传降采样', () => {
+  const bigImage = { naturalWidth: 4000, naturalHeight: 2000, src: 'file:///pics/big.png' };
+
+  it('previewDrawSize：长边钳制、四舍五入、小图不放大、最小 1px', () => {
+    expect(previewDrawSize(4000, 2000, 2048)).toEqual({ w: 2048, h: 1024 });
+    expect(previewDrawSize(3333, 1000, 2048)).toEqual({ w: 2048, h: 614 });
+    expect(previewDrawSize(3333, 1000, 1024)).toEqual({ w: 1024, h: 307 });
+    expect(previewDrawSize(100, 50, 2048)).toEqual({ w: 100, h: 50 });
+    expect(previewDrawSize(1, 10000, 2048)).toEqual({ w: 1, h: 2048 });
+  });
+
+  it('draft 出帧：画布长边 1024（面积 1/4），viewport 同步缩小', async () => {
+    const { canvas, gl } = makeCanvas();
+    globalThis.createImageBitmap = vi.fn().mockResolvedValue({ close: vi.fn() });
+    expect(await renderWebGLPreview(canvas, bigImage, baseUniforms(), { draft: true })).toBe(true);
+    expect(canvas.width).toBe(1024);
+    expect(canvas.height).toBe(512);
+    expect(gl.__calls.find((c) => c.prop === 'viewport').args).toEqual([0, 0, 1024, 512]);
+  });
+
+  it('上传即在 bitmap 阶段降采样到画布上限（全尺寸原图不进纹理）', async () => {
+    const { canvas, gl } = makeCanvas();
+    const bitmap = { close: vi.fn() };
+    globalThis.createImageBitmap = vi.fn().mockResolvedValue(bitmap);
+    expect(await renderWebGLPreview(canvas, bigImage, baseUniforms())).toBe(true);
+    const [, opts] = globalThis.createImageBitmap.mock.calls[0];
+    expect(opts).toMatchObject({ resizeWidth: 2048, resizeHeight: 1024, resizeQuality: 'high', colorSpaceConversion: 'none', premultiplyAlpha: 'none' });
+    expect(gl.__calls.filter((c) => c.prop === 'texImage2D').some((c) => c.args.includes(bitmap))).toBe(true);
+  });
+
+  it('小图（≤上限）不携带 resize 参数，行为与旧路径一致', async () => {
+    const { canvas } = makeCanvas();
+    globalThis.createImageBitmap = vi.fn().mockResolvedValue({ close: vi.fn() });
+    expect(await renderWebGLPreview(canvas, testImage, baseUniforms())).toBe(true);
+    const [, opts] = globalThis.createImageBitmap.mock.calls[0];
+    expect('resizeWidth' in opts).toBe(false);
+    expect('resizeHeight' in opts).toBe(false);
+  });
+
+  it('分辨率感知缓存：draft 首帧传低清版，settled 补传全清，其后 draft 复用全清纹理', async () => {
+    const { canvas, gl } = makeCanvas();
+    const draftBitmap = { close: vi.fn() };
+    const fullBitmap = { close: vi.fn() };
+    globalThis.createImageBitmap = vi.fn()
+      .mockResolvedValueOnce(draftBitmap)
+      .mockResolvedValueOnce(fullBitmap);
+    expect(await renderWebGLPreview(canvas, bigImage, baseUniforms(), { draft: true })).toBe(true);
+    expect(gl.__calls.filter((c) => c.prop === 'texImage2D').some((c) => c.args.includes(draftBitmap))).toBe(true);
+    expect(await renderWebGLPreview(canvas, bigImage, baseUniforms())).toBe(true);
+    expect(gl.__calls.filter((c) => c.prop === 'texImage2D').some((c) => c.args.includes(fullBitmap))).toBe(true);
+    expect(canvas.width).toBe(2048);
+    expect(await renderWebGLPreview(canvas, bigImage, baseUniforms(), { draft: true })).toBe(true);
+    expect(globalThis.createImageBitmap).toHaveBeenCalledTimes(2);
+    expect(gl.__calls.filter((c) => c.prop === 'texImage2D').length).toBe(2);
   });
 });

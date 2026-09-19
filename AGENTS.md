@@ -26,7 +26,7 @@ electron/
   thumbWorker.js  worker 内 sharp 缩略图生成（竖图按 EXIF 转正）
   preload.js      contextBridge 暴露 window.pixyang API
 scripts/
-  native.js       better-sqlite3 的 node/electron 双 ABI 切换（dev/test 前自动执行）
+  native.js       better-sqlite3 的 node/electron 双 ABI 切换（dev/build/test 前自动执行）
 shared/
   editSchema.cjs  EditParams v1 zod schema（非破坏编辑参数唯一事实源，前后端同构）
   renderSpec.cjs  EditParams → RenderSpec 纯函数（渲染指令序列，预览/导出唯一消费格式）
@@ -95,7 +95,7 @@ tests/            vitest（node 环境 + per-file happy-dom pragma）
 - 类型检查：`npm run typecheck`（tsc --noEmit，覆盖 src 下 TS/TSX）。
 - 格式检查：`npm run format:check`（Prettier 仅检查，禁止全量重排产生巨 diff）。
 - CI：GitHub Actions（`.github/workflows/ci.yml`），push/PR 时在 Windows + Ubuntu 跑 lint/typecheck/test。
-- better-sqlite3 原生二进制双 ABI：`npm run dev` 前自动执行 `rebuild:electron`，`npm test` 前自动执行 `rebuild:node`（脚本 `scripts/native.js`，electron 预编译缓存在 `scripts/.prebuilds/`，gitignore）。
+- better-sqlite3 原生二进制双 ABI：`npm run dev`/`npm run build` 前自动执行 `rebuild:electron`，`npm test` 前自动执行 `rebuild:node`（脚本 `scripts/native.js`，electron 预编译缓存在 `scripts/.prebuilds/`，gitignore）。打包必须走 `npm run build`（`build.npmRebuild=false`，ABI 由 native.js 唯一切换；直接调 electron-builder 会把 node ABI 二进制带进安装包，见 `error/packaged-app-node-abi-better-sqlite3.md`）。
 - 前端编译验证：`npx vite build`。
 - 修改 Electron 端代码后，运行 `npm run dev` 手动验证（Vite + Electron 并行）。
 - 修改 opencode 配置后需重启 opencode 生效。

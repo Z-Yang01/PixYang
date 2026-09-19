@@ -22,6 +22,8 @@ export default function CurveEditor({ curves, onCommit, onChange, epoch = 0 }) {
   const [channel, setChannel] = useState('rgb');
   const svgRef = useRef(null);
   const dragRef = useRef(null);
+  const moveRafRef = useRef(null);
+  const lastMoveRef = useRef(null);
 
   useEffect(() => {
     dragRef.current = null;
@@ -64,7 +66,7 @@ export default function CurveEditor({ curves, onCommit, onChange, epoch = 0 }) {
   };
 
   useEffect(() => {
-    const onMove = (e) => {
+    const applyMove = (e) => {
       const drag = dragRef.current;
       if (!drag) return;
       const rect = svgRef.current.getBoundingClientRect();
@@ -91,7 +93,28 @@ export default function CurveEditor({ curves, onCommit, onChange, epoch = 0 }) {
       dragRef.current = { points: next, index: i };
       writePoints(next);
     };
+    // mousemove（游戏鼠标可达 1kHz）合帧：每帧只应用最后一次移动，
+    // 否则每次事件都全量重渲染查看器/重建预览，拖点直接卡死
+    const onMove = (e) => {
+      if (!dragRef.current) return;
+      lastMoveRef.current = e;
+      if (moveRafRef.current != null) return;
+      moveRafRef.current = requestAnimationFrame(() => {
+        moveRafRef.current = null;
+        const ev = lastMoveRef.current;
+        lastMoveRef.current = null;
+        applyMove(ev);
+      });
+    };
     const onUp = () => {
+      if (moveRafRef.current != null) {
+        cancelAnimationFrame(moveRafRef.current);
+        moveRafRef.current = null;
+      }
+      // 结算前应用最后一帧未处理的移动，保证终态不丢
+      const ev = lastMoveRef.current;
+      lastMoveRef.current = null;
+      if (ev) applyMove(ev);
       if (dragRef.current) {
         dragRef.current = null;
         onCommit?.();
@@ -102,6 +125,7 @@ export default function CurveEditor({ curves, onCommit, onChange, epoch = 0 }) {
     // 窗口失焦（Alt+Tab 等）时 mouseup 不会送达，兜底结算避免拖点卡住/历史漏记（审查批 7 M3）
     window.addEventListener('blur', onUp);
     return () => {
+      if (moveRafRef.current != null) cancelAnimationFrame(moveRafRef.current);
       window.removeEventListener('mousemove', onMove);
       window.removeEventListener('mouseup', onUp);
       window.removeEventListener('blur', onUp);

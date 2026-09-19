@@ -38,6 +38,9 @@ import ConfirmDialog from '@/components/Layout/ConfirmDialog';
 
 const clamp = (v, min, max) => Math.min(max, Math.max(min, v));
 
+// 连续调节停止多少毫秒后把草稿预览补成全分辨率帧
+const EDIT_SETTLE_MS = 160;
+
 export default function ImageViewer({
   image, imageIndex = 0, totalCount = 0, onClose, onPrev, onNext, hasPrev, hasNext, onImageUpdated,
   onOpenInfo, closeGuardRef,
@@ -1007,28 +1010,42 @@ export default function ImageViewer({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [webglActive, editOps, editSession]);
 
-  // WebGL 预览绘制：uniforms 或底图变化时重绘（底图纹理按 src 缓存）
+  // WebGL 预览绘制：uniforms 或底图变化时重绘（底图纹理按 src 缓存）。
+  // 滑杆/蒙版连续调节（editOps 引用变化）先出 1024 草稿帧，停止 SETTLE_MS 后补全分辨率帧；
+  // 底图切换/bust（烘焙刷新）/Before 对比等单发重绘直接全分辨率，首次进入编辑也是全分辨率。
+  const drawnOpsRef = useRef(null);
   useEffect(() => {
-    if (!webglActive || !shaderUniforms) return;
+    if (!webglActive || !shaderUniforms) {
+      drawnOpsRef.current = null;
+      return;
+    }
     const canvas = webglCanvasRef.current;
     const img = editImgRef.current;
     if (!canvas || !img) return;
-    const draw = () => {
+    const draw = (draft) => {
       if (img.complete && img.naturalWidth > 0) {
-        renderWebGLPreview(canvas, img, shaderUniforms).then((ok) => {
+        renderWebGLPreview(canvas, img, shaderUniforms, { draft }).then((ok) => {
           if (!ok) setWebglFailed(true);
         });
       }
     };
-    if (img.complete && img.naturalWidth > 0) {
-      draw();
+    const opsDriven = drawnOpsRef.current !== null && drawnOpsRef.current !== editOps;
+    drawnOpsRef.current = editOps;
+    if (!(img.complete && img.naturalWidth > 0)) {
+      const onLoad = () => draw(false);
+      img.addEventListener('load', onLoad, { once: true });
+      return () => img.removeEventListener('load', onLoad);
+    }
+    if (!opsDriven) {
+      draw(false);
       return undefined;
     }
-    img.addEventListener('load', draw, { once: true });
-    return () => img.removeEventListener('load', draw);
+    draw(true);
+    const settleTimer = setTimeout(() => draw(false), EDIT_SETTLE_MS);
+    return () => clearTimeout(settleTimer);
     // showBefore/compareMode：画布随 Before/对比视图切换而卸载重挂，新画布必须重绘，
     // 否则 After 侧是一块空白画布盖住原图（预览 ≡ Before）
-  }, [webglActive, shaderUniforms, editBaseSrc, bust, showBefore, compareMode]);
+  }, [webglActive, shaderUniforms, editOps, editBaseSrc, bust, showBefore, compareMode]);
 
   if (!image) return null;
 

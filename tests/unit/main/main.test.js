@@ -573,6 +573,12 @@ describe('打包配置契约（electron-builder files）', () => {
       expect(files).toContain(dir);
     }
   });
+
+  it('build 前强制 rebuild:electron 且 npmRebuild 关闭（防 node ABI 二进制进安装包）', () => {
+    const pkg = require('../../../package.json');
+    expect(pkg.scripts.build.startsWith('npm run -s rebuild:electron && ')).toBe(true);
+    expect(pkg.build.npmRebuild).toBe(false);
+  });
 });
 
 describe('查询委托类 handler', () => {

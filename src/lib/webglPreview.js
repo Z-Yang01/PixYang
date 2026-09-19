@@ -205,6 +205,19 @@ export function isWebGL2Available() {
   return cachedAvailability;
 }
 
+// 全分辨率出帧的画布长边上限；draft（滑杆拖动中）再降一档，像素量 1/4
+const FULL_EDGE = 2048;
+const DRAFT_EDGE = 1024;
+
+export function previewDrawSize(naturalWidth, naturalHeight, maxEdge) {
+  const longEdge = Math.max(naturalWidth, naturalHeight);
+  const scale = longEdge > maxEdge ? maxEdge / longEdge : 1;
+  return {
+    w: Math.max(1, Math.round(naturalWidth * scale)),
+    h: Math.max(1, Math.round(naturalHeight * scale)),
+  };
+}
+
 // 每画布状态（gl 上下文/程序/纹理缓存）
 const stateByCanvas = new WeakMap();
 
@@ -255,13 +268,15 @@ function initCanvas(canvas) {
   gl.vertexAttribPointer(aPos, 2, gl.FLOAT, false, 0, 0);
   const texture = gl.createTexture();
   const lutTexture = gl.createTexture();
-  return { gl, program, locs: getUniformLocations(gl, program), texture, lutTexture, lastSrc: null };
+  return { gl, program, locs: getUniformLocations(gl, program), texture, lutTexture, lastSrc: null, lastTexEdge: 0 };
 }
 
 // 主入口：canvas 上绘制 uniforms 驱动的预览。image 须已加载（complete && naturalWidth>0）。
 // 失败返回 false，调用方回退 CSS/SVG。异步（纹理上传走 createImageBitmap 跳过浏览器
 // 色彩转换——导出在原生编码值上编辑，预览纹理也必须取原生值，宽色域 tagged 图才一致）。
-export async function renderWebGLPreview(canvas, image, uniforms) {
+// opts.draft：滑杆拖动中的草稿帧，画布按 1024 长边出帧，settled 后由调用方补全分辨率帧。
+export async function renderWebGLPreview(canvas, image, uniforms, opts = {}) {
+  const draft = !!opts.draft;
   let st = stateByCanvas.get(canvas);
   if (st && st.gl && st.gl.isContextLost()) stateByCanvas.delete(canvas);
   if (!st || !st.gl || st.gl.isContextLost()) {
@@ -275,11 +290,7 @@ export async function renderWebGLPreview(canvas, image, uniforms) {
   const { gl, locs } = st;
   const seq = (st.drawSeq = (st.drawSeq || 0) + 1); // 异步上传的过期绘制丢弃
   try {
-    const MAX_EDGE = 2048;
-    const longEdge = Math.max(image.naturalWidth, image.naturalHeight);
-    const scale = longEdge > MAX_EDGE ? MAX_EDGE / longEdge : 1;
-    const w = Math.max(1, Math.round(image.naturalWidth * scale));
-    const h = Math.max(1, Math.round(image.naturalHeight * scale));
+    const { w, h } = previewDrawSize(image.naturalWidth, image.naturalHeight, draft ? DRAFT_EDGE : FULL_EDGE);
     if (canvas.width !== w || canvas.height !== h) {
       canvas.width = w;
       canvas.height = h;
@@ -287,10 +298,12 @@ export async function renderWebGLPreview(canvas, image, uniforms) {
     gl.viewport(0, 0, w, h);
     gl.useProgram(st.program);
 
-    // 底图纹理（按 src 缓存，滑杆调节不重复上传）。
+    // 底图纹理（按 src + 纹理边长缓存，滑杆调节不重复上传）。
+    // 上传即在 bitmap 阶段降采样到画布上限：画布输出从不超过 FULL_EDGE，全尺寸原图
+    // 纹理（24MP ≈ 96MB 传输/显存）纯属浪费；draft 首帧会先传低清版，settled 补传全清。
     // createImageBitmap colorSpaceConversion:'none'——浏览器默认会把 tagged 图转到 sRGB，
     // 而导出在原生编码值上编辑，预览纹理必须同为原生值（宽色域 P3 等才与导出一致）。
-    if (st.lastSrc !== image.src) {
+    if (st.lastSrc !== image.src || (st.lastTexEdge || 0) < w) {
       gl.bindTexture(gl.TEXTURE_2D, st.texture);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
@@ -299,7 +312,12 @@ export async function renderWebGLPreview(canvas, image, uniforms) {
       let source = image;
       if (typeof createImageBitmap === 'function') {
         try {
-          const bitmap = await createImageBitmap(image, { colorSpaceConversion: 'none', premultiplyAlpha: 'none' });
+          const scaled = w !== image.naturalWidth || h !== image.naturalHeight;
+          const bitmap = await createImageBitmap(image, {
+            ...(scaled ? { resizeWidth: w, resizeHeight: h, resizeQuality: 'high' } : {}),
+            colorSpaceConversion: 'none',
+            premultiplyAlpha: 'none',
+          });
           if (seq !== st.drawSeq) {
             bitmap.close();
             // 过期绘制 ≠ 渲染失败：返回 false 会让调用方把 webglFailed 误闩锁
@@ -311,6 +329,7 @@ export async function renderWebGLPreview(canvas, image, uniforms) {
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, source);
       if (source !== image) source.close();
       st.lastSrc = image.src;
+      st.lastTexEdge = w;
     }
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, st.texture);

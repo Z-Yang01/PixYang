@@ -7,17 +7,29 @@ const EMPTY = { rgb: [], r: [], g: [], b: [] };
 
 describe('CurveEditor（曲线编辑器）', () => {
   let rectSpy;
+  let rafQueue;
   beforeEach(() => {
     // SVG 原型链是 SVGElement→Element（不经过 HTMLElement），须 spy Element.prototype
     rectSpy = vi.spyOn(Element.prototype, 'getBoundingClientRect').mockReturnValue({
       left: 0, top: 0, right: 100, bottom: 100, width: 100, height: 100, x: 0, y: 0,
       toJSON: () => {},
     });
+    // 手动 rAF 队列：拖拽移动按帧合并，测试里显式 flush
+    rafQueue = [];
+    vi.stubGlobal('requestAnimationFrame', (cb) => { rafQueue.push(cb); return rafQueue.length; });
+    vi.stubGlobal('cancelAnimationFrame', vi.fn());
   });
   afterEach(() => {
+    vi.unstubAllGlobals();
     rectSpy.mockRestore();
     cleanup();
   });
+
+  const flushRaf = () => {
+    const q = rafQueue;
+    rafQueue = [];
+    q.forEach((cb) => cb());
+  };
 
   const setup = (curves = EMPTY) => {
     const onCommit = vi.fn();
@@ -44,8 +56,9 @@ describe('CurveEditor（曲线编辑器）', () => {
     expect(onCommit).not.toHaveBeenCalled();
     const added = onChange.mock.calls.at(-1)[0];
     expect(added.rgb).toEqual([0, 0, 0.5, 0.5, 1, 1]);
-    // 拖到 (0.6, 0.6)
+    // 拖到 (0.6, 0.6)：mousemove 合帧，flush 后应用
     fireEvent.mouseMove(window, { clientX: 60, clientY: 40 });
+    flushRaf();
     const moved = onChange.mock.calls.at(-1)[0];
     expect(moved.rgb).toEqual([0, 0, 0.6, 0.6, 1, 1]);
     expect(onCommit).not.toHaveBeenCalled();
@@ -75,6 +88,7 @@ describe('CurveEditor（曲线编辑器）', () => {
     // 命中中间点 (0.5,0.5) → 屏幕 (50,50)
     fireEvent.mouseDown(svg, { clientX: 50, clientY: 50 });
     fireEvent.mouseMove(window, { clientX: 60, clientY: -200 });
+    flushRaf();
     const last = onChange.mock.calls.at(-1)[0];
     expect(last.rgb).toEqual([0, 0, 1, 1]);
     expect(onChange).toHaveBeenCalledTimes(1);
@@ -86,6 +100,7 @@ describe('CurveEditor（曲线编辑器）', () => {
     // 拖左端点 (0,0.02) → 屏幕 (0, 98)，水平拖到 x=30 也不动 x
     fireEvent.mouseDown(svg, { clientX: 0, clientY: 98 });
     fireEvent.mouseMove(window, { clientX: 30, clientY: 95 });
+    flushRaf();
     const last = onChange.mock.calls.at(-1)[0];
     expect(last.rgb[0]).toBe(0);
     expect(last.rgb[1]).toBeCloseTo(0.05);
@@ -97,8 +112,35 @@ describe('CurveEditor（曲线编辑器）', () => {
     const { onChange, svg } = setup({ rgb: [0, 0, 0.5, 0.5, 1, 1], r: [], g: [], b: [] });
     fireEvent.mouseDown(svg, { clientX: 50, clientY: 50 });
     fireEvent.mouseMove(window, { clientX: 50, clientY: 30 });
+    flushRaf();
     const last = onChange.mock.calls.at(-1)[0];
     expect(last.rgb).toEqual([0, 0, 0.5, 0.7, 1, 1]);
+  });
+
+  it('连续 mousemove 合帧：一帧只应用最后一次，高频事件不放大 onChange 次数', () => {
+    const { onChange, svg } = setup();
+    fireEvent.mouseDown(svg, { clientX: 50, clientY: 50 });
+    expect(onChange).toHaveBeenCalledTimes(1);
+    for (let k = 0; k < 8; k++) {
+      fireEvent.mouseMove(window, { clientX: 60 + k, clientY: 40 + k });
+    }
+    expect(onChange).toHaveBeenCalledTimes(1);
+    flushRaf();
+    expect(onChange).toHaveBeenCalledTimes(2);
+    const last = onChange.mock.calls.at(-1)[0];
+    expect(last.rgb).toEqual([0, 0, 0.67, 0.53, 1, 1]);
+    flushRaf();
+    expect(onChange).toHaveBeenCalledTimes(2);
+  });
+
+  it('松手时若有未 flush 的移动：先应用末次位置再结算，终态不丢', () => {
+    const { onCommit, onChange, svg } = setup();
+    fireEvent.mouseDown(svg, { clientX: 50, clientY: 50 });
+    fireEvent.mouseMove(window, { clientX: 70, clientY: 30 });
+    fireEvent.mouseUp(window);
+    expect(onChange).toHaveBeenCalledTimes(2);
+    expect(onChange.mock.calls.at(-1)[0].rgb).toEqual([0, 0, 0.7, 0.7, 1, 1]);
+    expect(onCommit).toHaveBeenCalledTimes(1);
   });
 
   it('通道独立写入：R 通道编辑不影响其他通道', () => {
