@@ -1124,7 +1124,8 @@ async function attachRawToImage(imageId, nefSource, nefFilename) {
 
 // 删除图片：硬删除。先在事务内删除记录（保证 DB 一致），再清理磁盘文件与缩略图；
 // 文件删除失败仅告警（残留文件无碍图库，失效记录扫描可兜底）
-function deleteImage(id) {
+// 记录删除与文件删除分离：批量删除需整体事务提交后才动文件，防回滚窗口内「记录复活、文件已没」
+function deleteImageRecord(id) {
   const img = getImageById(id);
   if (!img) return false;
 
@@ -1136,6 +1137,10 @@ function deleteImage(id) {
     db.prepare('DELETE FROM images WHERE id = ?').run(id);
   })();
 
+  return img;
+}
+
+function deleteImageFiles(img) {
   const targets = [img.filepath, img.raw_path].filter(Boolean);
   for (const p of targets) {
     try {
@@ -1147,8 +1152,14 @@ function deleteImage(id) {
     }
   }
 
-  deleteThumbnailFile(id);
+  deleteThumbnailFile(img.id);
   saveDatabase();
+}
+
+function deleteImage(id) {
+  const img = deleteImageRecord(id);
+  if (!img) return false;
+  deleteImageFiles(img);
   return img;
 }
 
@@ -1347,11 +1358,14 @@ function batchDeleteImages(ids) {
   const results = [];
   const tx = db.transaction(() => {
     for (const id of ids) {
-      const r = deleteImage(id);
+      const r = deleteImageRecord(id);
       if (r) results.push(r);
     }
   });
   tx();
+  for (const img of results) {
+    deleteImageFiles(img);
+  }
   return results;
 }
 
@@ -1595,6 +1609,46 @@ function deleteBrokenRecords(ids) {
   return removed;
 }
 
+// 启动清扫烘焙残留 -temp（原名-temp.jpg/png/webp，与 saveEditedImage 替代流程的中间产物同名）：
+// 崩溃/退出时在途烘焙会留下 temp。按 DB 记录逐目录精确匹配「存在主名相同的图片」才删，
+// 且候选本身是被管理的图片路径时跳过——绝不误删用户自己命名带 -temp 的文件。
+function cleanupStaleBakeTemps() {
+  try {
+    const byDir = new Map();
+    const managed = new Set();
+    for (const r of db.prepare('SELECT filepath FROM images').all()) {
+      const dir = path.dirname(r.filepath);
+      if (!byDir.has(dir)) byDir.set(dir, new Set());
+      managed.add(r.filepath.toLowerCase());
+    }
+    for (const r of db.prepare('SELECT filepath FROM images WHERE hidden = 0').all()) {
+      const dir = path.dirname(r.filepath);
+      byDir.get(dir).add(path.basename(r.filepath, path.extname(r.filepath)).toLowerCase());
+    }
+    let removed = 0;
+    for (const [dir, bases] of byDir) {
+      let names;
+      try {
+        names = fs.readdirSync(dir);
+      } catch { continue; /* 目录不可读（已删除/离线盘）跳过 */ }
+      for (const name of names) {
+        const m = /^(.*)-temp\.(jpe?g|png|webp)$/i.exec(name);
+        if (!m || !bases.has(m[1].toLowerCase())) continue;
+        const full = path.join(dir, name);
+        if (managed.has(full.toLowerCase())) continue;
+        try {
+          fs.unlinkSync(full);
+          removed++;
+        } catch { /* 占用中跳过 */ }
+      }
+    }
+    return removed;
+  } catch (e) {
+    console.error('[编辑清理] -temp 清扫失败:', e.message);
+    return 0;
+  }
+}
+
 // 重复图片检测：按 (大小, 尺寸) 粗分组，组内用首尾 64KB 快速哈希精确验证
 function findDuplicates() {
   const rows = db.prepare('SELECT id, filename, filepath, size, width, height, format, thumbnail_path FROM images WHERE hidden = 0').all();
@@ -1716,6 +1770,7 @@ module.exports = {
   renameImage,
   deleteImage,
   batchDeleteImages,
+  cleanupStaleBakeTemps,
   saveEditedImage,
   getEdits,
   saveEdits,

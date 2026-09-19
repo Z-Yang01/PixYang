@@ -34,6 +34,7 @@ const {
   renameImage,
   deleteImage,
   batchDeleteImages,
+  cleanupStaleBakeTemps,
   saveEditedImage,
   getEdits,
   saveEdits,
@@ -951,7 +952,14 @@ function setupIPC() {
   });
 
   ipcMain.handle('fs:set-images-root', async (_event, dirPath) => {
-    return setImagesRoot(dirPath);
+    const result = await setImagesRoot(dirPath);
+    // 迁移成功后所有在途编辑会话的文件路径已过期（零拷贝会话 basePath 即原图）——逐会话跟随新路径
+    if (result && result.success) {
+      for (const id of editSessions.keys()) {
+        reconcileEditSessionPaths(id, getImageById(id));
+      }
+    }
+    return result;
   });
 
   // 获取完整 EXIF（详情面板按需读取）
@@ -1172,6 +1180,8 @@ app.whenReady().then(async () => {
 
   // 后台回填历史图片方向标记，完成后通知渲染进程刷新
   setTimeout(async () => {
+    const staleTemps = cleanupStaleBakeTemps();
+    if (staleTemps) console.log(`[编辑清理] 已清除 ${staleTemps} 个烘焙 temp 残留`);
     await backfillOrientations();
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send('orientation-backfill-done');

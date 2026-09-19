@@ -1413,3 +1413,48 @@ masks 遗留三类中的 range 全链落地 + 手柄化；brush（栅格存储�
 ## Git Commit
 
 - `fix(render+db): tone 阴影检查点丢失（P0，golden 基线曾锁死坏输出）+ NEF 复制失败写 original_raw_path（P1）+ lint 47→10 死代码清理（+4 回归测试）`（未 push）
+
+---
+
+# 2026-09-19 审查遗留批：数据层 3 项 + 编辑器 2 项收尾
+
+上一批（a992aa6）明确「需独立批次」的遗留项全部落地；剩余两条为存疑/设计问题（见遗留）。
+
+## 当前状态
+
+- 分支 `optimize/architecture`；摸底 **754 passed** → 收尾 **759 passed / 0 failed**
+  （57 文件，+5）；coverage **89.29%** 语句 / **84.94%** 分支（thresholds 全达标）；
+  lint 0 error / 10 warnings（基线不变）；typecheck 通过；build 通过；golden 22/22（maxΔ=0，未触碰渲染层）。
+
+## 已完成
+
+1. **batchDeleteImages 文件删除后置提交**：deleteImage 拆为 `deleteImageRecord`（纯 DB 事务）+
+   `deleteImageFiles`（源文件/NEF/缩略图），批删先整体事务删记录、**提交后**再逐张删文件——
+   消除回滚窗口内「记录复活、文件已没」。回归：monkey-patch unlinkSync 断言首个文件删除时
+   其余待删记录已不在库（旧实现该时刻仍可见）。
+2. **启动清扫烘焙 -temp 残留**：database.js 新增 `cleanupStaleBakeTemps()`（与 deleteBrokenRecords
+   同族、可单测），main.js 挂入启动后台任务。安全语义：仅删「同目录存在主名相同的可见图片」
+   的 `主名-temp.(jpg|jpeg|png|webp)`，且候选本身是 DB 管理路径时跳过——用户自己命名带 -temp
+   的文件与 -temp 命名的真实记录均不误删。测试三向锁定（残留删除/无主保留/记录保留）。
+3. **setImagesRoot 后 reconcile 在途编辑会话**：`fs:set-images-root` 成功（result.success）后对
+   editSessions 逐会话 `reconcileEditSessionPaths`——零拷贝会话 basePath 即原图，迁移后烘焙/
+   导出不再指向旧根。测试走导出链路断言 inputPath 已跟随新根。
+4. **SVG 回退蒙版提示**：编辑面板蒙版区在 `有蒙版 && !webglActive` 时显示常驻提示「当前环境不
+   支持 WebGL2，预览不显示蒙版效果（保存参数与导出/烘焙结果不受影响）」（此前静默分叉无感知）。
+5. **蒙版数量上限 UI**：标题改「蒙版（n/8）」，达上限时 +径向/+线性/+亮度 按钮 disabled
+   （toast 拒绝仍在，兜住拖拽创建路径）。
+
+## 测试
+
+- 收尾：**759 passed / 0 failed**（+5：批删提交时序、temp 清扫、set-images-root reconcile、
+  蒙版计数/禁用、回退提示）；coverage 89.29%/84.94%；lint 0 error；typecheck/build 通过；golden 22/22。
+
+## 遗留（上批遗留项处置后剩余）
+
+- 滑杆聚焦后快捷键整体静默（INPUT 早退）——交互设计问题，需产品决策，未动。
+- importOne INSERT OR IGNORE 并发 TOCTOU——UI 难构造、存疑，未动。
+- masks brush/ai 类型、M7 后 ICC 深化、M8 libraw 等大型项不变。
+
+## Git Commit
+
+- `fix: 审查遗留批 — 批删文件后置提交 + 启动清扫 -temp + setImagesRoot 会话 reconcile + 蒙版上限/回退提示（+5 例）`（未 push）

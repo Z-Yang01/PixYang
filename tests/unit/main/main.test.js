@@ -203,6 +203,7 @@ const dbDefaults = {
   renameImage: async () => {},
   deleteImage: async () => {},
   batchDeleteImages: async () => {},
+  cleanupStaleBakeTemps: () => 0,
   saveEditedImage: () => ({ error: 'not stubbed' }),
   getEdits: () => null,
   saveEdits: () => ({ error: 'not stubbed' }),
@@ -960,6 +961,28 @@ describe('编辑会话（非破坏保存）', () => {
       })
     );
     expect(fs.existsSync(newPath)).toBe(true);
+  });
+
+  it('fs:set-images-root：迁移成功后打开中的零拷贝会话跟随新根路径', async () => {
+    const oldPath = path.join(FIXTURES, 'editme.jpg');
+    const movedPath = path.join(FIXTURES, 'newroot', 'editme.jpg');
+    fs.writeFileSync(oldPath, 'img');
+    dbStub.getImageById.mockReturnValueOnce(editImage());
+    await call('fs:edit-open', 77);
+    fs.mkdirSync(path.dirname(movedPath), { recursive: true });
+    fs.writeFileSync(movedPath, 'img');
+    dbStub.setImagesRoot.mockResolvedValueOnce({ success: true, path: path.join(FIXTURES, 'newroot'), moved: 1 });
+    dbStub.getImageById.mockReturnValueOnce({ ...editImage(), filepath: movedPath });
+    const r = await call('fs:set-images-root', path.join(FIXTURES, 'newroot'));
+    expect(r.success).toBe(true);
+    const destDir = path.join(TMP_BASE, 'export-newroot');
+    fs.mkdirSync(destDir, { recursive: true });
+    renderModuleStub.renderFromEditParams.mockResolvedValueOnce({ ok: true, width: 800, height: 600 });
+    const ex = await call('fs:edit-export', 77, sampleEdits, destDir);
+    expect(ex.ok).toBe(true);
+    const last = renderModuleStub.renderFromEditParams.mock.calls[renderModuleStub.renderFromEditParams.mock.calls.length - 1];
+    expect(last[1].inputPath).toBe(movedPath);
+    await call('fs:edit-cancel', 77);
   });
 
   it('db:update-image：import_date 移动文件后打开中的会话跟随新 filepath', async () => {

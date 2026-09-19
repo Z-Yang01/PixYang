@@ -281,6 +281,32 @@ describe('ImageViewer', () => {
     expect(container.querySelectorAll('.editor-mask-list button')).toHaveLength(0);
   });
 
+  it('编辑模式：蒙版计数（n/8）随增删更新，达到上限后三个添加按钮禁用', async () => {
+    mockEditBridge();
+    render(<ImageViewer {...baseProps()} />);
+    fireEvent.click(screen.getByTitle(/编辑模式/));
+    await screen.findByText('编辑');
+    const header = () =>
+      Array.from(document.querySelectorAll('.editor-crop-header span')).find((el) => el.textContent.startsWith('蒙版'));
+    expect(header().textContent).toBe('蒙版（0/8）');
+    const addBtn = screen.getByText('+ 径向');
+    for (let i = 0; i < 8; i++) fireEvent.click(addBtn);
+    expect(header().textContent).toBe('蒙版（8/8）');
+    expect(addBtn.disabled).toBe(true);
+    expect(screen.getByText('+ 线性').disabled).toBe(true);
+    expect(screen.getByText('+ 亮度').disabled).toBe(true);
+  });
+
+  it('编辑模式：SVG 回退（无 WebGL2）下有蒙版时提示预览不含蒙版效果', async () => {
+    mockEditBridge();
+    render(<ImageViewer {...baseProps()} />);
+    fireEvent.click(screen.getByTitle(/编辑模式/));
+    await screen.findByText('编辑');
+    expect(screen.queryByText(/不支持 WebGL2/)).toBeNull();
+    fireEvent.click(screen.getByText('+ 径向'));
+    expect(screen.getByText(/预览不显示蒙版效果/)).toBeInTheDocument();
+  });
+
   it('编辑模式：曲线编辑器渲染、加点出现清除、清除复位', async () => {
     mockEditBridge();
     // Element.prototype 覆盖 SVG（曲线面板固定 100x100 @ (0,0)）

@@ -436,6 +436,47 @@ describe('deleteImage / batchDeleteImages / updateImages', () => {
     expect(fs.existsSync(b.filepath)).toBe(false);
   });
 
+  it('batchDeleteImages 文件删除全部后于事务提交（首个文件 unlink 时其余记录已删）', async () => {
+    const dir = tmpDir('del3');
+    const [a] = await db.importImages([makeImage('postcommit-a.jpg', dir, 'pc1')]);
+    const [b] = await db.importImages([makeImage('postcommit-b.jpg', dir, 'pc2')]);
+    const realUnlink = fs.unlinkSync;
+    let bStillPresent = null;
+    fs.unlinkSync = (p, ...rest) => {
+      if (bStillPresent === null && String(p) === a.filepath) {
+        bStillPresent = db.getImageById(b.id) !== null;
+      }
+      return realUnlink(p, ...rest);
+    };
+    try {
+      db.batchDeleteImages([a.id, b.id]);
+    } finally {
+      fs.unlinkSync = realUnlink;
+    }
+    expect(bStillPresent).toBe(false);
+    expect(fs.existsSync(b.filepath)).toBe(false);
+  });
+
+  it('cleanupStaleBakeTemps 只删主名匹配且非记录本身的 -temp 残留', async () => {
+    const dir = tmpDir('sweep');
+    const [owner] = await db.importImages([makeImage('sweep-p.jpg', dir, 'sp')]);
+    const [tempRecord] = await db.importImages([makeImage('sweep-p-temp.jpg', dir, 'spt')]);
+    const managedDir = path.dirname(owner.filepath);
+    const stale = path.join(managedDir, `${path.basename(owner.filepath, path.extname(owner.filepath))}-temp.webp`);
+    fs.writeFileSync(stale, 'junk');
+    const legit = path.join(managedDir, 'sweep-ghost-temp.png');
+    fs.writeFileSync(legit, 'keep');
+    const removed = db.cleanupStaleBakeTemps();
+    expect(removed).toBeGreaterThanOrEqual(1);
+    expect(fs.existsSync(stale)).toBe(false); // 主名 sweep-p 有图片 → temp 判为烘焙残留
+    expect(fs.existsSync(legit)).toBe(true); // 主名 sweep-ghost 无图片 → 保留
+    expect(fs.existsSync(tempRecord.filepath)).toBe(true); // 自身是 DB 记录 → 保留
+    expect(db.getImageById(owner.id)).not.toBe(null);
+    db.deleteImage(owner.id);
+    db.deleteImage(tempRecord.id);
+    fs.rmSync(stale, { force: true });
+  });
+
   it('updateImages 批量更新仅限 rating/favorite', async () => {
     const dir = tmpDir('upd4');
     const [a] = await db.importImages([makeImage('mu-a.jpg', dir, 'u1')]);

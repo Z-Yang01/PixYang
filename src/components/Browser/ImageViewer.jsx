@@ -1398,11 +1398,11 @@ export default function ImageViewer({
           {/* 局部蒙版：radial/linear，渲染与 WebGL 预览同公式（shared/masks.cjs） */}
           <div className="editor-crop-section">
             <div className="editor-crop-header">
-              <span>蒙版</span>
+              <span>蒙版（{(editOps.masks || []).length}/8）</span>
               <div style={{ display: 'flex', gap: 4 }}>
-                <Button variant="ghost" size="xs" onClick={() => addMask('radial')}>+ 径向</Button>
-                <Button variant="ghost" size="xs" onClick={() => addMask('linear')}>+ 线性</Button>
-                <Button variant="ghost" size="xs" onClick={() => addMask('range')} title="按亮度范围选择区域（暗部/中间调/高光）">+ 亮度</Button>
+                <Button variant="ghost" size="xs" disabled={(editOps.masks || []).length >= 8} onClick={() => addMask('radial')}>+ 径向</Button>
+                <Button variant="ghost" size="xs" disabled={(editOps.masks || []).length >= 8} onClick={() => addMask('linear')}>+ 线性</Button>
+                <Button variant="ghost" size="xs" disabled={(editOps.masks || []).length >= 8} onClick={() => addMask('range')} title="按亮度范围选择区域（暗部/中间调/高光）">+ 亮度</Button>
                 <Button
                   variant="ghost" size="xs"
                   className={maskTool === 'radial' ? 'is-active' : ''}
@@ -1432,6 +1432,9 @@ export default function ImageViewer({
               onCommit={(label, next) => pushHistory(next || editOpsRef.current, label)}
               onChange={(m) => setEditOps(o => sanitizeEditOps({ ...o, masks: m }))}
             />
+            {(editOps.masks || []).length > 0 && !webglActive && (
+              <p className="editor-crop-hint">当前环境不支持 WebGL2，预览不显示蒙版效果（保存参数与导出/烘焙结果不受影响）</p>
+            )}
           </div>
 
           <div className="editor-crop-section">
