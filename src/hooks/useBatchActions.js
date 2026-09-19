@@ -64,6 +64,10 @@ export default function useBatchActions({ showToast }) {
     const dir = await api.selectExportDirectory();
     if (!dir) return;
     const result = await api.exportImages([...selected], dir);
+    if (!result || result.error) {
+      showToast(result?.error || '导出失败', 'error');
+      return;
+    }
     const nefText = result.nefCopied > 0 ? `，含配对 NEF ${result.nefCopied} 个` : '';
     showToast(`已导出 ${result.copied} / ${result.total} 张图片${nefText}`, 'success');
   }, [showToast]);
@@ -162,11 +166,22 @@ export default function useBatchActions({ showToast }) {
     const store = useGalleryStore.getState();
     const deletedCount = store.selectedIds.size;
     const deletedIds = [...store.selectedIds];
-    await api.batchDeleteImages(deletedIds);
+    const results = await api.batchDeleteImages(deletedIds);
     store.clearSelection();
     setPendingBatchAction(null);
-    showToast(`已删除 ${deletedCount} 张图片`, 'success');
-    const nextTotal = Math.max(0, store.totalImages - deletedCount);
+    // 逐张结果可能带 error（文件被占用等）：成功数按实际统计，不再一律报全量成功
+    const batchError = !Array.isArray(results) && results?.error;
+    const list = Array.isArray(results) ? results : [];
+    const failedCount = batchError ? deletedIds.length : list.filter((r) => r?.error).length;
+    const okCount = deletedIds.length - failedCount;
+    if (batchError) {
+      showToast(results.error, 'error');
+    } else if (failedCount > 0) {
+      showToast(`已删除 ${okCount} 张，${failedCount} 张失败（文件可能被占用）`, 'error');
+    } else {
+      showToast(`已删除 ${deletedCount} 张图片`, 'success');
+    }
+    const nextTotal = Math.max(0, store.totalImages - okCount);
     const nextPage = pageAfterDelete(store.page, nextTotal, store.gridSettings);
     const pageSize = pageSizeOf(store.gridSettings);
     store.setPage(nextPage);

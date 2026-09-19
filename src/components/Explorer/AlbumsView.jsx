@@ -83,6 +83,10 @@ export default function AlbumsView({ onSelectAlbum, onRefresh }) {
     const destDir = await api.selectExportDirectory();
     if (!destDir) return;
     const result = await api.exportAlbumImages(album.id, destDir);
+    if (!result || result.error) {
+      toast.error(result?.error || '导出失败');
+      return;
+    }
     const nefText = result.nefCopied > 0 ? `，含配对 NEF ${result.nefCopied} 个` : '';
     toast.success(`已导出 ${result.copied} / ${result.total} 张图片${nefText}`);
   };

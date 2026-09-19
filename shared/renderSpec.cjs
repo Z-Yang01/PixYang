@@ -132,7 +132,8 @@ function stageDeclared(kind, params) {
 }
 
 function buildCropStage(crop) {
-  // crop 坐标是 geometry 应用之后（旋转后）图像坐标系——与前端裁剪框显示空间一致
+  // crop 坐标是底图（geometry 前）像素坐标系——与前端裁剪框（maskGeometry.displayToImage
+  // 退回旋转/翻转后的底图空间）一致；执行器应用几何后按同一映射换算裁剪矩形
   if (!crop || !(crop.w > 0) || !(crop.h > 0)) {
     return { kind: 'crop', params: null };
   }

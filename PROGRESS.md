@@ -1633,3 +1633,97 @@ open/bake/export/cancel 生命周期；C：数据库底层/备份/存储 + src/l
 ## Git Commit
 
 - `fix: 多代理审查批 3 — alpha 缩略图必败 P0 建档 + NOCASE 索引/迁移容错/LIKE 转义/失效再核验/根目录越界 + 重建循环互斥与陈旧写回守卫/烘焙孤儿底图/编辑 IPC 显式失败（+13 例）`（未 push）
+
+---
+
+# 2026-09-19 多代理审查批 4：渲染层一致性（shared/执行器/shader）、编辑 UI 与查看器、IPC 面
+
+三路只读审查子代理并行覆盖（D：渲染层 shared/*.cjs + renderSpecToSharp 执行器 + WebGL2 shader
+一致性；E：编辑 UI 与查看器组件链；F：IPC 面一致性 + api.js 封装 + store 接线），主代理逐项
+核实（探针实测像素/映射公式复核）后修复 P0 4 项 + P1 全部 + 选定 P2。
+
+## 当前状态
+
+- 分支 `optimize/architecture`；**808 passed / 0 failed**（59 文件，+10 例 + 4 例契约改写）；
+  coverage **90.08%** 语句 / **85.62%** 分支 / **82.55%** 函数（thresholds 全达标）；
+  lint 0 error / 10 warnings（基线不变）；typecheck 通过；build 通过；golden 22/22
+  （002/005/015/019 expect 图按正确语义刷新）。
+
+## P0：渲染层预览/导出分叉（建档 error/saturation-mono-preview-export-divergence.md、error/crop-coordinate-space-divergence.md）
+
+- **D1/D2 饱和度模型分叉**：执行器走 libvips `modulate`/`grayscale`（线性光/lightness 语义，
+  探针 [255,40,10] 黑白得 131），shader 走 gamma 域 luma-mix（得 84）；且 `grayscale()` 把产物
+  降为 1 band，连带吞掉后续 masks 阶段（channels<3 早退）与 alpha 通道——勾选黑白后导出丢蒙版、
+  丢透明。修复：新建 `shared/saturation.cjs` 唯一实现（satFactor/saturate01/applySaturationInPlace），
+  执行器 saturation 阶段改 raw 像素检查点，预览模拟器与 shader 共用同一公式。
+- **D3 crop 坐标空间分叉**：crop 参数实际由 UI `displayToImage`/`buildProxySpec` 按**底图
+  （转正前）坐标**产出，执行器却按**转正后坐标**直接 extract——rotate=90/270 或带翻转时导出
+  裁剪窗口错位。修复：契约成文（pipelineOrder/renderSpec 注释）为 base 空间，执行器 geometry
+  记录 `ctx.baseGeom`，crop 前经 `mapCropThroughGeometry`（90CW/180/flip 映射，探针锁定）再钳制。
+
+## P0：查看器（建档 error/viewer-fullres-never-swapped.md）
+
+- **E1 原图永不替换**：`displaySrc` 消费 `fullLoaded`，但 `setFullLoaded(true)` 全文件零生产者
+  （重构时 onLoad 链被删）——有缩略图的图片永远停在放大的糊图。修复：`fullSrc` 就绪后离屏
+  `new Image()` 预解码，onload/onerror 均切换（失败也露出真实错误态，不卡缩略图）。
+- **E2 翻页串台**：loadImage/tags 拉取三处 `image.id === loadId` 恒真守卫（loadId 就取自
+  image.id）改为比对渲染期刷新的 `imageIdRef.current`，晚到响应不再写回已翻走的图片。
+
+## P1：渲染层（D 链）
+
+- **D4 GLSL 蒙版调整不独立钳制**：`applyMaskedAdjust` 缺 per-mask clamp，越界值串入下一蒙版，
+  与 JS 侧 `applyMaskedAdjustment` 的 clamp01 分叉——shader 补 `c = clamp(c, 0.0, 1.0)`。
+- **D7 蒙版 adjustments 连坐**：zod4 的对象级 catch 挂在 MaskAdjustmentsSchema 上，单字段非法
+  或整体缺失会把整个蒙版判废；新增 `MaskAdjustmentsFieldSchema`（catch 回退全零默认）只降级
+  该蒙版的调整参数，蒙版本体保留。
+
+## P1：编辑 UI / 查看器（E 链）
+
+- **E3 拖拽手势悬挂**：MaskOverlay/裁剪拖动/CompareView 分屏拖动只监听 pointerup，触摸被系统
+  接管（pointercancel）或窗口失焦（blur）时手势不结束——补 pointercancel/blur 收尾。
+- **E4 滑杆历史丢失**：连续拖动滑杆只按 change 记一次历史或不记；新增全局 settle
+  （pointerup/pointercancel/blur）统一入栈「滑杆调整」，pushHistory 自带同快照去重。
+- **E5 快捷键穿透**：查看器 keydown 未排除确认/导出/烘焙弹层与 defaultPrevented 事件，
+  弹层开着按 ←/→/Del 会改库——`dialogsOpenRef` 守卫。
+- **E6 WebGL 单向闩锁**：一次瞬时渲染失败永久降级 SVG 预览，cleanupEditSession 补
+  `setWebglFailed(false)` 复位。
+
+## P1：IPC 面（F 链）
+
+- **F1 shell:open-path 任意路径打开**：渲染进程可传任意绝对路径交 OS 打开（路径越狱）；
+  补 `path.resolve` + [图片根, 数据库所在目录] 前缀边界判定（`root + path.sep`）+ isDirectory。
+- **F2 settings:set 保留键**：直接写 `images_root` 会绕过迁移流程留下路径不一致——拒绝并提示
+  走迁移（`camera_folder` 有合法直写场景，不拦）。
+- **F5 长任务错误契约**：sync-camera/rebuild/batch-delete/delete-broken/export-album/export/
+  rename 失败由 reject 改为返回 `{ error }`（前端消费方按 result?.error 播报，不再卡忙态）；
+  `db:import-images` 保持 reject（ImportDialog 有 try/catch 且展开数组，{error} 对象会炸 spread）。
+- **F6/F9 前端消费对齐**：批量删除/去重/清理失效按 `{error}` 与逐条失败分别计数播报；
+  rename 返回 false（记录不存在）转显式错误；SettingsPage 扫描失效 try/catch、null 按无失效处理。
+
+## P2（选定项）
+
+- D10：`clampInt` 非有限值回退显式默认（quality NaN 不再输出 0 质量）；径向蒙版 feather 环带
+  在椭圆内侧，overlay 提示环与手柄半径改按 `r·(1−feather)` 绘制。
+
+## 测试
+
+- **+10 例**（798→808）+ 4 例契约改写：saturation 共享模块 3 例（mono 保 alpha、边界值、
+  灰度源恒等）；previewUniforms 2 例（simulateShaderPixel↔执行器 raw pass 字节级契约、
+  GLSL 源串 clamp 文本锁）；editSchema 蒙版容错 1 例；main 3 例（open-path 越狱守卫含
+  前缀逃逸、保留键拒绝、长任务 {error} 契约）；ImageViewer 2 例（预解码 onload/onerror 切换）。
+  改写：pipeline crop 两例按 base 空间契约、MaskOverlay feather 拖拽按新环带语义。
+- golden 005/015/019（饱和度语义）与 002（rotate90+crop 映射）expect 图刷新并逐例目检。
+
+## 遗留（本批核实、刻意不动）
+
+- **D5 灰度源白平衡分叉**（执行器 <3 band 跳过 wb，shader 纹理扩展 r=g=b 时色温仍有视觉效果，
+  统一需灰度源升道预处理，收益低频不动）、**D6 ICC 色域**（预览不做色彩管理，导出走 sharp
+  内嵌 ICC，口径差异待产品决策）。
+- **F8 thumbnails-ready 事件载荷形态不一**（多处 push 字段不同，前端逐字段容错中）。
+- **E10 乐观态无失败回滚、E11 裁剪比例元数据丢失 + passive wheel preventDefault 无效**。
+- **批 3 遗留不变**：B3/B8/B9/B11/B12、C5/C8/C12、worker F5~F13 系列。
+- **日期筛选语义 import_date vs taken_at**——产品口径问题，仍待用户决策。
+
+## Git Commit
+
+- `fix: 多代理审查批 4 — 渲染层饱和度/crop 预览导出分叉 P0 建档 + 查看器原图永不替换/翻页串台 P0 + 蒙版容错/GLSL 钳制/手势收尾 + IPC 路径越狱/长任务错误契约（+10 例）`（未 push）

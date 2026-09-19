@@ -80,6 +80,8 @@ export default function ImageViewer({
   const [showExportDialog, setShowExportDialog] = useState(false);
   const [exportOpts, setExportOpts] = useState({ format: 'auto', quality: 92, maxEdge: 0 });
   const [bakeConfirm, setBakeConfirm] = useState(false);
+  const dialogsOpenRef = useRef(false);
+  dialogsOpenRef.current = !!(exitConfirm || showExportDialog || bakeConfirm);
   const [histInfo, setHistInfo] = useState({ canUndo: false, canRedo: false, index: 0, length: 0 });
   const [editEpoch, setEditEpoch] = useState(0); // 外部替换 ops（撤销/跳转/清除）时递增，中断进行中的手势
   const webglAvailable = useRef(isWebGL2Available()).current;
@@ -118,8 +120,8 @@ export default function ImageViewer({
     const loadId = image?.id;
     if (!image || !api.isBridgeAvailable()) return;
     api.getImageTags(image.id).then(tags => {
-      // 快速翻页时丢弃过期标签响应
-      if (image.id === loadId) setImgTags(tags || []);
+      // 快速翻页时丢弃过期标签响应（loadId 在闭包内恒等于 image.id，须比对 ref）
+      if (imageIdRef.current === loadId) setImgTags(tags || []);
     });
     setZoom(1);
     setPos({ x: 0, y: 0 });
@@ -165,6 +167,7 @@ export default function ImageViewer({
     setMaskTool(null);
     setEditError('');
     setBusyKind('');
+    setWebglFailed(false);
     setHistInfo({ canUndo: false, canRedo: false, index: 0, length: 0 });
     historyRef.current = null;
     savedBaselineRef.current = null;
@@ -704,9 +707,12 @@ export default function ImageViewer({
     };
     window.addEventListener('mousemove', onMove);
     window.addEventListener('mouseup', onUp);
+    // 窗口失焦（Alt+Tab 等）时 mouseup 不会送达，兜底结算避免历史漏记/框选卡住
+    window.addEventListener('blur', onUp);
     return () => {
       window.removeEventListener('mousemove', onMove);
       window.removeEventListener('mouseup', onUp);
+      window.removeEventListener('blur', onUp);
     };
   }, [cropMode, toImageCoords, applyCropDrag]);
 
@@ -715,6 +721,8 @@ export default function ImageViewer({
     const handleKey = (e) => {
       // 滑杆/备注框等表单元素聚焦时不触发查看器快捷键（TEXTAREA 里 f/v 会误写库）
       if (e.target?.tagName === 'INPUT' || e.target?.tagName === 'SELECT' || e.target?.tagName === 'TEXTAREA' || e.target?.isContentEditable) return;
+      // 弹层（未保存确认/导出/烘焙确认）打开时快捷键归弹层，查看器不得抢键
+      if (dialogsOpenRef.current || e.defaultPrevented) return;
       // 编辑态：撤销/重做
       if (editingRef.current && (e.ctrlKey || e.metaKey) && !e.altKey) {
         const k = e.key.toLowerCase();
@@ -769,11 +777,24 @@ export default function ImageViewer({
     setFullLoaded(false);
     if (image.thumbnail_path) {
       const thumb = await api.toFileUrl(image.thumbnail_path);
-      if (image.id === loadId && thumb) setThumbSrc(`${thumb}${thumb.includes('?') ? '&' : '?'}v=${v}`);
+      if (imageIdRef.current === loadId && thumb) setThumbSrc(`${thumb}${thumb.includes('?') ? '&' : '?'}v=${v}`);
     }
     const url = await api.toFileUrl(image.filepath);
-    if (image.id === loadId) setFullSrc(url ? `${url}${url.includes('?') ? '&' : '?'}v=${v}` : null);
+    if (imageIdRef.current === loadId) setFullSrc(url ? `${url}${url.includes('?') ? '&' : '?'}v=${v}` : null);
   };
+
+  // 原图离屏预解码：解码完成才切换（避免半下载闪烁）；失败也切换，防止卡在缩略图
+  useEffect(() => {
+    if (!fullSrc) return undefined;
+    const pre = new Image();
+    pre.onload = () => setFullLoaded(true);
+    pre.onerror = () => setFullLoaded(true);
+    pre.src = fullSrc;
+    return () => {
+      pre.onload = null;
+      pre.onerror = null;
+    };
+  }, [fullSrc]);
 
   // ── 生命周期守护 ──
   // App 层 Escape 先经此守卫：编辑态时交给组件自身走"未保存确认"流程而非直接关闭
@@ -835,6 +856,24 @@ export default function ImageViewer({
       window.removeEventListener('mouseup', handleMouseUp);
     };
   }, []);
+
+  // 滑杆兜底结算：窗口外释放/失焦导致元素 pointerup 丢失时，任何 pointerup 都收敛拖动状态并补记历史
+  useEffect(() => {
+    if (!editing) return undefined;
+    const settle = () => {
+      if (!sliderDragRef.current) return;
+      sliderDragRef.current = null;
+      pushHistory(editOpsRef.current, '滑杆调整');
+    };
+    window.addEventListener('pointerup', settle);
+    window.addEventListener('pointercancel', settle);
+    window.addEventListener('blur', settle);
+    return () => {
+      window.removeEventListener('pointerup', settle);
+      window.removeEventListener('pointercancel', settle);
+      window.removeEventListener('blur', settle);
+    };
+  }, [editing, pushHistory]);
 
   // 滚轮缩放（以鼠标位置为中心）；分屏/并排对比时缩放只作用于 After 层，统一禁用
   const handleWheel = useCallback((e) => {

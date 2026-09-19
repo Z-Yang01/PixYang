@@ -163,8 +163,9 @@ describe('渲染管线安全（真实 sharp）', () => {
     expect(fs.existsSync(`${out}.part`)).toBe(false);
   });
 
-  it('几何+裁剪组合：rotate 90 后 crop 坐标为旋转后坐标系', async () => {
-    // 120x80 旋转 90 → 80x120；crop x:10,y:20,w:30,h:60（旋转后坐标）→ 30x60
+  it('几何+裁剪组合：crop 坐标为底图（geometry 前）坐标系，执行器映射到旋转后空间', async () => {
+    // 120x80 旋转 90 → 80x120；base 坐标 crop x:10,y:20,w:30,h:60
+    // → 映射 {x:80-20-60=0, y:10, w:60, h:30} → 输出 60x30
     const out = path.join(TMP, 'geo.jpg');
     const stages = baseSpecStages();
     stages.find((s) => s.kind === 'geometry').params = { rotate: 90, flipH: false, flipV: false };
@@ -197,8 +198,8 @@ describe('渲染管线安全（真实 sharp）', () => {
       out
     );
     const meta = await sharp(out).metadata();
-    expect(meta.width).toBe(30);
-    expect(meta.height).toBe(60);
+    expect(meta.width).toBe(60);
+    expect(meta.height).toBe(30);
   });
 });
 
@@ -1059,12 +1060,13 @@ describe('代理分辨率渲染（edit-preview 路径）', () => {
     stages.find((st) => st.kind === 'decode').params = { proxyLongEdge: 400 };
     stages.find((st) => st.kind === 'geometry').params = { rotate: 90, flipH: false, flipV: false };
     // rotate 90 顺时针：左半（红）映射到上半，右半（蓝）映射到下半
-    // 全分辨率旋转后坐标 crop {x:0,y:1000,w:1200,h:1000} → 代理坐标 {x:0,y:200,w:240,h:200}
+    // crop 为底图坐标系：全分辨率 base {x:1000,y:0,w:1000,h:1200}（右半蓝）→ 代理 base {x:200,y:0,w:200,h:240}
+    // 执行器映射到旋转后代理坐标 {x:0,y:200,w:240,h:200} → 下半蓝
     stages.find((st) => st.kind === 'crop').params = {
-      x: 0,
-      y: 200,
-      w: 240,
-      h: 200,
+      x: 200,
+      y: 0,
+      w: 200,
+      h: 240,
       ratio: 'free',
       angle: 0,
     };

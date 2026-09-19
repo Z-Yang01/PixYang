@@ -203,6 +203,30 @@ describe('masks uniforms（蒙版打包 + shader 模拟）', () => {
     expect(u.maskOn).toBe(0);
     expect(simulateShaderPixel([120, 120, 120], u, [0.9, 0.9])).toEqual(simulateShaderPixel([120, 120, 120], u, [0.1, 0.1]));
   });
+
+  it('饱和度：simulateShaderPixel 与 shared/saturation.cjs（执行器 raw pass）同语义（审查批 4 契约）', () => {
+    const sat = require_('../../../shared/saturation.cjs');
+    const uMono = buildUniforms({ basic: { saturation: -100 } });
+    expect(uMono.mono).toBe(1);
+    expect(simulateShaderPixel([255, 40, 10], uMono)).toEqual([84, 84, 84]);
+    const buf = Buffer.from([255, 40, 10]);
+    sat.applySaturationInPlace(buf, { value: -100 }, 3);
+    expect(simulateShaderPixel([255, 40, 10], uMono)).toEqual([...buf]);
+    const u50 = buildUniforms({ basic: { saturation: 50 } });
+    const buf2 = Buffer.from([255, 40, 10]);
+    sat.applySaturationInPlace(buf2, { value: 50 }, 3);
+    expect(simulateShaderPixel([255, 40, 10], u50)).toEqual([...buf2]);
+  });
+
+  it('GLSL applyMaskedAdjust 每个蒙版独立钳制（与 applyMaskedAdjustment 一致，审查批 4）', () => {
+    const fs = require_('fs');
+    const path_ = require_('path');
+    const glsl = fs.readFileSync(path_.resolve(__dirname, '../../../src/lib/webglPreview.js'), 'utf8');
+    const start = glsl.indexOf('void applyMaskedAdjust');
+    const end = glsl.indexOf('vec3 rgb2hsl', start);
+    const body = glsl.slice(start, end);
+    expect(body).toContain('c = clamp(c, 0.0, 1.0);');
+  });
 });
 
 function clamp01(v) { return Math.min(1, Math.max(0, v)); }

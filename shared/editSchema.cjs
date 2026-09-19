@@ -82,6 +82,10 @@ const MaskAdjustmentsSchema = z.object({
   temperature: z.number().min(-100).max(100).catch(0),
   tint: z.number().min(-100).max(100).catch(0),
 });
+// adjustments 整体缺失/非法只回退默认值，不连坐丢弃整个蒙版
+const MaskAdjustmentsFieldSchema = MaskAdjustmentsSchema.catch({
+  exposure: 0, contrast: 0, saturation: 0, temperature: 0, tint: 0,
+});
 
 const RadialMaskSchema = z.object({
   type: z.literal('radial'),
@@ -93,7 +97,7 @@ const RadialMaskSchema = z.object({
   rotation: z.number().catch(0),
   feather: z.number().min(0).max(1).catch(0.5),
   invert: z.boolean().catch(false),
-  adjustments: MaskAdjustmentsSchema,
+  adjustments: MaskAdjustmentsFieldSchema,
 });
 
 const LinearMaskSchema = z.object({
@@ -105,7 +109,7 @@ const LinearMaskSchema = z.object({
   y1: z.number().catch(100),
   feather: z.number().min(0).max(1).catch(0.5),
   invert: z.boolean().catch(false),
-  adjustments: MaskAdjustmentsSchema,
+  adjustments: MaskAdjustmentsFieldSchema,
 });
 
 const RangeMaskSchema = z.object({
@@ -115,7 +119,7 @@ const RangeMaskSchema = z.object({
   range: z.number().min(0).max(1).catch(0.25),
   feather: z.number().min(0).max(1).catch(0.25),
   invert: z.boolean().catch(false),
-  adjustments: MaskAdjustmentsSchema,
+  adjustments: MaskAdjustmentsFieldSchema,
 });
 
 const MaskSchema = z.union([RadialMaskSchema, LinearMaskSchema, RangeMaskSchema]).nullable().catch(null);

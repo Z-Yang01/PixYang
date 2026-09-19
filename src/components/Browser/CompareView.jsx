@@ -21,9 +21,11 @@ export default function CompareView({ mode = 'split', beforeSrc, afterNode, init
     const onUp = () => { draggingRef.current = false; };
     window.addEventListener('mousemove', onMove);
     window.addEventListener('mouseup', onUp);
+    window.addEventListener('blur', onUp);
     return () => {
       window.removeEventListener('mousemove', onMove);
       window.removeEventListener('mouseup', onUp);
+      window.removeEventListener('blur', onUp);
     };
   }, [mode]);
 

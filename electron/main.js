@@ -837,34 +837,40 @@ function setupIPC() {
 
   // 相机文件夹同步：导入图库中缺失的图片（JPG + NEF）
   ipcMain.handle('db:sync-camera-folder', async () => {
-    return withImportLock(async () => {
-      const cameraDir = getSetting('camera_folder');
-      if (!cameraDir) return { error: '未设置相机文件夹' };
-      if (!fs.existsSync(cameraDir)) return { error: '相机文件夹不存在' };
+    // 前端按 result.error 消费且无 catch：磁盘/权限类异常必须转成返回值，否则同步状态卡死
+    try {
+      return await withImportLock(async () => {
+        const cameraDir = getSetting('camera_folder');
+        if (!cameraDir) return { error: '未设置相机文件夹' };
+        if (!fs.existsSync(cameraDir)) return { error: '相机文件夹不存在' };
 
-      const files = await scanImageFiles(cameraDir, true);
-      const { toImport, attachPairs, skipped } = prepareCameraSync(files);
+        const files = await scanImageFiles(cameraDir, true);
+        const { toImport, attachPairs, skipped } = prepareCameraSync(files);
 
-      await extractExifBatch(toImport, (done, total) => sendProgress('import-progress', { done, total, task: 'camera-sync' }));
+        await extractExifBatch(toImport, (done, total) => sendProgress('import-progress', { done, total, task: 'camera-sync' }));
 
-      const imported = await importImages(toImport);
-      let attached = 0;
-      for (const p of attachPairs) {
-        if (await attachRawToImage(p.jpgId, p.nefSource, p.nefFilename)) attached++;
-      }
-      // 必须在导入落库后调度：防抖触发时 getImagesForRebuild 才能查到新记录
-      //（此前放在 importImages 之前，同步进来的图片一直没有缩略图）
-      scheduleThumbnailRebuild();
+        const imported = await importImages(toImport);
+        let attached = 0;
+        for (const p of attachPairs) {
+          if (await attachRawToImage(p.jpgId, p.nefSource, p.nefFilename)) attached++;
+        }
+        // 必须在导入落库后调度：防抖触发时 getImagesForRebuild 才能查到新记录
+        //（此前放在 importImages 之前，同步进来的图片一直没有缩略图）
+        scheduleThumbnailRebuild();
 
-      return {
-        scanned: files.length,
-        imported: imported.length,
-        jpgImported: imported.filter(i => !i.hidden).length,
-        nefImported: imported.filter(i => !!i.hidden).length,
-        attached,
-        skipped,
-      };
-    });
+        return {
+          scanned: files.length,
+          imported: imported.length,
+          jpgImported: imported.filter(i => !i.hidden).length,
+          nefImported: imported.filter(i => !!i.hidden).length,
+          attached,
+          skipped,
+        };
+      });
+    } catch (e) {
+      console.error('[ipc] 相机同步失败:', e.message);
+      return { error: `相机同步失败: ${e.message}` };
+    }
   });
 
   // 导入图片：提取日期 + 生成缩略图后写入数据库
@@ -917,13 +923,18 @@ function setupIPC() {
   });
 
   ipcMain.handle('db:delete-broken-records', async (_event, ids) => {
-    const list = ids || [];
-    const { removed, unbound } = await deleteBrokenRecords(list);
-    for (const id of removed) {
-      cancelEditSession(id); // 记录删除后仍打开的会话必须作废，防残留僵尸会话
-      cleanupEditDerivedFiles(id);
+    try {
+      const list = ids || [];
+      const { removed, unbound } = await deleteBrokenRecords(list);
+      for (const id of removed) {
+        cancelEditSession(id); // 记录删除后仍打开的会话必须作废，防残留僵尸会话
+        cleanupEditDerivedFiles(id);
+      }
+      return { removed: removed.length, unbound: unbound.length };
+    } catch (e) {
+      console.error('[ipc] 清理失效记录失败:', e.message);
+      return { error: `清理失效记录失败: ${e.message}` };
     }
-    return { removed: removed.length, unbound: unbound.length };
   });
 
   // 重复图片检测（元数据粗分组 + 快速哈希验证）
@@ -943,6 +954,7 @@ function setupIPC() {
   // 重命名图片（同时更新文件名和磁盘文件；打开中的编辑会话路径同步，避免烘焙报底图丢失）
   ipcMain.handle('db:rename-image', async (_event, id, newFilename) => {
     const result = await renameImage(id, newFilename);
+    if (result === false) return { error: '记录不存在或已被删除' };
     if (result && result.success) {
       reconcileEditSessionPaths(id, getImageById(id));
     }
@@ -1004,6 +1016,9 @@ function setupIPC() {
         mainWindow.webContents.send('thumbnails-ready');
       }
       return { total: rows.length, rebuilt, failed };
+    } catch (e) {
+      console.error('[ipc] 缩略图重建失败:', e.message);
+      return { error: `缩略图重建失败: ${e.message}` };
     } finally {
       manualRebuildRunning = false;
       if (thumbRebuildAgain) { thumbRebuildAgain = false; scheduleThumbnailRebuild(); }
@@ -1124,20 +1139,30 @@ function setupIPC() {
   }
 
   ipcMain.handle('fs:export-album-images', async (_event, albumId, destDir) => {
-    const images = getAlbumImages(albumId);
-    const r = await exportFiles(images, destDir);
-    return { total: images.length, copied: r.copied, nefCopied: r.nefCount };
+    try {
+      const images = getAlbumImages(albumId);
+      const r = await exportFiles(images, destDir);
+      return { total: images.length, copied: r.copied, nefCopied: r.nefCount };
+    } catch (e) {
+      console.error('[ipc] 相册导出失败:', e.message);
+      return { error: `导出失败: ${e.message}` };
+    }
   });
 
   // 导出勾选图片（含配对 NEF）
   ipcMain.handle('fs:export-images', async (_event, ids, destDir) => {
-    const images = [];
-    for (const id of ids) {
-      const img = getImageById(id);
-      if (img) images.push(img);
+    try {
+      const images = [];
+      for (const id of ids) {
+        const img = getImageById(id);
+        if (img) images.push(img);
+      }
+      const r = await exportFiles(images, destDir);
+      return { total: images.length, copied: r.copied, nefCopied: r.nefCount };
+    } catch (e) {
+      console.error('[ipc] 导出失败:', e.message);
+      return { error: `导出失败: ${e.message}` };
     }
-    const r = await exportFiles(images, destDir);
-    return { total: images.length, copied: r.copied, nefCopied: r.nefCount };
   });
 
   // ── 统计 ──
@@ -1146,19 +1171,29 @@ function setupIPC() {
   // ── 设置 ──
   ipcMain.handle('settings:get-all', async () => getAllSettings());
   ipcMain.handle('settings:get', async (_event, key) => getSetting(key));
-  ipcMain.handle('settings:set', async (_event, key, value) => setSetting(key, value));
+  // images_root 只能经 fs:set-images-root 变更：它绑定文件搬迁与在途会话 reconcile，
+  // 裸写会让 DB 路径整体失效（camera_folder 允许直设，本就无文件移动）
+  ipcMain.handle('settings:set', async (_event, key, value) => {
+    if (key === 'images_root') return { error: 'images_root 需通过迁移图片流程修改' };
+    return setSetting(key, value);
+  });
 
   // ── 缩略图重生 ──
   // ── 批量删除 ──
   ipcMain.handle('db:batch-delete-images', async (_event, ids) => {
-    const results = (await batchDeleteImages(ids)) || [];
-    for (const r of results) {
-      if (r && !r.error) {
-        cleanupEditDerivedFiles(r.id);
-        cancelEditSession(r.id);
+    try {
+      const results = (await batchDeleteImages(ids)) || [];
+      for (const r of results) {
+        if (r && !r.error) {
+          cleanupEditDerivedFiles(r.id);
+          cancelEditSession(r.id);
+        }
       }
+      return results;
+    } catch (e) {
+      console.error('[ipc] 批量删除失败:', e.message);
+      return { error: `批量删除失败: ${e.message}` };
     }
-    return results;
   });
 
   // ── 编辑模式（非破坏）──
@@ -1228,9 +1263,22 @@ function setupIPC() {
   });
 
   // ── 打开文件夹 ──
+  // 只允许打开托管目录（图库根 / 数据库所在目录）及其子目录：
+  // 渲染进程可被注入任意路径，shell.openPath 会直接启动文件，须做目录边界校验
   ipcMain.handle('shell:open-path', async (_event, dirPath) => {
     const { shell } = require('electron');
-    return shell.openPath(dirPath);
+    try {
+      if (typeof dirPath !== 'string' || !dirPath) return '无效路径';
+      const target = path.resolve(dirPath);
+      const roots = [getImagesRoot(), path.dirname(getDatabasePath())]
+        .filter(Boolean).map((r) => path.resolve(r));
+      const inside = roots.some((r) => target === r || target.startsWith(r + path.sep));
+      if (!inside) return '仅允许打开图库目录';
+      if (!fs.statSync(target).isDirectory()) return '目标不是目录';
+      return shell.openPath(target);
+    } catch (e) {
+      return e.message;
+    }
   });
 }
 

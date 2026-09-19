@@ -190,10 +190,17 @@ export default function SettingsPage({ onSettingsChanged, onImagesChanged }) {
   const handleScanBroken = async () => {
     if (!api.isBridgeAvailable() || scanningBroken) return;
     setScanningBroken(true);
-    const list = await api.scanBrokenRecords();
+    let list;
+    try {
+      list = (await api.scanBrokenRecords()) || [];
+    } catch (e) {
+      setScanningBroken(false);
+      setMessage(`扫描失效记录失败: ${e.message}`);
+      return;
+    }
     setScanningBroken(false);
-    setBrokenRecords(list || []);
-    if (!list || list.length === 0) showSaved('未发现失效记录');
+    setBrokenRecords(list);
+    if (list.length === 0) showSaved('未发现失效记录');
   };
 
   const handleCleanBroken = async () => {
@@ -202,6 +209,7 @@ export default function SettingsPage({ onSettingsChanged, onImagesChanged }) {
     setBrokenRecords(null);
     const result = await api.deleteBrokenRecords(ids);
     onImagesChanged?.();
+    if (result?.error) { setMessage(result.error); return; }
     const removed = result?.removed ?? 0;
     const unbound = result?.unbound ?? 0;
     showSaved(unbound > 0
@@ -250,10 +258,14 @@ export default function SettingsPage({ onSettingsChanged, onImagesChanged }) {
       return sum + g.items.filter(item => item.id !== dupeKeep[gi]).reduce((s, i) => s + (i.size || 0), 0);
     }, 0);
     setDupGroups(null);
-    await api.batchDeleteImages(ids);
+    const results = await api.batchDeleteImages(ids);
     onImagesChanged?.();
     const mb = (wasted / 1048576).toFixed(1);
-    showSaved(`已删除 ${ids.length} 张重复图片，释放 ${mb} MB`);
+    if (!Array.isArray(results) && results?.error) { setMessage(results.error); return; }
+    const failed = Array.isArray(results) ? results.filter(r => r?.error).length : 0;
+    showSaved(failed > 0
+      ? `已删除 ${ids.length - failed} 张重复图片（${failed} 张失败），释放 ${mb} MB`
+      : `已删除 ${ids.length} 张重复图片，释放 ${mb} MB`);
   };
 
   const formatMb = (bytes) => `${(bytes / 1048576).toFixed(1)} MB`;
@@ -261,10 +273,10 @@ export default function SettingsPage({ onSettingsChanged, onImagesChanged }) {
   const handleBackup = async () => {
     if (!api.isBridgeAvailable()) return;
     const result = await api.backupDatabase();
-    if (result.success) {
+    if (result?.success) {
       showSaved(`数据库已备份到 ${result.path}`);
     } else {
-      setMessage(result.error || '备份已取消');
+      setMessage(result?.error || '备份已取消');
     }
   };
 

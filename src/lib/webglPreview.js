@@ -83,6 +83,8 @@ void applyMaskedAdjust(int i, float w, inout vec3 c) {
     float y = dot(c, vec3(0.2126, 0.7152, 0.0722));
     c = y + (c - y) * (1.0 + (uMaskAdjSat[i] / 100.0) * w);
   }
+  // 与 shared/masks.cjs applyMaskedAdjustment 一致：每个蒙版独立钳制，避免越界值串入下一蒙版
+  c = clamp(c, 0.0, 1.0);
 }
 
 vec3 rgb2hsl(vec3 c) {

@@ -63,11 +63,11 @@ describe('MaskOverlay（蒙版几何 overlay）', () => {
     expect(handles.ry.style.left).toBe('40%');
     expect(handles.ry.style.top).toBe('50%');
     // 旋转手柄在椭圆系上方 max(rx,ry)*1.15 处：rotation 90 → (cx+230, cy)；
-    // 羽化手柄在 −x 轴 rx*(1+feather) 处：rotation 90 → (cx, cy−300)
+    // 羽化手柄在实芯边界 −x 轴 rx*(1−feather) 处：rotation 90 → (cx, cy−100)
     expect(handles.rot.style.left).toBe('73%');
     expect(handles.rot.style.top).toBe('50%');
     expect(handles.feather.style.left).toBe('50%');
-    expect(handles.feather.style.top).toBe('20%');
+    expect(handles.feather.style.top).toBe('40%');
     expect(container.querySelector('ellipse.editor-mask-feather-ring')).not.toBeNull();
   });
 
@@ -189,10 +189,15 @@ describe('MaskOverlay（蒙版几何 overlay）', () => {
     fireEvent.pointerMove(window, { clientX: 800, clientY: 500 });
     expect(props.onChangeMask).toHaveBeenCalledWith('m1', { rotation: 90 });
     fireEvent.pointerUp(window);
-    // 指针在 −x 轴方向距中心 400：feather = (400−200)/200 = 1（钳制）
-    fireEvent.pointerDown(container.querySelector('[data-mask-handle="feather"]'), { clientX: 200, clientY: 500 });
-    fireEvent.pointerMove(window, { clientX: 100, clientY: 500 });
+    // 羽化手柄拖向中心（proj→0）：feather = 1 − 0/200 = 1（实芯缩到 0）
+    fireEvent.pointerDown(container.querySelector('[data-mask-handle="feather"]'), { clientX: 400, clientY: 500 });
+    fireEvent.pointerMove(window, { clientX: 450, clientY: 500 });
+    expect(props.onChangeMask).toHaveBeenCalledWith('m1', { feather: 0.75 });
+    fireEvent.pointerMove(window, { clientX: 500, clientY: 500 });
     expect(props.onChangeMask).toHaveBeenCalledWith('m1', { feather: 1 });
+    // 外拖超过椭圆边界按 proj≥rx 归 0（硬边）
+    fireEvent.pointerMove(window, { clientX: 100, clientY: 500 });
+    expect(props.onChangeMask).toHaveBeenCalledWith('m1', { feather: 0 });
     fireEvent.pointerUp(window);
     expect(props.onCommit).toHaveBeenCalledTimes(2);
   });

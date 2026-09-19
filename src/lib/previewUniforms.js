@@ -8,10 +8,12 @@ import curvesLib from '../../shared/curves.cjs';
 import gradingLib from '../../shared/colorGrading.cjs';
 import hslLib from '../../shared/hsl.cjs';
 import masksLib from '../../shared/masks.cjs';
+import saturationLib from '../../shared/saturation.cjs';
 
 const { buildCurveLuts } = curvesLib;
 const { buildGradeLuts } = gradingLib;
 const { normalizeHsl, HSL_BANDS } = hslLib;
+const { saturate01 } = saturationLib;
 
 const clamp = (v, min, max) => Math.min(max, Math.max(min, v));
 
@@ -190,12 +192,8 @@ export function simulateShaderPixel(rgb255, uniforms, uv = [0.5, 0.5]) {
     }
     c = c.map((x) => clamp(x, 0, 1));
   }
-  if (uniforms.mono) {
-    const y = 0.213 * c[0] + 0.715 * c[1] + 0.072 * c[2];
-    c = [y, y, y];
-  } else if (uniforms.saturation !== 1) {
-    const y = 0.213 * c[0] + 0.715 * c[1] + 0.072 * c[2];
-    c = c.map((x) => y + (x - y) * uniforms.saturation);
+  if (uniforms.mono || uniforms.saturation !== 1) {
+    c = saturate01(c, uniforms.mono ? 0 : uniforms.saturation);
   }
   if (uniforms.maskOn) {
     const px = [uv[0] * uniforms.imageSize[0], uv[1] * uniforms.imageSize[1]];

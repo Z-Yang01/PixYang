@@ -5,7 +5,7 @@
 // 铁律：
 // - 严格按 spec.stages 顺序应用，禁止重排；
 // - stage.unsupported 为 true 时记录警告并跳过（不静默丢弃）；
-// - geometry 先于 crop，crop 坐标是旋转后图像坐标系（pipelineOrder.cjs 锁定）。
+// - geometry 先于 crop，crop 坐标是底图（geometry 前）坐标系，由执行器映射到变换后空间。
 //
 // 【仿射累积】白平衡/曝光/影调线性/高光全部是逐通道仿射映射，在 JS 端精确复合成
 // 单次 linear，到非线性边界（阴影 gamma/饱和度/锐化/几何/编码）才物化一次——
@@ -19,6 +19,7 @@ const { buildCurveLuts } = require('../../shared/curves.cjs');
 const { hasColorGradingData, applyColorGradingInPlace } = require('../../shared/colorGrading.cjs');
 const { applyVignetteInPlace } = require('../../shared/lens.cjs');
 const { hasHslData, applyHslInPlace } = require('../../shared/hsl.cjs');
+const { applySaturationInPlace } = require('../../shared/saturation.cjs');
 const { hasMaskData, applyMasksInPlace } = require('../../shared/masks.cjs');
 const fs = require('fs');
 
@@ -162,12 +163,17 @@ async function renderSpecToSharp(spec, inputPath, outputPath, opts = {}) {
         break;
       }
 
-      case 'saturation':
-        pixels = await flushAffine();
-        if (stage.params && (stage.params.mono || stage.params.value !== 0)) {
-          pixels = await materialize(applySaturation(sourceSharp(pixels, inputPath), stage.params));
+      case 'saturation': {
+        // 非线性边界：shared luma-mix raw pass（与 shader 同公式）。不用 modulate/grayscale——
+        // libvips 是另一套模型（预览/导出分叉），且 grayscale 降 1 band 连带吞掉 masks 与 alpha
+        const satP = stage.params || {};
+        if (satP.mono || (satP.value || 0) !== 0) {
+          pixels = await flushAffine();
+          if (!pixels) pixels = await materialize(sourceSharp(null, inputPath));
+          applySaturationInPlace(pixels.data, satP, pixels.info.channels);
         }
         break;
+      }
 
       case 'masks': {
         // 局部蒙版（pre-crop 坐标系，radial/linear v1）：逐像素权重 × 调整（raw pass）
@@ -205,6 +211,7 @@ async function renderSpecToSharp(spec, inputPath, outputPath, opts = {}) {
       case 'geometry':
         pixels = await flushAffine();
         if (hasGeometry(stage.params)) {
+          ctx.baseGeom = { w: ctx.width, h: ctx.height, ...stage.params };
           pixels = await materialize(applyGeometry(sourceSharp(pixels, inputPath), stage.params));
           ctx.width = pixels.info.width;
           ctx.height = pixels.info.height;
@@ -214,8 +221,11 @@ async function renderSpecToSharp(spec, inputPath, outputPath, opts = {}) {
       case 'crop':
         pixels = await flushAffine();
         if (stage.params && stage.params.w > 0 && stage.params.h > 0) {
-          // 裁剪坐标可能来自其他尺寸图片的预设（含几何应用）——按当前图像尺寸钳制防越界
-          const clipped = clampCrop(stage.params, ctx);
+          // crop 参数是底图（geometry 前）坐标——与 EditParams/前端裁剪框同一空间；
+          // 先随 geometry 映射到变换后坐标系，再按当前图像尺寸钳制
+          //（跨尺寸预设应用时 clamp 兜底防 extract 越界）
+          const rect = ctx.baseGeom ? mapCropThroughGeometry(stage.params, ctx.baseGeom) : stage.params;
+          const clipped = clampCrop(rect, ctx);
           if (clipped) {
             ctx.effectiveCrop = clipped;
             pixels = await materialize(sourceSharp(pixels, inputPath).extract(clipped));
@@ -447,6 +457,28 @@ async function encodeAndWrite(pixels, inputPath, outputPath, encodeStage, spec, 
   return outputPath;
 }
 
+// 底图（geometry 前）裁剪矩形 → 变换后坐标系：与 applyGeometry 的
+// rotate(顺时针 90 倍数) → flipV → flipH 次序严格一致
+function mapCropThroughGeometry(p, g) {
+  let { x, y, w, h } = p;
+  let W = g.w;
+  let H = g.h;
+  const rot = ((Math.round((g.rotate || 0) % 360) + 360) % 360);
+  if (rot === 90 || rot === 270) {
+    const nx = rot === 90 ? H - y - h : y;
+    const ny = rot === 90 ? x : W - x - w;
+    x = nx; y = ny;
+    [w, h] = [h, w];
+    [W, H] = [H, W];
+  } else if (rot === 180) {
+    x = W - x - w;
+    y = H - y - h;
+  }
+  if (g.flipV) y = H - y - h;
+  if (g.flipH) x = W - x - w;
+  return { ...p, x, y, w, h };
+}
+
 // 裁剪矩形按当前图像尺寸钳制（预设跨尺寸应用时防 extract 越界崩溃）：
 // 优先保留裁剪尺寸，把位置拉回边界内；尺寸超过图像时收敛到图像大小
 function clampCrop(params, ctx) {
@@ -470,12 +502,6 @@ function applyGeometry(pipe, params) {
   return pipe;
 }
 
-function applySaturation(pipe, { value = 0, mono = false } = {}) {
-  if (mono || value === -100) return pipe.grayscale();
-  if (value !== 0) return pipe.modulate({ saturation: 1 + value / 100 });
-  return pipe;
-}
-
 function guessFormat(outputPath) {
   const ext = outputPath.toLowerCase().split('.').pop();
   if (ext === 'png') return 'png';
@@ -484,6 +510,10 @@ function guessFormat(outputPath) {
 }
 
 function clampNum(v, min, max) { return Math.min(max, Math.max(min, v)); }
-function clampInt(v, min, max) { return Math.min(max, Math.max(min, Math.round(v))); }
+function clampInt(v, min, max, def = min) {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return def;
+  return Math.min(max, Math.max(min, Math.round(n)));
+}
 
 module.exports = { renderSpecToSharp, applyStage: renderSpecToSharp };

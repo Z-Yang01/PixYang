@@ -633,6 +633,21 @@ describe('写入委托类 handler', () => {
     expect(dbStub.setSetting).toHaveBeenCalledWith('theme', 'light');
   });
 
+  it('settings:set 拒绝裸写 images_root（审查批 4，只能走迁移流程）', async () => {
+    const result = await call('settings:set', 'images_root', 'D:/elsewhere');
+    expect(result.error).toBeTruthy();
+    expect(dbStub.setSetting).not.toHaveBeenCalled();
+  });
+
+  it('长任务 handler 异常转 { error } 不 reject（审查批 4）', async () => {
+    dbStub.batchDeleteImages.mockRejectedValueOnce(new Error('EBUSY'));
+    await expect(call('db:batch-delete-images', [1])).resolves.toEqual({ error: expect.stringContaining('EBUSY') });
+    dbStub.deleteBrokenRecords.mockRejectedValueOnce(new Error('boom'));
+    await expect(call('db:delete-broken-records', [1])).resolves.toEqual({ error: expect.stringContaining('boom') });
+    dbStub.renameImage.mockResolvedValueOnce(false);
+    await expect(call('db:rename-image', 1, 'a.jpg')).resolves.toEqual({ error: '记录不存在或已被删除' });
+  });
+
   it('db:scan-broken-records / db:delete-broken-records 委托', async () => {
     const broken = [{ id: 9 }];
     dbStub.findBrokenRecords.mockReturnValueOnce(broken);
@@ -1204,9 +1219,19 @@ describe('对话框与 shell', () => {
     await expect(call('dialog:select-export-directory')).resolves.toBeNull();
   });
 
-  it('shell:open-path 委托 shell.openPath', async () => {
-    await expect(call('shell:open-path', 'C:/some/dir')).resolves.toBe('');
-    expect(electronStub.shell.openPath).toHaveBeenCalledWith('C:/some/dir');
+  it('shell:open-path 仅允许打开托管根（图库根/数据库目录）内的目录（审查批 4）', async () => {
+    // 根外路径：拒绝且不触达 shell
+    await expect(call('shell:open-path', 'C:/some/dir')).resolves.toBe('仅允许打开图库目录');
+    // 前缀兄弟目录不得因 startsWith 误放行
+    await expect(call('shell:open-path', `${TMP_BASE}-evil`)).resolves.toBe('仅允许打开图库目录');
+    expect(electronStub.shell.openPath).not.toHaveBeenCalled();
+    // 数据库所在目录 = 托管根：放行
+    await expect(call('shell:open-path', TMP_BASE)).resolves.toBe('');
+    expect(electronStub.shell.openPath).toHaveBeenCalledWith(TMP_BASE);
+    // 根内文件（非目录）拒绝
+    fs.writeFileSync(path.join(TMP_BASE, 'notadir.txt'), 'x');
+    await expect(call('shell:open-path', path.join(TMP_BASE, 'notadir.txt'))).resolves.toBe('目标不是目录');
+    expect(electronStub.shell.openPath).toHaveBeenCalledTimes(1);
   });
 });
 

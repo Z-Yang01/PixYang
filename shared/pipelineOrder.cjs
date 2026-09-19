@@ -4,7 +4,8 @@
 // 顺序语义（锁定，写测试用例防止回归）：
 // - 白平衡/影调/颜色等像素操作在几何（旋转/裁剪）之前；
 // - geometry（rotate/flip）先于 crop；
-// - crop 的 x/y/w/h 坐标是 geometry 应用之后图像坐标系（即旋转后坐标系）；
+// - crop 的 x/y/w/h 坐标是 geometry 应用之前的底图坐标系（与 EditParams/前端裁剪框同源），
+//   执行器负责把矩形随 geometry 参数映射到变换后坐标系再 extract；
 // - encode 永远最后。
 const PIPELINE_ORDER = [
   'decode',        // 解码/RAW 显影（M8 前：常规格式直读）
@@ -19,7 +20,7 @@ const PIPELINE_ORDER = [
   'detail',        // 锐化/降噪（锐化已实现，降噪未实现时按参数内警告）
   'lens',          // 镜头校正（vignette 已实现，shared/lens.cjs；profile/distortion/chromatic 阶段内警告跳过）
   'geometry',      // 旋转/翻转（90° 倍数）
-  'crop',          // 裁剪（geometry 之后坐标系）
+  'crop',          // 裁剪（底图坐标系，执行器映射到变换后空间）
   'encode',        // 编码输出
 ];
 

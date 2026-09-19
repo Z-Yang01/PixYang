@@ -759,4 +759,47 @@ describe('历史面板（本轮新功能验证）', () => {
     });
     rectSpy.mockRestore();
   });
+
+  it('原图预解码：解码完成后显示源从缩略图切到原图（审查批 4）', async () => {
+    const preloads = [];
+    class FakeImage {
+      set src(v) { this._src = v; preloads.push(this); }
+      get src() { return this._src; }
+    }
+    const RealImage = window.Image;
+    window.Image = FakeImage;
+    window.pixyang.toFileUrl.mockImplementation((p) => Promise.resolve(p ? `file:///${p.replace(/\\/g, '/')}` : null));
+    const { container } = render(<ImageViewer {...baseProps()} />);
+    try {
+      const img = () => container.querySelector('.viewer-image');
+      await vi.waitFor(() => expect(img()?.getAttribute('src')).toContain('thumbs'));
+      await vi.waitFor(() => expect(preloads.length).toBeGreaterThan(0));
+      expect(preloads[0]._src).toContain('pics');
+      expect(img().getAttribute('src')).toContain('thumbs'); // 未解码不切换
+      preloads[0].onload();
+      await vi.waitFor(() => expect(img().getAttribute('src')).toContain('pics'));
+    } finally {
+      window.Image = RealImage;
+    }
+  });
+
+  it('原图解码失败也切换到原图露出错误态，不卡在缩略图（审查批 4）', async () => {
+    const preloads = [];
+    class FakeImage {
+      set src(v) { this._src = v; preloads.push(this); }
+      get src() { return this._src; }
+    }
+    const RealImage = window.Image;
+    window.Image = FakeImage;
+    window.pixyang.toFileUrl.mockImplementation((p) => Promise.resolve(p ? `file:///${p.replace(/\\/g, '/')}` : null));
+    const { container } = render(<ImageViewer {...baseProps()} />);
+    try {
+      const img = () => container.querySelector('.viewer-image');
+      await vi.waitFor(() => expect(preloads.length).toBeGreaterThan(0));
+      preloads[0].onerror();
+      await vi.waitFor(() => expect(img().getAttribute('src')).toContain('pics'));
+    } finally {
+      window.Image = RealImage;
+    }
+  });
 });

@@ -59,9 +59,9 @@ export default function MaskOverlay({
       const dx = p.x - g.cx;
       const dy = p.y - g.cy;
       const proj = -(dx * Math.cos(a) + dy * Math.sin(a));
-      // 分母保底：rx 极小时按 16px 屏幕位移映射满量程，避免手柄 1px 跳变不可用
+      // 羽化带宽按 rx 归一（feather=1 时实芯缩到 0）；rx 极小时按 16px 屏幕位移映射满量程，避免手柄 1px 跳变不可用
       const base = Math.max(g.rx, 16);
-      onChangeMask?.(g.id, { feather: clamp((proj - g.rx) / base, 0, 1) });
+      onChangeMask?.(g.id, { feather: clamp(1 - proj / base, 0, 1) });
       return;
     }
     const a = ((g.rotation || 0) * Math.PI) / 180;
@@ -112,9 +112,12 @@ export default function MaskOverlay({
     };
     window.addEventListener('pointermove', onMove);
     window.addEventListener('pointerup', onUp);
+    // 触摸被系统接管等场景只有 pointercancel 没有 pointerup，不结算会卡住手势与草稿
+    window.addEventListener('pointercancel', onUp);
     return () => {
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onUp);
     };
   }, [toImagePoint, applyHandle, onCreate, onCommit]);
 
@@ -192,7 +195,7 @@ export default function MaskOverlay({
   if (selected?.type === 'radial') {
     const a = ((selected.rotation || 0) * Math.PI) / 180;
     const rotR = Math.max(selected.rx, selected.ry) * 1.15;
-    const featherR = selected.rx * (1 + (selected.feather || 0));
+    const featherR = selected.rx * (1 - (selected.feather || 0));
     handles.push({ kind: 'center', x: selected.cx, y: selected.cy, title: '中心（拖动移动）' });
     handles.push({ kind: 'rx', x: selected.cx + selected.rx * Math.cos(a), y: selected.cy + selected.rx * Math.sin(a), title: '半径 X' });
     handles.push({ kind: 'ry', x: selected.cx - selected.ry * Math.sin(a), y: selected.cy + selected.ry * Math.cos(a), title: '半径 Y' });
@@ -218,8 +221,8 @@ export default function MaskOverlay({
           <ellipse
             className="editor-mask-feather-ring"
             cx={selected.cx} cy={selected.cy}
-            rx={Math.max(0, selected.rx * (1 + (selected.feather || 0)))}
-            ry={Math.max(0, selected.ry * (1 + (selected.feather || 0)))}
+            rx={Math.max(0, selected.rx * (1 - (selected.feather || 0)))}
+            ry={Math.max(0, selected.ry * (1 - (selected.feather || 0)))}
             transform={`rotate(${selected.rotation || 0} ${selected.cx} ${selected.cy})`}
             vectorEffect="non-scaling-stroke"
           />
