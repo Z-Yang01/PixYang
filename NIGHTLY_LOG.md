@@ -9,3 +9,6 @@
   cargo 6/6；vitest 946/946。详见 NIGHTLY_PROGRESS.md。
 - 02:00-02:22 R2 完成：image_group.rs（导入分组/日期围栏/安全文件名移植，10 测试）。
   镜像测试抓到并修复 2 处移植错误（扩展名小写、日期横线索引）。cargo 16/16；vitest 946/946。
+- 02:44-02:52 R3 完成：引入 tauri v2 + serde（derive）依赖，commands.rs 命令壳
+  （unique_filename 真磁盘查重、group_import_files DTO 封装，2 命令直调测试）。
+  tauri 全依赖图单任务编译 3.5 分钟，可行。cargo 18/18；vitest 946/946。
