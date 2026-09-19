@@ -151,4 +151,24 @@ describe('App 组合根冒烟', () => {
     expect(screen.getByText('PixYang')).toBeInTheDocument();
     expect(screen.queryByText('共 1 张')).not.toBeInTheDocument();
   });
+
+  it('回归：搜索词变化即清空勾选（跨筛选陈旧 id 不得随批量操作泄漏）', async () => {
+    const { container } = renderApp('/');
+    await screen.findByText('sunset');
+    fireEvent.click(container.querySelector('.card-checkbox'));
+    expect(useGalleryStore.getState().selectedIds.has(1)).toBe(true);
+    fireEvent.change(screen.getByPlaceholderText(/搜索图片名称/), { target: { value: 'sun' } });
+    expect(useGalleryStore.getState().selectedIds.size).toBe(0);
+  });
+
+  it('回归：查看器打开后 Space 不穿透网格勾选（viewerActive 接线）', async () => {
+    const { container } = renderApp('/');
+    await screen.findByText('sunset');
+    // 先用方向键把高亮落到第一张卡（历史缺陷：App 未传 viewerActive，查看器内按键穿透进网格）
+    fireEvent.keyDown(window, { key: 'ArrowRight' });
+    fireEvent.click(container.querySelector('.image-card'));
+    await screen.findByTitle(/查看详情/);
+    fireEvent.keyDown(window, { key: ' ' });
+    expect(useGalleryStore.getState().selectedIds.size).toBe(0);
+  });
 });

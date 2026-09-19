@@ -763,46 +763,59 @@ function setupIPC() {
     return scanImageFiles(dirPath, false);
   });
 
+  // 相机同步/手动导入串行锁：两条链路各自有「查重 → 复制 → 落库」的跨 await 窗口，
+  // 并发执行会同时判定“未导入”而产生重复记录与 _1 副本文件
+  let importChain = Promise.resolve();
+  function withImportLock(task) {
+    const run = importChain.then(task, task);
+    importChain = run.then(() => undefined, () => undefined);
+    return run;
+  }
+
   // 相机文件夹同步：导入图库中缺失的图片（JPG + NEF）
   ipcMain.handle('db:sync-camera-folder', async () => {
-    const cameraDir = getSetting('camera_folder');
-    if (!cameraDir) return { error: '未设置相机文件夹' };
-    if (!fs.existsSync(cameraDir)) return { error: '相机文件夹不存在' };
+    return withImportLock(async () => {
+      const cameraDir = getSetting('camera_folder');
+      if (!cameraDir) return { error: '未设置相机文件夹' };
+      if (!fs.existsSync(cameraDir)) return { error: '相机文件夹不存在' };
 
-    const files = await scanImageFiles(cameraDir, true);
-    const { toImport, attachPairs, skipped } = prepareCameraSync(files);
+      const files = await scanImageFiles(cameraDir, true);
+      const { toImport, attachPairs, skipped } = prepareCameraSync(files);
 
-    await extractExifBatch(toImport, (done, total) => sendProgress('import-progress', { done, total }));
+      await extractExifBatch(toImport, (done, total) => sendProgress('import-progress', { done, total }));
 
-    const imported = await importImages(toImport);
-    let attached = 0;
-    for (const p of attachPairs) {
-      if (await attachRawToImage(p.jpgId, p.nefSource, p.nefFilename)) attached++;
-    }
-    // 必须在导入落库后调度：防抖触发时 getImagesForRebuild 才能查到新记录
-    //（此前放在 importImages 之前，同步进来的图片一直没有缩略图）
-    scheduleThumbnailRebuild();
+      const imported = await importImages(toImport);
+      let attached = 0;
+      for (const p of attachPairs) {
+        if (await attachRawToImage(p.jpgId, p.nefSource, p.nefFilename)) attached++;
+      }
+      // 必须在导入落库后调度：防抖触发时 getImagesForRebuild 才能查到新记录
+      //（此前放在 importImages 之前，同步进来的图片一直没有缩略图）
+      scheduleThumbnailRebuild();
 
-    return {
-      scanned: files.length,
-      imported: imported.length,
-      jpgImported: imported.filter(i => !i.hidden).length,
-      nefImported: imported.filter(i => !!i.hidden).length,
-      attached,
-      skipped,
-    };
+      return {
+        scanned: files.length,
+        imported: imported.length,
+        jpgImported: imported.filter(i => !i.hidden).length,
+        nefImported: imported.filter(i => !!i.hidden).length,
+        attached,
+        skipped,
+      };
+    });
   });
 
   // 导入图片：提取日期 + 生成缩略图后写入数据库
   ipcMain.handle('db:import-images', async (_event, imageFiles, dateOverride) => {
-    await extractExifBatch(
-      imageFiles,
-      (done, total) => sendProgress('import-progress', { done, total }),
-      (img, info) => { img.importDate = dateOverride || info.date; }
-    );
-    const result = await importImages(imageFiles);
-    scheduleThumbnailRebuild();
-    return result;
+    return withImportLock(async () => {
+      await extractExifBatch(
+        imageFiles,
+        (done, total) => sendProgress('import-progress', { done, total }),
+        (img, info) => { img.importDate = dateOverride || info.date; }
+      );
+      const result = await importImages(imageFiles);
+      scheduleThumbnailRebuild();
+      return result;
+    });
   });
 
   // 获取图片列表（支持日期+标签组合筛选）

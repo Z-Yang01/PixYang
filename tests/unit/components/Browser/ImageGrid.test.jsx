@@ -159,4 +159,59 @@ describe('ImageGrid', () => {
     fireEvent.click(screen.getByText('下一页'));
     expect(useGalleryStore.getState().page).toBe(2);
   });
+
+  it('回归：viewerActive 时键盘导航不穿透网格（Space 不勾选、方向键不高亮）', async () => {
+    seedStore({ images: [makeImage()], totalImages: 1 });
+    const { container, rerender } = render(<ImageGrid />);
+    await screen.findByText('sunset');
+    fireEvent.keyDown(window, { key: 'ArrowRight' });
+    expect(container.querySelector('.image-card.keyboard-active')).toBeTruthy();
+    fireEvent.keyDown(window, { key: ' ' });
+    expect(useGalleryStore.getState().selectedIds.has(1)).toBe(true);
+
+    useGalleryStore.setState({ selectedIds: new Set() });
+    rerender(<ImageGrid viewerActive={true} />);
+    fireEvent.keyDown(window, { key: ' ' });
+    fireEvent.keyDown(window, { key: 'ArrowLeft' });
+    expect(useGalleryStore.getState().selectedIds.size).toBe(0);
+  });
+
+  it('回归：单图删除确认后从勾选集移除该 id（不留陈旧死 id）', async () => {
+    seedStore({ images: [makeImage()], totalImages: 1, selectedIds: new Set([1, 999]) });
+    const { container } = render(<ImageGrid />);
+    await screen.findByText('sunset');
+    fireEvent.contextMenu(container.querySelector('.image-card'));
+    fireEvent.click(await screen.findByRole('menuitem', { name: /删除/ }));
+    fireEvent.click(await screen.findByRole('button', { name: '删除' }));
+    await vi.waitFor(() => {
+      expect(window.pixyang.deleteImage).toHaveBeenCalledWith(1);
+      const sel = useGalleryStore.getState().selectedIds;
+      expect(sel.has(1)).toBe(false);
+      expect(sel.has(999)).toBe(true);
+    });
+  });
+
+  it('回归：thumbnail_edit_path 写回后清该图缩略图缓存并重新解析 URL', async () => {
+    window.pixyang.toFileUrls = vi.fn(async (paths) =>
+      Object.fromEntries(paths.map((p) => [p, `file:///${encodeURIComponent(p)}`])));
+    seedStore({ images: [makeImage()], totalImages: 1 });
+    const { rerender } = render(<ImageGrid />);
+    await screen.findByText('sunset');
+    await vi.waitFor(() => {
+      expect(window.pixyang.toFileUrls).toHaveBeenCalledWith(
+        expect.arrayContaining(['C:/pics/sunset.jpg'])
+      );
+    });
+    const callsBefore = window.pixyang.toFileUrls.mock.calls.length;
+    // 编辑预览写回新路径 → 缓存失效重解析
+    useGalleryStore.setState({
+      images: [makeImage({ thumbnail_edit_path: 'C:/edit/sunset.png' })],
+    });
+    rerender(<ImageGrid />);
+    await vi.waitFor(() => {
+      expect(window.pixyang.toFileUrls.mock.calls.length).toBeGreaterThan(callsBefore);
+      const last = window.pixyang.toFileUrls.mock.calls.at(-1)[0];
+      expect(last).toContain('C:/edit/sunset.png');
+    });
+  });
 });

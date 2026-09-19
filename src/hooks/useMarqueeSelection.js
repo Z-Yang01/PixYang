@@ -72,11 +72,21 @@ export default function useMarqueeSelection({ selectedIdsRef }) {
       setSelectedIds(next);
       if (hit.length > 0) lastSelectedRef.current = hit[hit.length - 1];
     };
+    // 鼠标在窗口外松开（切窗/拖出屏幕）时收不到 mouseup：失焦即复位，避免回来移动鼠标出现幽灵框
+    const onBlur = () => {
+      if (!selectStartRef.current) return;
+      selectStartRef.current = null;
+      selBoxRef.current = null;
+      const el = selBoxElRef.current;
+      if (el) el.style.display = 'none';
+    };
     window.addEventListener('mousemove', onMove);
     window.addEventListener('mouseup', onUp);
+    window.addEventListener('blur', onBlur);
     return () => {
       window.removeEventListener('mousemove', onMove);
       window.removeEventListener('mouseup', onUp);
+      window.removeEventListener('blur', onBlur);
     };
   }, [setSelectedIds, selectedIdsRef]);
 

@@ -40,6 +40,9 @@ export default function App() {
   const selectedIds = useGalleryStore(s => s.selectedIds);
   const gridSettings = useGalleryStore(s => s.gridSettings);
   const page = useGalleryStore(s => s.page);
+  const search = useGalleryStore(s => s.search);
+  const filterDate = useGalleryStore(s => s.filterDate);
+  const dateRange = useGalleryStore(s => s.dateRange);
 
   // App 级弹层状态（生命周期短，无需入 store）
   const [viewerImage, setViewerImage] = useState(null);
@@ -109,8 +112,9 @@ export default function App() {
     }
   }, [location.pathname]);
 
-  // 筛选变化：清空勾选（勾选集只对当前筛选有意义，避免跨筛选误操作）；翻页重置由 store 的筛选 action 完成
-  const filterKey = `${filterTag}|${filterAlbum}|${filterFavorites}`;
+  // 筛选变化（含搜索/日期）：清空勾选（勾选集只对当前筛选有意义，避免跨筛选把不可见图片拖进批量操作）；
+  // 翻页重置由 store 的筛选 action 完成
+  const filterKey = `${filterTag}|${filterAlbum}|${filterFavorites}|${search}|${filterDate}|${dateRange.from}|${dateRange.to}`;
   useEffect(() => {
     useGalleryStore.getState().clearSelection();
   }, [filterKey, location.pathname]);
@@ -132,6 +136,19 @@ export default function App() {
       setViewerIndex(-1);
     }
   }, [images, gridSettings, page]);
+
+  // 同步 infoImage：images 刷新后把面板对齐到最新记录（重命名/改日期/评分等不回退旧值）；
+  // 从网格打开的面板其图片必在当前页，刷新后找不到（已删除/被筛掉）即关闭，防幽灵面板写空
+  useEffect(() => {
+    const current = infoImageRef.current;
+    if (!current || images.length === 0) return;
+    const fresh = images.find(img => img.id === current.id);
+    if (fresh) {
+      if (fresh !== current) setInfoImage(prev => (prev && prev.id === fresh.id ? { ...prev, ...fresh } : prev));
+      return;
+    }
+    if (!infoFromViewerRef.current) setInfoImage(null);
+  }, [images]);
 
   // 通过路由状态传递筛选参数（修复相册/标签点击导航 Bug）
   useEffect(() => {
@@ -376,6 +393,7 @@ export default function App() {
   // 数组会在 Routes 匹配时抛 TypeError，因此拆成两个 Route 复用同一 element。
   const galleryGrid = (
     <ImageGrid
+      viewerActive={!!viewerImage}
       onView={openViewer}
       onInfo={(img) => {
         infoFromViewerRef.current = false;

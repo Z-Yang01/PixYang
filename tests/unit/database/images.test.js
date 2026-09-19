@@ -133,6 +133,77 @@ describe('importImages 导入', () => {
     expect(third).toHaveLength(0);
     expect(db.getImageById(first[0].id).raw_path).toBe(rec.raw_path);
   });
+
+  it('P0 回归：大写扩展名 DSC.JPG+DSC.NEF 同目录同主名配对导入', async () => {
+    const dir = tmpDir('upper');
+    const jpg = makeImage('DSC_9.JPG', dir, 'upj');
+    const nef = makeImage('DSC_9.NEF', dir, 'upn');
+    const imported = await db.importImages([jpg, nef]);
+    expect(imported).toHaveLength(1);
+    const row = imported[0];
+    expect(row.hidden).toBe(0);
+    expect(row.raw_path).not.toBe('');
+    expect(path.basename(row.raw_path)).toBe('DSC_9.NEF');
+    expect(fs.existsSync(row.raw_path)).toBe(true);
+  });
+
+  it('P0 回归：大小写混排小写 jpg + 大写 NEF 也配对', async () => {
+    const dir = tmpDir('mixed');
+    const jpg = makeImage('mix_1.jpg', dir, 'mj');
+    const nef = makeImage('MIX_1.NEF', dir, 'mn');
+    const imported = await db.importImages([jpg, nef]);
+    expect(imported).toHaveLength(1);
+    expect(imported[0].raw_path).not.toBe('');
+  });
+
+  it('配对 NEF 目标名被隐藏记录占用：导入收养（删隐藏记录，不两行指同一文件）', async () => {
+    const dir = tmpDir('adopt');
+    const nef = makeImage('adr.nef', dir, 'adrnef');
+    const [hidden] = await db.importImages([nef]);
+    expect(hidden.hidden).toBe(1);
+    const jpg = makeImage('adr.jpg', dir, 'adrjpg');
+    const withRaw = { ...jpg, raw_source: nef.filepath, raw_filename: 'adr.nef' };
+    const imported = await db.importImages([withRaw]);
+    expect(imported).toHaveLength(1);
+    const row = imported[0];
+    expect(row.raw_path).toBe(hidden.filepath);
+    expect(db.getImageById(hidden.id)).toBe(null);
+    expect(fs.existsSync(row.raw_path)).toBe(true);
+    expect(fs.readFileSync(row.raw_path, 'utf8')).toBe('adrnef');
+  });
+
+  it('主文件复制失败清理半截文件：目标名不被占住，重试按原名导入', async () => {
+    const dir = tmpDir('mainfail');
+    const jpg = makeImage('mcf.jpg', dir, 'mcfbytes');
+    const originalCopy = fs.promises.copyFile;
+    let failNext = true;
+    fs.promises.copyFile = async (src, dest) => {
+      if (failNext) {
+        failNext = false;
+        fs.writeFileSync(dest, 'half');
+        throw new Error('simulated ENOSPC mid-copy');
+      }
+      return originalCopy(src, dest);
+    };
+    try {
+      await expect(db.importImages([jpg])).resolves.toHaveLength(0);
+      const retry = await db.importImages([jpg]);
+      expect(retry).toHaveLength(1);
+      expect(path.basename(retry[0].filepath)).toBe('mcf.jpg');
+      expect(fs.readFileSync(retry[0].filepath, 'utf8')).toBe('mcfbytes');
+    } finally {
+      fs.promises.copyFile = originalCopy;
+    }
+  });
+
+  it('非法 importDate 回退今天，不拼出任意目录逃出托管根', async () => {
+    const dir = tmpDir('baddate');
+    const jpg = { ...makeImage('bd.jpg', dir, 'bd'), importDate: '../../9999/01/x' };
+    const imported = await db.importImages([jpg]);
+    expect(imported).toHaveLength(1);
+    expect(imported[0].import_date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(imported[0].filepath.startsWith(db.getImagesRoot())).toBe(true);
+  });
 });
 
 describe('getImages 查询', () => {
@@ -293,7 +364,11 @@ describe('updateImage 更新', () => {
     const [img] = await db.importImages([jpg, nef]);
     const oldFilepath = img.filepath;
     const oldRawPath = img.raw_path;
-    expect(await db.updateImage(img.id, { import_date: '2033-05-05' })).toBe(true);
+    // 移动过文件时返回新行（调用方 InfoPanel 据此做轻量更新），未移动仍返回 true
+    const updated = await db.updateImage(img.id, { import_date: '2033-05-05' });
+    expect(typeof updated).toBe('object');
+    expect(updated.error).toBeUndefined();
+    expect(updated.filepath).toContain(path.join('2033', '05', '05'));
     const rec = db.getImageById(img.id);
     expect(rec.import_date).toBe('2033-05-05');
     expect(rec.filepath).toContain(path.join('2033', '05', '05'));

@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import api from '../lib/api';
+import { applyLightLocalUpdate } from '../lib/gallery';
 import useGalleryStore from '../store/galleryStore';
 
 // 图库数据 wiring：筛选/分页变化时触发 store.loadImages（搜索 200ms 防抖），
@@ -49,11 +50,17 @@ export default function useGalleryData({ onThumbnailsReady } = {}) {
     return off;
   }, [loadImages, onThumbnailsReady]);
 
-  // 编辑预览缩略图生成完成（参数保存后异步渲染）：bump 版本刷新该图 URL
+  // 编辑预览缩略图生成完成（参数保存后异步渲染）：bump 版本刷新该图 URL，
+  // 并把新路径就地写回当前页记录（不写回则网格按 id 命中旧缓存，改完参数缩略图不变）
   useEffect(() => {
     if (!api.isBridgeAvailable()) return;
-    const off = api.onEditPreviewReady(() => {
-      useGalleryStore.setState(s => ({ thumbVersion: s.thumbVersion + 1 }));
+    const off = api.onEditPreviewReady((payload) => {
+      useGalleryStore.setState(s => ({
+        thumbVersion: s.thumbVersion + 1,
+        ...(payload?.id && payload?.path
+          ? { images: applyLightLocalUpdate(s.images, payload.id, { thumbnail_edit_path: payload.path }) }
+          : {}),
+      }));
     });
     return off;
   }, []);

@@ -441,6 +441,13 @@ function generateUniqueFilename(targetDir, originalName) {
 
 // ── Image Operations ──
 
+// 配对主名：剥离真实扩展名后再小写。path.basename(name, lowerExt) 的后缀匹配区分大小写，
+// 对 DSC_1.NEF 传 '.nef' 不会剥离，主名会带上 .nef 导致大小写混排的 jpg/nef 永远分不到同一组
+function pairBase(filename) {
+  const ext = path.extname(filename);
+  return (ext ? filename.slice(0, -ext.length) : filename).toLowerCase();
+}
+
 async function importImages(imageFiles) {
   // imageFiles: 从扫描结果传入，每项含 { filename, filepath(原始), size, format, ... }
   // 此函数负责：1.复制文件到管理目录 2.写入数据库
@@ -453,7 +460,7 @@ async function importImages(imageFiles) {
   const groups = new Map();
   for (const img of imageFiles) {
     const ext = path.extname(img.filename).toLowerCase();
-    const base = path.basename(img.filename, ext).toLowerCase();
+    const base = pairBase(img.filename);
     const key = `${path.dirname(img.filepath)}::${base}`;
     if (!groups.has(key)) groups.set(key, { jpg: null, nef: null });
     const group = groups.get(key);
@@ -469,7 +476,7 @@ async function importImages(imageFiles) {
 
   for (const group of groups.values()) {
     if (group.jpg) {
-      const existing = getObject('SELECT * FROM images WHERE original_path = ?', [group.jpg.filepath]);
+      const existing = getObject('SELECT * FROM images WHERE original_path = ? COLLATE NOCASE', [group.jpg.filepath]);
       if (existing) {
         if (!existing.raw_path && group.nef) {
           await attachRawToImage(existing.id, group.nef.filepath, group.nef.filename);
@@ -479,8 +486,8 @@ async function importImages(imageFiles) {
       const row = await importOne(root, group.jpg, { pair: group.nef || null, hidden: false });
       if (row) imported.push(row);
     } else if (group.nef) {
-      const asHidden = getObject('SELECT id FROM images WHERE original_path = ?', [group.nef.filepath]);
-      const asPair = getObject('SELECT id FROM images WHERE original_raw_path = ?', [group.nef.filepath]);
+      const asHidden = getObject('SELECT id FROM images WHERE original_path = ? COLLATE NOCASE', [group.nef.filepath]);
+      const asPair = getObject('SELECT id FROM images WHERE original_raw_path = ? COLLATE NOCASE', [group.nef.filepath]);
       if (asHidden || asPair) continue;
       const row = await importOne(root, group.nef, { pair: null, hidden: true });
       if (row) imported.push(row);
@@ -492,10 +499,11 @@ async function importImages(imageFiles) {
 }
 
 async function importOne(root, img, { pair, hidden }) {
-  const dateStr = img.importDate || (() => {
-    const today = new Date();
-    return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
-  })();
+  const today = new Date();
+  const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+  // 非法日期会拼出任意目录名（如 '../../x'）逃出托管根目录，只接受 YYYY-MM-DD
+  const rawDate = img.importDate || todayStr;
+  const dateStr = /^\d{4}-\d{2}-\d{2}$/.test(rawDate) ? rawDate : todayStr;
 
   const subDir = path.join(root, ...dateStr.split('-'));
   ensureDir(subDir);
@@ -509,6 +517,10 @@ async function importOne(root, img, { pair, hidden }) {
       await fs.promises.copyFile(img.filepath, destPath);
     }
   } catch (err) {
+    // 半截文件不留场：残留会占住目标名，重试导入被 generateUniqueFilename 判占用而派生 _1 副本
+    if (img.filepath !== destPath) {
+      try { fs.unlinkSync(destPath); } catch { /* 目标本不存在或部分写入失败 */ }
+    }
     console.error('[导入] 复制失败:', img.filepath, err.message);
     return null;
   }
@@ -518,6 +530,10 @@ async function importOne(root, img, { pair, hidden }) {
   if (pair) {
     const rawName = `${path.basename(uniqueName, ext)}${path.extname(pair.filename)}`;
     rawDestPath = path.join(subDir, rawName);
+    // 目标名被隐藏 NEF 记录占用（该 NEF 曾以独立记录导入）：收养——删隐藏记录，
+    // 其文件由本次配对复制覆盖，避免两行记录指向同一文件
+    const owner = getObject('SELECT id, hidden FROM images WHERE filepath = ?', [rawDestPath]);
+    if (owner && owner.hidden === 1) deleteImageRecord(owner.id);
     try {
       if (pair.filepath !== rawDestPath) {
         await fs.promises.copyFile(pair.filepath, rawDestPath);
@@ -717,6 +733,7 @@ function getAllVisibleIds(options = {}) {
 }
 
 async function updateImage(id, updates) {
+  let dateMoved = false;
   // 修改导入日期时，将文件移动到新日期目录（JPG 与配对 NEF 一起移动）
   if (updates.import_date) {
     const newDate = String(updates.import_date).trim();
@@ -729,6 +746,7 @@ async function updateImage(id, updates) {
         const newName = generateUniqueFilename(subDir, img.filename);
         const newPath = path.join(subDir, newName);
         let newRawPath = img.raw_path || '';
+        dateMoved = true;
 
         if (!fs.existsSync(img.filepath)) {
           // 源文件缺失时不动 DB：照旧 UPDATE 会把记录改写成必然不存在的新路径
@@ -784,12 +802,13 @@ async function updateImage(id, updates) {
     }
   }
 
-  if (sets.length === 0) return true;
+  // 日期改址移动过文件：返回新行（filename/filepath 已变），调用方据此本地更新
+  if (sets.length === 0) return dateMoved ? getImageById(id) : true;
 
   params.push(id);
   db.prepare(`UPDATE images SET ${sets.join(', ')} WHERE id = ?`).run(...params);
   saveDatabase();
-  return true;
+  return dateMoved ? getImageById(id) : true;
 }
 
 function renameImage(id, newFilename) {
@@ -999,32 +1018,37 @@ async function scanImageFiles(dirPath, includeRaw = false) {
 
   // 普通导入（不包含 .nef）时，为 JPG 检测同目录同名 NEF，便于导入时配对
   if (!includeRaw) {
-    const dirEntries = new Map();
-    for (const f of files) {
-      if (f.format === '.jpg' || f.format === '.jpeg') {
-        const dir = path.dirname(f.filepath);
-        let names;
-        try {
-          if (!dirEntries.has(dir)) dirEntries.set(dir, await fs.promises.readdir(dir));
-          names = dirEntries.get(dir);
-        } catch (err) {
-          console.error('[扫描] 检测 NEF 失败:', dir, err.message);
-          continue;
-        }
-        const base = path.basename(f.filename, path.extname(f.filename)).toLowerCase();
-        const match = names.find(n => {
-          const ext = path.extname(n);
-          return ext.toLowerCase() === '.nef' && path.basename(n, ext).toLowerCase() === base;
-        });
-        if (match) {
-          f.raw_source = path.join(dir, match);
-          f.raw_filename = match;
-        }
-      }
-    }
+    await annotateRawPairs(files);
   }
 
   return files;
+}
+
+// 为 jpg/jpeg 条目按主名（大小写不敏感）查找同目录 NEF，命中则补 raw_source/raw_filename
+async function annotateRawPairs(files) {
+  const dirEntries = new Map();
+  for (const f of files) {
+    if (f.format === '.jpg' || f.format === '.jpeg') {
+      const dir = path.dirname(f.filepath);
+      let names;
+      try {
+        if (!dirEntries.has(dir)) dirEntries.set(dir, await fs.promises.readdir(dir));
+        names = dirEntries.get(dir);
+      } catch (err) {
+        console.error('[扫描] 检测 NEF 失败:', dir, err.message);
+        continue;
+      }
+      const base = pairBase(f.filename);
+      const match = names.find(n => {
+        const ext = path.extname(n);
+        return ext.toLowerCase() === '.nef' && pairBase(n) === base;
+      });
+      if (match) {
+        f.raw_source = path.join(dir, match);
+        f.raw_filename = match;
+      }
+    }
+  }
 }
 
 // 收集拖拽导入的文件/目录：目录递归扫描，文件按扩展名过滤（含同目录 NEF 配对检测）
@@ -1050,6 +1074,8 @@ async function collectImportFiles(paths) {
   for (const d of dirs) {
     files.push(...(await scanImageFiles(d, false)));
   }
+  // 单拖入的 JPG 同样补同目录 NEF 配对检测（与目录扫描口径一致）
+  await annotateRawPairs(files);
   return files;
 }
 
@@ -1058,7 +1084,7 @@ function prepareCameraSync(imageFiles) {
   const groups = new Map();
   for (const f of imageFiles) {
     const ext = path.extname(f.filename).toLowerCase();
-    const base = path.basename(f.filename, ext).toLowerCase();
+    const base = pairBase(f.filename);
     const key = `${path.dirname(f.filepath)}::${base}`;
     if (!groups.has(key)) groups.set(key, { jpg: null, nef: null });
     const group = groups.get(key);
@@ -1072,7 +1098,7 @@ function prepareCameraSync(imageFiles) {
 
   for (const group of groups.values()) {
     if (group.jpg) {
-      const existing = getObject('SELECT * FROM images WHERE original_path = ?', [group.jpg.filepath]);
+      const existing = getObject('SELECT * FROM images WHERE original_path = ? COLLATE NOCASE', [group.jpg.filepath]);
       if (existing) {
         if (!existing.raw_path && group.nef) {
           attachPairs.push({ jpgId: existing.id, nefSource: group.nef.filepath, nefFilename: group.nef.filename });
@@ -1083,8 +1109,8 @@ function prepareCameraSync(imageFiles) {
         if (group.nef) toImport.push(group.nef);
       }
     } else if (group.nef) {
-      const asHidden = getObject('SELECT id FROM images WHERE original_path = ?', [group.nef.filepath]);
-      const asPair = getObject('SELECT id FROM images WHERE original_raw_path = ?', [group.nef.filepath]);
+      const asHidden = getObject('SELECT id FROM images WHERE original_path = ? COLLATE NOCASE', [group.nef.filepath]);
+      const asPair = getObject('SELECT id FROM images WHERE original_raw_path = ? COLLATE NOCASE', [group.nef.filepath]);
       if (asHidden || asPair) {
         skipped++;
       } else {
@@ -1105,7 +1131,23 @@ async function attachRawToImage(imageId, nefSource, nefFilename) {
   const rawName = `${path.basename(img.filename, path.extname(img.filename))}${ext}`;
   const rawDest = path.join(path.dirname(img.filepath), rawName);
   ensureDir(path.dirname(rawDest));
-  if (fs.existsSync(rawDest)) return false;
+  if (fs.existsSync(rawDest)) {
+    const owner = getObject('SELECT id, hidden, original_path FROM images WHERE filepath = ?', [rawDest]);
+    if (owner && owner.hidden === 1) {
+      // 收养：同主名隐藏 NEF 记录正是目标文件的主人，删记录后直接把文件挂为 raw_path
+      deleteImageRecord(owner.id);
+      db.prepare('UPDATE images SET raw_path = ?, original_raw_path = ? WHERE id = ?')
+        .run(rawDest, owner.original_path || '', imageId);
+      saveDatabase();
+      return true;
+    }
+    if (owner) return false;
+    // 无主残留（历史上复制中断的半截文件）：清掉后继续，否则 existsSync 从此永久拒绝补配对
+    try { fs.unlinkSync(rawDest); } catch (e) {
+      console.error('[相机同步] 清理无主残留失败:', rawDest, e.message);
+      return false;
+    }
+  }
 
   try {
     await fs.promises.copyFile(nefSource, rawDest);
@@ -1581,13 +1623,23 @@ function updateImages(imageIds, updates) {
 
 // ── 失效记录维护 ──
 
-// 找出文件已不存在的图片记录（主文件或配对 NEF 丢失都算）
+// 找出文件已不存在的图片记录：主文件缺失 reason='main'（记录可删）；
+// 仅配对 NEF 缺失 reason='raw'（可见图片还在，清理时应解绑而非删记录）
 function findBrokenRecords() {
   const rows = db.prepare('SELECT id, filename, filepath, raw_path FROM images').all();
-  return rows.filter(r => !fs.existsSync(r.filepath) || (r.raw_path && !fs.existsSync(r.raw_path)));
+  const broken = [];
+  for (const r of rows) {
+    if (!fs.existsSync(r.filepath)) {
+      broken.push({ ...r, reason: 'main' });
+    } else if (r.raw_path && !fs.existsSync(r.raw_path)) {
+      broken.push({ ...r, reason: 'raw' });
+    }
+  }
+  return broken;
 }
 
-// 清理失效记录：删除数据库条目与缩略图残留，不碰磁盘上仍存在的文件
+// 清理失效记录：主文件已没的删数据库条目与缩略图残留；主文件仍在（仅 raw 丢失）
+// 只解绑 raw_path/original_raw_path，保留可见记录；不碰磁盘上仍存在的文件
 function deleteBrokenRecords(ids) {
   if (!Array.isArray(ids)) return 0;
   let removed = 0;
@@ -1595,6 +1647,13 @@ function deleteBrokenRecords(ids) {
     for (const id of ids) {
       const img = getImageById(id);
       if (!img) continue;
+      if (fs.existsSync(img.filepath)) {
+        if (img.raw_path && !fs.existsSync(img.raw_path)) {
+          db.prepare("UPDATE images SET raw_path = '', original_raw_path = '' WHERE id = ?").run(id);
+          removed++;
+        }
+        continue;
+      }
       db.prepare('DELETE FROM image_tags WHERE image_id = ?').run(id);
       db.prepare('DELETE FROM album_images WHERE image_id = ?').run(id);
       db.prepare('DELETE FROM edits WHERE image_id = ?').run(id);

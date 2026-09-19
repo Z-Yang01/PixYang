@@ -1458,3 +1458,87 @@ masks 遗留三类中的 range 全链落地 + 手柄化；brush（栅格存储�
 ## Git Commit
 
 - `fix: 审查遗留批 — 批删文件后置提交 + 启动清扫 -temp + setImagesRoot 会话 reconcile + 蒙版上限/回退提示（+5 例）`（未 push）
+
+---
+
+# 2026-09-19 多代理审查批 2：图库加载/导入链/标签相册设置链
+
+三路只读审查子代理并行覆盖此前未审的三条链路（图库加载与勾选、导入/扫描/相机同步、标签/相册/详情/设置/快捷键），主代理逐项核实后修复 P0 1 项 + P1 全部 + 选定 P2。
+
+## 当前状态
+
+- 分支 `optimize/architecture`；**785 passed / 0 failed**（58 文件，+26 例 / +1 文件）；
+  coverage **90.1%** 语句 / **85.23%** 分支（thresholds 全达标）；
+  lint 0 error / 10 warnings（基线不变）；typecheck 通过；build 通过；golden 22/22（未触碰渲染层）。
+
+## P0：大写扩展名 NEF 配对全断（建档 error/uppercase-ext-nef-pairing-broken.md）
+
+- `path.basename(name, extLower)` 后缀剥离**区分大小写**：`DSC_1.NEF` 传 `'.nef'` 剥不掉，
+  分组主名变 `'DSC_1.NEF'` vs `'dsc_1'`，jpg/nef 永不同组——相机同步的大写原图成永久孤儿隐藏记录。
+- 修复：新增 `pairBase()`（extname 原样剥离后 toLowerCase），importImages / prepareCameraSync /
+  annotateRawPairs 统一口径；6 处 `original_path`/`original_raw_path` 去重查询加 `COLLATE NOCASE`
+  （Windows 文件系统大小写不敏感）。
+
+## P1：导入链
+
+- **导入/相机同步互斥**（main.js `withImportLock` promise 链）：闭合 check-then-act 跨
+  `await copyFile` 的竞态窗口；锁内抛错不阻塞后续任务。
+- **主文件复制失败清理半截目标文件**：否则目标名被占住，重试永远撞文件名去重。
+- **attachRawToImage 占用分诊**：rawDest 被隐藏记录占用→收养（删记录、文件直挂 raw_path、
+  继承 original_raw_path，存量孤儿自愈）；被可见记录占用→拒绝；无主残留→清理后继续。
+- **失效记录区分 main/raw**：findBrokenRecords 返回 reason；仅配对 NEF 丢失时 deleteBrokenRecords
+  只解绑 `raw_path` 保留可见记录（此前整条删除——主文件还在就丢库记录）。
+- **updateImage 改日期返回移动后的新行**（此前返回 true，调用方拿不到新 filepath/raw_path）。
+- **importDate 合法性校验**：非 `YYYY-MM-DD` 回退今天（防路径穿越）。
+
+## P1：图库加载/勾选链
+
+- **页码钳制**：末页图片被删后卡在空页——loadImages 收到 total>0 且当前页空且 page>1 时
+  `set({ page: lastPage })`，靠 wiring effect 的 [page] 依赖自动重查。
+- **筛选变更清勾选**：App 订阅 filterKey（tag/album/favorites/search/date/range），跨筛选条件的
+  陈旧勾选自动清空。
+- **grid 设置入口规范化**：SettingsPage 输入框把字符串写库（'5'+1='51'→NaN 网格崩塌），
+  store 入口 Number+clamp 归一，setGridSettings 改合并语义。
+- **edit-preview-ready 载荷 {id,path}**：预览写回后原地图格行内更新 thumbnail_edit_path
+  （applyLightLocalUpdate），不再整页重查。
+
+## P1：详情/设置/勾选链
+
+- **viewerActive 传入 ImageGrid**：查看器开着时空格/方向键不再穿透操作底层网格勾选与高亮。
+- **infoImage 随页对齐**：images 变化时按 id 合并最新行（保留 _refresh）；网格打开的详情面板
+  在图片离开当前页后关闭；查看器来源面板不受影响。
+- **InfoPanel 同 id 换 props 刷新**：重置 effect 补 filename/filepath/import_date/notes 依赖
+  （改日期移动后曾显示旧路径）；rename 成功用返回的 newFilename/newPath 轻量更新；
+  日期保存失败在输入框下方显示错误。
+- **单图删除确认后从勾选集移除该 id**（不留死 id 污染批量操作）；跨页全选改**替换**语义
+  （勾选集已按 filterKey 作用域化，union 会残留其他筛选条件的 id）。
+- **框选 window blur 复位**：拖拽中切窗口不再残留幽灵选择框/起点。
+
+## P2（选定项）
+
+- clearSingleFilter 所有分支补 `page: 1`；相册与日期范围筛选双向互斥清空。
+- **thumbUrls 缓存键 id→首选路径**（测试驱动抓出的真竞态）：loadUrls effect 先于 purge effect
+  执行且读同一渲染的 ref 快照，按 id 键控时路径变更后的重解析永远不触发；
+  路径键控后旧键自然不命中，单趟收敛。
+
+## 测试
+
+- **+26 例**（759→785）：新建 `tests/unit/store/galleryStore.test.js`（8：grid 归一/筛选互斥/
+  clearSingleFilter 页码/页码钳制）；images.test +5（大写/混排配对导入、隐藏记录收养、半截文件
+  清理、非法日期回退、日期移动返回新行）；maintenance +3（attachRaw 收养/无主自愈、
+  prepareCameraSync 大写端到端）+失效记录 2 例重写（main/raw 分类与解绑保留）；
+  main.test +2（导入锁串行活动计数 ≤1、锁内抛错不阻塞）；ImageGrid +3（viewerActive 键盘守卫、
+  右键删除勾选集剪枝、thumbnail_edit_path 重解析）；App +2（搜索清勾选、viewerActive 接线）；
+  hooks +2（onEditPreviewReady 行内合并、全选替换语义/toggle-off）。
+
+## 遗留（本批核实、刻意不动）
+
+- **日期筛选语义 import_date vs taken_at**——产品口径问题，待用户决策。
+- InfoPanel 打开时全局快捷键整体静默——交互设计问题，同滑杆聚焦项，需产品决策。
+- 重复文件对话框 Esc/遮罩关闭重做；ImageCard memo 失效（全量 store 订阅 + 内联 lambda）；
+  乐观更新与在途请求的勾选竞态；批量打标签的 thumbVersion 批量 bump；缩略图重建重入；
+  thumbWorker unknown 类型不回复。
+
+## Git Commit
+
+- `fix: 多代理审查批 2 — 大写扩展名 NEF 配对 P0 建档 + 导入锁/半截文件/收养/失效分类 + 页码钳制/筛选清勾选/grid 归一 + viewerActive/infoImage 对齐（+26 例）`（未 push）

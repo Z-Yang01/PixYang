@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { ImageOff } from 'lucide-react';
-import { groupImagesByDate, pageSizeOf, addRangeToSet, toggleIdInSet, createLoadSequencer, hasActiveFilters as computeHasActiveFilters } from '@/lib/gallery';
+import { groupImagesByDate, pageSizeOf, addRangeToSet, toggleIdInSet, removeIdsFromSet, createLoadSequencer, hasActiveFilters as computeHasActiveFilters } from '@/lib/gallery';
 import useGalleryStore from '@/store/galleryStore';
 import { matchGridShortcut, GRID_ACTIONS } from '@/lib/shortcuts';
 import api from '@/lib/api';
@@ -12,6 +12,10 @@ import ConfirmDialog from '../Layout/ConfirmDialog';
 import useMarqueeSelection from '@/hooks/useMarqueeSelection';
 
 const EMPTY_TAGS = [];
+
+// 首选缩略图路径：编辑预览 > 小图 > 大图。thumbUrls 缓存以此路径为键，
+// 写回 thumbnail_edit_path 后旧键自然不命中触发重解析（按 id 键控需 purge 与 loadUrls 抢顺序）
+const preferredThumbOf = (img) => img.thumbnail_edit_path || img.thumbnail_small_path || img.thumbnail_path;
 
 export default function ImageGrid({
   onView, onInfo, onImageUpdated, onImport,
@@ -88,14 +92,15 @@ export default function ImageGrid({
     setBrokenThumbnails(new Set());
   }, [thumbVersion]);
 
-  // 翻页后把 URL/状态缓存裁剪到当前页，避免长期浏览内存增长
+  // 翻页/路径变更后把 URL/状态缓存裁剪到当前页，避免长期浏览内存增长
   useEffect(() => {
     const ids = new Set(images.map(img => img.id));
+    const preferredPaths = new Set(images.map(preferredThumbOf).filter(Boolean));
     setThumbUrls(prev => {
-      if (Object.keys(prev).every(k => ids.has(Number(k)))) return prev;
+      if (Object.keys(prev).every(k => preferredPaths.has(k))) return prev;
       const next = {};
-      for (const img of images) {
-        if (prev[img.id] !== undefined) next[img.id] = prev[img.id];
+      for (const p of preferredPaths) {
+        if (prev[p] !== undefined) next[p] = prev[p];
       }
       return next;
     });
@@ -114,24 +119,43 @@ export default function ImageGrid({
     setActiveIndex(-1);
   }, [pageIdsKey]);
 
-  // 图片路径变更（重命名/改导入日期）后清除该图的原图 URL 缓存，避免指向旧文件
+  // 图片路径变更（重命名/改导入日期）后清除该图的原图 URL 缓存，避免指向旧文件；
+  // 首选缩略图路径变更（编辑预览生成写回 thumbnail_edit_path）同理清缓存并复位损坏标记
   const pathMapRef = useRef({});
+  const thumbMapRef = useRef({});
   useEffect(() => {
+    const oldThumbMap = thumbMapRef.current;
     const changed = [];
+    const thumbChanged = [];
     const nextMap = {};
+    const nextThumbMap = {};
     for (const img of images) {
       nextMap[img.id] = img.filepath;
       if (pathMapRef.current[img.id] && pathMapRef.current[img.id] !== img.filepath) {
         changed.push(img.id);
       }
+      const preferred = preferredThumbOf(img);
+      nextThumbMap[img.id] = preferred;
+      if (oldThumbMap[img.id] && oldThumbMap[img.id] !== preferred) {
+        thumbChanged.push(img.id);
+      }
     }
     pathMapRef.current = nextMap;
+    thumbMapRef.current = nextThumbMap;
     if (changed.length > 0) {
       setFileUrls(prev => {
         const next = { ...prev };
         changed.forEach(id => delete next[id]);
         return next;
       });
+    }
+    if (thumbChanged.length > 0) {
+      setThumbUrls(prev => {
+        const next = { ...prev };
+        thumbChanged.forEach(id => delete next[oldThumbMap[id]]);
+        return next;
+      });
+      setBrokenThumbnails(prev => new Set([...prev].filter(id => !thumbChanged.includes(id))));
     }
   }, [images]);
 
@@ -228,8 +252,8 @@ export default function ImageGrid({
     const needThumbPaths = [];
     const needOrigPaths = [];
     for (const img of imgs) {
-      const preferredThumb = img.thumbnail_edit_path || img.thumbnail_small_path || img.thumbnail_path;
-      if (preferredThumb && thumbUrlsRef.current[img.id] === undefined) {
+      const preferredThumb = preferredThumbOf(img);
+      if (preferredThumb && thumbUrlsRef.current[preferredThumb] === undefined) {
         needThumbPaths.push(preferredThumb);
       }
       if (fileUrlsRef.current[img.id] === undefined) {
@@ -242,18 +266,18 @@ export default function ImageGrid({
     if (paths.length === 0) return;
     const urlMap = (await api.toFileUrls(paths)) || {};
     if (!urlSeqRef.current.isCurrent(token)) return;
-    const thumbById = {};
+    const thumbByPath = {};
     const origById = {};
     for (const img of imgs) {
-      const preferredThumb = img.thumbnail_edit_path || img.thumbnail_small_path || img.thumbnail_path;
+      const preferredThumb = preferredThumbOf(img);
       if (preferredThumb && thumbSet.has(preferredThumb) && urlMap[preferredThumb]) {
-        thumbById[img.id] = urlMap[preferredThumb];
+        thumbByPath[preferredThumb] = urlMap[preferredThumb];
       }
       if (origSet.has(img.filepath) && urlMap[img.filepath]) {
         origById[img.id] = urlMap[img.filepath];
       }
     }
-    if (Object.keys(thumbById).length > 0) setThumbUrls(prev => ({ ...prev, ...thumbById }));
+    if (Object.keys(thumbByPath).length > 0) setThumbUrls(prev => ({ ...prev, ...thumbByPath }));
     if (Object.keys(origById).length > 0) setFileUrls(prev => ({ ...prev, ...origById }));
   };
 
@@ -294,6 +318,7 @@ export default function ImageGrid({
     setDeleteTarget(null);
     if (!image || !api.isBridgeAvailable()) return;
     await api.deleteImage(image.id);
+    setSelectedIds(removeIdsFromSet(selectedIdsRef.current, [image.id]));
     onImageUpdated?.();
   };
 
@@ -419,7 +444,8 @@ export default function ImageGrid({
             );
           }
           const { image, index } = item;
-          const thumbUrl = thumbUrls[image.id];
+          const preferred = preferredThumbOf(image);
+          const thumbUrl = preferred ? thumbUrls[preferred] : undefined;
           return (
             <ImageCard
               key={image.id}

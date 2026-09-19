@@ -15,6 +15,13 @@ export const DEFAULT_GRID_SETTINGS = { rows: 3, columns: 5, gap: 12, padding: 16
 
 const clamp = (v, [min, max]) => Math.max(min, Math.min(max, v));
 
+// 网格数值入 store 前强制数字化并夹到合法区间：设置页输入框给出字符串时，
+// 未归一化的值会让 App 列数加减变成 '5'+1='51'、pageSize 变 NaN 并被持久化
+const normalizeGridValue = (k, v, fallback) => {
+  const n = Number(v);
+  return Number.isFinite(n) ? clamp(n, GRID_LIMITS[k]) : fallback;
+};
+
 let loadImagesSeq = null;
 
 // 图库共享状态：筛选/排序/分页、勾选集、网格设置。
@@ -71,12 +78,16 @@ const useGalleryStore = create((set, get) => ({
   }),
 
   setFilterTag: (id) => set({ filterTag: id, page: 1 }),
-  // 相册与日期筛选互斥：设置一方时清掉另一方，避免交集为空
-  setFilterAlbum: (id) => set(id !== null ? { filterAlbum: id, filterDate: '', page: 1 } : { filterAlbum: null, page: 1 }),
+  // 相册与日期（单日/区间）筛选互斥：设置任一方时清掉另一方，避免交集为空
+  setFilterAlbum: (id) => set(id !== null
+    ? { filterAlbum: id, filterDate: '', dateRange: { from: '', to: '' }, page: 1 }
+    : { filterAlbum: null, page: 1 }),
   setFilterDate: (date) => set(date
     ? { filterDate: date, dateRange: { from: '', to: '' }, filterAlbum: null, page: 1 }
     : { filterDate: '', page: 1 }),
-  setDateRange: (range) => set({ dateRange: range, filterDate: '', page: 1 }),
+  setDateRange: (range) => set(range && (range.from || range.to)
+    ? { dateRange: range, filterDate: '', filterAlbum: null, page: 1 }
+    : { dateRange: { from: '', to: '' }, page: 1 }),
   setFilterFavorites: (v) => set({ filterFavorites: v, page: 1 }),
   setPage: (page) => set({ page }),
 
@@ -92,11 +103,11 @@ const useGalleryStore = create((set, get) => ({
 
   clearSingleFilter: (type) => {
     switch (type) {
-      case 'tag': set({ filterTag: null }); break;
-      case 'album': set({ filterAlbum: null }); break;
-      case 'date': set({ filterDate: '' }); break;
-      case 'dateRange': set({ dateRange: { from: '', to: '' } }); break;
-      case 'favorites': set({ filterFavorites: false }); break;
+      case 'tag': set({ filterTag: null, page: 1 }); break;
+      case 'album': set({ filterAlbum: null, page: 1 }); break;
+      case 'date': set({ filterDate: '', page: 1 }); break;
+      case 'dateRange': set({ dateRange: { from: '', to: '' }, page: 1 }); break;
+      case 'favorites': set({ filterFavorites: false, page: 1 }); break;
       default: break;
     }
   },
@@ -104,12 +115,18 @@ const useGalleryStore = create((set, get) => ({
   setSelectedIds: (ids) => set({ selectedIds: ids }),
   clearSelection: () => set({ selectedIds: new Set() }),
 
-  setGridSettings: (settings) => set({ gridSettings: settings }),
+  setGridSettings: (settings) => set((state) => {
+    const next = { ...state.gridSettings };
+    for (const [k, v] of Object.entries(settings || {})) {
+      if (GRID_LIMITS[k]) next[k] = normalizeGridValue(k, v, next[k]);
+    }
+    return { gridSettings: next };
+  }),
 
   patchGridSettings: (patch) => set((state) => {
     const next = { ...state.gridSettings };
     for (const [k, v] of Object.entries(patch)) {
-      if (GRID_LIMITS[k]) next[k] = clamp(v, GRID_LIMITS[k]);
+      if (GRID_LIMITS[k]) next[k] = normalizeGridValue(k, v, next[k]);
     }
     return { gridSettings: next };
   }),
@@ -160,6 +177,11 @@ const useGalleryStore = create((set, get) => ({
       const result = await api.getImages(options);
       if (!loadImagesSeq.isCurrent(token)) return;
       set({ images: result.images, totalImages: result.total });
+      // 页码越界（外部删除后总页数变少等）：回钳到最后一页，page 变化由 wiring effect 自动重查
+      if (!override && result.images.length === 0 && result.total > 0 && state.page > 1) {
+        const lastPage = Math.max(1, Math.ceil(result.total / pageSize));
+        if (lastPage < state.page) set({ page: lastPage });
+      }
     } catch (err) {
       console.error('加载图片失败:', err);
     } finally {

@@ -19,6 +19,7 @@ export default function InfoPanel({ image, onClose, onImageUpdated }) {
   const [importDate, setImportDate] = useState('');
   const [editName, setEditName] = useState('');
   const [renameErr, setRenameErr] = useState('');
+  const [dateErr, setDateErr] = useState('');
   const [showAddTag, setShowAddTag] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState(false);
   const [thumbUrl, setThumbUrl] = useState(null);
@@ -32,7 +33,7 @@ export default function InfoPanel({ image, onClose, onImageUpdated }) {
     setImportDate(image.import_date || '');
     setEditName(image.filename || '');
     setRenameErr('');
-  }, [image?.id, image?._refresh]);
+  }, [image?.id, image?._refresh, image?.filename, image?.filepath, image?.import_date, image?.notes]);
 
   useEffect(() => {
     let alive = true;
@@ -89,9 +90,19 @@ export default function InfoPanel({ image, onClose, onImageUpdated }) {
   };
 
   const handleDateSave = async () => {
-    if (!api.isBridgeAvailable() || !importDate) return;
-    await api.updateImage(image.id, { import_date: importDate });
-    onImageUpdated?.();
+    if (!api.isBridgeAvailable() || !importDate || importDate === image.import_date) return;
+    const result = await api.updateImage(image.id, { import_date: importDate });
+    if (result?.error) {
+      setDateErr(result.error);
+      return;
+    }
+    setDateErr('');
+    // 改日期会移动文件：DB 返回移动后的新行，携带 filename/filepath 做轻量更新，
+    // 否则面板继续展示旧路径（重进前永远是陈旧数据）
+    const moved = result && typeof result === 'object'
+      ? { import_date: importDate, filename: result.filename, filepath: result.filepath, raw_path: result.raw_path }
+      : { import_date: importDate };
+    onImageUpdated?.(image.id, moved);
   };
 
   const handleRename = async () => {
@@ -101,7 +112,7 @@ export default function InfoPanel({ image, onClose, onImageUpdated }) {
       setRenameErr(result.error);
     } else {
       setRenameErr('');
-      onImageUpdated?.();
+      onImageUpdated?.(image.id, { filename: result.newFilename, filepath: result.newPath });
     }
   };
 
@@ -174,10 +185,11 @@ export default function InfoPanel({ image, onClose, onImageUpdated }) {
                 className="form-input"
                 style={{ width: 140, padding: '2px 6px', fontSize: 12 }}
                 value={importDate}
-                onChange={(e) => setImportDate(e.target.value)}
+                onChange={(e) => { setImportDate(e.target.value); setDateErr(''); }}
                 onBlur={handleDateSave}
               />
             </div>
+            {dateErr && <span style={{ fontSize: 11, color: 'var(--danger)' }}>{dateErr}</span>}
 
             <div className="info-row">
               <span className="info-label">格式</span>

@@ -785,6 +785,33 @@ describe('导入与相机同步', () => {
     expect(toImport[0].orientation).toBe(6);
     expect(dbStub.attachRawToImage).toHaveBeenCalledWith('j1', 'src.nef', 'a.nef');
   });
+
+  it('导入与相机同步并发触发时经导入锁串行，不交错', async () => {
+    let active = 0;
+    let maxActive = 0;
+    dbStub.importImages.mockImplementation(async () => {
+      active++;
+      maxActive = Math.max(maxActive, active);
+      await new Promise((r) => setTimeout(r, 10));
+      active--;
+      return [];
+    });
+    dbStub.getSetting.mockImplementation((key) => (key === 'camera_folder' ? FIXTURES : null));
+    dbStub.scanImageFiles.mockResolvedValue([randomJpg]);
+    dbStub.prepareCameraSync.mockReturnValue({ toImport: [{ filepath: randomJpg }], attachPairs: [], skipped: 0 });
+    const p1 = call('db:import-images', [{ filepath: randomJpg }]);
+    const p2 = call('db:sync-camera-folder');
+    await Promise.all([p1, p2]);
+    expect(maxActive).toBe(1);
+    expect(dbStub.importImages).toHaveBeenCalledTimes(2);
+  });
+
+  it('导入锁内任务抛错不阻塞后续导入', async () => {
+    dbStub.importImages.mockRejectedValueOnce(new Error('boom'));
+    await expect(call('db:import-images', [{ filepath: randomJpg }])).rejects.toThrow('boom');
+    const imgs = [{ filepath: randomJpg }];
+    await expect(call('db:import-images', imgs)).resolves.toBe(imgs);
+  });
 });
 
 describe('编辑会话（非破坏保存）', () => {

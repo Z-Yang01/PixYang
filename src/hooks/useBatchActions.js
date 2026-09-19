@@ -50,9 +50,10 @@ export default function useBatchActions({ showToast }) {
       store.setSelectedIds(next);
       showToast(`已取消全选 ${ids.length} 张图片`, 'info');
     } else {
-      ids.forEach((id) => next.add(id));
-      store.setSelectedIds(next);
-      showToast(`已全选当前筛选下 ${next.size} 张图片`, 'info');
+      // 全量替换而非并集：勾选集必须严格等于当前筛选结果，
+      // 并入陈旧 id（其他筛选/页面上的历史勾选、已删 id）会让批量删除误伤不可见图片
+      store.setSelectedIds(new Set(ids));
+      showToast(`已全选当前筛选下 ${ids.length} 张图片`, 'info');
     }
   }, [showToast]);
 

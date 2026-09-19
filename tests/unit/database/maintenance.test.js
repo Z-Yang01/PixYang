@@ -53,6 +53,8 @@ function tmpDir(tag) {
 
 let brokenIds = [];
 let healthyId = null;
+let missingId = null;
+let pairedId = null;
 
 afterAll(() => {
   db.closeDatabase();
@@ -164,10 +166,60 @@ describe('相机同步', () => {
     expect(await db.attachRawToImage(img.id, path.join(dir, 'nope.nef'), 'nope.nef')).toBe(false);
     expect(db.getImageById(img.id).raw_path).toBe('');
   });
+
+  it('attachRawToImage 目标名被隐藏 NEF 记录占用时收养该记录', async () => {
+    const nefSrcDir = tmpDir('adopt-nefsrc');
+    const nefSrc = makeImage('adp.nef', nefSrcDir, 'adoptraw');
+    const [hidden] = await db.importImages([nefSrc]);
+    expect(hidden.hidden).toBe(1);
+    const jpgSrc = makeImage('adp.jpg', tmpDir('adopt-jpgsrc'), 'adoptjpg');
+    const [img] = await db.importImages([jpgSrc]);
+    expect(db.getImageById(img.id).raw_path).toBe('');
+    expect(await db.attachRawToImage(img.id, hidden.original_path, 'adp.nef')).toBe(true);
+    const rec = db.getImageById(img.id);
+    expect(rec.raw_path).toBe(hidden.filepath);
+    expect(rec.original_raw_path).toBe(nefSrc.filepath);
+    expect(db.getImageById(hidden.id)).toBe(null);
+    expect(fs.existsSync(rec.raw_path)).toBe(true);
+    expect(fs.readFileSync(rec.raw_path, 'utf8')).toBe('adoptraw');
+  });
+
+  it('attachRawToImage 清理无主半截残留后继续复制', async () => {
+    const dir = tmpDir('orphan');
+    const srcDir = tmpDir('orphan-src');
+    const src = path.join(srcDir, 'real.nef');
+    fs.writeFileSync(src, 'realfull');
+    const [img] = await db.importImages([makeImage('orph.jpg', dir, 'orphjpg')]);
+    const rec0 = db.getImageById(img.id);
+    const rawDest = path.join(path.dirname(rec0.filepath), 'orph.nef');
+    fs.writeFileSync(rawDest, 'halfwritten');
+    expect(await db.attachRawToImage(img.id, src, 'real.nef')).toBe(true);
+    const rec = db.getImageById(img.id);
+    expect(rec.raw_path).toBe(rawDest);
+    expect(fs.readFileSync(rawDest, 'utf8')).toBe('realfull');
+    expect(rec.original_raw_path).toBe(src);
+  });
+
+  it('prepareCameraSync 大写扩展名 UP1.JPG+UP1.NEF 分组配对并端到端导入', async () => {
+    const cam = tmpDir('camupper');
+    const j = makeImage('UP1.JPG', cam, 'ujpg');
+    const n = makeImage('UP1.NEF', cam, 'uneffile');
+    const prep = db.prepareCameraSync([j, n]);
+    expect(prep.toImport.map((f) => f.filename).sort()).toEqual(['UP1.JPG', 'UP1.NEF']);
+    expect(prep.attachPairs).toEqual([]);
+    const rows = await db.importImages(prep.toImport);
+    expect(rows).toHaveLength(1);
+    const rec = db.getImageById(rows[0].id);
+    expect(rec.hidden).toBe(0);
+    expect(rec.filename).toBe('UP1.JPG');
+    expect(path.basename(rec.raw_path)).toBe('UP1.NEF');
+    expect(path.dirname(rec.raw_path)).toBe(path.dirname(rec.filepath));
+    expect(fs.readFileSync(rec.raw_path, 'utf8')).toBe('uneffile');
+  });
 });
 
 describe('失效记录维护', () => {
-  it('findBrokenRecords 找出文件缺失的记录', async () => {
+  it('findBrokenRecords 区分主文件缺失(main)与仅配对 raw 缺失(raw)', async () => {
     const dir = tmpDir('broken');
     const [missing] = await db.importImages([makeImage('missing.jpg', dir, 'm')]);
     const [paired] = await db.importImages([makeImage('paired.jpg', dir, 'p'), makeImage('paired.nef', dir, 'q')]);
@@ -177,20 +229,31 @@ describe('失效记录维护', () => {
     const broken = db.findBrokenRecords();
     brokenIds = broken.map((r) => r.id);
     healthyId = healthy.id;
-    expect(brokenIds).toContain(missing.id);
-    expect(brokenIds).toContain(paired.id);
-    expect(brokenIds).not.toContain(healthy.id);
+    missingId = missing.id;
+    pairedId = paired.id;
+    const byId = Object.fromEntries(broken.map((r) => [r.id, r.reason]));
+    expect(byId[missing.id]).toBe('main');
+    expect(byId[paired.id]).toBe('raw');
+    expect(byId[healthy.id]).toBeUndefined();
     expect(broken[0]).toHaveProperty('raw_path');
   });
 
-  it('deleteBrokenRecords 清理记录且不删除现存文件', () => {
+  it('deleteBrokenRecords：仅 raw 缺失只解绑保留记录，主文件缺失才删记录', () => {
     const healthy = db.getImageById(healthyId);
     expect(healthy).not.toBe(null);
     fs.mkdirSync(path.dirname(healthy.filepath), { recursive: true });
     fs.writeFileSync(healthy.filepath, 'h');
+    const pairedBefore = db.getImageById(pairedId);
+    expect(pairedBefore).not.toBe(null);
     const removed = db.deleteBrokenRecords(brokenIds);
     expect(removed).toBe(brokenIds.length);
-    for (const id of brokenIds) expect(db.getImageById(id)).toBe(null);
+    expect(db.getImageById(missingId)).toBe(null);
+    // 回归：可见图片仅配对 NEF 丢失时曾被整条删除——现在记录保留、只解绑 raw
+    const pairedRec = db.getImageById(pairedId);
+    expect(pairedRec).not.toBe(null);
+    expect(pairedRec.raw_path).toBe('');
+    expect(pairedRec.original_raw_path).toBe('');
+    expect(fs.existsSync(pairedRec.filepath)).toBe(true);
     expect(db.getImageById(healthyId)).not.toBe(null);
     expect(fs.existsSync(healthy.filepath)).toBe(true);
     expect(db.deleteBrokenRecords('not-array')).toBe(0);

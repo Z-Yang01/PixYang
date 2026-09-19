@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, fireEvent, cleanup, waitFor, act } from '@testing-library/react';
 import useGlobalShortcuts from '@/hooks/useGlobalShortcuts';
 import useGalleryData from '@/hooks/useGalleryData';
+import useBatchActions from '@/hooks/useBatchActions';
 import useGalleryStore from '@/store/galleryStore';
 import { formatFileSize, formatSizeDisplay, todayStr } from '@/lib/format';
 
@@ -150,5 +151,57 @@ describe('useGalleryData wiring', () => {
     const before = useGalleryStore.getState().thumbVersion;
     await act(async () => { readyCb(); });
     expect(useGalleryStore.getState().thumbVersion).toBe(before + 1);
+  });
+
+  it('onEditPreviewReady 携带 {id,path} 时把新缩略图路径就地写回当前页记录', async () => {
+    let previewCb;
+    window.pixyang.getImages = vi.fn().mockResolvedValue({
+      images: [{ id: 1, filename: 'a.jpg', thumbnail_path: 'C:/t/a_old.jpg' }], total: 1,
+    });
+    window.pixyang.onEditPreviewReady = vi.fn((cb) => { previewCb = cb; return () => {}; });
+    render(<HookHarness hook={useGalleryData} hookProps={{}} />);
+    await waitFor(() => expect(previewCb).toBeDefined());
+    const before = useGalleryStore.getState().thumbVersion;
+    await act(async () => { previewCb({ id: 1, path: 'C:/edit/a.png' }); });
+    const st = useGalleryStore.getState();
+    expect(st.thumbVersion).toBe(before + 1);
+    expect(st.images[0].thumbnail_edit_path).toBe('C:/edit/a.png');
+    // 无载荷（旧口径/其他图）只 bump，不动列表
+    await act(async () => { previewCb(undefined); });
+    expect(useGalleryStore.getState().images[0].thumbnail_edit_path).toBe('C:/edit/a.png');
+  });
+});
+
+describe('useBatchActions 全选全部', () => {
+  const out = { current: null };
+  function BatchHarness() {
+    out.current = useBatchActions({ showToast: vi.fn() });
+    return null;
+  }
+
+  beforeEach(() => {
+    useGalleryStore.setState(initialSnapshot, true);
+    window.pixyang = {};
+  });
+
+  afterEach(() => {
+    cleanup();
+    delete window.pixyang;
+  });
+
+  it('全量替换勾选集而非并集（陈旧/跨筛选 id 不随批量操作泄漏）', async () => {
+    window.pixyang.getAllImageIds = vi.fn().mockResolvedValue([1, 2]);
+    useGalleryStore.setState({ selectedIds: new Set([999]) });
+    render(<BatchHarness />);
+    await act(async () => { out.current.handleSelectAllAll(); });
+    expect([...useGalleryStore.getState().selectedIds].sort()).toEqual([1, 2]);
+  });
+
+  it('当前筛选已全部在勾选集中时再点取消这批全选', async () => {
+    window.pixyang.getAllImageIds = vi.fn().mockResolvedValue([1, 2]);
+    useGalleryStore.setState({ selectedIds: new Set([1, 2, 3]) });
+    render(<BatchHarness />);
+    await act(async () => { out.current.handleSelectAllAll(); });
+    expect([...useGalleryStore.getState().selectedIds]).toEqual([3]);
   });
 });
