@@ -253,3 +253,13 @@
      渲染失败）、渲染失败不写缩略图路径。ensure_edit_base 参数改为 thumbs_dir 便于内核直测。
   夹具自建（edit_session 测试助手未标 pub，避免越权改动既有模块）。
   验证：cargo 125/125 + golden 门禁 ✅；vitest 969/969 ✅；typecheck ✅；lint 0 error ✅。
+
+- 2026-09-21 05:15-05:30 R30（夜间自动化第七轮）删除时清理编辑派生文件（64/64 维持）：
+  深挖发现一处真实对齐缺口——Electron 在 delete-image / batch-delete-images / 损坏记录
+  清理三处都会调 cleanupEditDerivedFiles（清 edit-{id}.jpg 预览 + meta 侧车 + 编辑底图
+  缓存），Tauri 两条删除路径只删双档缩略图，被删图片的编辑派生文件会永久滞留 thumbs 目录。
+  修复：db.rs delete_image_files 与 update_image.rs delete_thumbnail_file 的清理名单
+  统一扩展 edit-{id}.jpg / edit-{id}.jpg.meta.json / edit-{id}-base.jpg / edit-{id}-base.png
+  （镜像 Electron cleanupEditDerivedFiles 文件侧；记录行随五表事务删除，无需重置列）。
+  测试 +1（文件清理_含编辑派生文件：六类文件全部清除、缺失静默跳过）。
+  验证：cargo 126/126 + golden 门禁 ✅；vitest 969/969 ✅；typecheck ✅；lint 0 error ✅。

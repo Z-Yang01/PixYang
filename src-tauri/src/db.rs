@@ -176,7 +176,9 @@ pub fn delete_image_record(
     Ok(img)
 }
 
-/// 文件清理：原图 + 配对 NEF + 双档缩略图；单个失败吞掉继续（与 JS 同策略），不回滚记录删除
+/// 文件清理：原图 + 配对 NEF + 双档缩略图 + 编辑派生文件（预览/缓存元数据/底图缓存，
+/// 镜像 Electron cleanupEditDerivedFiles 的文件侧）；单个失败吞掉继续（与 JS 同策略），
+/// 不回滚记录删除
 pub fn delete_image_files(
     filepath: Option<&str>,
     raw_path: Option<&str>,
@@ -189,7 +191,14 @@ pub fn delete_image_files(
             let _ = std::fs::remove_file(path);
         }
     }
-    for name in [format!("{id}.jpg"), format!("{id}_s.jpg")] {
+    for name in [
+        format!("{id}.jpg"),
+        format!("{id}_s.jpg"),
+        format!("edit-{id}.jpg"),
+        format!("edit-{id}.jpg.meta.json"),
+        format!("edit-{id}-base.jpg"),
+        format!("edit-{id}-base.png"),
+    ] {
         let _ = std::fs::remove_file(thumbs_dir.join(name));
     }
 }
@@ -393,6 +402,41 @@ mod path_tests {
             dir.join("images").join("no.jpg").to_str().unwrap()
         )
         .unwrap());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+    #[test]
+    fn 文件清理_含编辑派生文件() {
+        let dir = std::env::temp_dir().join("pixyang_delete_files");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("thumbs")).unwrap();
+        let id = 42;
+        let original = dir.join("keep_nothing").join("a.jpg");
+        let _ = std::fs::remove_dir_all(original.parent().unwrap());
+        std::fs::create_dir_all(original.parent().unwrap()).unwrap();
+        std::fs::write(&original, b"orig").unwrap();
+        let mut existing = std::collections::BTreeSet::new();
+        for name in [
+            format!("{id}.jpg"),
+            format!("{id}_s.jpg"),
+            format!("edit-{id}.jpg"),
+            format!("edit-{id}.jpg.meta.json"),
+            format!("edit-{id}-base.jpg"),
+            format!("edit-{id}-base.png"),
+        ] {
+            let p = dir.join("thumbs").join(&name);
+            std::fs::write(&p, b"x").unwrap();
+            existing.insert(name);
+        }
+        delete_image_files(Some(original.to_str().unwrap()), None, &dir.join("thumbs"), id);
+        assert!(!original.exists());
+        for name in &existing {
+            assert!(
+                !dir.join("thumbs").join(name).exists(),
+                "应被清理: {name}"
+            );
+        }
+        // 缺失文件静默跳过：重复调用不报错
+        delete_image_files(None, None, &dir.join("thumbs"), id);
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

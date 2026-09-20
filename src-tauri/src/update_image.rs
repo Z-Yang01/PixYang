@@ -125,7 +125,15 @@ fn row_to_json(conn: &Connection, id: i64) -> Result<Value, PixError> {
 }
 
 fn delete_thumbnail_file(thumbs_dir: &Path, id: i64) {
-    for name in [format!("{id}.jpg"), format!("{id}_s.jpg")] {
+    // 含编辑派生文件（预览/缓存元数据/底图缓存），镜像 Electron cleanupEditDerivedFiles
+    for name in [
+        format!("{id}.jpg"),
+        format!("{id}_s.jpg"),
+        format!("edit-{id}.jpg"),
+        format!("edit-{id}.jpg.meta.json"),
+        format!("edit-{id}-base.jpg"),
+        format!("edit-{id}-base.png"),
+    ] {
         let path = thumbs_dir.join(name);
         if path.exists() {
             if let Err(e) = std::fs::remove_file(&path) {
