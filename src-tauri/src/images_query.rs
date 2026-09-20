@@ -61,7 +61,7 @@ pub struct ImageRow {
     pub updated_at: Option<String>,
 }
 
-fn row_from(row: &rusqlite::Row) -> rusqlite::Result<ImageRow> {
+pub(crate) fn row_from(row: &rusqlite::Row) -> rusqlite::Result<ImageRow> {
     Ok(ImageRow {
         id: row.get("id")?,
         filename: row.get("filename")?,
@@ -257,10 +257,10 @@ pub fn get_stats(conn: &Connection) -> rusqlite::Result<StatsRow> {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
 
-    fn mem_db() -> Connection {
+    pub(crate) fn mem_db() -> Connection {
         let conn = Connection::open_in_memory().unwrap();
         conn.execute_batch(
             "CREATE TABLE images (

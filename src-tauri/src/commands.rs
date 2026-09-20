@@ -171,6 +171,93 @@ pub fn get_albums(db: State<'_, Db>) -> Result<Vec<tags_albums::AlbumRow>, Strin
     tags_albums::get_albums(&conn).map_err(|e| e.to_string())
 }
 
+// ── 标签/相册写通道（迁移接缝 4a） ──
+
+#[tauri::command]
+pub fn create_tag(
+    db: State<'_, Db>,
+    name: String,
+    color: String,
+) -> Result<Option<tags_albums::TagLite>, String> {
+    let conn = db.0.lock().unwrap();
+    tags_albums::create_tag(&conn, &name, &color).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn delete_tag(db: State<'_, Db>, id: i64) -> Result<(), String> {
+    let conn = db.0.lock().unwrap();
+    tags_albums::delete_tag(&conn, id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn add_tag_to_image(db: State<'_, Db>, image_id: i64, tag_id: i64) -> Result<bool, String> {
+    let conn = db.0.lock().unwrap();
+    tags_albums::add_tag_to_image(&conn, image_id, tag_id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn remove_tag_from_image(db: State<'_, Db>, image_id: i64, tag_id: i64) -> Result<(), String> {
+    let conn = db.0.lock().unwrap();
+    tags_albums::remove_tag_from_image(&conn, image_id, tag_id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn add_tag_to_images(
+    db: State<'_, Db>,
+    image_ids: Vec<i64>,
+    tag_id: i64,
+) -> Result<i64, String> {
+    let conn = db.0.lock().unwrap();
+    tags_albums::add_tag_to_images(&conn, &image_ids, tag_id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn create_album(
+    db: State<'_, Db>,
+    name: String,
+    description: String,
+) -> Result<Option<tags_albums::AlbumRow>, String> {
+    let conn = db.0.lock().unwrap();
+    tags_albums::create_album(&conn, &name, &description).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn rename_album(
+    db: State<'_, Db>,
+    id: i64,
+    new_name: String,
+) -> Result<serde_json::Value, String> {
+    let conn = db.0.lock().unwrap();
+    tags_albums::rename_album(&conn, id, &new_name).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn delete_album(db: State<'_, Db>, id: i64) -> Result<(), String> {
+    let conn = db.0.lock().unwrap();
+    tags_albums::delete_album(&conn, id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn add_to_album(db: State<'_, Db>, album_id: i64, image_ids: Vec<i64>) -> Result<(), String> {
+    let conn = db.0.lock().unwrap();
+    tags_albums::add_to_album(&conn, album_id, &image_ids).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn remove_from_album(db: State<'_, Db>, album_id: i64, image_id: i64) -> Result<(), String> {
+    let conn = db.0.lock().unwrap();
+    tags_albums::remove_from_album(&conn, album_id, image_id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn get_album_images(
+    db: State<'_, Db>,
+    album_id: i64,
+) -> Result<Vec<images_query::ImageRow>, String> {
+    let conn = db.0.lock().unwrap();
+    tags_albums::get_album_images(&conn, album_id).map_err(|e| e.to_string())
+}
+
 // ── 图片列表查询通道（迁移接缝 3） ──
 
 #[tauri::command]

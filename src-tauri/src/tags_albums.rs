@@ -245,3 +245,256 @@ mod tests {
         assert_eq!(albums[1].image_count, 1);
     }
 }
+
+// ── 写通道（迁移接缝 4a）：标签/相册 CRUD，SQL 与 electron/database.js 同式 ──
+
+/// 镜像 cleanText：trim + 截断。JS slice 按 UTF-16 计数，此处按字符数（仅超长 emoji 名有差异）
+pub fn clean_text(value: &str, max_len: usize) -> String {
+    value.trim().chars().take(max_len).collect()
+}
+
+pub fn create_tag(conn: &Connection, name: &str, color: &str) -> rusqlite::Result<Option<TagLite>> {
+    let clean_name = clean_text(name, 50);
+    if clean_name.is_empty() {
+        return Ok(None);
+    }
+    let safe_color = if color.trim().len() >= 2
+        && color.trim().starts_with('#')
+        && color.trim()[1..].chars().all(|c| c.is_ascii_hexdigit())
+        && (color.trim().len() - 1) <= 8
+        && (color.trim().len() - 1) >= 3
+    {
+        color.trim().to_string()
+    } else {
+        "#6366f1".to_string()
+    };
+    // 镜像 JS try/catch：重名等约束冲突一律返回 None
+    let inserted = conn.execute(
+        "INSERT INTO tags (name, color) VALUES (?1, ?2)",
+        rusqlite::params![clean_name, safe_color],
+    );
+    if inserted.is_err() {
+        return Ok(None);
+    }
+    let mut stmt = conn.prepare("SELECT id, name, color FROM tags WHERE name = ?1")?;
+    let mut rows = stmt.query_map([&clean_name], |r| {
+        Ok(TagLite {
+            id: r.get(0)?,
+            name: r.get(1)?,
+            color: r.get(2)?,
+        })
+    })?;
+    match rows.next() {
+        Some(row) => Ok(Some(row?)),
+        None => Ok(None),
+    }
+}
+
+pub fn delete_tag(conn: &Connection, id: i64) -> rusqlite::Result<()> {
+    conn.execute("DELETE FROM image_tags WHERE tag_id = ?1", [id])?;
+    conn.execute("DELETE FROM tags WHERE id = ?1", [id])?;
+    Ok(())
+}
+
+pub fn add_tag_to_image(conn: &Connection, image_id: i64, tag_id: i64) -> rusqlite::Result<bool> {
+    conn.execute(
+        "INSERT OR IGNORE INTO image_tags (image_id, tag_id) VALUES (?1, ?2)",
+        [image_id, tag_id],
+    )?;
+    Ok(true)
+}
+
+pub fn remove_tag_from_image(
+    conn: &Connection,
+    image_id: i64,
+    tag_id: i64,
+) -> rusqlite::Result<()> {
+    conn.execute(
+        "DELETE FROM image_tags WHERE image_id = ?1 AND tag_id = ?2",
+        [image_id, tag_id],
+    )?;
+    Ok(())
+}
+
+pub fn add_tag_to_images(
+    conn: &Connection,
+    image_ids: &[i64],
+    tag_id: i64,
+) -> rusqlite::Result<i64> {
+    let tx = conn.unchecked_transaction()?;
+    let mut added = 0i64;
+    {
+        let mut stmt =
+            tx.prepare("INSERT OR IGNORE INTO image_tags (image_id, tag_id) VALUES (?1, ?2)")?;
+        for id in image_ids {
+            added += stmt.execute(rusqlite::params![id, tag_id])? as i64;
+        }
+    }
+    tx.commit()?;
+    Ok(added)
+}
+
+pub fn create_album(
+    conn: &Connection,
+    name: &str,
+    description: &str,
+) -> rusqlite::Result<Option<AlbumRow>> {
+    let clean_name = clean_text(name, 50);
+    if clean_name.is_empty() {
+        return Ok(None);
+    }
+    let clean_desc = clean_text(description, 200);
+    conn.execute(
+        "INSERT INTO albums (name, description) VALUES (?1, ?2)",
+        [&clean_name, &clean_desc],
+    )?;
+    let mut stmt = conn.prepare(
+        "SELECT a.id, a.name, a.description, a.cover_image_id, a.created_at,
+           NULL AS cover_path, 0 AS image_count
+         FROM albums a WHERE name = ?1 ORDER BY id DESC LIMIT 1",
+    )?;
+    let mut rows = stmt.query_map([&clean_name], |r| {
+        Ok(AlbumRow {
+            id: r.get(0)?,
+            name: r.get(1)?,
+            description: r.get(2)?,
+            cover_image_id: r.get(3)?,
+            created_at: r.get(4)?,
+            cover_path: r.get(5)?,
+            image_count: r.get(6)?,
+        })
+    })?;
+    match rows.next() {
+        Some(row) => Ok(Some(row?)),
+        None => Ok(None),
+    }
+}
+
+/// 镜像 JS 返回契约：`{error} | true` → Ok(JSON) 两种形态
+pub fn rename_album(
+    conn: &Connection,
+    id: i64,
+    new_name: &str,
+) -> rusqlite::Result<serde_json::Value> {
+    let clean_name = clean_text(new_name, 50);
+    if clean_name.is_empty() {
+        return Ok(serde_json::json!({ "error": "相册名称无效" }));
+    }
+    conn.execute(
+        "UPDATE albums SET name = ?1 WHERE id = ?2",
+        rusqlite::params![clean_name, id],
+    )?;
+    Ok(serde_json::json!(true))
+}
+
+pub fn delete_album(conn: &Connection, id: i64) -> rusqlite::Result<()> {
+    conn.execute("DELETE FROM album_images WHERE album_id = ?1", [id])?;
+    conn.execute("DELETE FROM albums WHERE id = ?1", [id])?;
+    Ok(())
+}
+
+pub fn add_to_album(conn: &Connection, album_id: i64, image_ids: &[i64]) -> rusqlite::Result<()> {
+    let tx = conn.unchecked_transaction()?;
+    {
+        let mut stmt =
+            tx.prepare("INSERT OR IGNORE INTO album_images (album_id, image_id) VALUES (?1, ?2)")?;
+        for image_id in image_ids {
+            stmt.execute(rusqlite::params![album_id, image_id])?;
+        }
+    }
+    tx.commit()?;
+    Ok(())
+}
+
+pub fn remove_from_album(conn: &Connection, album_id: i64, image_id: i64) -> rusqlite::Result<()> {
+    conn.execute(
+        "DELETE FROM album_images WHERE album_id = ?1 AND image_id = ?2",
+        [album_id, image_id],
+    )?;
+    Ok(())
+}
+
+pub fn get_album_images(
+    conn: &Connection,
+    album_id: i64,
+) -> rusqlite::Result<Vec<crate::images_query::ImageRow>> {
+    let mut stmt = conn.prepare(
+        "SELECT i.* FROM images i JOIN album_images ai ON i.id = ai.image_id
+         WHERE ai.album_id = ?1 AND i.hidden = 0",
+    )?;
+    let rows = stmt.query_map([album_id], crate::images_query::row_from)?;
+    rows.collect()
+}
+
+#[cfg(test)]
+mod write_tests {
+    use super::*;
+
+    fn mem_db() -> Connection {
+        let conn = crate::images_query::tests::mem_db();
+        conn.execute_batch(
+            "INSERT INTO images (id, filename, filepath, import_date, hidden) VALUES
+               (1, 'a.jpg', '/a.jpg', '2026-01-01', 0), (2, 'b.jpg', '/b.jpg', '2026-01-01', 0);",
+        )
+        .unwrap();
+        conn
+    }
+
+    #[test]
+    fn 建标签_重名返回空_颜色校验回落默认() {
+        let conn = mem_db();
+        let t = create_tag(&conn, "  travel  ", "#abc").unwrap().unwrap();
+        assert_eq!(t.name, "travel");
+        assert_eq!(t.color.as_deref(), Some("#abc"));
+        assert!(create_tag(&conn, "travel", "#fff").unwrap().is_none());
+        let bad = create_tag(&conn, "plain", "red").unwrap().unwrap();
+        assert_eq!(bad.color.as_deref(), Some("#6366f1"));
+        assert!(create_tag(&conn, "   ", "#fff").unwrap().is_none());
+    }
+
+    #[test]
+    fn 删标签连带关联() {
+        let conn = mem_db();
+        let t = create_tag(&conn, "t", "#ffffff").unwrap().unwrap();
+        add_tag_to_image(&conn, 1, t.id).unwrap();
+        delete_tag(&conn, t.id).unwrap();
+        assert!(get_image_tags(&conn, 1).unwrap().is_empty());
+        assert!(get_tags(&conn).unwrap().is_empty());
+    }
+
+    #[test]
+    fn 批量加标签计数含去重() {
+        let conn = mem_db();
+        let t = create_tag(&conn, "t", "#ffffff").unwrap().unwrap();
+        add_tag_to_image(&conn, 1, t.id).unwrap();
+        let added = add_tag_to_images(&conn, &[1, 2], t.id).unwrap();
+        assert_eq!(added, 1);
+    }
+
+    #[test]
+    fn 相册增改名删() {
+        let conn = mem_db();
+        assert!(create_album(&conn, "  ", "").unwrap().is_none());
+        let a = create_album(&conn, "trip", "desc").unwrap().unwrap();
+        assert_eq!(a.name, "trip");
+        assert_eq!(
+            rename_album(&conn, a.id, "  ").unwrap(),
+            serde_json::json!({ "error": "相册名称无效" })
+        );
+        assert_eq!(
+            rename_album(&conn, a.id, "trip2").unwrap(),
+            serde_json::json!(true)
+        );
+        add_to_album(&conn, a.id, &[1, 2]).unwrap();
+        add_to_album(&conn, a.id, &[2]).unwrap();
+        let imgs = get_album_images(&conn, a.id).unwrap();
+        assert_eq!(imgs.len(), 2);
+        let albums = get_albums(&conn).unwrap();
+        assert_eq!(albums[0].image_count, 2);
+        remove_from_album(&conn, a.id, 1).unwrap();
+        assert_eq!(get_album_images(&conn, a.id).unwrap().len(), 1);
+        delete_album(&conn, a.id).unwrap();
+        assert!(get_albums(&conn).unwrap().is_empty());
+        assert!(get_album_images(&conn, a.id).unwrap().is_empty());
+    }
+}

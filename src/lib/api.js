@@ -24,6 +24,17 @@ const TAURI_SEAMS = new Set([
   'getImage',
   'getImportDates',
   'getStats',
+  'getAlbumImages',
+  'createTag',
+  'deleteTag',
+  'addTagToImage',
+  'removeTagFromImage',
+  'addTagToImages',
+  'createAlbum',
+  'renameAlbum',
+  'deleteAlbum',
+  'addToAlbum',
+  'removeFromAlbum',
 ]);
 
 const api = {

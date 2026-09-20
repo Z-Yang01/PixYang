@@ -32,6 +32,17 @@ pub fn run() {
             commands::get_image,
             commands::get_import_dates,
             commands::get_stats,
+            commands::create_tag,
+            commands::delete_tag,
+            commands::add_tag_to_image,
+            commands::remove_tag_from_image,
+            commands::add_tag_to_images,
+            commands::create_album,
+            commands::rename_album,
+            commands::delete_album,
+            commands::add_to_album,
+            commands::remove_from_album,
+            commands::get_album_images,
         ])
         .run(tauri::generate_context!())
         .expect("tauri 启动失败");
