@@ -22,3 +22,10 @@
 - 提交链：6d20c40 wip → 65e3ff7 R1 → 018752e R2 → b164a7c R3（HEAD）。
 - 最终验证：cargo 18/18 ✅；vitest 61 文件 / 946/946 ✅（均为 R3 收尾时的全绿状态）。
 - 工作区干净，无未提交的源码改动。
+
+## 窗口外续作（11:47 起，用户指示继续）
+
+- 11:50-11:59 R4 完成：tauri.conf.json（withGlobalTauri/frontendDist=../dist）+ build.rs +
+  lib.rs run()（generate_handler! 编译期校验两个命令签名）。tauri-build 要求 Windows 资源图标，
+  复用 build/icon.ico → src-tauri/icons/icon.ico。cargo 18/18；vitest 946/946。
+  约束记录：cargo test 编译期读取 ../dist（generate_context），fresh 环境需先 vite build。
