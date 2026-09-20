@@ -114,3 +114,8 @@
   rot90+crop 映射、超尺寸裁剪钳制、EXIF 注入产物。修复 flush 丢 pending 仿射的关键 bug
   （JS flushAffine 语义：无像素时从原图物化，不得静默丢弃）。
   render_edit 命令 + 桥接。cargo 66/66；clippy 干净；vitest 961/961。
+- 16:40-17:00 R20 阶段4（golden 重锁）：golden_audit.rs 升级为门禁（GOLDEN_RELOCK=1 重锁 +
+  case.json 容差断言），基线重锁至 Rust 执行器产物；重锁前 Δ 审计归档
+  tests/golden/rust-relock-audit.md（23/23 渲染成功、尺寸全对、maxΔ 0..59、meanΔ ≤0.145，
+  全部为编码器量化级差异）。node runner.cjs 留作 sharp 对照（将随 Electron 删除）。
+  cargo 66/66 + golden 门禁全绿。接缝5 阶段 1-4 全部完成。
