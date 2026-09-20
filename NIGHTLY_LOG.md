@@ -167,3 +167,7 @@
      allow_directory 递归；set_images_root 命令加 AppHandle 迁移成功后同步扩展），
      解决用户自定义图片根不在静态 scope 的问题（C 的 $CONFIG 静态 scope 保留兜底）。
   二次拉起验证存活正常。cargo 115/115；vitest 961/961。
+- 2026-09-21 01:20 CSP 根因最终修复：index.html 内 Electron 时代的 CSP meta 标签
+  （connect-src http://localhost:* 不含 ipc.localhost；img-src file: 无 asset:）与 Tauri
+  头部 CSP 取交集，导致改配置无效。已从 index.html/dist 删除 meta，配置层 CSP 生效。
+  顺带清理构建占用（旧实例未关）。cargo 115/115 + golden；vitest 961/961。
