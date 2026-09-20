@@ -27,13 +27,26 @@ electron/
   preload.js      contextBridge 暴露 window.pixyang API
 scripts/
   native.js       better-sqlite3 的 node/electron 双 ABI 切换（dev/build/test 前自动执行）
-src-tauri/        Rust/Tauri 结构（渐进迁移层，与 Electron 并存，见下「Rust/Tauri 约定」）
-  src/lib.rs      模块声明 + run()（Builder，generate_handler! 注册命令）
+src-tauri/        Rust/Tauri 结构（渐进迁移层，45+ 通道已接，与 Electron 并存，见下「Rust/Tauri 约定」）
+  src/lib.rs      模块声明 + run()（Builder + dialog/opener 插件，generate_handler! 注册 45+ 命令）
   src/main.rs     桌面入口（release 隐控制台）
-  src/naming.rs   唯一命名/配对主名（移植 electron/database.js 语义，18 测试内嵌）
-  src/image_group.rs 导入分组/日期围栏/安全文件名（移植 importImages/importOne 纯函数部分）
-  src/commands.rs tauri 命令壳（薄封装内核，serde DTO；unique_filename/group_import_files）
-  tauri.conf.json withGlobalTauri=true、frontendDist=../dist
+  src/naming.rs   唯一命名/配对主名（移植 electron/database.js 语义）
+  src/image_group.rs 导入分组/日期围栏/安全文件名
+  src/images_query.rs 图片列表动态查询/getStats/getImportDates（JS 对拍向量锁定）
+  src/render.rs   渲染像素内核六件套（饱和/暗角/分级/HSL/蒙版/曲线，JS 对拍 8/8 零偏差）
+  src/executor.rs 渲染执行器（管线调度/仿射累积/几何裁剪/编码；gamma 与 libvips 实测表逐值一致）
+  src/thumbs.rs   双档缩略图/EXIF 转正/NEF 预览段提取（image-rs+kamadak-exif）
+  src/exif_relay.rs EXIF 回接（JPEG APP1/PNG eXIf 字节级注放）
+  src/db.rs       rusqlite 连接/settings/删除通道（与 Electron 共用 pixyang.db）
+  src/file_ops.rs 导入编排/改名（NEF 避让收养、双回滚）
+  src/camera.rs   相机同步/图片根迁移
+  src/update_image.rs 日期移动白名单更新/rebuild 缩略图/损坏记录/重复查找
+  src/edit_session.rs 编辑会话（saveEditedImage 原子替换/历史/烘焙/导出）
+  src/scan.rs     目录扫描/导入收集
+  src/exif_read.rs EXIF 读取（18 字段中文映射）
+  src/interact.rs 对话框/openPath/backupDatabase（tauri-plugin-dialog/opener）
+  src/progress.rs 进度事件（rebuild-progress 等，Tauri Emitter）
+  tauri.conf.json withGlobalTauri=true、frontendDist=../dist、assetProtocol（$CONFIG/pixyang scope）
 shared/
   editSchema.cjs  EditParams v1 zod schema（非破坏编辑参数唯一事实源，前后端同构）
   renderSpec.cjs  EditParams → RenderSpec 纯函数（渲染指令序列，预览/导出唯一消费格式）
@@ -103,8 +116,10 @@ tests/            vitest（node 环境 + per-file happy-dom pragma）
   读取 `../dist`，fresh 环境先 `npx vite build`；Windows 资源图标在 `src-tauri/icons/icon.ico`。
 - 前端经 `src/lib/tauriBridge.js` 探测 `window.__TAURI__`（withGlobalTauri 注入）调用命令；
   Electron 运行时不可用即显式报错，不得影响现有 `api.js` IPC 路径。不引入 `@tauri-apps/api` npm 依赖。
-- CI：`.github/workflows/ci.yml` 的 `rust` job（windows）先 `vite build` 再 `cargo test`；
-  naming 测试已平台中性化，如需 ubuntu cargo 覆盖先验证路径分隔符相关断言。
+- CI：`.github/workflows/ci.yml` 的 `rust` job（windows）先 `vite build` 再 `cargo test`。
+- 像素 golden 门禁：`cargo test --test golden_audit`（基线 2026-09-20 重锁为 Rust 执行器产物，
+  Δ 审计归档 tests/golden/rust-relock-audit.md；重锁用 GOLDEN_RELOCK=1）。
+  node tests/golden/runner.cjs 为 sharp 执行器对照工具（将随 Electron 删除）。
 
 ## 验证
 

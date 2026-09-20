@@ -1,6 +1,7 @@
 // 统一 window.pixyang 访问层：集中守卫，组件不再散布 if (!window.pixyang) 判断。
 // Tauri 运行时下已接缝的通道走 Rust 命令（tauriBridge），其余仍透传 Electron IPC。
 import { isTauriAvailable, tauriApi } from './tauriBridge';
+import * as tauriMedia from './tauriBridgeMedia';
 
 const px = () => (typeof window !== 'undefined' ? window.pixyang : undefined);
 
@@ -66,6 +67,12 @@ const TAURI_SEAMS = new Set([
   'editExport',
   'syncCameraFolder',
   'setImagesRoot',
+  'toFileUrl',
+  'toFileUrls',
+  'onRebuildProgress',
+  'onImportProgress',
+  'onThumbnailsReady',
+  'onOrientationBackfill',
 ]);
 
 const api = {
@@ -138,8 +145,10 @@ for (const name of [
   'onEditPreviewReady',
 ]) {
   api[name] = (...args) => {
-    if (TAURI_SEAMS.has(name) && isTauriAvailable()) return tauriApi[name](...args);
-    return passthrough(name)(...args);
+    if (!TAURI_SEAMS.has(name) || !isTauriAvailable()) return passthrough(name)(...args);
+    if (name.startsWith('on')) return tauriMedia[name](...args);
+    if (name === 'toFileUrl' || name === 'toFileUrls') return tauriMedia[name](...args);
+    return tauriApi[name](...args);
   };
 }
 
