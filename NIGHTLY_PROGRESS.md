@@ -28,6 +28,7 @@
 | **接缝 1：settings** | getSetting/setSetting/getSettings → rusqlite 同库读写 | ✅ R8 完成（db.rs 3 测试 + api.js TAURI_SEAMS 分发） |
 | **接缝 2：tags/albums 只读** | getTags/getAlbums/getImageTags/getBatchImageTags | ✅ R9 完成（tags_albums.rs 4 测试，SQL 逐字镜像） |
 | **接缝 3：图片列表查询** | getImages/getImage/getImportDates/getStats | ✅ R10 完成（images_query.rs 9 测试，动态查询全语义镜像） |
+| **R14：杂项通道** | getImagesRoot/getDatabasePath/getAllImageIds/fileExists | ✅ 完成（+2 测试，筛选器抽取共用） |
 | **接缝 4a：tags/albums 写** | createTag/deleteTag/addTagToImage/removeTagFromImage/addTagToImages/createAlbum/renameAlbum/deleteAlbum/addToAlbum/removeFromAlbum/getAlbumImages | ✅ R11 完成（11 命令，写内核 4 测试） |
 | **接缝 4b：删除通道** | deleteImage/batchDeleteImages + error.rs | ✅ R12 完成（2 命令，磁盘+五表事务，2 测试） |
 | 接缝 4c：图片创建/移动 | importImages/renameImage/updateImage（与缩略图生成耦合，随接缝 5 一起） | 未开始 |
