@@ -87,9 +87,52 @@ pub fn default_thumbnails_dir() -> PathBuf {
     base
 }
 
-/// 托管状态：连接 + 宿主派生路径（缩略图目录等）
+/// 托管状态：连接 + 宿主派生路径（缩略图目录、默认图片根）
 pub struct AppPaths {
     pub thumbs_dir: PathBuf,
+    pub default_images_dir: PathBuf,
+}
+
+fn get_setting_raw(conn: &Connection, key: &str) -> Result<Option<String>, PixError> {
+    conn.query_row("SELECT value FROM settings WHERE key = ?", [key], |r| {
+        r.get(0)
+    })
+    .optional()
+    .map_err(PixError::Db)
+}
+
+/// 图片托管根：设置 images_root 优先，否则默认 userData/images；目录缺失即建（镜像 getImagesRoot）
+pub fn images_root(conn: &Connection, default_dir: &Path) -> Result<PathBuf, PixError> {
+    let custom = get_setting_raw(conn, "images_root")?;
+    let root = match custom.filter(|s| !s.is_empty()) {
+        Some(dir) => PathBuf::from(dir),
+        None => default_dir.to_path_buf(),
+    };
+    std::fs::create_dir_all(&root).map_err(|e| PixError::Io(format!("创建托管目录失败: {e}")))?;
+    Ok(root)
+}
+
+/// 镜像 isManagedPath + exists：路径位于托管根（图片根或库目录）内且真实存在
+pub fn managed_file_exists(
+    conn: &Connection,
+    default_images_dir: &Path,
+    filepath: &str,
+) -> Result<bool, PixError> {
+    let target = Path::new(filepath);
+    let images = images_root(conn, default_images_dir)?;
+    let roots = [
+        images,
+        default_db_path()
+            .parent()
+            .unwrap_or(Path::new("."))
+            .to_path_buf(),
+    ];
+    for root in &roots {
+        if target.starts_with(root) {
+            return Ok(target.exists());
+        }
+    }
+    Ok(false)
 }
 
 // ── 删除通道（迁移接缝 4b）：镜像 deleteImageRecord/deleteImageFiles/deleteImage/batchDeleteImages ──
@@ -238,8 +281,7 @@ mod delete_tests {
 
         let conn = full_mem_db();
         conn.execute_batch(&format!(
-            "CREATE TABLE edits (image_id INTEGER NOT NULL); CREATE TABLE edit_history (image_id INTEGER NOT NULL);
-             INSERT INTO images (id, filename, filepath, import_date, raw_path) VALUES (1, 'a.jpg', '{}', '2026-01-01', '{}');
+            "INSERT INTO images (id, filename, filepath, import_date, raw_path) VALUES (1, 'a.jpg', '{}', '2026-01-01', '{}');
              INSERT INTO tags (id, name) VALUES (1, 't'); INSERT INTO image_tags VALUES (1, 1);
              INSERT INTO albums (id, name) VALUES (1, 'al'); INSERT INTO album_images VALUES (1, 1, 0);
              INSERT INTO edits (image_id) VALUES (1); INSERT INTO edit_history (image_id) VALUES (1);",
@@ -272,8 +314,7 @@ mod delete_tests {
         std::fs::create_dir_all(&dir).unwrap();
         let conn = full_mem_db();
         conn.execute_batch(&format!(
-            "CREATE TABLE edits (image_id INTEGER NOT NULL); CREATE TABLE edit_history (image_id INTEGER NOT NULL);
-             INSERT INTO images (id, filename, filepath, import_date) VALUES
+            "INSERT INTO images (id, filename, filepath, import_date) VALUES
                (1, 'a.jpg', '{}', '2026-01-01'), (2, 'b.jpg', '{}', '2026-01-01');",
             dir.join("a.jpg").to_string_lossy().replace("\\", "/"),
             dir.join("b.jpg").to_string_lossy().replace("\\", "/")
@@ -290,6 +331,53 @@ mod delete_tests {
             .query_row("SELECT COUNT(*) FROM images", [], |r| r.get(0))
             .unwrap();
         assert_eq!(left, 0);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+}
+
+#[cfg(test)]
+mod path_tests {
+    use super::*;
+
+    #[test]
+    fn images_root_默认创建_设置覆盖生效() {
+        let dir = std::env::temp_dir().join("pixyang_root_test");
+        let _ = std::fs::remove_dir_all(&dir);
+        let conn = crate::images_query::tests::mem_db();
+        let default_dir = dir.join("images");
+        let root = images_root(&conn, &default_dir).unwrap();
+        assert!(root.exists());
+        conn.execute(
+            "INSERT OR REPLACE INTO settings (key, value) VALUES ('images_root', ?1)",
+            [dir.join("custom").to_str().unwrap()],
+        )
+        .unwrap();
+        let root2 = images_root(&conn, &default_dir).unwrap();
+        assert!(root2.ends_with("custom"));
+        assert!(root2.exists());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn 托管文件判定_根外存在也判false() {
+        let dir = std::env::temp_dir().join("pixyang_managed_test");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("images")).unwrap();
+        let conn = crate::images_query::tests::mem_db();
+        let inside = dir.join("images").join("a.jpg");
+        std::fs::write(&inside, b"x").unwrap();
+        let outside = dir.join("outside.jpg");
+        std::fs::write(&outside, b"x").unwrap();
+        assert!(managed_file_exists(&conn, &dir.join("images"), inside.to_str().unwrap()).unwrap());
+        assert!(
+            !managed_file_exists(&conn, &dir.join("images"), outside.to_str().unwrap()).unwrap()
+        );
+        assert!(!managed_file_exists(
+            &conn,
+            &dir.join("images"),
+            dir.join("images").join("no.jpg").to_str().unwrap()
+        )
+        .unwrap());
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

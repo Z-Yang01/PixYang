@@ -40,6 +40,10 @@ const TAURI_SEAMS = new Set([
   'getPresets',
   'createPreset',
   'deletePreset',
+  'getImagesRoot',
+  'getDatabasePath',
+  'getAllImageIds',
+  'fileExists',
 ]);
 
 const api = {

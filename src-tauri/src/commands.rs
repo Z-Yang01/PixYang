@@ -284,6 +284,40 @@ pub fn delete_preset(db: State<'_, Db>, id: i64) -> Result<(), String> {
 
 // ── 删除通道（迁移接缝 4b） ──
 
+// ── 杂项通道（迁移接缝 14：托管根/库路径/跨页全选/托管文件判定） ──
+
+#[tauri::command]
+pub fn get_images_root(db: State<'_, Db>, paths: State<'_, AppPaths>) -> Result<String, String> {
+    let conn = db.0.lock().unwrap();
+    db::images_root(&conn, &paths.default_images_dir)
+        .map(|p| p.to_string_lossy().into_owned())
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn get_database_path() -> Result<String, String> {
+    Ok(db::default_db_path().to_string_lossy().into_owned())
+}
+
+#[tauri::command]
+pub fn get_all_image_ids(
+    db: State<'_, Db>,
+    query: images_query::ImageQuery,
+) -> Result<Vec<i64>, String> {
+    let conn = db.0.lock().unwrap();
+    images_query::get_all_visible_ids(&conn, &query).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn file_exists(
+    db: State<'_, Db>,
+    paths: State<'_, AppPaths>,
+    filepath: String,
+) -> Result<bool, String> {
+    let conn = db.0.lock().unwrap();
+    db::managed_file_exists(&conn, &paths.default_images_dir, &filepath).map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 pub fn delete_image(
     db: State<'_, Db>,

@@ -561,15 +561,7 @@ mod preset_tests {
 
     fn mem_db() -> Connection {
         let conn = crate::images_query::tests::mem_db();
-        conn.execute_batch(
-            "CREATE TABLE presets (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name TEXT NOT NULL UNIQUE,
-                params_json TEXT NOT NULL,
-                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-            );",
-        )
-        .unwrap();
+
         conn
     }
 

@@ -65,4 +65,8 @@ export const tauriApi = {
   },
   createPreset: (name, params) => tauriInvoke('create_preset', { name, params: upgradeEdits(params) }),
   deletePreset: (id) => tauriInvoke('delete_preset', { id }),
+  getImagesRoot: () => tauriInvoke('get_images_root'),
+  getDatabasePath: () => tauriInvoke('get_database_path'),
+  getAllImageIds: (options) => tauriInvoke('get_all_image_ids', { query: options ?? {} }),
+  fileExists: (filepath) => tauriInvoke('file_exists', { filepath }),
 };

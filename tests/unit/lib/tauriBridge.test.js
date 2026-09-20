@@ -141,4 +141,17 @@ describe('tauriBridge', () => {
     await api.deletePreset(1);
     expect(invoke).toHaveBeenCalledWith('delete_preset', { id: 1 });
   });
+
+  it('接缝 14：托管路径与跨页全选通道走 Rust 命令', async () => {
+    const invoke = vi.fn().mockResolvedValue(null);
+    window.__TAURI__ = { core: { invoke } };
+    await api.getImagesRoot();
+    expect(invoke).toHaveBeenCalledWith('get_images_root', {});
+    await api.getDatabasePath();
+    expect(invoke).toHaveBeenCalledWith('get_database_path', {});
+    await api.getAllImageIds({ tagId: 3 });
+    expect(invoke).toHaveBeenCalledWith('get_all_image_ids', { query: { tagId: 3 } });
+    await api.fileExists('E:/managed/a.jpg');
+    expect(invoke).toHaveBeenCalledWith('file_exists', { filepath: 'E:/managed/a.jpg' });
+  });
 });

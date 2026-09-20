@@ -104,20 +104,13 @@ pub fn like_pattern(term: &str) -> String {
     out
 }
 
-pub fn get_images(conn: &Connection, q: &ImageQuery) -> rusqlite::Result<(Vec<ImageRow>, i64)> {
-    let safe_limit = match q.limit {
-        Some(n) if n.is_finite() => (n.floor().clamp(1.0, 2000.0)) as i64,
-        _ => 200,
-    };
-    let safe_offset = match q.offset {
-        Some(n) if n.is_finite() => (n.floor().max(0.0)) as i64,
-        _ => 0,
-    };
-
-    let mut joins: Vec<&str> = Vec::new();
-    let mut conditions: Vec<String> = vec!["i.hidden = 0".into()];
-    let mut params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
-
+/// getImages/getAllVisibleIds 共用的筛选构造（join/conditions/params 顺序即 SQL 拼接顺序）
+fn build_filters(
+    q: &ImageQuery,
+    joins: &mut Vec<&'static str>,
+    conditions: &mut Vec<String>,
+    params: &mut Vec<Box<dyn rusqlite::ToSql>>,
+) {
     if let Some(tag_id) = q.tag_id.filter(|v| *v != 0) {
         joins.push("JOIN image_tags it ON i.id = it.image_id");
         conditions.push("it.tag_id = ?".into());
@@ -153,6 +146,22 @@ pub fn get_images(conn: &Connection, q: &ImageQuery) -> rusqlite::Result<(Vec<Im
         params.push(Box::new(pat.clone()));
         params.push(Box::new(pat));
     }
+}
+
+pub fn get_images(conn: &Connection, q: &ImageQuery) -> rusqlite::Result<(Vec<ImageRow>, i64)> {
+    let safe_limit = match q.limit {
+        Some(n) if n.is_finite() => (n.floor().clamp(1.0, 2000.0)) as i64,
+        _ => 200,
+    };
+    let safe_offset = match q.offset {
+        Some(n) if n.is_finite() => (n.floor().max(0.0)) as i64,
+        _ => 0,
+    };
+
+    let mut joins: Vec<&str> = Vec::new();
+    let mut conditions: Vec<String> = vec!["i.hidden = 0".into()];
+    let mut params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+    build_filters(q, &mut joins, &mut conditions, &mut params);
 
     let base = format!(
         "SELECT DISTINCT i.* FROM images i {} WHERE {}",
@@ -293,7 +302,11 @@ pub(crate) mod tests {
             CREATE TABLE tags (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL UNIQUE, color TEXT DEFAULT '#6366f1');
             CREATE TABLE image_tags (image_id INTEGER NOT NULL, tag_id INTEGER NOT NULL, PRIMARY KEY (image_id, tag_id));
             CREATE TABLE albums (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, description TEXT DEFAULT '', cover_image_id INTEGER, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);
-            CREATE TABLE album_images (album_id INTEGER NOT NULL, image_id INTEGER NOT NULL, sort_order INTEGER DEFAULT 0, PRIMARY KEY (album_id, image_id));",
+            CREATE TABLE album_images (album_id INTEGER NOT NULL, image_id INTEGER NOT NULL, sort_order INTEGER DEFAULT 0, PRIMARY KEY (album_id, image_id));
+            CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+            CREATE TABLE presets (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL UNIQUE, params_json TEXT NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);
+            CREATE TABLE edits (image_id INTEGER NOT NULL);
+            CREATE TABLE edit_history (image_id INTEGER NOT NULL);",
         )
         .unwrap();
         conn
@@ -453,4 +466,23 @@ pub(crate) mod tests {
         assert_eq!(stats.total_albums, 0);
         assert_eq!(stats.favorites, 1);
     }
+}
+
+/// 跨页全选：全部可见 id（同筛选器，无排序无分页）——镜像 getAllVisibleIds
+pub fn get_all_visible_ids(conn: &Connection, q: &ImageQuery) -> rusqlite::Result<Vec<i64>> {
+    let mut joins: Vec<&str> = Vec::new();
+    let mut conditions: Vec<String> = vec!["i.hidden = 0".into()];
+    let mut params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+    build_filters(q, &mut joins, &mut conditions, &mut params);
+    let sql = format!(
+        "SELECT DISTINCT i.id FROM images i {} WHERE {}",
+        joins.join(" "),
+        conditions.join(" AND ")
+    );
+    let mut stmt = conn.prepare(&sql)?;
+    let rows = stmt.query_map(
+        rusqlite::params_from_iter(params.iter().map(|p| p.as_ref())),
+        |r| r.get(0),
+    )?;
+    rows.collect()
 }

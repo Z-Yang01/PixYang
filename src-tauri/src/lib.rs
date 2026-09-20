@@ -19,6 +19,10 @@ pub fn run() {
             app.manage(database);
             app.manage(db::AppPaths {
                 thumbs_dir: db::default_thumbnails_dir(),
+                default_images_dir: db::default_db_path()
+                    .parent()
+                    .unwrap_or(std::path::Path::new("."))
+                    .join("images"),
             });
             Ok(())
         })
@@ -52,6 +56,10 @@ pub fn run() {
             commands::get_presets,
             commands::create_preset,
             commands::delete_preset,
+            commands::get_images_root,
+            commands::get_database_path,
+            commands::get_all_image_ids,
+            commands::file_exists,
         ])
         .run(tauri::generate_context!())
         .expect("tauri 启动失败");
