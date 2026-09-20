@@ -1,0 +1,52 @@
+// @vitest-environment happy-dom
+import { describe, it, expect, vi, afterEach } from 'vitest';
+import { isTauriAvailable, tauriInvoke, tauriApi } from '@/lib/tauriBridge';
+
+afterEach(() => {
+  delete window.__TAURI__;
+});
+
+describe('tauriBridge', () => {
+  it('无 __TAURI__ 全局时不可用，调用显式报错', async () => {
+    expect(isTauriAvailable()).toBe(false);
+    await expect(tauriInvoke('ping')).rejects.toThrow('[tauriBridge] Tauri 运行时不可用');
+  });
+
+  it('__TAURI__ 缺 core 或 invoke 时同样判不可用', () => {
+    window.__TAURI__ = {};
+    expect(isTauriAvailable()).toBe(false);
+    window.__TAURI__ = { core: {} };
+    expect(isTauriAvailable()).toBe(false);
+  });
+
+  it('可用时透传命令名与参数、返回值原样', async () => {
+    const invoke = vi.fn().mockResolvedValue({ ok: 1 });
+    window.__TAURI__ = { core: { invoke } };
+    expect(isTauriAvailable()).toBe(true);
+    await expect(tauriInvoke('ping', { a: 1 })).resolves.toEqual({ ok: 1 });
+    expect(invoke).toHaveBeenCalledWith('ping', { a: 1 });
+  });
+
+  it('后端错误原样传播', async () => {
+    const invoke = vi.fn().mockRejectedValue(new Error('backend boom'));
+    window.__TAURI__ = { core: { invoke } };
+    await expect(tauriInvoke('ping')).rejects.toThrow('backend boom');
+  });
+
+  it('uniqueFilename 包装命令参数形状（单参数 args 包裹）', async () => {
+    const invoke = vi.fn().mockResolvedValue('a_1.jpg');
+    window.__TAURI__ = { core: { invoke } };
+    await expect(tauriApi.uniqueFilename('E:/pics', 'a.jpg', ['e:/pics/a.jpg'])).resolves.toBe('a_1.jpg');
+    expect(invoke).toHaveBeenCalledWith('unique_filename', {
+      args: { dir: 'E:/pics', name: 'a.jpg', taken: ['e:/pics/a.jpg'] },
+    });
+  });
+
+  it('groupImportFiles 包装透传文件列表', async () => {
+    const invoke = vi.fn().mockResolvedValue([]);
+    window.__TAURI__ = { core: { invoke } };
+    const files = [{ filename: 'a.jpg', filepath: 'E:/c/a.jpg' }];
+    await tauriApi.groupImportFiles(files);
+    expect(invoke).toHaveBeenCalledWith('group_import_files', { files });
+  });
+});

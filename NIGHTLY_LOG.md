@@ -29,3 +29,5 @@
   lib.rs run()（generate_handler! 编译期校验两个命令签名）。tauri-build 要求 Windows 资源图标，
   复用 build/icon.ico → src-tauri/icons/icon.ico。cargo 18/18；vitest 946/946。
   约束记录：cargo test 编译期读取 ../dist（generate_context），fresh 环境需先 vite build。
+- 12:03-12:07 R5 完成：src/lib/tauriBridge.js（isTauriAvailable/tauriInvoke/tauriApi，
+  window.__TAURI__ 探测，Electron 路径零影响）+ 6 例 vitest。vitest 952/952。
