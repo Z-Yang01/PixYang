@@ -1,7 +1,10 @@
 # NIGHTLY_PROGRESS — Rust/Tauri 结构推进
 
-状态：**迁移收尾阶段（R23 多 agent 完成，54/58 通道）**。会话在 03:29 槽间休眠中被中断，恢复时已过 08:10/08:55 停止线，
-按硬性规则停止，共完成 3 轮。下一窗口可直接从「下一步」清单继续。
+状态：**迁移收尾阶段（R24 完成，60/64 通道）**。对齐口径自 R24 起以
+`docs/TAURI_PARITY.md` 为唯一权威（基准=api.js 暴露的 59 数据通道+5 事件；旧「58 通道」
+为手工清点口径，已废弃）。夜间自动化（每 30 分钟一轮）自 2026-09-21 02:15 起接管推进，
+每轮记录统一追加到 NIGHTLY_LOG.md。剩余缺口见 TAURI_PARITY「剩余缺口」：
+exportImages/exportAlbumImages、onEditPreviewReady、getPathForFile。
 
 分支：`auto/nightly/pixyang-rust-tauri-20260920-0114`（基线 optimize/architecture + wip 6d20c40）
 提交链：6d20c40 wip → 65e3ff7 R1 → 018752e R2 → b164a7c R3 → 09fde04 最终日志
@@ -39,16 +42,13 @@
 
 ## 接缝迁移状态总览
 
-- 已接通：settings 三通道（Tauri 运行时走 Rust+rusqlite 同库；Electron 运行时行为不变）。
-- 未接通：其余 55 个通道仍仅 Electron。**应用整体仍在 Electron 上运行**；
-  全部接缝完成并经 tauri dev 全功能冒烟后，才可执行 Electron 删除。
-
-## 下一步（按优先级）
-
-1. 首个真实文件操作命令（如 copy_import_file）→ 引入 error.rs + tauri v2 权限细化。
-2. ubuntu cargo 覆盖（naming 已中性化；验证 image_group 的 dirname 分隔符断言后开 runner）。
-3. tauriBridge 与 api.js 的第一个真实接缝（某个纯查询类 IPC 走双后端）。
-4. `tauri dev` 冒烟（需 WebView2 运行时，跑之前先确认本机已装）。
+- R23 后可运行基线：Tauri debug 构建启动冒烟通过（WebView2、共享 %APPDATA%/pixyang/pixyang.db）、
+  缩略图/CSP/返回形状三类冒烟问题已修复（01:20 CSP 根因= index.html 遗留 meta，已删）。
+- R24：对话框/外壳 4 通道（selectDirectory/selectExportDirectory/openPath/backupDatabase）
+  接缝完成——Rust 命令与 tauriBridge 包装 R23 已就绪，缺的仅 api.js TAURI_SEAMS 成员。
+- 剩余 4 通道：exportImages/exportAlbumImages（Rust 未移植）、onEditPreviewReady（事件未接）、
+  getPathForFile（Electron webUtils，架构性差异）。逐项状态见 docs/TAURI_PARITY.md。
+- Electron 删除前置条件不变：全部接缝完成 + tauri dev 全功能冒烟。
 
 ## 轮次记录（窗口外续作，2026-09-20 上午）
 

@@ -80,10 +80,46 @@ describe('tauriBridge', () => {
   it('api 未接缝通道不受 Tauri 接缝影响', async () => {
     const invoke = vi.fn();
     window.__TAURI__ = { core: { invoke } };
-    window.pixyang = { backupDatabase: vi.fn().mockResolvedValue({ success: true }) };
-    await api.backupDatabase();
-    expect(window.pixyang.backupDatabase).toHaveBeenCalled();
+    window.pixyang = { exportImages: vi.fn().mockResolvedValue({ done: 2 }) };
+    await api.exportImages([1, 2], 'E:/dest');
+    expect(window.pixyang.exportImages).toHaveBeenCalledWith([1, 2], 'E:/dest');
     expect(invoke).not.toHaveBeenCalled();
+  });
+
+  it('接缝 R24：对话框/外壳通道在 Tauri 可用时走插件与 Rust 命令', async () => {
+    const invoke = vi.fn().mockResolvedValue({ success: true, path: 'E:/backup.db' });
+    const dialogOpen = vi.fn().mockResolvedValue('E:/picked');
+    const openerOpenPath = vi.fn().mockResolvedValue('');
+    window.__TAURI__ = {
+      core: { invoke },
+      dialog: { open: dialogOpen },
+      opener: { openPath: openerOpenPath },
+    };
+    await expect(api.selectDirectory()).resolves.toBe('E:/picked');
+    expect(dialogOpen).toHaveBeenCalledWith({
+      directory: true,
+      title: '选择要导入的图片文件夹',
+    });
+    await expect(api.selectExportDirectory()).resolves.toBe('E:/picked');
+    expect(dialogOpen).toHaveBeenLastCalledWith({
+      directory: true,
+      title: '选择导出的目标文件夹',
+    });
+    await expect(api.openPath('E:/picked/sub')).resolves.toBe('');
+    expect(openerOpenPath).toHaveBeenCalledWith('E:/picked/sub');
+    await expect(api.backupDatabase()).resolves.toEqual({ success: true, path: 'E:/backup.db' });
+    expect(invoke).toHaveBeenCalledWith('backup_database', {});
+  });
+
+  it('接缝 R24：对话框/外壳通道在 Electron 运行时仍走 pixyang 桥', async () => {
+    window.pixyang = {
+      selectDirectory: vi.fn().mockResolvedValue('E:/elect'),
+      openPath: vi.fn().mockResolvedValue(''),
+    };
+    await expect(api.selectDirectory()).resolves.toBe('E:/elect');
+    expect(window.pixyang.selectDirectory).toHaveBeenCalled();
+    await api.openPath('E:/elect');
+    expect(window.pixyang.openPath).toHaveBeenCalledWith('E:/elect');
   });
 
   it('接缝 2：标签/相册只读通道走 Rust 命令', async () => {

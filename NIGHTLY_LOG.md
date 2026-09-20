@@ -171,3 +171,15 @@
   （connect-src http://localhost:* 不含 ipc.localhost；img-src file: 无 asset:）与 Tauri
   头部 CSP 取交集，导致改配置无效。已从 index.html/dist 删除 meta，配置层 CSP 生效。
   顺带清理构建占用（旧实例未关）。cargo 115/115 + golden；vitest 961/961。
+
+- 2026-09-21 02:15-02:40 R24（夜间自动化首轮）对话框/外壳四通道接缝 + 对齐权威清单：
+  盘点发现 R23 的 interact.rs 四命令（select_directory/select_export_directory/open_path/
+  backup_database）与 tauriBridge 包装均已就绪，但 api.js TAURI_SEAMS 未收录——Tauri 运行时下
+  这四通道静默回落 Electron 桥返回 undefined（导入对话框/在资源管理器打开/备份数据库全失效）。
+  修复：SEAMS 收录四通道；「未接缝不受影响」测试样本通道由 backupDatabase 换为 exportImages
+  （真未接缝）；新增接缝正/反向测试 ×2（961→963）。
+  返回契约逐一核对：取消=null / {success:false}、openPath 错误字符串直返，与 Electron 逐字段一致。
+  建 docs/TAURI_PARITY.md 为唯一权威对齐口径（64 通道=59 数据+5 事件，旧 58 口径废弃），
+  NIGHTLY_PROGRESS 状态/总览/下一步同步更新。对齐度：60/64。
+  验证：vitest 963/963（其中一轮并行负载下 ImageViewer 曲线用例偶发，复跑两次均全绿，已知抖动）；
+  typecheck ✅；lint 0 error（10 warning 均为既有文件）；Rust 零改动（命令已注册，cargo 免跑）。

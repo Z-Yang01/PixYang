@@ -73,6 +73,10 @@ const TAURI_SEAMS = new Set([
   'onImportProgress',
   'onThumbnailsReady',
   'onOrientationBackfill',
+  'selectDirectory',
+  'selectExportDirectory',
+  'openPath',
+  'backupDatabase',
 ]);
 
 const api = {
