@@ -37,3 +37,10 @@
 - 12:18-12:24 R7 完成：naming 测试平台中性化（taken 键用与实现相同的 join+lowercase 变换构造，
   disk 谓词改字符串后缀，解除 win32 分隔符耦合，为 ubuntu cargo 铺路）+ AGENTS.md 登记
   src-tauri 结构与 Rust/Tauri 约定。cargo 18/18；vitest 952/952；AGENTS.md prettier 通过。
+- 12:30-12:45 全面测试（用户指示）：lint 0 error（发现并修复 eslint 解析 src-tauri/target
+  构建产物的 1 error，加入 ignores）/ typecheck ✅ / format:check 存量 573 文件不洁
+  （Prettier 版本漂移，CI 无此门，今日新文件已全部清洁）/ coverage 952/952 全绿且
+  statements 91.79/branches 85.28/functions 82.31（门槛 75/70/50）/ golden 23/23 像素锁定 ✅ /
+  vite build ✅ / cargo fmt+clippy+test 18/18 ✅ / 完整打包 ✅ 且产物冒烟双过
+  （better_sqlite3 electron ABI 加载 + asar 内 shared/ 11 文件完整）。
+  产物：release/PixYang Setup 1.0.0.exe（含曲线拖拽 rAF 合帧修复）。
