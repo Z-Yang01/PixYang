@@ -755,6 +755,7 @@ pub fn sync_camera_folder(db: State<'_, Db>, paths: State<'_, AppPaths>) -> Resu
 pub fn set_images_root(
     db: State<'_, Db>,
     paths: State<'_, AppPaths>,
+    app: tauri::AppHandle,
     dir_path: String,
 ) -> Result<Value, String> {
     let conn = db.0.lock().unwrap();

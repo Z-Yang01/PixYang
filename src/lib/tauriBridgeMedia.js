@@ -14,8 +14,16 @@ export function toFileUrl(filepath) {
   return core.convertFileSrc(filepath);
 }
 
+// 镜像 Electron fs:to-file-urls：返回 {路径: URL} 映射（组件按原始路径取 URL）
 export function toFileUrls(paths) {
-  return (paths ?? []).map((p) => toFileUrl(p));
+  const core = tauriCore();
+  const result = {};
+  if (!core || typeof core.convertFileSrc !== 'function' || !Array.isArray(paths)) return result;
+  for (const p of paths) {
+    if (typeof p !== 'string' || !p || p in result) continue;
+    result[p] = core.convertFileSrc(p);
+  }
+  return result;
 }
 
 function listen(event, cb) {

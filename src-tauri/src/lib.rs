@@ -31,13 +31,34 @@ pub fn run() {
         .setup(|app| {
             let database =
                 db::Db::open(&db::default_db_path()).map_err(|e| format!("数据库打开失败: {e}"))?;
+            let default_images_dir = db::default_db_path()
+                .parent()
+                .unwrap_or(std::path::Path::new("."))
+                .join("images");
+            let images_root = database
+                .get_setting("images_root")
+                .unwrap_or(None)
+                .filter(|s| !s.is_empty())
+                .map(std::path::PathBuf::from)
+                .unwrap_or_else(|| default_images_dir.clone());
+            let _ = std::fs::create_dir_all(&images_root);
+            {
+                use tauri::Manager;
+                let scope = app.asset_protocol_scope();
+                let _ = scope.allow_directory(&images_root, true);
+                let _ = scope.allow_directory(&db::default_thumbnails_dir(), true);
+                let _ = scope.allow_directory(
+                    &db::default_db_path()
+                        .parent()
+                        .unwrap_or(std::path::Path::new("."))
+                        .to_path_buf(),
+                    true,
+                );
+            }
             app.manage(database);
             app.manage(db::AppPaths {
                 thumbs_dir: db::default_thumbnails_dir(),
-                default_images_dir: db::default_db_path()
-                    .parent()
-                    .unwrap_or(std::path::Path::new("."))
-                    .join("images"),
+                default_images_dir,
             });
             Ok(())
         })

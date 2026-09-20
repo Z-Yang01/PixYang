@@ -160,3 +160,10 @@
      get_settings 由 pairs 数组改为 {key: value} 对象（镜像 JS getAllSettings），
      db.rs 新增 get_all_settings_map。三处修复后 cargo 115/115 + golden 全绿 + vitest 961/961，
      dist 与二进制已重建，二次冒烟拉起/终止正常。等待用户二次视觉确认。
+- 2026-09-21 01:00 缩略图不显示修复（用户二次冒烟反馈）：
+  1) toFileUrls 形状：组件消费 {路径: URL} 映射（镜像 fs:to-file-urls 逐字含去重），
+     tauriBridgeMedia 误返回数组——已改映射；
+  2) asset scope：运行时扩展（setup 内按 settings images_root/缩略图目录/库目录
+     allow_directory 递归；set_images_root 命令加 AppHandle 迁移成功后同步扩展），
+     解决用户自定义图片根不在静态 scope 的问题（C 的 $CONFIG 静态 scope 保留兜底）。
+  二次拉起验证存活正常。cargo 115/115；vitest 961/961。
