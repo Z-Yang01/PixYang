@@ -77,6 +77,8 @@ const TAURI_SEAMS = new Set([
   'selectExportDirectory',
   'openPath',
   'backupDatabase',
+  'exportImages',
+  'exportAlbumImages',
 ]);
 
 const api = {

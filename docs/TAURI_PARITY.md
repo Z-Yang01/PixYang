@@ -4,7 +4,7 @@
 （59 数据通道 + 5 事件），即 `preload.js` `window.pixyang` 的前端可见契约。逐一核对
 `src/lib/api.js` `TAURI_SEAMS` 接缝 × `src/lib/tauriBridge.js` 包装 × `src-tauri/src/` 命令注册。
 
-**当前对齐度：60/64。** 状态含义：✅ 已通（Tauri 运行时走 Rust，Electron 运行时原路径不变）／
+**当前对齐度：62/64。**（R25 更新：导出双通道接通）状态含义：✅ 已通（Tauri 运行时走 Rust，Electron 运行时原路径不变）／
 ❌ 缺失（仅 Electron）。
 
 历史口径说明：NIGHTLY_PROGRESS 旧记录的「58 通道」基准为手工清点，与 api.js 实际暴露面有
@@ -64,8 +64,8 @@ getAlbums / createAlbum / renameAlbum / deleteAlbum / addToAlbum / removeFromAlb
 | 通道 | 状态 | 备注 |
 |---|---|---|
 | selectExportDirectory | ✅ | R24 接缝；Rust select_export_directory |
-| exportImages | ❌ | Rust 未移植；可基于 file_ops.rs 复制能力扩展（下一轮候选） |
-| exportAlbumImages | ❌ | 同上（按相册批量导出） |
+| exportImages | ✅ | R25；file_ops.rs export_image_files（EXCL 独占+_1.._9999 避让/单文件失败隔离/NEF 主名跟随），命令 export_images 返回 {total,copied,nefCopied,failed}/{error} 契约镜像 |
+| exportAlbumImages | ✅ | R25；get_album_images 内核复用 + 同一导出内核，命令 export_album_images |
 
 ## 数据库文件（2）
 
@@ -83,13 +83,11 @@ getSettings / getSetting / setSetting ✅（db.rs 同库读写，get_settings �
 | onRebuildProgress / onImportProgress / onThumbnailsReady / onOrientationBackfill | ✅ | progress.rs Emitter + tauriBridgeMedia listen |
 | onEditPreviewReady | ❌ | Electron sendProgress('edit-preview-ready')；Tauri Emitter 未接（编辑预览完成通知） |
 
-## 剩余缺口（4，按优先级）
+## 剩余缺口（2，按优先级）
 
-1. **exportImages / exportAlbumImages**（2 通道）：导出是用户可见主功能；基于 file_ops.rs
-   复制能力 + interact.rs 目录选择即可闭环，一轮可完成。
-2. **onEditPreviewReady**（1 事件）：编辑面板预览完成通知；progress.rs 加 emit +
-   tauriBridgeMedia 加 listen + SEAMS/循环名单接入。
-3. **getPathForFile**（1 通道）：Electron webUtils 拖拽路径；Tauri v2 的 onDragDropEvent
+1. **onEditPreviewReady**（1 事件）：编辑面板预览完成通知；progress.rs 加 emit +
+   tauriBridgeMedia 加 listen + SEAMS/循环名单接入，一轮可完成。
+2. **getPathForFile**（1 通道）：Electron webUtils 拖拽路径；Tauri v2 的 onDragDropEvent
    原生给绝对路径，需改 useDragImport 事件源，属架构调整，单独一轮评估。
 
 ## 验证口径

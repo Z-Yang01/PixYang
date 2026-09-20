@@ -102,6 +102,8 @@ pub fn run() {
             commands::render_edit,
             commands::import_images,
             commands::rename_image,
+            commands::export_images,
+            commands::export_album_images,
             commands::get_exif,
             commands::scan_directory,
             commands::collect_import_files,

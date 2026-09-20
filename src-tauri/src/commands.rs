@@ -388,6 +388,44 @@ pub fn rename_image(
     file_ops::rename_image(&conn, id, &new_filename).map_err(|e| e.to_string())
 }
 
+// ── 导出（契约镜像 fs:export-images / fs:export-album-images） ──
+
+#[tauri::command]
+pub fn export_images(db: State<'_, Db>, ids: Vec<i64>, dest_dir: String) -> Result<Value, String> {
+    let conn = db.0.lock().unwrap();
+    let mut images = Vec::with_capacity(ids.len());
+    for id in ids {
+        if let Some(row) = images_query::get_image_by_id(&conn, id).map_err(|e| e.to_string())? {
+            images.push(row);
+        }
+    }
+    finish_export(&images, &dest_dir)
+}
+
+#[tauri::command]
+pub fn export_album_images(
+    db: State<'_, Db>,
+    album_id: i64,
+    dest_dir: String,
+) -> Result<Value, String> {
+    let conn = db.0.lock().unwrap();
+    let images = tags_albums::get_album_images(&conn, album_id).map_err(|e| e.to_string())?;
+    finish_export(&images, &dest_dir)
+}
+
+fn finish_export(images: &[images_query::ImageRow], dest_dir: &str) -> Result<Value, String> {
+    let total = images.len();
+    match file_ops::export_image_files(images, dest_dir) {
+        Ok(o) => Ok(json!({
+            "total": total,
+            "copied": o.copied,
+            "nefCopied": o.nef_copied,
+            "failed": o.failed,
+        })),
+        Err(msg) => Ok(json!({ "error": format!("导出失败: {msg}") })),
+    }
+}
+
 // ── 渲染执行器（迁移接缝 5 阶段 3） ──
 
 #[tauri::command]

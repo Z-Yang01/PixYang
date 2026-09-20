@@ -409,6 +409,93 @@ pub fn rename_image(conn: &Connection, id: i64, new_filename: &str) -> Result<Va
     }
 }
 
+#[derive(Debug)]
+pub struct ExportOutcome {
+    pub copied: u32,
+    pub nef_copied: u32,
+    pub failed: Vec<String>,
+}
+
+// EXCL 独占复制 + _1.._9999 避让，直译 electron/main.js exportFiles 的 COPYFILE_EXCL 循环
+fn copy_exclusive(src: &Path, dest: &Path) -> Result<(), std::io::Error> {
+    let ext = dest.extension().and_then(|e| e.to_str()).unwrap_or("");
+    let ext_dot = if ext.is_empty() { String::new() } else { format!(".{ext}") };
+    let stem = dest.file_stem().and_then(|s| s.to_str()).unwrap_or("");
+    let parent = dest.parent().map(Path::to_path_buf).unwrap_or_default();
+    let mut final_dest = dest.to_path_buf();
+    let mut n = 1u32;
+    loop {
+        let r = std::fs::File::open(src).and_then(|mut input| {
+            let mut out = std::fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&final_dest)?;
+            std::io::copy(&mut input, &mut out).map(|_| ())
+        });
+        match r {
+            Ok(()) => return Ok(()),
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+                if n > 9999 {
+                    return Err(std::io::Error::other("目标目录同名文件过多，避让失败"));
+                }
+                final_dest = parent.join(format!("{stem}_{n}{ext_dot}"));
+                n += 1;
+            }
+            Err(e) => return Err(e),
+        }
+    }
+}
+
+// 导出内核：JPG + 配对 NEF，单文件失败不废整批；空文件名跳过；源不存在静默跳过
+pub fn export_image_files(images: &[ImageRow], dest_dir: &str) -> Result<ExportOutcome, String> {
+    if dest_dir.is_empty() {
+        return Err("导出目标目录无效".into());
+    }
+    let dest_root = Path::new(dest_dir);
+    let mut outcome = ExportOutcome {
+        copied: 0,
+        nef_copied: 0,
+        failed: Vec::new(),
+    };
+    for img in images {
+        let out_name = Path::new(img.filename.as_str())
+            .file_name()
+            .and_then(|s| s.to_str())
+            .unwrap_or("");
+        if out_name.is_empty() {
+            continue;
+        }
+        let mut jpg_failed = false;
+        let src = Path::new(&img.filepath);
+        if src.exists() {
+            match copy_exclusive(src, &dest_root.join(out_name)) {
+                Ok(()) => outcome.copied += 1,
+                Err(e) => {
+                    jpg_failed = true;
+                    outcome.failed.push(format!("{out_name}: {e}"));
+                }
+            }
+        }
+        if jpg_failed {
+            continue;
+        }
+        if let Some(raw) = img.raw_path.as_deref() {
+            let raw_path = Path::new(raw);
+            if raw_path.exists() {
+                let raw_ext = raw_path.extension().and_then(|e| e.to_str()).unwrap_or("");
+                let raw_ext_dot =
+                    if raw_ext.is_empty() { String::new() } else { format!(".{raw_ext}") };
+                let stem = Path::new(out_name).file_stem().and_then(|s| s.to_str()).unwrap_or("");
+                match copy_exclusive(raw_path, &dest_root.join(format!("{stem}{raw_ext_dot}"))) {
+                    Ok(()) => outcome.nef_copied += 1,
+                    Err(e) => outcome.failed.push(format!("{out_name}: {e}")),
+                }
+            }
+        }
+    }
+    Ok(outcome)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -425,6 +512,112 @@ mod tests {
         let p = dir.join(name);
         img.save(&p).unwrap();
         p
+    }
+
+    fn export_row(filename: &str, filepath: &Path, raw_path: Option<&Path>) -> ImageRow {
+        ImageRow {
+            id: 1,
+            filename: filename.into(),
+            filepath: filepath.to_string_lossy().into(),
+            original_path: None,
+            raw_path: raw_path.map(|p| p.to_string_lossy().into()),
+            original_raw_path: None,
+            hidden: None,
+            orientation: None,
+            rotation: None,
+            flip_h: None,
+            flip_v: None,
+            import_date: "2026-09-21".into(),
+            taken_at: None,
+            size: None,
+            width: None,
+            height: None,
+            format: None,
+            thumbnail: None,
+            thumbnail_path: None,
+            thumbnail_small_path: None,
+            rating: None,
+            favorite: None,
+            notes: None,
+            created_at: None,
+            updated_at: None,
+        }
+    }
+
+    #[test]
+    fn 导出_复制原图与配对NEF并计数() {
+        let dir = std::env::temp_dir().join("pixyang_export_basic");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("src")).unwrap();
+        let jpg = make_jpeg(&dir.join("src"), "a.jpg", 32, 20);
+        let nef = dir.join("src").join("a.nef");
+        std::fs::write(&nef, b"NEFBYTES").unwrap();
+        let jpg_b = make_jpeg(&dir.join("src"), "b.jpg", 24, 24);
+        let dest = dir.join("out");
+        std::fs::create_dir_all(&dest).unwrap();
+        let rows = vec![
+            export_row("a.jpg", &jpg, Some(&nef)),
+            export_row("b.jpg", &jpg_b, None),
+        ];
+        let o = export_image_files(&rows, dest.to_str().unwrap()).unwrap();
+        assert_eq!(o.copied, 2);
+        assert_eq!(o.nef_copied, 1);
+        assert!(o.failed.is_empty());
+        assert!(dest.join("a.jpg").exists());
+        assert!(dest.join("a.nef").exists());
+        assert!(dest.join("b.jpg").exists());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn 导出_重名避让_1后缀() {
+        let dir = std::env::temp_dir().join("pixyang_export_dup");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("src")).unwrap();
+        let jpg = make_jpeg(&dir.join("src"), "dup.jpg", 32, 20);
+        let dest = dir.join("out");
+        std::fs::create_dir_all(&dest).unwrap();
+        std::fs::write(dest.join("dup.jpg"), b"EXISTING").unwrap();
+        let rows = vec![export_row("dup.jpg", &jpg, None)];
+        let o = export_image_files(&rows, dest.to_str().unwrap()).unwrap();
+        assert_eq!(o.copied, 1);
+        assert!(o.failed.is_empty());
+        assert_eq!(std::fs::read(dest.join("dup.jpg")).unwrap(), b"EXISTING");
+        assert!(dest.join("dup_1.jpg").exists());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn 导出_单文件失败不废整批_空文件名跳过() {
+        let dir = std::env::temp_dir().join("pixyang_export_fail");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("src")).unwrap();
+        let jpg = make_jpeg(&dir.join("src"), "ok.jpg", 32, 20);
+        let dest = dir.join("out");
+        std::fs::create_dir_all(&dest).unwrap();
+        let rows = vec![
+            export_row("bad.jpg", &dir.join("src"), None),
+            export_row("", &jpg, None),
+            export_row("ok.jpg", &jpg, None),
+        ];
+        let o = export_image_files(&rows, dest.to_str().unwrap()).unwrap();
+        assert_eq!(o.copied, 1);
+        assert_eq!(o.nef_copied, 0);
+        assert_eq!(o.failed.len(), 1);
+        assert!(o.failed[0].starts_with("bad.jpg:"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn 导出_目标目录无效_整体报错() {
+        let dir = std::env::temp_dir().join("pixyang_export_invalid");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let jpg = make_jpeg(&dir, "x.jpg", 16, 16);
+        let rows = vec![export_row("x.jpg", &jpg, None)];
+        let err = export_image_files(&rows, "").unwrap_err();
+        assert_eq!(err, "导出目标目录无效");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

@@ -80,10 +80,19 @@ describe('tauriBridge', () => {
   it('api 未接缝通道不受 Tauri 接缝影响', async () => {
     const invoke = vi.fn();
     window.__TAURI__ = { core: { invoke } };
-    window.pixyang = { exportImages: vi.fn().mockResolvedValue({ done: 2 }) };
-    await api.exportImages([1, 2], 'E:/dest');
-    expect(window.pixyang.exportImages).toHaveBeenCalledWith([1, 2], 'E:/dest');
+    window.pixyang = { getPathForFile: vi.fn().mockResolvedValue('E:/drop/a.jpg') };
+    await api.getPathForFile('E:/drop/a.jpg');
+    expect(window.pixyang.getPathForFile).toHaveBeenCalledWith('E:/drop/a.jpg');
     expect(invoke).not.toHaveBeenCalled();
+  });
+
+  it('接缝 R25：导出通道走 Rust 命令', async () => {
+    const invoke = vi.fn().mockResolvedValue({ total: 2, copied: 2, nefCopied: 1, failed: [] });
+    window.__TAURI__ = { core: { invoke } };
+    await api.exportImages([1, 2], 'E:/dest');
+    expect(invoke).toHaveBeenCalledWith('export_images', { ids: [1, 2], destDir: 'E:/dest' });
+    await api.exportAlbumImages(7, 'E:/dest');
+    expect(invoke).toHaveBeenCalledWith('export_album_images', { albumId: 7, destDir: 'E:/dest' });
   });
 
   it('接缝 R24：对话框/外壳通道在 Tauri 可用时走插件与 Rust 命令', async () => {

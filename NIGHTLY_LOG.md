@@ -183,3 +183,15 @@
   NIGHTLY_PROGRESS 状态/总览/下一步同步更新。对齐度：60/64。
   验证：vitest 963/963（其中一轮并行负载下 ImageViewer 曲线用例偶发，复跑两次均全绿，已知抖动）；
   typecheck ✅；lint 0 error（10 warning 均为既有文件）；Rust 零改动（命令已注册，cargo 免跑）。
+
+- 2026-09-21 02:45-03:00 R25（夜间自动化第二轮）导出双通道 Rust 移植（62/64）：
+  file_ops.rs 新增 export_image_files 内核 + copy_exclusive（EXCL 独占预约+_1.._9999 避让，
+  先开源文件再建目标防残档）；单文件失败不废整批、空文件名跳过、源不存在静默跳过——
+  语义逐条直译 electron/main.js exportFiles。命令 export_images/export_album_images 薄封装
+  （get_image_by_id/get_album_images 内核复用），返回 {total,copied,nefCopied,failed}/{error}
+  与 Electron 逐字段镜像。前端 tauriBridge 包装 ×2 + TAURI_SEAMS 收录，「未接缝」测试样本
+  通道换为 getPathForFile（最后一个未接缝数据通道）。内核测试 +4（真实 JPEG 夹具：
+  基本复制计数/重名避让/失败隔离+空名跳过/无效目录整体报错）。
+  验证：cargo 119/119 + golden 门禁 ✅；vitest 964/964 ✅；typecheck ✅；lint 0 error ✅。
+  环境清理：发现 01:56 冒烟遗留的 debug pixyang.exe 实例（PID 30340）占用构建目录，
+  已终止。剩余缺口：onEditPreviewReady、getPathForFile。

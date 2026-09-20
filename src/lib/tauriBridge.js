@@ -111,6 +111,9 @@ export const tauriApi = {
     tauriInvoke('render_edit', { spec, inputPath, outputPath }),
   importImages: (files) => tauriInvoke('import_images', { files }),
   renameImage: (id, newFilename) => tauriInvoke('rename_image', { id, newFilename }),
+  exportImages: (ids, destDir) => tauriInvoke('export_images', { ids, destDir }),
+  exportAlbumImages: (albumId, destDir) =>
+    tauriInvoke('export_album_images', { albumId, destDir }),
   getExif: (filepath) => tauriInvoke('get_exif', { filepath }),
   scanDirectory: (dirPath) => tauriInvoke('scan_directory', { dir: dirPath }),
   collectImportFiles: (paths) => tauriInvoke('collect_import_files', { paths }),

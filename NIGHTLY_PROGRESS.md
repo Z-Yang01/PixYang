@@ -1,10 +1,10 @@
 # NIGHTLY_PROGRESS — Rust/Tauri 结构推进
 
-状态：**迁移收尾阶段（R24 完成，60/64 通道）**。对齐口径自 R24 起以
+状态：**迁移收尾阶段（R25 完成，62/64 通道）**。对齐口径自 R24 起以
 `docs/TAURI_PARITY.md` 为唯一权威（基准=api.js 暴露的 59 数据通道+5 事件；旧「58 通道」
 为手工清点口径，已废弃）。夜间自动化（每 30 分钟一轮）自 2026-09-21 02:15 起接管推进，
 每轮记录统一追加到 NIGHTLY_LOG.md。剩余缺口见 TAURI_PARITY「剩余缺口」：
-exportImages/exportAlbumImages、onEditPreviewReady、getPathForFile。
+onEditPreviewReady、getPathForFile。
 
 分支：`auto/nightly/pixyang-rust-tauri-20260920-0114`（基线 optimize/architecture + wip 6d20c40）
 提交链：6d20c40 wip → 65e3ff7 R1 → 018752e R2 → b164a7c R3 → 09fde04 最终日志
