@@ -80,9 +80,9 @@ describe('tauriBridge', () => {
   it('api 未接缝通道不受 Tauri 接缝影响', async () => {
     const invoke = vi.fn();
     window.__TAURI__ = { core: { invoke } };
-    window.pixyang = { importImages: vi.fn().mockResolvedValue([]) };
-    await api.importImages([]);
-    expect(window.pixyang.importImages).toHaveBeenCalledWith([]);
+    window.pixyang = { getExif: vi.fn().mockResolvedValue({}) };
+    await api.getExif('E:/p/a.jpg');
+    expect(window.pixyang.getExif).toHaveBeenCalledWith('E:/p/a.jpg');
     expect(invoke).not.toHaveBeenCalled();
   });
 
@@ -171,5 +171,16 @@ describe('tauriBridge', () => {
     });
     await tauriApi.imageMeta('E:/p/a.jpg');
     expect(invoke).toHaveBeenCalledWith('image_meta', { filepath: 'E:/p/a.jpg' });
+  });
+
+  it('接缝 4c：导入/改名通道走 Rust 命令', async () => {
+    const invoke = vi.fn().mockResolvedValue([]);
+    window.__TAURI__ = { core: { invoke } };
+    await api.importImages([{ filename: 'a.jpg', filepath: 'E:/src/a.jpg' }]);
+    expect(invoke).toHaveBeenCalledWith('import_images', {
+      files: [{ filename: 'a.jpg', filepath: 'E:/src/a.jpg' }],
+    });
+    await api.renameImage(5, 'new.jpg');
+    expect(invoke).toHaveBeenCalledWith('rename_image', { id: 5, newFilename: 'new.jpg' });
   });
 });

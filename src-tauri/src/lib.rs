@@ -3,6 +3,7 @@ pub mod db;
 pub mod error;
 pub mod executor;
 pub mod exif_relay;
+pub mod file_ops;
 pub mod image_group;
 pub mod images_query;
 pub mod naming;
@@ -68,6 +69,8 @@ pub fn run() {
             commands::extract_nef_preview,
             commands::image_meta,
             commands::render_edit,
+            commands::import_images,
+            commands::rename_image,
         ])
         .run(tauri::generate_context!())
         .expect("tauri 启动失败");

@@ -76,4 +76,6 @@ export const tauriApi = {
   imageMeta: (filepath) => tauriInvoke('image_meta', { filepath }),
   renderEdit: (spec, inputPath, outputPath) =>
     tauriInvoke('render_edit', { spec, inputPath, outputPath }),
+  importImages: (files) => tauriInvoke('import_images', { files }),
+  renameImage: (id, newFilename) => tauriInvoke('rename_image', { id, newFilename }),
 };

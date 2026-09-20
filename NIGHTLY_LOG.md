@@ -119,3 +119,10 @@
   tests/golden/rust-relock-audit.md（23/23 渲染成功、尺寸全对、maxΔ 0..59、meanΔ ≤0.145，
   全部为编码器量化级差异）。node runner.cjs 留作 sharp 对照（将随 Electron 删除）。
   cargo 66/66 + golden 门禁全绿。接缝5 阶段 1-4 全部完成。
+- 17:05-17:30 R21 接缝4c（导入/改名编排）：file_ops.rs——today_ymd（免依赖民用历）/
+  move_file_safe（EXDEV 回退）/import_one（日期围栏→安全名→唯一名→复制清理→NEF 双列
+  NOCASE 避让+隐藏收养→落库→导入即生成双档缩略图并回写路径尺寸【改进型分歧】）/
+  import_images 分组编排/rename_image（非法字符/扩展名锁定/盘∪库占用检查/NEF 跟随/
+  磁盘-DB 双回滚）。import_images/rename_image 命令 + 接缝。测试 4 个（真实 JPEG 夹具）。
+  vitest golden 像素比对移交 cargo 门禁 golden_audit（基线已属 Rust 执行器），vitest 保留
+  spec 快照与结构断言；cargo 70/70 + golden 门禁；vitest 961/961。对等度：29/58 通道。

@@ -1,0 +1,536 @@
+// 文件操作编排（迁移接缝 4c/4b 混合）：importImages/importOne/renameImage 的 Rust 直译。
+// 复用已移植内核：naming（唯一命名）、image_group（分组/日期围栏/安全文件名）、thumbs（双档缩略图）。
+// 已记录改进型分歧：导入时由 Rust 直接生成双档缩略图并回写
+// thumbnail_path/thumbnail_small_path/width/height（Electron 版由渲染进程传 base64，仅 thumbnail 列）。
+
+use crate::db::{delete_image_record, PixError};
+use crate::image_group;
+use crate::images_query::ImageRow;
+use crate::naming;
+use crate::thumbs;
+use rusqlite::{Connection, OptionalExtension};
+use serde_json::{json, Value};
+use std::path::{Path, PathBuf};
+
+/// 今天 YYYY-MM-DD（days-since-epoch 民用历算法，免 chrono 依赖）
+pub fn today_ymd() -> String {
+    let secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0);
+    let days = secs.div_euclid(86400);
+    // Howard Hinnant civil_from_days
+    let z = days + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let y = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = if m <= 2 { y + 1 } else { y };
+    format!("{y:04}-{m:02}-{d:02}")
+}
+
+/// 镜像 moveFileSafe：rename 优先，EXDEV 回退 copy+delete
+pub fn move_file_safe(from: &Path, to: &Path) -> Result<(), PixError> {
+    if let Some(parent) = to.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| PixError::Io(format!("建目录失败: {e}")))?;
+    }
+    match std::fs::rename(from, to) {
+        Ok(()) => Ok(()),
+        Err(e) => {
+            // EXDEV（跨盘）与 Windows ERROR_NOT_SAME_DEVICE(17) 均走 copy+delete
+            std::fs::copy(from, to).map_err(|e2| PixError::Io(format!("移动失败: {e}/{e2}")))?;
+            std::fs::remove_file(from).map_err(|e| PixError::Io(format!("移动清理失败: {e}")))?;
+            Ok(())
+        }
+    }
+}
+
+fn is_path_taken(conn: &Connection, full_path: &str, exclude_id: Option<i64>) -> bool {
+    let taken = match exclude_id {
+        Some(id) => conn
+            .query_row(
+                "SELECT 1 FROM images WHERE filepath = ?1 COLLATE NOCASE AND id != ?2",
+                rusqlite::params![full_path, id],
+                |_| Ok(()),
+            )
+            .optional()
+            .unwrap_or(None)
+            .is_some(),
+        None => conn
+            .query_row(
+                "SELECT 1 FROM images WHERE filepath = ?1 COLLATE NOCASE",
+                [full_path],
+                |_| Ok(()),
+            )
+            .optional()
+            .unwrap_or(None)
+            .is_some(),
+    };
+    taken || Path::new(full_path).exists()
+}
+
+fn get_img_row(conn: &Connection, id: i64) -> Option<ImageRow> {
+    crate::images_query::get_image_by_id(conn, id).ok()?
+}
+
+fn num_i64(v: Option<&Value>) -> i64 {
+    v.and_then(|x| x.as_f64()).map(|f| f as i64).unwrap_or(0)
+}
+
+fn str_or_empty(v: Option<&Value>) -> String {
+    v.and_then(|x| x.as_str()).unwrap_or("").to_string()
+}
+
+/// 镜像 importOne：单张导入编排（日期围栏→安全名→唯一名→复制→NEF 避让/收养→落库→缩略图）
+pub fn import_one(
+    conn: &Connection,
+    root: &Path,
+    img: &Value,
+    pair: Option<&Value>,
+    hidden: bool,
+    today: &str,
+    thumbs_dir: &Path,
+) -> Result<Option<ImageRow>, PixError> {
+    let raw_date = str_or_empty(img.get("importDate"));
+    let date_str = if raw_date.is_empty() {
+        today.to_string()
+    } else {
+        image_group::effective_import_date(&raw_date, today)
+    };
+    let sub_dir = image_group::date_dir(&date_str)
+        .map(|rel| root.join(rel))
+        .unwrap_or_else(|| root.join(today));
+    std::fs::create_dir_all(&sub_dir).map_err(|e| PixError::Io(format!("建日期目录失败: {e}")))?;
+
+    let safe_name = match image_group::safe_basename(&str_or_empty(img.get("filename"))) {
+        Some(n) => n,
+        None => {
+            eprintln!(
+                "[导入] 文件名无效，跳过: {}",
+                str_or_empty(img.get("filepath"))
+            );
+            return Ok(None);
+        }
+    };
+    let ext = naming::extname(&safe_name).to_string();
+    let taken: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let unique_name =
+        naming::generate_unique_filename(&sub_dir, &safe_name, &taken, |p| p.exists());
+    let dest_path = sub_dir.join(&unique_name);
+    let src_path = str_or_empty(img.get("filepath"));
+
+    if src_path != dest_path.to_string_lossy() {
+        if let Err(e) = std::fs::copy(&src_path, &dest_path) {
+            let _ = std::fs::remove_file(&dest_path);
+            eprintln!("[导入] 复制失败: {src_path} {e}");
+            return Ok(None);
+        }
+    }
+
+    // 配对 NEF：filepath ∪ raw_path 双列 NOCASE 查占用者，可见占用派生避让、隐藏记录收养
+    let mut raw_dest_path = String::new();
+    let mut raw_source_path = String::new();
+    if let Some(pair) = pair {
+        let pair_filepath = str_or_empty(pair.get("filepath"));
+        let pair_filename = str_or_empty(pair.get("filename"));
+        let raw_ext = naming::extname(&pair_filename).to_string();
+        let mut candidate = format!("{}{}", naming::basename_no_ext(&unique_name), raw_ext);
+        let mut collision = 0i64;
+        loop {
+            let target = sub_dir.join(&candidate);
+            let owner: Option<(i64, i64)> = conn
+                .query_row(
+                    "SELECT id, hidden FROM images WHERE filepath = ?1 COLLATE NOCASE OR raw_path = ?2 COLLATE NOCASE",
+                    rusqlite::params![target.to_string_lossy(), target.to_string_lossy()],
+                    |r| Ok((r.get(0)?, r.get(1)?)),
+                )
+                .optional()
+                .unwrap_or(None);
+            match owner {
+                Some((owner_id, hidden_flag)) => {
+                    if hidden_flag == 1 {
+                        delete_image_record(conn, owner_id)?;
+                        raw_dest_path = target.to_string_lossy().into_owned();
+                        break;
+                    }
+                }
+                None => {
+                    if pair_filepath == target.to_string_lossy() || !target.exists() {
+                        raw_dest_path = target.to_string_lossy().into_owned();
+                        break;
+                    }
+                }
+            }
+            collision += 1;
+            if collision > 9999 {
+                break;
+            }
+            candidate = format!(
+                "{}_{}{}",
+                naming::basename_no_ext(&unique_name),
+                collision,
+                raw_ext
+            );
+        }
+        if raw_dest_path.is_empty() {
+            eprintln!("[导入] NEF 同名占用过多，放弃配对导入: {pair_filepath}");
+        }
+        if !raw_dest_path.is_empty() {
+            if pair_filepath != raw_dest_path {
+                if let Err(e) = std::fs::copy(&pair_filepath, &raw_dest_path) {
+                    // 复制失败：raw_path/original_raw_path 均不落库，并清理半截目标文件
+                    let _ = std::fs::remove_file(&raw_dest_path);
+                    eprintln!("[导入] NEF 复制失败: {pair_filepath} {e}");
+                    raw_dest_path = String::new();
+                }
+            }
+            if !raw_dest_path.is_empty() {
+                raw_source_path = pair_filepath;
+            }
+        }
+    }
+
+    let thumbnail_value = if hidden {
+        String::new()
+    } else {
+        str_or_empty(img.get("thumbnail"))
+    };
+    conn.execute(
+        "INSERT OR IGNORE INTO images (filename, filepath, original_path, raw_path, original_raw_path, hidden, orientation, rotation, flip_h, flip_v, import_date, taken_at, size, width, height, format, thumbnail)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 0, 0, 0, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
+        rusqlite::params![
+            unique_name,
+            dest_path.to_string_lossy(),
+            src_path,
+            raw_dest_path,
+            raw_source_path,
+            if hidden { 1 } else { 0 },
+            num_i64(img.get("orientation")).max(1),
+            date_str,
+            str_or_empty(img.get("takenAt")),
+            num_i64(img.get("size")),
+            num_i64(img.get("width")),
+            num_i64(img.get("height")),
+            str_or_empty(img.get("format")),
+            thumbnail_value,
+        ],
+    )
+    .map_err(PixError::Db)?;
+
+    let row = conn
+        .query_row(
+            "SELECT * FROM images WHERE filepath = ?1",
+            [&dest_path.to_string_lossy()],
+            crate::images_query::row_from,
+        )
+        .optional()
+        .map_err(PixError::Db)?;
+
+    // 改进型分歧：导入即由 Rust 生成双档缩略图并回写路径/尺寸（失败不致命，列保持空）
+    if let (Some(row), false) = (&row, hidden) {
+        if let Ok((small, medium, w, h)) = thumbs::generate_tiers(&dest_path) {
+            std::fs::create_dir_all(thumbs_dir).ok();
+            let big_path = thumbs_dir.join(format!("{}.jpg", row.id));
+            let small_path = thumbs_dir.join(format!("{}_s.jpg", row.id));
+            let w_ok = std::fs::write(&big_path, medium).is_ok();
+            let s_ok = std::fs::write(&small_path, small).is_ok();
+            if w_ok && s_ok {
+                conn.execute(
+                    "UPDATE images SET thumbnail_path = ?1, thumbnail_small_path = ?2, width = ?3, height = ?4 WHERE id = ?5",
+                    rusqlite::params![big_path.to_string_lossy(), small_path.to_string_lossy(), w, h, row.id],
+                )
+                .map_err(PixError::Db)?;
+                return conn
+                    .query_row(
+                        "SELECT * FROM images WHERE filepath = ?1",
+                        [&dest_path.to_string_lossy()],
+                        crate::images_query::row_from,
+                    )
+                    .optional()
+                    .map_err(PixError::Db);
+            }
+        }
+    }
+    Ok(row)
+}
+
+/// 镜像 importImages：分组编排（jpg 组可见导入，nef-only 组隐藏导入）
+pub fn import_images(
+    conn: &Connection,
+    files: &Value,
+    today: &str,
+    thumbs_dir: &Path,
+) -> Result<Vec<ImageRow>, PixError> {
+    let mut imported = Vec::new();
+    let groups = image_group::group_import_files(&parse_import_files(files));
+    let root = crate::db::images_root(conn, &PathBuf::from("."))?;
+    for (_, group) in &groups {
+        if let Some(jpg) = &group.jpg {
+            let jpg_value = import_file_to_value(jpg);
+            let pair = group.nef.as_ref().map(import_file_to_value);
+            if let Some(row) = import_one(
+                conn,
+                &root,
+                &jpg_value,
+                pair.as_ref(),
+                false,
+                today,
+                thumbs_dir,
+            )? {
+                imported.push(row);
+            }
+        } else if let Some(nef) = &group.nef {
+            let nef_value = import_file_to_value(nef);
+            if let Some(row) = import_one(conn, &root, &nef_value, None, true, today, thumbs_dir)? {
+                imported.push(row);
+            }
+        }
+    }
+    Ok(imported)
+}
+
+fn parse_import_files(files: &Value) -> Vec<image_group::ImportFile> {
+    files
+        .as_array()
+        .map(|arr| {
+            arr.iter()
+                .map(|f| image_group::ImportFile {
+                    filename: str_or_empty(f.get("filename")),
+                    filepath: str_or_empty(f.get("filepath")),
+                    raw_source: f
+                        .get("raw_source")
+                        .and_then(|x| x.as_str())
+                        .map(String::from),
+                    raw_filename: f
+                        .get("raw_filename")
+                        .and_then(|x| x.as_str())
+                        .map(String::from),
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn import_file_to_value(f: &image_group::ImportFile) -> Value {
+    json!({ "filename": f.filename, "filepath": f.filepath })
+}
+
+/// 镜像 renameImage：校验→NEF 跟随→磁盘改名（失败回滚）→DB 更新（失败双回滚）
+pub fn rename_image(conn: &Connection, id: i64, new_filename: &str) -> Result<Value, PixError> {
+    let Some(img) = get_img_row(conn, id) else {
+        return Ok(json!(false));
+    };
+    let invalid = new_filename.trim().is_empty()
+        || new_filename
+            != Path::new(new_filename)
+                .file_name()
+                .map(|s| s.to_string_lossy().into_owned())
+                .unwrap_or_default()
+        || new_filename.chars().any(|c| "\\/:*?\"<>|".contains(c))
+        || new_filename == "."
+        || new_filename == "..";
+    if invalid {
+        return Ok(json!({ "error": "文件名含有非法字符" }));
+    }
+    if naming::extname(new_filename) != naming::extname(&img.filename) {
+        return Ok(json!({ "error": "不允许修改扩展名" }));
+    }
+
+    let old_path = PathBuf::from(&img.filepath);
+    let new_path = old_path.with_file_name(new_filename);
+    if old_path != new_path && is_path_taken(conn, &new_path.to_string_lossy(), Some(id)) {
+        return Ok(json!({ "error": "同名文件已存在" }));
+    }
+
+    let mut new_raw_path = img.raw_path.clone().unwrap_or_default();
+    if !img.raw_path.as_deref().unwrap_or("").is_empty() {
+        let old_ext = naming::extname(&img.filename);
+        let raw_ext = naming::extname(img.raw_path.as_deref().unwrap_or(""));
+        let new_raw_name = format!("{}{}", naming::basename_no_ext(new_filename), raw_ext);
+        let candidate_raw =
+            PathBuf::from(img.raw_path.as_deref().unwrap_or("")).with_file_name(new_raw_name);
+        if candidate_raw.exists()
+            && candidate_raw.to_string_lossy() != img.raw_path.as_deref().unwrap_or("")
+        {
+            return Ok(json!({ "error": "同名文件已存在" }));
+        }
+        new_raw_path = candidate_raw.to_string_lossy().into_owned();
+    }
+
+    let rename = |from: &Path, to: &Path| -> Result<(), PixError> {
+        if from != to {
+            std::fs::rename(from, to).map_err(|e| PixError::Io(format!("重命名失败: {e}")))?;
+        }
+        Ok(())
+    };
+
+    let result = (|| -> Result<(), PixError> {
+        rename(&old_path, &new_path)?;
+        if !img.raw_path.as_deref().unwrap_or("").is_empty()
+            && new_raw_path != img.raw_path.as_deref().unwrap_or("")
+        {
+            if let Err(raw_err) = rename(
+                Path::new(img.raw_path.as_deref().unwrap_or("")),
+                Path::new(&new_raw_path),
+            ) {
+                // NEF 跟随失败：把已改名的 JPG 改回去，绝不留下 DB 指向不存在路径的 broken 记录
+                let _ = rename(&new_path, &old_path);
+                return Err(raw_err);
+            }
+        }
+        if let Err(db_err) = conn.execute(
+            "UPDATE images SET filename = ?1, filepath = ?2, raw_path = ?3 WHERE id = ?4",
+            rusqlite::params![new_filename, new_path.to_string_lossy(), new_raw_path, id],
+        ) {
+            // 磁盘改名完成、DB 写入失败：两个文件一起改回原位
+            if !img.raw_path.as_deref().unwrap_or("").is_empty()
+                && new_raw_path != img.raw_path.as_deref().unwrap_or("")
+            {
+                let _ = rename(
+                    Path::new(&new_raw_path),
+                    Path::new(img.raw_path.as_deref().unwrap_or("")),
+                );
+            }
+            let _ = rename(&new_path, &old_path);
+            return Err(PixError::Db(db_err));
+        }
+        Ok(())
+    })();
+
+    match result {
+        Ok(()) => Ok(
+            json!({ "success": true, "newFilename": new_filename, "newPath": new_path.to_string_lossy() }),
+        ),
+        Err(e) => Ok(json!({ "error": format!("重命名失败: {}", e) })),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use image::{DynamicImage, RgbaImage};
+
+    fn mem_db() -> Connection {
+        crate::images_query::tests::mem_db()
+    }
+
+    fn make_jpeg(dir: &Path, name: &str, w: u32, h: u32) -> PathBuf {
+        let img = DynamicImage::from(RgbaImage::from_fn(w, h, |x, y| {
+            image::Rgba([(x * 7 % 256) as u8, (y * 11 % 256) as u8, 60, 255])
+        }));
+        let p = dir.join(name);
+        img.save(&p).unwrap();
+        p
+    }
+
+    #[test]
+    fn today_ymd_格式正确() {
+        let t = today_ymd();
+        assert_eq!(t.len(), 10);
+        assert_eq!(&t[4..5], "-");
+    }
+
+    #[test]
+    fn 导入单张_落库并生成双档缩略图() {
+        let dir = std::env::temp_dir().join("pixyang_import_one");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("src")).unwrap();
+        let src = make_jpeg(&dir.join("src"), "photo.jpg", 60, 40);
+        let conn = mem_db();
+        let root = dir.join("root");
+        let img = json!({ "filename": "photo.jpg", "filepath": src.to_string_lossy(), "importDate": "2026-09-20" });
+        let row = import_one(
+            &conn,
+            &root,
+            &img,
+            None,
+            false,
+            "2026-09-20",
+            &dir.join("thumbs"),
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(row.filename, "photo.jpg");
+        assert!(row.filepath.contains("2026"));
+        assert!(Path::new(&row.filepath).exists());
+        assert!(!row.thumbnail_path.as_deref().unwrap_or("").is_empty());
+        assert_eq!(row.width, Some(60));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn 导入重名派生_1() {
+        let dir = std::env::temp_dir().join("pixyang_import_dup");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("src")).unwrap();
+        let src = make_jpeg(&dir.join("src"), "dup.jpg", 30, 20);
+        let conn = mem_db();
+        let root = dir.join("root");
+        let img = json!({ "filename": "dup.jpg", "filepath": src.to_string_lossy() });
+        let r1 = import_one(
+            &conn,
+            &root,
+            &img,
+            None,
+            false,
+            "2026-09-20",
+            &dir.join("thumbs"),
+        )
+        .unwrap()
+        .unwrap();
+        let r2 = import_one(
+            &conn,
+            &root,
+            &img,
+            None,
+            false,
+            "2026-09-20",
+            &dir.join("thumbs"),
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(r1.filename, "dup.jpg");
+        assert_eq!(r2.filename, "dup_1.jpg");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn 改名校验_非法字符_扩展名_占用() {
+        let dir = std::env::temp_dir().join("pixyang_rename");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("root").join("2026-01-01")).unwrap();
+        let src = make_jpeg(&dir.join("root").join("2026-01-01"), "a.jpg", 20, 10);
+        let conn = mem_db();
+        let img = json!({ "filename": "a.jpg", "filepath": src.to_string_lossy(), "importDate": "2026-01-01" });
+        let row = import_one(
+            &conn,
+            &dir.join("root"),
+            &img,
+            None,
+            false,
+            "2026-01-01",
+            &dir.join("thumbs"),
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(
+            rename_image(&conn, row.id, "../evil.jpg").unwrap()["error"],
+            "文件名含有非法字符"
+        );
+        assert_eq!(
+            rename_image(&conn, row.id, "b.png").unwrap()["error"],
+            "不允许修改扩展名"
+        );
+        assert!(rename_image(&conn, 9999, "x.jpg").unwrap().is_boolean());
+        let ok = rename_image(&conn, row.id, "renamed.jpg").unwrap();
+        assert_eq!(ok["success"], true);
+        let updated = get_img_row(&conn, row.id).unwrap();
+        assert_eq!(updated.filename, "renamed.jpg");
+        assert!(Path::new(&updated.filepath).exists());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+}

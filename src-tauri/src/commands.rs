@@ -3,6 +3,7 @@
 
 use crate::db::{self, AppPaths, Db};
 use crate::executor;
+use crate::file_ops;
 use crate::image_group::{self, ImportFile, PairGroup};
 use crate::images_query;
 use crate::naming;
@@ -352,6 +353,30 @@ pub fn extract_nef_preview(
 #[tauri::command]
 pub fn image_meta(filepath: String) -> Result<(u32, u32, u32, bool), String> {
     thumbs::image_meta(std::path::Path::new(&filepath)).map_err(|e| e.to_string())
+}
+
+// ── 导入/改名编排（迁移接缝 4c） ──
+
+#[tauri::command]
+pub fn import_images(
+    db: State<'_, Db>,
+    paths: State<'_, AppPaths>,
+    files: serde_json::Value,
+) -> Result<Vec<images_query::ImageRow>, String> {
+    let conn = db.0.lock().unwrap();
+    let root = db::images_root(&conn, &paths.default_images_dir).map_err(|e| e.to_string())?;
+    file_ops::import_images(&conn, &files, &file_ops::today_ymd(), &paths.thumbs_dir)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn rename_image(
+    db: State<'_, Db>,
+    id: i64,
+    new_filename: String,
+) -> Result<serde_json::Value, String> {
+    let conn = db.0.lock().unwrap();
+    file_ops::rename_image(&conn, id, &new_filename).map_err(|e| e.to_string())
 }
 
 // ── 渲染执行器（迁移接缝 5 阶段 3） ──

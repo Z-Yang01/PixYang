@@ -75,7 +75,12 @@ fn golden_audit_rust_vs_sharp_baseline() {
                     continue;
                 }
                 let (max_delta, mean_delta) = compare(&a_data, &b_data);
-                rows.push((name.clone(), true, max_delta, (mean_delta * 10000.0).round() / 10000.0));
+                rows.push((
+                    name.clone(),
+                    true,
+                    max_delta,
+                    (mean_delta * 10000.0).round() / 10000.0,
+                ));
             }
             Err(e) => {
                 rows.push((name.clone(), false, -2, -2.0));
@@ -101,7 +106,10 @@ fn golden_audit_rust_vs_sharp_baseline() {
         } else {
             "ok"
         };
-        println!("{:<40} {:>8} {:>10} {}", name, max_delta, mean_delta, status);
+        println!(
+            "{:<40} {:>8} {:>10} {}",
+            name, max_delta, mean_delta, status
+        );
     }
     println!(
         "\n共 {} 例：ok={}，尺寸不一致={}，渲染失败={}",

@@ -44,6 +44,8 @@ const TAURI_SEAMS = new Set([
   'getDatabasePath',
   'getAllImageIds',
   'fileExists',
+  'importImages',
+  'renameImage',
 ]);
 
 const api = {

@@ -1,7 +1,7 @@
 // SQLite 内核：迁移窗口内与 Electron 共用同一库文件（userData/pixyang.db，WAL）。
 // 表结构由 Electron 侧 migrateSchema 拥有；这里只做 settings 读写，缺表时按同式补齐。
 
-use crate::error::PixError;
+pub use crate::error::PixError;
 use rusqlite::{Connection, OptionalExtension};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
