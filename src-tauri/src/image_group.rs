@@ -27,7 +27,10 @@ fn ext_lower(filename: &str) -> String {
 /// 镜像 node path.dirname 的常用情形：无分隔符 → '.'；仅根分隔符 → 该根；保留盘符
 pub fn dirname(p: &str) -> String {
     let bytes = p.as_bytes();
-    match (0..bytes.len()).rev().find(|&i| bytes[i] == b'/' || bytes[i] == b'\\') {
+    match (0..bytes.len())
+        .rev()
+        .find(|&i| bytes[i] == b'/' || bytes[i] == b'\\')
+    {
         None => ".".into(),
         Some(0) => p[..1].into(),
         Some(i) => {
@@ -66,9 +69,17 @@ pub fn effective_import_date(raw: &str, today: &str) -> String {
     let b = raw.as_bytes();
     let valid = b.len() == 10
         && b.iter().enumerate().all(|(i, c)| {
-            if i == 4 || i == 7 { *c == b'-' } else { c.is_ascii_digit() }
+            if i == 4 || i == 7 {
+                *c == b'-'
+            } else {
+                c.is_ascii_digit()
+            }
         });
-    if valid { raw.to_string() } else { today.to_string() }
+    if valid {
+        raw.to_string()
+    } else {
+        today.to_string()
+    }
 }
 
 /// 'YYYY-MM-DD' → 托管根下的相对目录 yyyy/MM/dd；非三段返回 None（调用方回退今天再调）
@@ -87,7 +98,11 @@ pub fn group_import_files(files: &[ImportFile]) -> Vec<(String, PairGroup)> {
     let mut order: Vec<(String, PairGroup)> = Vec::new();
     let mut index: HashMap<String, usize> = HashMap::new();
     for img in files {
-        let key = format!("{}::{}", dirname(&img.filepath), crate::naming::pair_base(&img.filename));
+        let key = format!(
+            "{}::{}",
+            dirname(&img.filepath),
+            crate::naming::pair_base(&img.filename)
+        );
         let slot = match index.get(&key) {
             Some(&i) => &mut order[i].1,
             None => {
@@ -124,7 +139,12 @@ mod tests {
     use super::*;
 
     fn f(filename: &str, filepath: &str) -> ImportFile {
-        ImportFile { filename: filename.into(), filepath: filepath.into(), raw_source: None, raw_filename: None }
+        ImportFile {
+            filename: filename.into(),
+            filepath: filepath.into(),
+            raw_source: None,
+            raw_filename: None,
+        }
     }
 
     #[test]
@@ -188,15 +208,27 @@ mod tests {
 
     #[test]
     fn 导入日期围栏_非法回退今天() {
-        assert_eq!(effective_import_date("2026-09-20", "2026-01-01"), "2026-09-20");
+        assert_eq!(
+            effective_import_date("2026-09-20", "2026-01-01"),
+            "2026-09-20"
+        );
         assert_eq!(effective_import_date("../../x", "2026-01-01"), "2026-01-01");
-        assert_eq!(effective_import_date("2026-9-2", "2026-01-01"), "2026-01-01");
-        assert_eq!(effective_import_date("2026/09/20", "2026-01-01"), "2026-01-01");
+        assert_eq!(
+            effective_import_date("2026-9-2", "2026-01-01"),
+            "2026-01-01"
+        );
+        assert_eq!(
+            effective_import_date("2026/09/20", "2026-01-01"),
+            "2026-01-01"
+        );
     }
 
     #[test]
     fn 日期目录三段拼接() {
-        assert_eq!(date_dir("2026-09-20"), Some(PathBuf::from("2026").join("09").join("20")));
+        assert_eq!(
+            date_dir("2026-09-20"),
+            Some(PathBuf::from("2026").join("09").join("20"))
+        );
         assert_eq!(date_dir("bad"), None);
     }
 

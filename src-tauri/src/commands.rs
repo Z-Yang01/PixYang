@@ -99,8 +99,18 @@ mod tests {
     #[test]
     fn 分组命令_nef小写归并到组() {
         let out = group_import_files(vec![
-            ImportFileDto { filename: "dsc_1.jpg".into(), filepath: r"E:\c\dsc_1.jpg".into(), raw_source: None, raw_filename: None },
-            ImportFileDto { filename: "DSC_1.NEF".into(), filepath: r"E:\c\DSC_1.NEF".into(), raw_source: None, raw_filename: None },
+            ImportFileDto {
+                filename: "dsc_1.jpg".into(),
+                filepath: r"E:\c\dsc_1.jpg".into(),
+                raw_source: None,
+                raw_filename: None,
+            },
+            ImportFileDto {
+                filename: "DSC_1.NEF".into(),
+                filepath: r"E:\c\DSC_1.NEF".into(),
+                raw_source: None,
+                raw_filename: None,
+            },
         ])
         .unwrap();
         assert_eq!(out.len(), 1);

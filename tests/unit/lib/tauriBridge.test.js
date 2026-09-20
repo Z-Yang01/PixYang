@@ -36,7 +36,9 @@ describe('tauriBridge', () => {
   it('uniqueFilename 包装命令参数形状（单参数 args 包裹）', async () => {
     const invoke = vi.fn().mockResolvedValue('a_1.jpg');
     window.__TAURI__ = { core: { invoke } };
-    await expect(tauriApi.uniqueFilename('E:/pics', 'a.jpg', ['e:/pics/a.jpg'])).resolves.toBe('a_1.jpg');
+    await expect(tauriApi.uniqueFilename('E:/pics', 'a.jpg', ['e:/pics/a.jpg'])).resolves.toBe(
+      'a_1.jpg'
+    );
     expect(invoke).toHaveBeenCalledWith('unique_filename', {
       args: { dir: 'E:/pics', name: 'a.jpg', taken: ['e:/pics/a.jpg'] },
     });

@@ -17,7 +17,15 @@ const vitestGlobals = {
 
 export default [
   {
-    ignores: ['dist/**', 'release/**', 'coverage/**', 'node_modules/**', 'build/**'],
+    ignores: [
+      'dist/**',
+      'release/**',
+      'coverage/**',
+      'node_modules/**',
+      'build/**',
+      'src-tauri/target/**',
+      'src-tauri/gen/**',
+    ],
   },
   {
     files: ['src/**/*.{js,jsx,ts,tsx}'],
@@ -32,7 +40,14 @@ export default [
   },
   {
     // Electron 端、共享渲染模块与构建辅助脚本均为 CommonJS（含 .cjs）
-    files: ['electron/**/*.js', 'electron/**/*.cjs', 'scripts/**/*.js', 'shared/**/*.cjs', 'tests/**/*.cjs', '*.cjs'],
+    files: [
+      'electron/**/*.js',
+      'electron/**/*.cjs',
+      'scripts/**/*.js',
+      'shared/**/*.cjs',
+      'tests/**/*.cjs',
+      '*.cjs',
+    ],
     languageOptions: {
       ecmaVersion: 'latest',
       sourceType: 'commonjs',
@@ -64,13 +79,19 @@ export default [
     plugins: { '@typescript-eslint': tseslint.plugin },
     rules: {
       'no-unused-vars': 'off',
-      '@typescript-eslint/no-unused-vars': ['warn', { args: 'none', caughtErrors: 'none', ignoreRestSiblings: true, varsIgnorePattern: '^_' }],
+      '@typescript-eslint/no-unused-vars': [
+        'warn',
+        { args: 'none', caughtErrors: 'none', ignoreRestSiblings: true, varsIgnorePattern: '^_' },
+      ],
     },
   },
   {
     rules: {
       // ignoreRestSiblings：`const { output, ...rest }` 剔除键惯用法不算未用；^_ 前缀为有意占位
-      'no-unused-vars': ['warn', { args: 'none', caughtErrors: 'none', ignoreRestSiblings: true, varsIgnorePattern: '^_' }],
+      'no-unused-vars': [
+        'warn',
+        { args: 'none', caughtErrors: 'none', ignoreRestSiblings: true, varsIgnorePattern: '^_' },
+      ],
       // EXIF 二进制解析故意匹配控制字符（阶段 2 换 exifr 后消失）
       'no-control-regex': 'warn',
       // 累加器模式的末次自增属正常写法，待人工复核
