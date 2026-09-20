@@ -135,3 +135,5 @@
   cargo 108/108；golden 门禁全绿；vitest 961/961。对等度：45/58 通道。
   剩余：对话框/openPath/backupDatabase（插件轮）、toFileUrl/asset 协议、syncCameraFolder/
   setImagesRoot、编辑渲染进度事件（事件系统）。
+- 18:30 命令层清理：拼接残留 .part 移除、unused 告警清零、参数名误改恢复。
+  最终 cargo 108/108 + golden 门禁全绿 + vitest 961/961。

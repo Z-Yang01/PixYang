@@ -13,7 +13,6 @@ use crate::tags_albums;
 use crate::thumbs;
 use crate::update_image;
 use serde::{Deserialize, Serialize};
-use serde_json::json;
 use serde_json::Value;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
@@ -515,7 +514,6 @@ fn ensure_edit_base(
     id: i64,
     src: &Path,
 ) -> Result<(std::path::PathBuf, u32, u32), String> {
-    use image::GenericImageView;
     let (sw, sh, orientation, has_alpha) = thumbs::image_meta(src).map_err(|e| e.to_string())?;
     let ext = if has_alpha { "png" } else { "jpg" };
     let base = paths.thumbs_dir.join(format!("edit-{id}-base.{ext}"));

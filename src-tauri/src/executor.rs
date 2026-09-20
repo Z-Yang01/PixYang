@@ -10,8 +10,8 @@
 use crate::error::PixError;
 use crate::exif_relay::relay_exif_files;
 use crate::render::{
-    apply_color_grading_in_place, apply_hsl_in_place, apply_masks_in_place,
-    apply_saturation_in_place, apply_vignette_in_place, build_curve_luts, normalize_masks,
+    apply_color_grading_in_place, apply_hsl_in_place, apply_saturation_in_place,
+    apply_vignette_in_place, build_curve_luts, normalize_masks,
 };
 use image::{DynamicImage, GenericImageView, RgbaImage};
 use serde_json::Value;
@@ -303,7 +303,7 @@ fn encode_buffer(
         .ok_or_else(|| PixError::Io("buffer 尺寸不匹配".into()))?;
     let mut dyn_img = DynamicImage::from(img);
     // encode.resize：fit inside，不放大（镜像 encodeStage.params.resize）
-    if let Some(w) = resize_w.or(resize_h) {
+    if let Some(_w) = resize_w.or(resize_h) {
         let target_w = resize_w.map(|x| x as u32);
         let target_h = resize_h.map(|x| x as u32);
         let (sw, sh) = dyn_img.dimensions();
