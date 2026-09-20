@@ -53,15 +53,18 @@ export const tauriApi = {
   // presets：upgradeEdits 规整在桥接层（与 Electron 主进程同用 shared/editSchema.cjs）
   getPresets: async () => {
     const rows = await tauriInvoke('get_presets');
-    return rows.map((r) => {
-      let params = null;
-      try {
-        params = upgradeEdits(r.params);
-      } catch {
-        params = null;
-      }
-      return { id: r.id, name: r.name, params, createdAt: r.createdAt };
-    });
+    return rows.map((r) => ({
+      id: r.id,
+      name: r.name,
+      params: (() => {
+        try {
+          return upgradeEdits(r.params);
+        } catch {
+          return null;
+        }
+      })(),
+      createdAt: r.createdAt,
+    }));
   },
   createPreset: (name, params) =>
     tauriInvoke('create_preset', { name, params: upgradeEdits(params) }),
