@@ -195,3 +195,21 @@
   验证：cargo 119/119 + golden 门禁 ✅；vitest 964/964 ✅；typecheck ✅；lint 0 error ✅。
   环境清理：发现 01:56 冒烟遗留的 debug pixyang.exe 实例（PID 30340）占用构建目录，
   已终止。剩余缺口：onEditPreviewReady、getPathForFile。
+
+- 2026-09-21 03:15-03:35 R26（夜间自动化第三轮）勘误修复：编辑器三通道桥接缺失（62/64 维持）：
+  核对对齐清单时发现 R23「editOpen/editBake/editExport 桥接已集成」与代码不符——tauriApi
+  无此三包装，SEAMS 路由到 undefined，Tauri 运行时下打开编辑器/烘焙/导出点击即 TypeError
+  崩溃（此前点击级冒烟未覆盖编辑器）。R26 补齐：
+  1) edit_open 返回补齐 Electron 契约字段 id/source/hasNef/savedEdits（get_edits 的
+     {version,updatedAt,params}|Null 直映射；原 edits 键移除，无其他消费方）；
+  2) tauriApi 新增 editOpen 直传；editBake/editExport 桥内先 edit_open 取 basePath，
+     editParamsToRenderSpec 构建 spec（sourceHash 以 basePath 占位——沿用组件 WebGL 预览
+     'preview' 占位先例，Tauri 执行器不消费该键），再调 edit_bake/edit_export；
+     输出格式强制/maxEdge/命名循环均由 Rust 命令内部自理，与 R23 设计一致。
+  3) 测试 +1（R25 断言误改 export_album_images→edit_export 一处，已当场纠正）。
+  已知契约差异（记录不修）：记录不存在/底图解码失败走 invoke reject（Electron 为 {error}
+  正常返回），组件 catch 已覆盖；NEF 底图显影（source='nef' 实际出现）在 Tauri 下未实现，
+  隐藏记录本就拒绝编辑，不影响配对 JPG 记录。
+  验证：cargo 119/119 + golden 门禁 ✅；vitest 965/965 ✅；typecheck ✅；lint 0 error ✅。
+  对齐度维持 62/64（三通道由「标记✅实际断」修正为真 ✅）。剩余：onEditPreviewReady
+  （需连同 Tauri 下网格缩略图预览渲染编排一起评估）、getPathForFile。

@@ -625,12 +625,20 @@ pub fn edit_open(db: State<'_, Db>, paths: State<'_, AppPaths>, id: i64) -> Resu
         .map_err(|e| e.to_string())?
         .ok_or_else(|| "图片不存在".to_string())?;
     let (base, w, h) = ensure_edit_base(&paths, id, Path::new(&img.filepath))?;
-    let edits = edit_session::get_edits(&conn, id).map_err(|e| e.to_string())?;
+    let saved_edits = edit_session::get_edits(&conn, id).map_err(|e| e.to_string())?;
+    let src_ext = Path::new(&img.filepath)
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.to_ascii_lowercase())
+        .unwrap_or_default();
     Ok(serde_json::json!({
+        "id": id,
+        "source": if src_ext == "nef" { "nef" } else { "jpg" },
         "basePath": base.to_string_lossy(),
         "width": w,
         "height": h,
-        "edits": edits,
+        "hasNef": img.raw_path.as_deref().map(|p| !p.is_empty()).unwrap_or(false),
+        "savedEdits": saved_edits,
         "filepath": img.filepath,
     }))
 }

@@ -2,8 +2,10 @@
 // isTauriAvailable() 为 false，api.js 维持原 IPC 路径；桥仅供逐步迁移的调用方使用。
 // 依赖 tauri.conf.json 的 app.withGlobalTauri 注入的全局，不新增 npm 依赖。
 import editSchema from '../../shared/editSchema.cjs';
+import renderSpecModule from '../../shared/renderSpec.cjs';
 
 const { upgradeEdits } = editSchema;
+const { editParamsToRenderSpec } = renderSpecModule;
 
 function tauriCore() {
   if (typeof window === 'undefined') return null;
@@ -127,4 +129,26 @@ export const tauriApi = {
   saveEdits: (id, params, command) => tauriInvoke('save_edit_params', { id, params, command }),
   getEditHistory: (id) => tauriInvoke('get_edit_history', { id }),
   editCancel: (id) => Promise.resolve({ ok: true }),
+  // 编辑器三通道：spec 桥内构建（sourceHash 仅作 renderSpec 必填占位，Tauri 执行器不消费）；
+  // bake/export 的输出格式、maxEdge、命名循环由 Rust 命令内部自理
+  editOpen: (id) => tauriInvoke('edit_open', { id }),
+  editBake: async (id, edits) => {
+    const session = await tauriInvoke('edit_open', { id });
+    if (session?.error) return session;
+    const spec = editParamsToRenderSpec(edits, { sourceHash: session.basePath });
+    return tauriInvoke('edit_bake', { id, edits, spec, inputPath: session.basePath });
+  },
+  editExport: async (id, edits, destDir, output) => {
+    const session = await tauriInvoke('edit_open', { id });
+    if (session?.error) return session;
+    const spec = editParamsToRenderSpec(edits, { sourceHash: session.basePath });
+    return tauriInvoke('edit_export', {
+      id,
+      edits,
+      spec,
+      inputPath: session.basePath,
+      destDir,
+      output: output ?? null,
+    });
+  },
 };

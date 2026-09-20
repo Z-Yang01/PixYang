@@ -95,6 +95,31 @@ describe('tauriBridge', () => {
     expect(invoke).toHaveBeenCalledWith('export_album_images', { albumId: 7, destDir: 'E:/dest' });
   });
 
+  it('接缝 R26：编辑器三通道桥接（open 直传；bake/export 桥内建 spec）', async () => {
+    const session = { basePath: 'E:/t/edit-5-base.jpg', width: 100, height: 80 };
+    const invoke = vi.fn().mockResolvedValue(session);
+    window.__TAURI__ = { core: { invoke } };
+    await api.editOpen(5);
+    expect(invoke).toHaveBeenLastCalledWith('edit_open', { id: 5 });
+    const edits = { exposure: 0.5 };
+    await api.editBake(5, edits);
+    expect(invoke).toHaveBeenLastCalledWith(
+      'edit_bake',
+      expect.objectContaining({ id: 5, edits, inputPath: session.basePath, spec: expect.any(Object) })
+    );
+    await api.editExport(5, edits, 'E:/dest', { format: 'png', quality: 88 });
+    expect(invoke).toHaveBeenLastCalledWith(
+      'edit_export',
+      expect.objectContaining({
+        id: 5,
+        edits,
+        inputPath: session.basePath,
+        destDir: 'E:/dest',
+        output: { format: 'png', quality: 88 },
+      })
+    );
+  });
+
   it('接缝 R24：对话框/外壳通道在 Tauri 可用时走插件与 Rust 命令', async () => {
     const invoke = vi.fn().mockResolvedValue({ success: true, path: 'E:/backup.db' });
     const dialogOpen = vi.fn().mockResolvedValue('E:/picked');

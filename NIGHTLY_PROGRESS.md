@@ -46,8 +46,13 @@ onEditPreviewReady、getPathForFile。
   缩略图/CSP/返回形状三类冒烟问题已修复（01:20 CSP 根因= index.html 遗留 meta，已删）。
 - R24：对话框/外壳 4 通道（selectDirectory/selectExportDirectory/openPath/backupDatabase）
   接缝完成——Rust 命令与 tauriBridge 包装 R23 已就绪，缺的仅 api.js TAURI_SEAMS 成员。
-- 剩余 4 通道：exportImages/exportAlbumImages（Rust 未移植）、onEditPreviewReady（事件未接）、
-  getPathForFile（Electron webUtils，架构性差异）。逐项状态见 docs/TAURI_PARITY.md。
+- R25：导出双通道（exportImages/exportAlbumImages）Rust 内核+命令+桥接全链路接通。
+- R26：**勘误修复**——R23 的编辑器三通道桥接（editOpen/editBake/editExport）实际缺失，
+  Tauri 运行时点击即崩；已补齐包装（spec 桥内构建）并扩 edit_open 返回契约。
+  点击级烘焙/导出需人工复核。
+- 剩余 2 通道：onEditPreviewReady（事件未接；注：Tauri 下保存参数后尚无网格缩略图
+  预览渲染编排，接事件时需一并考虑）、getPathForFile（Electron webUtils，架构性差异）。
+  逐项状态见 docs/TAURI_PARITY.md。
 - Electron 删除前置条件不变：全部接缝完成 + tauri dev 全功能冒烟。
 
 ## 轮次记录（窗口外续作，2026-09-20 上午）

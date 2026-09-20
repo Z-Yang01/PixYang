@@ -44,6 +44,15 @@
 editOpen / getEdits / saveEdits / getEditHistory / editBake / editExport / editCancel 全部 ✅
 （edit_session.rs；saveEdits 走 save_edit_params，editCancel Tauri 侧无操作恒 ok；upgradeEdits 规整在桥接层）。
 
+**R26 勘误与补全**：R23 日志声称 editOpen/editBake/editExport 桥接已集成，实际 tauriApi
+无此三包装——Tauri 运行时下打开编辑器/烘焙/导出会 TypeError 崩溃（点击级冒烟未覆盖到）。
+R26 补齐：editOpen 直传；editBake/editExport 桥内先 edit_open 取 basePath、以
+editParamsToRenderSpec 构建 spec（sourceHash 用 basePath 占位，Tauri 执行器不消费该键）、
+再调 edit_bake/edit_export。edit_open 返回补齐 Electron 契约字段
+（id/source/hasNef/savedEdits，原 edits 键移除）。已知契约差异：不存在/解码失败走
+invoke reject（Electron 为 {error} 正常返回），组件 catch 路径已覆盖。点击级烘焙/导出
+仍需人工复核（cargo run）。
+
 ## 预设（3）
 
 getPresets / createPreset / deletePreset ✅（params 原样 JSON 存取）。
