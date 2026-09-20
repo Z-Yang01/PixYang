@@ -12,7 +12,15 @@ const passthrough = (name) => (...args) => {
 };
 
 // 已迁移到 Tauri 后端的通道（Electron 运行时自动回落原 IPC，行为不变）
-const TAURI_SEAMS = new Set(['getSettings', 'getSetting', 'setSetting']);
+const TAURI_SEAMS = new Set([
+  'getSettings',
+  'getSetting',
+  'setSetting',
+  'getTags',
+  'getAlbums',
+  'getImageTags',
+  'getBatchImageTags',
+]);
 
 const api = {
   isBridgeAvailable: () => !!px() || isTauriAvailable(),

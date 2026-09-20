@@ -26,4 +26,8 @@ export const tauriApi = {
   getSettings: () => tauriInvoke('get_settings'),
   getSetting: (key) => tauriInvoke('get_setting', { key }),
   setSetting: (key, value) => tauriInvoke('set_setting', { key, value }),
+  getTags: () => tauriInvoke('get_tags'),
+  getAlbums: () => tauriInvoke('get_albums'),
+  getImageTags: (imageId) => tauriInvoke('get_image_tags', { imageId }),
+  getBatchImageTags: (imageIds) => tauriInvoke('get_batch_image_tags', { imageIds }),
 };

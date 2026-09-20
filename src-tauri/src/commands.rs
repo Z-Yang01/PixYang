@@ -4,6 +4,7 @@
 use crate::db::Db;
 use crate::image_group::{self, ImportFile, PairGroup};
 use crate::naming;
+use crate::tags_albums;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::path::Path;
@@ -135,4 +136,36 @@ pub fn set_setting(db: State<'_, Db>, key: String, value: String) -> Result<(), 
 #[tauri::command]
 pub fn get_settings(db: State<'_, Db>) -> Result<Vec<(String, String)>, String> {
     db.get_all_settings().map_err(|e| e.to_string())
+}
+
+// ── 标签/相册只读通道（迁移接缝 2） ──
+
+#[tauri::command]
+pub fn get_tags(db: State<'_, Db>) -> Result<Vec<tags_albums::TagRow>, String> {
+    let conn = db.0.lock().unwrap();
+    tags_albums::get_tags(&conn).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn get_image_tags(
+    db: State<'_, Db>,
+    image_id: i64,
+) -> Result<Vec<tags_albums::TagLite>, String> {
+    let conn = db.0.lock().unwrap();
+    tags_albums::get_image_tags(&conn, image_id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn get_batch_image_tags(
+    db: State<'_, Db>,
+    image_ids: Vec<i64>,
+) -> Result<std::collections::HashMap<i64, Vec<tags_albums::TagLite>>, String> {
+    let conn = db.0.lock().unwrap();
+    tags_albums::get_batch_image_tags(&conn, &image_ids).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn get_albums(db: State<'_, Db>) -> Result<Vec<tags_albums::AlbumRow>, String> {
+    let conn = db.0.lock().unwrap();
+    tags_albums::get_albums(&conn).map_err(|e| e.to_string())
 }
