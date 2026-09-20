@@ -28,3 +28,22 @@ jobs:
           name: coverage-report
           path: coverage/
           retention-days: 7
+
+  # Rust 层（src-tauri）：仅 Windows——naming 测试断言依赖 win32 路径分隔符约定；
+  # generate_context! 编译期读取 dist/，故先 vite build
+  rust:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx vite build
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - run: cargo test --jobs 1
+        working-directory: src-tauri

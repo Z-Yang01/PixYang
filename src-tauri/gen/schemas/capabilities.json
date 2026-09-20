@@ -1,1 +1,1 @@
-{}
+{"default":{"identifier":"default","description":"主窗口默认能力基线：核心事件/窗口操作；自有命令（unique_filename 等）无需授权","local":true,"windows":["main"],"permissions":["core:default"]}}
