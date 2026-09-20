@@ -31,9 +31,10 @@
 | **R14：杂项通道** | getImagesRoot/getDatabasePath/getAllImageIds/fileExists | ✅ 完成（+2 测试，筛选器抽取共用） |
 | **接缝 4a：tags/albums 写** | createTag/deleteTag/addTagToImage/removeTagFromImage/addTagToImages/createAlbum/renameAlbum/deleteAlbum/addToAlbum/removeFromAlbum/getAlbumImages | ✅ R11 完成（11 命令，写内核 4 测试） |
 | **接缝 4b：删除通道** | deleteImage/batchDeleteImages + error.rs | ✅ R12 完成（2 命令，磁盘+五表事务，2 测试） |
-| 接缝 4c：图片创建/移动 | importImages/renameImage/updateImage（与缩略图生成耦合，随接缝 5 一起） | 未开始 |
+| **接缝 4c：导入/改名** | importImages/renameImage（file_ops.rs 编排，导入即生成双档缩略图） | ✅ R21 完成（+5 测试） |
+| 接缝 4d：日期移动/更新 | updateImage（白名单 UPDATE + NEF 随日期移动） | 未开始 |
 | **接缝 4c：presets** | getPresets/createPreset/deletePreset（params JSON 原样存取，upgradeEdits 在桥接层） | ✅ R13 完成（2 测试） |
-| 接缝 5：缩略图/渲染 | sharp→Rust 等价或 sidecar 方案（golden 锁定，最高风险） | 未开始 |
+| **接缝 5：缩略图/渲染** | 方案 A image-rs 纯 Rust（已拍板，SEAM5_DECISION.md） | ✅ R16-R20 完成（四阶段，+18 测试，golden 门禁切换） |
 | Electron 删除 | 前置条件：接缝 1-5 全部切换 + tauri dev 全功能冒烟 | **阻塞中（对等未达）** |
 
 ## 接缝迁移状态总览
