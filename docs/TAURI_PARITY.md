@@ -4,7 +4,7 @@
 （59 数据通道 + 5 事件），即 `preload.js` `window.pixyang` 的前端可见契约。逐一核对
 `src/lib/api.js` `TAURI_SEAMS` 接缝 × `src/lib/tauriBridge.js` 包装 × `src-tauri/src/` 命令注册。
 
-**当前对齐度：62/64。**（R25 更新：导出双通道接通）状态含义：✅ 已通（Tauri 运行时走 Rust，Electron 运行时原路径不变）／
+**当前对齐度：63/64。**（R25 导出双通道；R27 编辑预览事件链路）状态含义：✅ 已通（Tauri 运行时走 Rust，Electron 运行时原路径不变）／
 ❌ 缺失（仅 Electron）。
 
 历史口径说明：NIGHTLY_PROGRESS 旧记录的「58 通道」基准为手工清点，与 api.js 实际暴露面有
@@ -90,13 +90,11 @@ getSettings / getSetting / setSetting ✅（db.rs 同库读写，get_settings �
 | 通道 | 状态 | 备注 |
 |---|---|---|
 | onRebuildProgress / onImportProgress / onThumbnailsReady / onOrientationBackfill | ✅ | progress.rs Emitter + tauriBridgeMedia listen |
-| onEditPreviewReady | ❌ | Electron sendProgress('edit-preview-ready')；Tauri Emitter 未接（编辑预览完成通知） |
+| onEditPreviewReady | ✅ | R27：saveEdits 成功后桥内异步调度（400 长边代理 spec，buildProxySpec 缩放 crop/蒙版坐标）→ edit_render_preview 渲染 edit-{id}.jpg + 缓存元数据（editVersion/render-rust-1）+ 写 thumbnail_edit_path + Emitter 发事件；useGalleryData 既有消费端直接生效。**需人工复核**：编辑保存后网格缩略图即时更新（cargo run 点击级） |
 
-## 剩余缺口（2，按优先级）
+## 剩余缺口（1）
 
-1. **onEditPreviewReady**（1 事件）：编辑面板预览完成通知；progress.rs 加 emit +
-   tauriBridgeMedia 加 listen + SEAMS/循环名单接入，一轮可完成。
-2. **getPathForFile**（1 通道）：Electron webUtils 拖拽路径；Tauri v2 的 onDragDropEvent
+1. **getPathForFile**（1 通道）：Electron webUtils 拖拽路径；Tauri v2 的 onDragDropEvent
    原生给绝对路径，需改 useDragImport 事件源，属架构调整，单独一轮评估。
 
 ## 验证口径

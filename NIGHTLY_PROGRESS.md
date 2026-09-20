@@ -1,10 +1,9 @@
 # NIGHTLY_PROGRESS — Rust/Tauri 结构推进
 
-状态：**迁移收尾阶段（R25 完成，62/64 通道）**。对齐口径自 R24 起以
+状态：**迁移收尾阶段（R27 完成，63/64 通道）**。对齐口径自 R24 起以
 `docs/TAURI_PARITY.md` 为唯一权威（基准=api.js 暴露的 59 数据通道+5 事件；旧「58 通道」
 为手工清点口径，已废弃）。夜间自动化（每 30 分钟一轮）自 2026-09-21 02:15 起接管推进，
-每轮记录统一追加到 NIGHTLY_LOG.md。剩余缺口见 TAURI_PARITY「剩余缺口」：
-onEditPreviewReady、getPathForFile。
+每轮记录统一追加到 NIGHTLY_LOG.md。剩余缺口仅 getPathForFile（拖拽路径，架构性差异）。
 
 分支：`auto/nightly/pixyang-rust-tauri-20260920-0114`（基线 optimize/architecture + wip 6d20c40）
 提交链：6d20c40 wip → 65e3ff7 R1 → 018752e R2 → b164a7c R3 → 09fde04 最终日志
@@ -50,8 +49,10 @@ onEditPreviewReady、getPathForFile。
 - R26：**勘误修复**——R23 的编辑器三通道桥接（editOpen/editBake/editExport）实际缺失，
   Tauri 运行时点击即崩；已补齐包装（spec 桥内构建）并扩 edit_open 返回契约。
   点击级烘焙/导出需人工复核。
-- 剩余 2 通道：onEditPreviewReady（事件未接；注：Tauri 下保存参数后尚无网格缩略图
-  预览渲染编排，接事件时需一并考虑）、getPathForFile（Electron webUtils，架构性差异）。
+- R27：onEditPreviewReady 事件链路接通——saveEdits 后桥内异步调度 400 代理预览渲染
+  （edit_render_preview：渲染/缓存元数据/写 thumbnail_edit_path/Emitter 发事件），
+  useGalleryData 既有消费端直接生效；网格缩略图即时更新需人工复核。
+- 剩余 1 通道：getPathForFile（Electron webUtils，架构性差异，拖拽事件源单独评估）。
   逐项状态见 docs/TAURI_PARITY.md。
 - Electron 删除前置条件不变：全部接缝完成 + tauri dev 全功能冒烟。
 

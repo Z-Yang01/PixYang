@@ -8,6 +8,7 @@ use crate::file_ops;
 use crate::image_group::{self, ImportFile, PairGroup};
 use crate::images_query;
 use crate::naming;
+use crate::progress;
 use crate::scan;
 use crate::tags_albums;
 use crate::thumbs;
@@ -641,6 +642,74 @@ pub fn edit_open(db: State<'_, Db>, paths: State<'_, AppPaths>, id: i64) -> Resu
         "savedEdits": saved_edits,
         "filepath": img.filepath,
     }))
+}
+
+// 编辑预览缩略图（镜像 Electron edit-preview-ready 链路）：spec 已由桥内按 400 长边构建代理，
+// 渲染/缓存元数据/写库/发事件在此闭环；渲染失败不影响已保存的编辑参数
+#[tauri::command]
+pub fn edit_render_preview(
+    db: State<'_, Db>,
+    paths: State<'_, AppPaths>,
+    app: AppHandle,
+    id: i64,
+    spec: Value,
+    input_path: String,
+) -> Result<Value, String> {
+    const RENDER_VERSION: &str = "render-rust-1";
+    let conn = db.0.lock().unwrap();
+    let img = images_query::get_image_by_id(&conn, id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "图片不存在".to_string())?;
+    if img.hidden.unwrap_or(0) != 0 {
+        return Ok(serde_json::json!({ "error": "隐藏的 NEF 记录不支持编辑预览" }));
+    }
+    let edits_version = || -> Result<i64, String> {
+        Ok(edit_session::get_edits(&conn, id)
+            .map_err(|e| e.to_string())?
+            .get("version")
+            .and_then(|v| v.as_i64())
+            .unwrap_or(0))
+    };
+    let version_before = edits_version()?;
+    let (base, _, _) = ensure_edit_base(&paths, id, Path::new(&input_path))?;
+    let preview = paths.thumbs_dir.join(format!("edit-{id}.jpg"));
+    let preview_meta = PathBuf::from(format!("{}.meta.json", preview.to_string_lossy()));
+    if preview.exists() {
+        let cached = std::fs::read_to_string(&preview_meta)
+            .ok()
+            .and_then(|s| serde_json::from_str::<Value>(&s).ok())
+            .map(|meta| {
+                meta.get("editVersion").and_then(|v| v.as_i64()) == Some(version_before)
+                    && meta.get("renderVersion").and_then(|v| v.as_str()) == Some(RENDER_VERSION)
+            })
+            .unwrap_or(false);
+        if cached {
+            return Ok(serde_json::json!({ "path": preview.to_string_lossy() }));
+        }
+    }
+    if let Err(e) = executor::render_spec_to_file(&spec, &base, &preview) {
+        return Ok(serde_json::json!({ "error": format!("渲染失败：{e}") }));
+    }
+    if edits_version()? == version_before {
+        let _ = std::fs::write(
+            &preview_meta,
+            serde_json::json!({
+                "editVersion": version_before,
+                "renderVersion": RENDER_VERSION,
+            })
+            .to_string(),
+        );
+    }
+    let _ = conn.execute(
+        "UPDATE images SET thumbnail_edit_path = ?1 WHERE id = ?2",
+        rusqlite::params![preview.to_string_lossy(), id],
+    );
+    progress::emit_progress(
+        &app,
+        progress::EDIT_PREVIEW_READY,
+        serde_json::json!({ "id": id, "path": preview.to_string_lossy() }),
+    );
+    Ok(serde_json::json!({ "path": preview.to_string_lossy() }))
 }
 
 #[tauri::command]

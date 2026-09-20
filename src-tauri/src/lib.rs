@@ -120,6 +120,7 @@ pub fn run() {
             commands::edit_open,
             commands::edit_bake,
             commands::edit_export,
+            commands::edit_render_preview,
             interact::select_directory,
             interact::select_export_directory,
             interact::open_path,

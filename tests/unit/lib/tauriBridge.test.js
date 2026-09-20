@@ -253,4 +253,35 @@ describe('tauriBridge', () => {
     await api.renameImage(5, 'new.jpg');
     expect(invoke).toHaveBeenCalledWith('rename_image', { id: 5, newFilename: 'new.jpg' });
   });
+
+  it('接缝 R27：保存参数后调度编辑预览渲染（不阻塞保存返回）', async () => {
+    const session = { basePath: 'E:/t/edit-5-base.jpg', width: 800, height: 600 };
+    const invoke = vi.fn().mockImplementation((cmd) => {
+      if (cmd === 'save_edit_params') return Promise.resolve({ version: 2, params: {} });
+      if (cmd === 'edit_open') return Promise.resolve(session);
+      return Promise.resolve({ path: session.basePath });
+    });
+    window.__TAURI__ = { core: { invoke } };
+    const edits = { exposure: 0.5 };
+    const result = await api.saveEdits(5, edits, { label: '保存编辑参数' });
+    expect(result).toEqual({ version: 2, params: {} });
+    expect(invoke).toHaveBeenNthCalledWith(1, 'save_edit_params', {
+      id: 5,
+      params: edits,
+      command: { label: '保存编辑参数' },
+    });
+    await vi.waitFor(() => {
+      expect(invoke).toHaveBeenLastCalledWith(
+        'edit_render_preview',
+        expect.objectContaining({ id: 5, inputPath: session.basePath, spec: expect.any(Object) })
+      );
+    });
+  });
+
+  it('接缝 R27：onEditPreviewReady 事件走 Tauri listen', () => {
+    const listen = vi.fn().mockResolvedValue(() => {});
+    window.__TAURI__ = { core: { invoke: vi.fn() }, event: { listen } };
+    api.onEditPreviewReady(() => {});
+    expect(listen).toHaveBeenCalledWith('edit-preview-ready', expect.any(Function));
+  });
 });

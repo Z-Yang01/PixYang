@@ -213,3 +213,18 @@
   验证：cargo 119/119 + golden 门禁 ✅；vitest 965/965 ✅；typecheck ✅；lint 0 error ✅。
   对齐度维持 62/64（三通道由「标记✅实际断」修正为真 ✅）。剩余：onEditPreviewReady
   （需连同 Tauri 下网格缩略图预览渲染编排一起评估）、getPathForFile。
+
+- 2026-09-21 03:45-03:55 R27（夜间自动化第四轮）onEditPreviewReady 事件链路（63/64）：
+  Tauri 下保存编辑参数后原无任何网格缩略图预览编排。本轮按 Electron 链路最小忠实移植：
+  1) 前端 saveEdits 成功后异步调度（不阻塞保存返回，失败仅告警——镜像 edits:save 行为）：
+     edit_open 取底图 → editParamsToRenderSpec → buildProxySpec 按 400 长边缩放
+     （crop/蒙版坐标等比、range 亮度语义不动；Rust 执行器 decode.proxyLongEdge 已支持）；
+  2) 新命令 edit_render_preview：ensure_edit_base → 缓存元数据命中
+     （editVersion+render-rust-1，渲染前后版本一致才写 meta，镜像 Electron 防陈旧语义）→
+     render_spec_to_file → 写 thumbnail_edit_path → Emitter 发 edit-preview-ready {id,path}；
+  3) progress.rs 加 EDIT_PREVIEW_READY 常量（对齐测试同步）；tauriBridgeMedia 加
+     onEditPreviewReady listen；SEAMS 收录（api 循环名单原本就有，useGalleryData 消费端零改动）。
+  简化取舍（记录）：Electron 的渲染世代取消/预览数量上限未移植——同步命令天然无在途取消问题，
+  数量上限影响可控后补。测试 +2（保存调度参数形状/事件路由）。
+  验证：cargo 119/119 + golden 门禁 ✅；vitest 967/967 ✅；typecheck ✅；lint 0 error ✅。
+  需人工复核：编辑保存后网格缩略图即时更新（cargo run）。剩余缺口：getPathForFile。

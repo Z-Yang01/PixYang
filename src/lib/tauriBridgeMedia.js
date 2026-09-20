@@ -54,3 +54,7 @@ export function onThumbnailsReady(cb) {
 export function onOrientationBackfill(cb) {
   return listen('orientation-backfill', cb);
 }
+
+export function onEditPreviewReady(cb) {
+  return listen('edit-preview-ready', cb);
+}

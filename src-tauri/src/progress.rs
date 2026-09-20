@@ -5,6 +5,7 @@ pub const REBUILD_PROGRESS: &str = "rebuild-progress";
 pub const IMPORT_PROGRESS: &str = "import-progress";
 pub const THUMBNAILS_READY: &str = "thumbnails-ready";
 pub const ORIENTATION_BACKFILL: &str = "orientation-backfill";
+pub const EDIT_PREVIEW_READY: &str = "edit-preview-ready";
 
 pub fn emit_progress(app: &AppHandle, event: &str, payload: Value) {
     if let Err(e) = app.emit(event, payload) {
@@ -26,6 +27,7 @@ mod tests {
         assert_eq!(IMPORT_PROGRESS, "import-progress");
         assert_eq!(THUMBNAILS_READY, "thumbnails-ready");
         assert_eq!(ORIENTATION_BACKFILL, "orientation-backfill");
+        assert_eq!(EDIT_PREVIEW_READY, "edit-preview-ready");
     }
 
     #[test]

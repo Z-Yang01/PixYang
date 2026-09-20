@@ -5,7 +5,7 @@ import editSchema from '../../shared/editSchema.cjs';
 import renderSpecModule from '../../shared/renderSpec.cjs';
 
 const { upgradeEdits } = editSchema;
-const { editParamsToRenderSpec } = renderSpecModule;
+const { editParamsToRenderSpec, buildProxySpec } = renderSpecModule;
 
 function tauriCore() {
   if (typeof window === 'undefined') return null;
@@ -126,7 +126,16 @@ export const tauriApi = {
   deleteBrokenRecords: (ids) => tauriInvoke('delete_broken_records', { ids }),
   findDuplicates: () => tauriInvoke('find_duplicates', {}),
   getEdits: (id) => tauriInvoke('get_edits', { id }),
-  saveEdits: (id, params, command) => tauriInvoke('save_edit_params', { id, params, command }),
+  saveEdits: (id, params, command) =>
+    tauriInvoke('save_edit_params', { id, params, command }).then((result) => {
+      // 镜像 Electron edits:save：保存成功后异步刷新编辑预览缩略图（不阻塞保存；失败仅告警）
+      if (result && !result.error) {
+        renderEditPreviewAfterSave(id, params).catch((e) =>
+          console.error('[tauriBridge] 编辑预览渲染失败:', e.message)
+        );
+      }
+      return result;
+    }),
   getEditHistory: (id) => tauriInvoke('get_edit_history', { id }),
   editCancel: (id) => Promise.resolve({ ok: true }),
   // 编辑器三通道：spec 桥内构建（sourceHash 仅作 renderSpec 必填占位，Tauri 执行器不消费）；
@@ -152,3 +161,13 @@ export const tauriApi = {
     });
   },
 };
+
+// 保存参数后的网格缩略图预览：400 长边代理 spec（crop/蒙版坐标由 buildProxySpec 等比缩放），
+// 渲染/写库/发 edit-preview-ready 事件在 edit_render_preview 内闭环
+async function renderEditPreviewAfterSave(id, params) {
+  const session = await tauriInvoke('edit_open', { id });
+  if (session?.error) return;
+  const spec = editParamsToRenderSpec(params, { sourceHash: session.basePath });
+  const { spec: proxySpec } = buildProxySpec(spec, session.width, session.height, 400);
+  await tauriInvoke('edit_render_preview', { id, spec: proxySpec, inputPath: session.basePath });
+}

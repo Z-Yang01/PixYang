@@ -79,6 +79,7 @@ const TAURI_SEAMS = new Set([
   'backupDatabase',
   'exportImages',
   'exportAlbumImages',
+  'onEditPreviewReady',
 ]);
 
 const api = {
