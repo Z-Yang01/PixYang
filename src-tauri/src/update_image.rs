@@ -2,6 +2,7 @@ use crate::db::PixError;
 use crate::image_group;
 use crate::images_query::ImageRow;
 use crate::naming;
+use crate::progress;
 use crate::thumbs;
 use rusqlite::{params, params_from_iter, Connection};
 use serde_json::{json, Value};
@@ -339,6 +340,7 @@ pub fn rebuild_thumbnails(
     conn: &Connection,
     thumbs_dir: &Path,
     all: bool,
+    app: Option<&tauri::AppHandle>,
 ) -> Result<Value, PixError> {
     let where_clause = if all {
         "hidden = 0".to_string()
@@ -357,35 +359,33 @@ pub fn rebuild_thumbnails(
     let mut failed = 0i64;
     std::fs::create_dir_all(thumbs_dir)
         .map_err(|e| PixError::Io(format!("建缩略图目录失败: {e}")))?;
-    for (id, filepath) in &rows {
+    for (index, (id, filepath)) in rows.iter().enumerate() {
         let src = PathBuf::from(filepath);
         match thumbs::generate_tiers(&src) {
             Ok((small, medium, w, h)) => {
                 // 写回前再核验：生成期间记录被删/改名则放弃本次写回，不计入统计
                 let fresh = crate::images_query::get_image_by_id(conn, *id)?;
-                let Some(cur) = fresh else { continue };
-                if cur.filepath != *filepath {
-                    continue;
-                }
-                let medium_path = thumbs_dir.join(format!("{id}.jpg"));
-                let small_path = thumbs_dir.join(format!("{id}_s.jpg"));
-                match std::fs::write(&medium_path, &medium)
-                    .and_then(|_| std::fs::write(&small_path, &small))
-                {
-                    Ok(_) => {
-                        update_image_thumbs(
-                            conn,
-                            *id,
-                            &medium_path.to_string_lossy(),
-                            &small_path.to_string_lossy(),
-                            w as i64,
-                            h as i64,
-                        )?;
-                        rebuilt += 1;
-                    }
-                    Err(e) => {
-                        failed += 1;
-                        eprintln!("[缩略图] 写入失败: {filepath} {e}");
+                if fresh.is_some_and(|cur| cur.filepath == *filepath) {
+                    let medium_path = thumbs_dir.join(format!("{id}.jpg"));
+                    let small_path = thumbs_dir.join(format!("{id}_s.jpg"));
+                    match std::fs::write(&medium_path, &medium)
+                        .and_then(|_| std::fs::write(&small_path, &small))
+                    {
+                        Ok(_) => {
+                            update_image_thumbs(
+                                conn,
+                                *id,
+                                &medium_path.to_string_lossy(),
+                                &small_path.to_string_lossy(),
+                                w as i64,
+                                h as i64,
+                            )?;
+                            rebuilt += 1;
+                        }
+                        Err(e) => {
+                            failed += 1;
+                            eprintln!("[缩略图] 写入失败: {filepath} {e}");
+                        }
                     }
                 }
             }
@@ -394,6 +394,16 @@ pub fn rebuild_thumbnails(
                 eprintln!("[缩略图] 重建失败: {filepath} {e}");
             }
         }
+        if let Some(app) = app {
+            progress::emit_progress(
+                app,
+                progress::REBUILD_PROGRESS,
+                progress::rebuild_payload(index as i64 + 1, total, failed),
+            );
+        }
+    }
+    if let Some(app) = app {
+        progress::emit_progress(app, progress::THUMBNAILS_READY, Value::Null);
     }
     Ok(json!({ "total": total, "rebuilt": rebuilt, "failed": failed }))
 }
@@ -904,7 +914,7 @@ mod tests {
         let id4 = insert_image(&conn, "hidden.jpg", &f3, "", "2026-01-01", 1);
         let thumbs_dir = dir.join("thumbs");
 
-        let r1 = rebuild_thumbnails(&conn, &thumbs_dir, true).unwrap();
+        let r1 = rebuild_thumbnails(&conn, &thumbs_dir, true, None).unwrap();
         assert_eq!(r1, json!({ "total": 3, "rebuilt": 2, "failed": 1 }));
         let row1 = get_image_by_id(&conn, id1).unwrap().unwrap();
         assert_eq!(
@@ -923,7 +933,7 @@ mod tests {
         let hidden_row = get_image_by_id(&conn, id4).unwrap().unwrap();
         assert_eq!(hidden_row.thumbnail_path.as_deref(), Some(""));
 
-        let r2 = rebuild_thumbnails(&conn, &thumbs_dir, false).unwrap();
+        let r2 = rebuild_thumbnails(&conn, &thumbs_dir, false, None).unwrap();
         assert_eq!(r2, json!({ "total": 1, "rebuilt": 0, "failed": 1 }));
 
         conn.execute(
@@ -932,7 +942,7 @@ mod tests {
         )
         .unwrap();
         // 只补缺失：候选为 id2（被清空）与 id3（一直失败仍缺失），id4 隐藏不参与
-        let r3 = rebuild_thumbnails(&conn, &thumbs_dir, false).unwrap();
+        let r3 = rebuild_thumbnails(&conn, &thumbs_dir, false, None).unwrap();
         assert_eq!(r3, json!({ "total": 2, "rebuilt": 1, "failed": 1 }));
         let _ = std::fs::remove_dir_all(&dir);
     }

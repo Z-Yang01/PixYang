@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
-use tauri::State;
+use tauri::{AppHandle, State};
 
 #[derive(Debug, Deserialize)]
 pub struct UniqueFilenameArgs {
@@ -453,7 +453,19 @@ pub fn rebuild_thumbnails(
     all: bool,
 ) -> Result<Value, String> {
     let conn = db.0.lock().unwrap();
-    update_image::rebuild_thumbnails(&conn, &paths.thumbs_dir, all).map_err(|e| e.to_string())
+    update_image::rebuild_thumbnails(&conn, &paths.thumbs_dir, all, None).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn rebuild_thumbnails_with_events(
+    app: AppHandle,
+    db: State<'_, Db>,
+    paths: State<'_, AppPaths>,
+    all: bool,
+) -> Result<Value, String> {
+    let conn = db.0.lock().unwrap();
+    update_image::rebuild_thumbnails(&conn, &paths.thumbs_dir, all, Some(&app))
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]

@@ -137,3 +137,13 @@
   setImagesRoot、编辑渲染进度事件（事件系统）。
 - 18:30 命令层清理：拼接残留 .part 移除、unused 告警清零、参数名误改恢复。
   最终 cargo 108/108 + golden 门禁全绿 + vitest 961/961。
+- 19:30-21:30 R23 多 agent 并行（3 agent + 主控集成）：
+  A interact.rs（tauri-plugin-dialog/opener 集成，选目录/导出目录/openPath 含托管边界/
+  backupDatabase VACUUM INTO 保存对话框，4 命令；tauri features 加 protocol-asset）；
+  B camera.rs 1050 行（相机同步全流程 + setImagesRoot 迁移含 NEF 跟随与反向回滚，
+  发现并修复 strip_prefix 的 parent() 缺失 bug，5 测试）；
+  C assetProtocol conf（核实 $CONFIG 与 db.rs Electron 镜像精确吻合，弃 $APPDATA）+
+  progress.rs 事件基建 + rebuild 事件钩子 + tauriBridgeMedia.js（convertFileSrc/listen 包装）。
+  集成：editOpen/editBake/editExport 桥接（basePath 桥内持有 + spec 桥内构建）、
+  syncCameraFolder/setImagesRoot 接缝、TAURI_SEAMS 45 通道。
+  cargo 115/115 + golden 门禁；clippy 0 error；vitest 961/961；typecheck/build/lint 干净。

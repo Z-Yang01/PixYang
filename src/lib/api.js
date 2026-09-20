@@ -5,11 +5,13 @@ import { isTauriAvailable, tauriApi } from './tauriBridge';
 const px = () => (typeof window !== 'undefined' ? window.pixyang : undefined);
 
 // 每个方法透传 IPC；bridge 不存在时返回 undefined（调用方按空数据处理）
-const passthrough = (name) => (...args) => {
-  const bridge = px();
-  if (!bridge || typeof bridge[name] !== 'function') return undefined;
-  return bridge[name](...args);
-};
+const passthrough =
+  (name) =>
+  (...args) => {
+    const bridge = px();
+    if (!bridge || typeof bridge[name] !== 'function') return undefined;
+    return bridge[name](...args);
+  };
 
 // 已迁移到 Tauri 后端的通道（Electron 运行时自动回落原 IPC，行为不变）
 const TAURI_SEAMS = new Set([
@@ -59,6 +61,11 @@ const TAURI_SEAMS = new Set([
   'saveEdits',
   'getEditHistory',
   'editCancel',
+  'editOpen',
+  'editBake',
+  'editExport',
+  'syncCameraFolder',
+  'setImagesRoot',
 ]);
 
 const api = {

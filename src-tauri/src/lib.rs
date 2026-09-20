@@ -1,4 +1,7 @@
+pub mod camera;
 pub mod commands;
+pub mod interact;
+// [MOD-B]
 pub mod db;
 pub mod edit_session;
 pub mod error;
@@ -9,6 +12,7 @@ pub mod file_ops;
 pub mod image_group;
 pub mod images_query;
 pub mod naming;
+pub mod progress;
 pub mod render;
 pub mod scan;
 pub mod tags_albums;
@@ -22,6 +26,8 @@ use tauri::Manager;
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             let database =
                 db::Db::open(&db::default_db_path()).map_err(|e| format!("数据库打开失败: {e}"))?;
@@ -91,6 +97,14 @@ pub fn run() {
             commands::edit_open,
             commands::edit_bake,
             commands::edit_export,
+            interact::select_directory,
+            interact::select_export_directory,
+            interact::open_path,
+            interact::backup_database,
+            camera::sync_camera_folder,
+            camera::set_images_root,
+            // [CMD-B]
+            commands::rebuild_thumbnails_with_events,
         ])
         .run(tauri::generate_context!())
         .expect("tauri 启动失败");

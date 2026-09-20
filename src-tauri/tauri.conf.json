@@ -16,7 +16,14 @@
       }
     ],
     "security": {
-      "csp": null
+      "csp": null,
+      "assetProtocol": {
+        "enable": true,
+        "scope": [
+          "$CONFIG/pixyang/images/**",
+          "$CONFIG/pixyang/thumbnails/**"
+        ]
+      }
     }
   }
 }

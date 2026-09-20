@@ -22,6 +22,23 @@ export async function tauriInvoke(cmd, args = {}) {
   return core.invoke(cmd, args);
 }
 
+function tauriDialog() {
+  if (typeof window === 'undefined') return null;
+  return window.__TAURI__?.dialog ?? null;
+}
+
+function tauriOpener() {
+  if (typeof window === 'undefined') return null;
+  return window.__TAURI__?.opener ?? null;
+}
+
+function requirePluginGlobal(plugin, method) {
+  if (!plugin || typeof plugin[method] !== 'function') {
+    throw new Error('[tauriBridge] Tauri 运行时不可用');
+  }
+  return plugin;
+}
+
 export const tauriApi = {
   uniqueFilename: (dir, name, taken = []) =>
     tauriInvoke('unique_filename', { args: { dir, name, taken } }),
@@ -77,6 +94,19 @@ export const tauriApi = {
     tauriInvoke('make_thumbnail_tiers', { filepath, thumbsDir, id }),
   extractNefPreview: (nefPath, outPath) => tauriInvoke('extract_nef_preview', { nefPath, outPath }),
   imageMeta: (filepath) => tauriInvoke('image_meta', { filepath }),
+  selectDirectory: async () => {
+    const dialog = requirePluginGlobal(tauriDialog(), 'open');
+    return dialog.open({ directory: true, title: '选择要导入的图片文件夹' });
+  },
+  selectExportDirectory: async () => {
+    const dialog = requirePluginGlobal(tauriDialog(), 'open');
+    return dialog.open({ directory: true, title: '选择导出的目标文件夹' });
+  },
+  openPath: async (path) => {
+    const opener = requirePluginGlobal(tauriOpener(), 'openPath');
+    return opener.openPath(path);
+  },
+  backupDatabase: () => tauriInvoke('backup_database'),
   renderEdit: (spec, inputPath, outputPath) =>
     tauriInvoke('render_edit', { spec, inputPath, outputPath }),
   importImages: (files) => tauriInvoke('import_images', { files }),
