@@ -104,3 +104,13 @@
   （tests/render_vectors.json，8 组确定性输入输出），Rust 测试逐字节断言：**8/8 一次全过**，
   平移零偏差。参数走 serde_json::Value 镜像 JS 动态归一化（含 `|| 0`/clamp/截断语义）。
   cargo 61/61。剩：执行器装配（仿射累积/几何/编码/EXIF 回接）→ golden 重锁。
+- 16:05-16:35 R19 接缝5 阶段3-2（执行器装配）：executor.rs——RenderSpec JSON → image-rs
+  解码（RGBA）→ 阶段调度（decode 代理缩放/whiteBalance/exposure 仿射累积/tone 线性复合+
+  阴影 gamma 边界物化+负镜像域三检查点/curves/hsl/colorGrading/saturation/masks/detail 近似
+  USM/lens/geometry 翻转先于旋转 T=R∘F/crop 经 geometry 映射+钳制/encode）→ 原子落盘
+  （part+fsync+rename）+ EXIF 回接（relay_exif_files 替代 sharp composite 保元数据策略）。
+  libvips 探测两条铁律落地：linear/gamma 对 uchar 均 truncate；gamma(1,g)=trunc(255·(x/255)^(1/g))。
+  执行器测试 5 个：曝光 trunc、阴影提升 gamma 与 libvips 实测表逐值一致（跨实现对拍）、
+  rot90+crop 映射、超尺寸裁剪钳制、EXIF 注入产物。修复 flush 丢 pending 仿射的关键 bug
+  （JS flushAffine 语义：无像素时从原图物化，不得静默丢弃）。
+  render_edit 命令 + 桥接。cargo 66/66；clippy 干净；vitest 961/961。

@@ -74,4 +74,6 @@ export const tauriApi = {
     tauriInvoke('make_thumbnail_tiers', { filepath, thumbsDir, id }),
   extractNefPreview: (nefPath, outPath) => tauriInvoke('extract_nef_preview', { nefPath, outPath }),
   imageMeta: (filepath) => tauriInvoke('image_meta', { filepath }),
+  renderEdit: (spec, inputPath, outputPath) =>
+    tauriInvoke('render_edit', { spec, inputPath, outputPath }),
 };

@@ -2,6 +2,7 @@
 // 命令不内嵌业务逻辑；错误统一 String（跨 IPC 序列化最简形态）。
 
 use crate::db::{self, AppPaths, Db};
+use crate::executor;
 use crate::image_group::{self, ImportFile, PairGroup};
 use crate::images_query;
 use crate::naming;
@@ -351,6 +352,23 @@ pub fn extract_nef_preview(
 #[tauri::command]
 pub fn image_meta(filepath: String) -> Result<(u32, u32, u32, bool), String> {
     thumbs::image_meta(std::path::Path::new(&filepath)).map_err(|e| e.to_string())
+}
+
+// ── 渲染执行器（迁移接缝 5 阶段 3） ──
+
+#[tauri::command]
+pub fn render_edit(
+    spec: serde_json::Value,
+    input_path: String,
+    output_path: String,
+) -> Result<(u32, u32), String> {
+    executor::render_spec_to_file(
+        &spec,
+        std::path::Path::new(&input_path),
+        std::path::Path::new(&output_path),
+    )
+    .map(|o| (o.width, o.height))
+    .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
