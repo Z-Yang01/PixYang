@@ -519,6 +519,7 @@ pub fn render_spec_to_file(
                     continue;
                 };
                 flush_affine(&mut pixels, &mut affine, input)?;
+                ensure_decoded(&mut pixels, input)?;
                 let p = pixels.as_mut().unwrap();
                 apply_curve_luts_in_place(&mut p.data, &luts, p.channels);
             }
@@ -527,6 +528,7 @@ pub fn render_spec_to_file(
                     continue;
                 }
                 flush_affine(&mut pixels, &mut affine, input)?;
+                ensure_decoded(&mut pixels, input)?;
                 let p = pixels.as_mut().unwrap();
                 apply_hsl_in_place(&mut p.data, &params, p.channels);
             }
@@ -535,6 +537,7 @@ pub fn render_spec_to_file(
                     continue;
                 }
                 flush_affine(&mut pixels, &mut affine, input)?;
+                ensure_decoded(&mut pixels, input)?;
                 let p = pixels.as_mut().unwrap();
                 apply_color_grading_in_place(&mut p.data, &params, p.channels);
             }
@@ -548,6 +551,7 @@ pub fn render_spec_to_file(
                     continue;
                 }
                 flush_affine(&mut pixels, &mut affine, input)?;
+                ensure_decoded(&mut pixels, input)?;
                 let p = pixels.as_mut().unwrap();
                 apply_saturation_in_place(&mut p.data, &params, p.channels);
             }
@@ -558,6 +562,7 @@ pub fn render_spec_to_file(
                     continue;
                 }
                 flush_affine(&mut pixels, &mut affine, input)?;
+                ensure_decoded(&mut pixels, input)?;
                 let p = pixels.as_mut().unwrap();
                 crate::render::apply_masks_in_place(
                     &mut p.data,
@@ -598,6 +603,7 @@ pub fn render_spec_to_file(
                     continue;
                 }
                 flush_affine(&mut pixels, &mut affine, input)?;
+                ensure_decoded(&mut pixels, input)?;
                 let p = pixels.as_mut().unwrap();
                 apply_vignette_in_place(
                     &mut p.data,
