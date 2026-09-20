@@ -306,3 +306,13 @@
   托管同名保留）。启动时的全库 stale 清理（Electron 800ms 后台）未移植：打开时清理已覆盖
   常见路径，避免 Tauri setup 阶段引入后台任务，记录为已知取舍。
   验证：cargo 128/128 + golden 门禁 ✅；vitest 969/969 ✅；typecheck ✅；lint 0 error ✅。
+
+- 2026-09-21 07:45-08:00 R35（夜间自动化第十二轮）编辑预览磁盘 LRU 上限（64/64 维持）：
+  收官 R27 明确延期的 enforceEditPreviewLimit——Electron 把编辑预览文件数按 LRU 钉在
+  500（按 edits.updated_at 清最旧：文件+meta 侧车删除、路径列清空、edits 行保留自愈），
+  Tauri 端预览无上限累积。移植：edit_session.rs enforce_edit_preview_limit 内核
+  （SQL 逐字镜像 Electron 的排序语义）+ EDIT_PREVIEW_LIMIT=500 常量；接线到
+  render_edit_preview_kernel 写回路径之后（错误吞掉不阻塞预览，镜像 try/catch）。
+  测试 +1（3 预览限 2：最旧文件删除+列清空，其余保留；夹具首轮踩 filepath 唯一约束，
+  已改为每图独立文件）。
+  验证：cargo 129/129 + golden 门禁 ✅；vitest 969/969 ✅；typecheck ✅；lint 0 error ✅。

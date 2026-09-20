@@ -734,6 +734,8 @@ pub(crate) fn render_edit_preview_kernel(
         "UPDATE images SET thumbnail_edit_path = ?1 WHERE id = ?2",
         rusqlite::params![preview.to_string_lossy(), id],
     );
+    let _ =
+        edit_session::enforce_edit_preview_limit(conn, thumbs_dir, edit_session::EDIT_PREVIEW_LIMIT);
     Ok(serde_json::json!({ "path": preview.to_string_lossy() }))
 }
 
@@ -1187,6 +1189,50 @@ mod edit_cmd_tests {
         let snap = edit_session_snapshot(&conn, &thumbs, id).unwrap();
         assert!(snap.get("error").is_none(), "{snap}");
         assert!(managed_lookalike.exists(), "托管同名文件绝不能被当残留删除");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+    #[test]
+    fn 预览LRU_超限清最旧且文件列同步删除() {
+        let dir = fresh_dir("preview_lru");
+        let src = make_jpeg(&dir, "a.jpg", 40, 30, 100);
+        let conn = edit_mem_db();
+        let thumbs = dir.join("thumbs");
+        std::fs::create_dir_all(&thumbs).unwrap();
+        let mut ids = Vec::new();
+        for i in 0..3 {
+            let f = make_jpeg(&dir, &format!("img{i}.jpg"), 40, 30, 100);
+            let id = seed_record(&conn, &format!("img{i}.jpg"), &f);
+            ids.push(id);
+            let p = thumbs.join(format!("edit-{id}.jpg"));
+            std::fs::write(&p, b"p").unwrap();
+            conn.execute(
+                "INSERT INTO edits (image_id, version, params_json, updated_at)
+                 VALUES (?1, 1, '{}', ?2)",
+                rusqlite::params![id, format!("2026-09-2{i} 00:00:00")],
+            )
+            .unwrap();
+            conn.execute(
+                "UPDATE images SET thumbnail_edit_path = ?1 WHERE id = ?2",
+                rusqlite::params![p.to_string_lossy(), id],
+            )
+            .unwrap();
+        }
+        let removed =
+            edit_session::enforce_edit_preview_limit(&conn, &thumbs, 2).unwrap();
+        assert_eq!(removed, 1);
+        // 最旧（updated_at 2026-09-20）被清：文件删除、列清空；其余保留
+        assert!(!thumbs.join(format!("edit-{}.jpg", ids[0])).exists());
+        let cleared: String = conn
+            .query_row(
+                "SELECT thumbnail_edit_path FROM images WHERE id = ?1",
+                [ids[0]],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(cleared, "");
+        for id in ids.iter().skip(1) {
+            assert!(thumbs.join(format!("edit-{id}.jpg")).exists());
+        }
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

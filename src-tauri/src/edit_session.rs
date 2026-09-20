@@ -13,6 +13,9 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 pub const HISTORY_LIMIT: i64 = 50;
 
+// 磁盘上限（LRU）：编辑预览文件数超过时清最旧（与 Electron EDIT_PREVIEW_LIMIT 一致）
+pub const EDIT_PREVIEW_LIMIT: i64 = 500;
+
 pub fn default_edits() -> Value {
     json!({
         "schemaVersion": 1,
@@ -80,6 +83,40 @@ pub fn get_edits(conn: &Connection, id: i64) -> Result<Value, PixError> {
         }
     };
     Ok(json!({ "version": version, "updatedAt": updated_at, "params": params }))
+}
+
+/// 镜像 enforceEditPreviewLimit：预览文件数超上限时按 edits.updated_at 清最旧
+/// （文件+缓存元数据删除、路径列清空；edits 行保留，下次保存自愈）。返回清理数。
+pub fn enforce_edit_preview_limit(
+    conn: &Connection,
+    thumbs_dir: &Path,
+    limit: i64,
+) -> Result<i64, PixError> {
+    let rows: Vec<(i64, String)> = {
+        let mut stmt = conn.prepare(
+            "SELECT i.id, i.thumbnail_edit_path
+             FROM images i
+             LEFT JOIN edits e ON e.image_id = i.id
+             WHERE i.thumbnail_edit_path != ''
+             ORDER BY COALESCE(e.updated_at, '1970-01-01') DESC",
+        )?;
+        let it = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?;
+        it.collect::<rusqlite::Result<Vec<_>>>()?
+    };
+    if rows.len() as i64 <= limit {
+        return Ok(0);
+    }
+    let mut removed = 0i64;
+    for (id, path) in rows.iter().skip(limit as usize) {
+        let _ = std::fs::remove_file(Path::new(path));
+        let _ = std::fs::remove_file(Path::new(&format!("{}.meta.json", path)));
+        conn.execute(
+            "UPDATE images SET thumbnail_edit_path = '' WHERE id = ?1",
+            rusqlite::params![id],
+        )?;
+        removed += 1;
+    }
+    Ok(removed)
 }
 
 /// 镜像 saveEdits：参数 upsert 且 version+1；command.label 非空时推入历史并按 HISTORY_LIMIT 裁剪。
