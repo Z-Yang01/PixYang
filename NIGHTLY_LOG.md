@@ -272,3 +272,15 @@
   既有 bake 测试扩展断言（底图 jpg/png 均被清除）。取消/删除路径无需处理：取消在 Tauri
   无会话状态（底图与原像素一致可复用），删除侧 R30 已覆盖。
   验证：cargo 126/126 + golden 门禁 ✅；vitest 969/969 ✅；typecheck ✅；lint 0 error ✅。
+
+- 2026-09-21 06:15-06:30 R32（夜间自动化第九轮）烘焙后触发缩略图重建（64/64 维持）：
+  副作用审计第三处命中——Electron 烘焙后注释明示「缩略图由 rebuild 重生成」（后台
+  runThumbnailRebuild 循环挑缺失者，完成发 thumbnails-ready），Tauri 端 save_edits 把
+  缩略图 DB 列清零、bake 又删了缩略图文件，但没有任何触发器：烘焙后网格会一直缺缩略图
+  （直到手动重建）。修复：edit_bake 命令成功后起后台线程（先 drop 连接锁防死锁）调
+  update_image::rebuild_thumbnails(all=false 仅缺失者, Some(&app))——复用既有内核，
+  自带 rebuild-progress / thumbnails-ready 事件，useGalleryData 既有监听直接生效。
+  save_edits 清列语义（元数据归零_缩略图清空 有专门测试）保证 all=false 恰好选中
+  刚烘焙的图。测试策略：线程胶水层不另测（依赖的 rebuild 内核已有测试覆盖），
+  烘焙后网格缩略图自动恢复标注「需人工复核」。
+  验证：cargo 126/126 + golden 门禁 ✅；vitest 969/969 ✅；typecheck ✅；lint 0 error ✅。

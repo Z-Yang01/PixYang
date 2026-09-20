@@ -17,7 +17,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, Manager, State};
 
 #[derive(Debug, Deserialize)]
 pub struct UniqueFilenameArgs {
@@ -749,6 +749,7 @@ pub fn edit_render_preview(
 pub fn edit_bake(
     db: State<'_, Db>,
     paths: State<'_, AppPaths>,
+    app: AppHandle,
     id: i64,
     edits: Value,
     spec: Value,
@@ -756,8 +757,22 @@ pub fn edit_bake(
 ) -> Result<Value, String> {
     let conn = db.0.lock().unwrap();
     let (base, _, _) = ensure_edit_base(&paths.thumbs_dir, id, Path::new(&input_path))?;
-    edit_session::edit_bake(&conn, id, &edits, &spec, &base, &paths.thumbs_dir)
-        .map_err(|e| e.to_string())
+    let result = edit_session::edit_bake(&conn, id, &edits, &spec, &base, &paths.thumbs_dir)
+        .map_err(|e| e.to_string());
+    drop(conn);
+    // 镜像 Electron：烘焙后缩略图由 rebuild 重生成（仅缺失者，后台跑，完成发 thumbnails-ready）
+    if let Ok(v) = &result {
+        if v.get("error").is_none() {
+            let app = app.clone();
+            let thumbs_dir = paths.thumbs_dir.clone();
+            std::thread::spawn(move || {
+                let db = app.state::<Db>();
+                let conn = db.0.lock().unwrap();
+                let _ = update_image::rebuild_thumbnails(&conn, &thumbs_dir, false, Some(&app));
+            });
+        }
+    }
+    result
 }
 
 #[tauri::command]
