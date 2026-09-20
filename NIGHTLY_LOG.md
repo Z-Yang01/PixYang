@@ -228,3 +228,17 @@
   数量上限影响可控后补。测试 +2（保存调度参数形状/事件路由）。
   验证：cargo 119/119 + golden 门禁 ✅；vitest 967/967 ✅；typecheck ✅；lint 0 error ✅。
   需人工复核：编辑保存后网格缩略图即时更新（cargo run）。剩余缺口：getPathForFile。
+
+- 2026-09-21 04:15-04:25 R28（夜间自动化第五轮）拖拽导入原生事件源（64/64 收官）：
+  通道层最后一个缺口 getPathForFile 按架构方案闭环——Electron webUtils 只认 DOM File 对象，
+  Tauri fileDropEnabled 下 DOM drop 本就不触发，故不走通道接缝而是换事件源：
+  1) tauriBridgeMedia 新增 onNativeDragDrop（getCurrentWebview().onDragDropEvent，
+     兼容 {payload} 包装/直出两种事件形态，非 Tauri 运行时 no-op）；
+  2) useDragImport 双事件源并存：Electron=DOM dragenter/leave/drop+webUtils（原逻辑原测试不动），
+     Tauri=原生 enter/leave/drop 直接给绝对路径（连 getPathForFile 都无需走）；
+     收集/在途排队/失败不卡队列逻辑抽取为 importPaths 共用，零运行时分支；
+  3) 测试 +2（原生 enter/drop 全链路、leave 不触发导入），原 17 条 DOM 测试全数保留通过。
+  取舍记录：原生 over 事件未消费（遮罩 enter 已亮，无需逐帧刷新）；onDragDropEvent 实际
+  事件形态需点击级冒烟最终确认（两种形态桥内均已兼容）。
+  验证：vitest 969/969 ✅；typecheck ✅；lint 0 error ✅；Rust 零改动免 cargo。
+  【通道对齐 64/64 全通】下一步=人工 tauri 全功能点击级冒烟，通过后安排 Electron 删除轮。

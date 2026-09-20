@@ -4,8 +4,10 @@
 （59 数据通道 + 5 事件），即 `preload.js` `window.pixyang` 的前端可见契约。逐一核对
 `src/lib/api.js` `TAURI_SEAMS` 接缝 × `src/lib/tauriBridge.js` 包装 × `src-tauri/src/` 命令注册。
 
-**当前对齐度：63/64。**（R25 导出双通道；R27 编辑预览事件链路）状态含义：✅ 已通（Tauri 运行时走 Rust，Electron 运行时原路径不变）／
-❌ 缺失（仅 Electron）。
+**当前对齐度：64/64 ✅ 全通。**（R25 导出；R27 编辑预览；R28 拖拽导入原生事件源闭环）
+状态含义：✅ 已通（Tauri 运行时走 Rust/原生能力，Electron 运行时原路径不变）／
+❌ 缺失（仅 Electron）。**通道层无剩余缺口**；Electron 删除前置条件仅剩 tauri 全功能
+点击级冒烟（人工）。
 
 历史口径说明：NIGHTLY_PROGRESS 旧记录的「58 通道」基准为手工清点，与 api.js 实际暴露面有
 ±1 出入；自 R24 起以本文件为唯一权威口径，后续轮次直接更新此表。
@@ -17,7 +19,7 @@
 | selectDirectory | ✅ | R24 接缝；Rust select_directory（dialog 插件，取消=null） |
 | scanDirectory | ✅ | scan.rs |
 | collectImportFiles | ✅ | scan.rs |
-| getPathForFile | ❌ | Electron webUtils 专供拖拽；Tauri v2 需改走原生 drag-drop 事件路径，架构性差异待方案 |
+| getPathForFile | ✅ | R28：Tauri 运行时改走原生 onDragDropEvent 事件源（绝对路径由原生给出，通道本体不适用）；useDragImport 双事件源并存（Electron=DOM+webUtils，Tauri=原生），队列/排队逻辑共用 |
 | getExif | ✅ | exif_read.rs 18 字段中文映射 |
 | toFileUrl / toFileUrls | ✅ | tauriBridgeMedia convertFileSrc + asset scope 运行时扩展（R23+01:00 修复） |
 | fileExists | ✅ | isManagedPath 根 containment |
@@ -92,10 +94,10 @@ getSettings / getSetting / setSetting ✅（db.rs 同库读写，get_settings �
 | onRebuildProgress / onImportProgress / onThumbnailsReady / onOrientationBackfill | ✅ | progress.rs Emitter + tauriBridgeMedia listen |
 | onEditPreviewReady | ✅ | R27：saveEdits 成功后桥内异步调度（400 长边代理 spec，buildProxySpec 缩放 crop/蒙版坐标）→ edit_render_preview 渲染 edit-{id}.jpg + 缓存元数据（editVersion/render-rust-1）+ 写 thumbnail_edit_path + Emitter 发事件；useGalleryData 既有消费端直接生效。**需人工复核**：编辑保存后网格缩略图即时更新（cargo run 点击级） |
 
-## 剩余缺口（1）
+## 剩余缺口
 
-1. **getPathForFile**（1 通道）：Electron webUtils 拖拽路径；Tauri v2 的 onDragDropEvent
-   原生给绝对路径，需改 useDragImport 事件源，属架构调整，单独一轮评估。
+**无（64/64 全通）。** 后续工作 = tauri 全功能点击级冒烟（人工，`cd src-tauri && cargo run`）
++ 已标注「需人工复核」项的逐项确认 + Electron 删除轮。
 
 ## 验证口径
 

@@ -1,9 +1,11 @@
 # NIGHTLY_PROGRESS — Rust/Tauri 结构推进
 
-状态：**迁移收尾阶段（R27 完成，63/64 通道）**。对齐口径自 R24 起以
+状态：**通道对齐 64/64 全通（R28 收官）**。对齐口径自 R24 起以
 `docs/TAURI_PARITY.md` 为唯一权威（基准=api.js 暴露的 59 数据通道+5 事件；旧「58 通道」
 为手工清点口径，已废弃）。夜间自动化（每 30 分钟一轮）自 2026-09-21 02:15 起接管推进，
-每轮记录统一追加到 NIGHTLY_LOG.md。剩余缺口仅 getPathForFile（拖拽路径，架构性差异）。
+R24-R28 五轮完成最后 10+ 通道与两处勘误修复，逐轮记录见 NIGHTLY_LOG.md。
+**下一步 = 人工 tauri 全功能点击级冒烟**（`cd src-tauri && cargo run`，重点：编辑保存后
+网格缩略图即时更新、烘焙/导出、拖拽导入），通过后即可安排 Electron 删除轮。
 
 分支：`auto/nightly/pixyang-rust-tauri-20260920-0114`（基线 optimize/architecture + wip 6d20c40）
 提交链：6d20c40 wip → 65e3ff7 R1 → 018752e R2 → b164a7c R3 → 09fde04 最终日志
@@ -52,9 +54,11 @@
 - R27：onEditPreviewReady 事件链路接通——saveEdits 后桥内异步调度 400 代理预览渲染
   （edit_render_preview：渲染/缓存元数据/写 thumbnail_edit_path/Emitter 发事件），
   useGalleryData 既有消费端直接生效；网格缩略图即时更新需人工复核。
-- 剩余 1 通道：getPathForFile（Electron webUtils，架构性差异，拖拽事件源单独评估）。
-  逐项状态见 docs/TAURI_PARITY.md。
-- Electron 删除前置条件不变：全部接缝完成 + tauri dev 全功能冒烟。
+- R28：拖拽导入原生事件源闭环（64/64 收官）——tauriBridgeMedia.onNativeDragDrop
+  （getCurrentWebview().onDragDropEvent，兼容 {payload}/直出两种事件形态）+
+  useDragImport 双事件源并存（Electron=DOM+webUtils.getPathForFile，
+  Tauri=原生 enter/leave/drop 直接给绝对路径），队列/在途排队逻辑共用，零运行时分支。
+- 通道层无剩余缺口。**下一步 = 人工 tauri 全功能点击级冒烟**，通过后安排 Electron 删除轮。
 
 ## 轮次记录（窗口外续作，2026-09-20 上午）
 

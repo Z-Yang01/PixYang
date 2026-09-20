@@ -245,3 +245,66 @@ describe('hooks/useDragImport', () => {
     errSpy.mockRestore();
   });
 });
+
+describe('hooks/useDragImport · Tauri 原生拖拽', () => {
+  it('原生 enter/drop：显示遮罩并直接用事件路径收集导入', async () => {
+    const onCollect = vi.fn();
+    let handler: (e: unknown) => void = () => {};
+    const onDragDropEvent = vi.fn((h: (e: unknown) => void) => {
+      handler = h;
+      return Promise.resolve(() => {});
+    });
+    const invoke = vi.fn().mockResolvedValue(['/a.png', '/b.png']);
+    (window as unknown as { __TAURI__?: unknown }).__TAURI__ = {
+      core: { invoke },
+      webview: { getCurrentWebview: () => ({ onDragDropEvent }) },
+    };
+    render(<Harness onCollect={onCollect} />);
+    await vi.waitFor(() => expect(onDragDropEvent).toHaveBeenCalledTimes(1));
+    act(() => {
+      handler({ payload: { type: 'enter', paths: ['/a.png'] } });
+    });
+    expect(screen.getByText('mask')).toBeInTheDocument();
+    act(() => {
+      handler({ payload: { type: 'drop', paths: ['/a.png', '/b.png'] } });
+    });
+    expect(screen.getByText('idle')).toBeInTheDocument();
+    await vi.waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith('collect_import_files', {
+        paths: ['/a.png', '/b.png'],
+      });
+      expect(onCollect).toHaveBeenCalledWith(['/a.png', '/b.png']);
+    });
+    delete (window as unknown as { __TAURI__?: unknown }).__TAURI__;
+  });
+
+  it('原生 leave：隐藏遮罩且不触发导入', async () => {
+    const onCollect = vi.fn();
+    let handler: (e: unknown) => void = () => {};
+    const onDragDropEvent = vi.fn((h: (e: unknown) => void) => {
+      handler = h;
+      return Promise.resolve(() => {});
+    });
+    const invoke = vi.fn();
+    (window as unknown as { __TAURI__?: unknown }).__TAURI__ = {
+      core: { invoke },
+      webview: { getCurrentWebview: () => ({ onDragDropEvent }) },
+    };
+    render(<Harness onCollect={onCollect} />);
+    await vi.waitFor(() => expect(onDragDropEvent).toHaveBeenCalledTimes(1));
+    act(() => {
+      handler({ payload: { type: 'enter', paths: ['/a.png'] } });
+    });
+    expect(screen.getByText('mask')).toBeInTheDocument();
+    act(() => {
+      handler({ payload: { type: 'leave' } });
+    });
+    expect(screen.getByText('idle')).toBeInTheDocument();
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(invoke).not.toHaveBeenCalled();
+    expect(onCollect).not.toHaveBeenCalled();
+    delete (window as unknown as { __TAURI__?: unknown }).__TAURI__;
+  });
+});

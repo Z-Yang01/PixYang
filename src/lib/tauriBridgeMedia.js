@@ -58,3 +58,24 @@ export function onOrientationBackfill(cb) {
 export function onEditPreviewReady(cb) {
   return listen('edit-preview-ready', cb);
 }
+
+// Tauri v2 原生拖拽（fileDropEnabled 下 DOM drop 不触发，绝对路径由原生事件给出）。
+// 兼容事件包装两种形态（{payload} / 直出），非 Tauri 运行时返回 no-op
+export function onNativeDragDrop({ onEnter, onLeave, onDrop }) {
+  const webview = typeof window !== 'undefined' ? window.__TAURI__?.webview : null;
+  const target = webview?.getCurrentWebview?.() ?? webview;
+  if (typeof target?.onDragDropEvent !== 'function') return () => {};
+  let unlisten = () => {};
+  target
+    .onDragDropEvent((e) => {
+      const p = e?.payload ?? e ?? {};
+      if (p.type === 'enter') onEnter?.(Array.isArray(p.paths) ? p.paths : []);
+      else if (p.type === 'leave') onLeave?.();
+      else if (p.type === 'drop') onDrop?.(Array.isArray(p.paths) ? p.paths : []);
+    })
+    .then((off) => {
+      unlisten = off;
+    })
+    .catch((err) => console.error('[tauriBridgeMedia] 拖拽监听失败:', err.message));
+  return () => unlisten();
+}
