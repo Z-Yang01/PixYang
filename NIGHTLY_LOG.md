@@ -93,3 +93,8 @@
   记录为不可移植分歧）、image_meta。5 测试（真实 JPEG 编解码夹具）。命令 3 个 + 桥接包装。
   依赖：image 0.25（feature 门控）+ kamadak-exif。cargo 49/49；clippy 干净；vitest 961/961。
   Windows 网络注意：cargo fetch 需 CARGO_HTTP_CHECK_REVOKE=false（吊销服务器脱机）。
+- 15:10-15:30 R17 接缝5 阶段2（EXIF 回接基建）：exif_relay.rs——JPEG APP1 段解析
+  （SOI 后逐 marker 走段、SOS 即停防熵区伪造段误收）/ 注回（SOI 后插 APP1，超 64KB 容量跳过）/
+  PNG eXIf 块取放（手写 CRC32，IHDR 后插入）/ relay_exif 按源格式分派（跨格式原样返回）+
+  relay_exif_files 文件便捷封装。4 测试（含熵区伪造段、跨格式、往返 CRC 校验）。
+  cargo 53/53；clippy 干净。无前端接线（阶段3 saveEditedImage 平移时的内部依赖）。

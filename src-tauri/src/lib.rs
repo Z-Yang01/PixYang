@@ -1,6 +1,7 @@
 pub mod commands;
 pub mod db;
 pub mod error;
+pub mod exif_relay;
 pub mod image_group;
 pub mod images_query;
 pub mod naming;
