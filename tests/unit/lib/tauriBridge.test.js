@@ -80,9 +80,9 @@ describe('tauriBridge', () => {
   it('api 未接缝通道不受 Tauri 接缝影响', async () => {
     const invoke = vi.fn();
     window.__TAURI__ = { core: { invoke } };
-    window.pixyang = { getExif: vi.fn().mockResolvedValue({}) };
-    await api.getExif('E:/p/a.jpg');
-    expect(window.pixyang.getExif).toHaveBeenCalledWith('E:/p/a.jpg');
+    window.pixyang = { backupDatabase: vi.fn().mockResolvedValue({ success: true }) };
+    await api.backupDatabase();
+    expect(window.pixyang.backupDatabase).toHaveBeenCalled();
     expect(invoke).not.toHaveBeenCalled();
   });
 

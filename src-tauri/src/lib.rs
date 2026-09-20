@@ -1,15 +1,19 @@
 pub mod commands;
 pub mod db;
+pub mod edit_session;
 pub mod error;
 pub mod executor;
+pub mod exif_read;
 pub mod exif_relay;
 pub mod file_ops;
 pub mod image_group;
 pub mod images_query;
 pub mod naming;
 pub mod render;
+pub mod scan;
 pub mod tags_albums;
 pub mod thumbs;
+pub mod update_image;
 
 use tauri::Manager;
 
@@ -71,6 +75,22 @@ pub fn run() {
             commands::render_edit,
             commands::import_images,
             commands::rename_image,
+            commands::get_exif,
+            commands::scan_directory,
+            commands::collect_import_files,
+            commands::update_image,
+            commands::update_images,
+            commands::rebuild_thumbnails,
+            commands::scan_broken_records,
+            commands::delete_broken_records,
+            commands::find_duplicates,
+            commands::get_edits,
+            commands::save_edit_params,
+            commands::get_edit_history,
+            commands::edit_cancel,
+            commands::edit_open,
+            commands::edit_bake,
+            commands::edit_export,
         ])
         .run(tauri::generate_context!())
         .expect("tauri 启动失败");

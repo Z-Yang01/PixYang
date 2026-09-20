@@ -2,16 +2,21 @@
 // 命令不内嵌业务逻辑；错误统一 String（跨 IPC 序列化最简形态）。
 
 use crate::db::{self, AppPaths, Db};
+use crate::edit_session;
 use crate::executor;
 use crate::file_ops;
 use crate::image_group::{self, ImportFile, PairGroup};
 use crate::images_query;
 use crate::naming;
+use crate::scan;
 use crate::tags_albums;
 use crate::thumbs;
+use crate::update_image;
 use serde::{Deserialize, Serialize};
+use serde_json::json;
+use serde_json::Value;
 use std::collections::HashSet;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use tauri::State;
 
 #[derive(Debug, Deserialize)]
@@ -394,6 +399,306 @@ pub fn render_edit(
     )
     .map(|o| (o.width, o.height))
     .map_err(|e| e.to_string())
+}
+
+// ── 外围与编辑会话通道（多 agent 内核集成） ──
+
+#[tauri::command]
+pub fn get_exif(filepath: String) -> Value {
+    crate::exif_read::exif_fields(Path::new(&filepath)).unwrap_or_else(|_| serde_json::json!({}))
+}
+
+#[tauri::command]
+pub fn scan_directory(dir: String) -> Result<Vec<scan::CollectedFile>, String> {
+    scan::scan_directory(Path::new(&dir)).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn collect_import_files(paths: Vec<String>) -> Result<Vec<scan::CollectedFile>, String> {
+    let as_pathbuf: Vec<std::path::PathBuf> = paths.iter().map(PathBuf::from).collect();
+    scan::collect_import_files(&as_pathbuf).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn update_image(
+    db: State<'_, Db>,
+    paths: State<'_, AppPaths>,
+    id: i64,
+    updates: Value,
+) -> Result<Value, String> {
+    let conn = db.0.lock().unwrap();
+    update_image::update_image(
+        &conn,
+        id,
+        &updates,
+        &paths.default_images_dir,
+        &paths.thumbs_dir,
+    )
+    .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn update_images(
+    db: State<'_, Db>,
+    image_ids: Vec<i64>,
+    updates: Value,
+) -> Result<i64, String> {
+    let conn = db.0.lock().unwrap();
+    update_image::update_images(&conn, &image_ids, &updates).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn rebuild_thumbnails(
+    db: State<'_, Db>,
+    paths: State<'_, AppPaths>,
+    all: bool,
+) -> Result<Value, String> {
+    let conn = db.0.lock().unwrap();
+    update_image::rebuild_thumbnails(&conn, &paths.thumbs_dir, all).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn scan_broken_records(db: State<'_, Db>, paths: State<'_, AppPaths>) -> Result<Value, String> {
+    let conn = db.0.lock().unwrap();
+    update_image::scan_broken_records(&conn, &paths.default_images_dir).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn delete_broken_records(
+    db: State<'_, Db>,
+    paths: State<'_, AppPaths>,
+    ids: Vec<i64>,
+) -> Result<Value, String> {
+    let conn = db.0.lock().unwrap();
+    update_image::delete_broken_records(&conn, &ids, &paths.default_images_dir, &paths.thumbs_dir)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn find_duplicates(db: State<'_, Db>, paths: State<'_, AppPaths>) -> Result<Value, String> {
+    let conn = db.0.lock().unwrap();
+    update_image::find_duplicates(&conn, &paths.default_images_dir).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn get_edits(db: State<'_, Db>, id: i64) -> Result<Value, String> {
+    let conn = db.0.lock().unwrap();
+    edit_session::get_edits(&conn, id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn save_edit_params(
+    db: State<'_, Db>,
+    id: i64,
+    params: Value,
+    command: Value,
+) -> Result<Value, String> {
+    let conn = db.0.lock().unwrap();
+    edit_session::save_edit_params(&conn, id, &params, Some(&command)).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn get_edit_history(db: State<'_, Db>, id: i64) -> Result<Vec<Value>, String> {
+    let conn = db.0.lock().unwrap();
+    edit_session::get_edit_history(&conn, id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn edit_cancel(id: String) -> Value {
+    let _ = id;
+    serde_json::json!({ "ok": true })
+}
+
+/// normalizeBase 等价：自动转正 + alpha 源写 PNG，其余 JPEG q92；缓存于 thumbs/edit-{id}-base.*
+fn ensure_edit_base(
+    paths: &AppPaths,
+    id: i64,
+    src: &Path,
+) -> Result<(std::path::PathBuf, u32, u32), String> {
+    use image::GenericImageView;
+    let (sw, sh, orientation, has_alpha) = thumbs::image_meta(src).map_err(|e| e.to_string())?;
+    let ext = if has_alpha { "png" } else { "jpg" };
+    let base = paths.thumbs_dir.join(format!("edit-{id}-base.{ext}"));
+    if base.exists() {
+        let dims = image::ImageReader::open(&base)
+            .map_err(|e| e.to_string())?
+            .with_guessed_format()
+            .map_err(|e| e.to_string())?
+            .into_dimensions()
+            .map_err(|e| e.to_string())?;
+        return Ok((base, dims.0, dims.1));
+    }
+    let img = image::ImageReader::open(src)
+        .map_err(|e| e.to_string())?
+        .with_guessed_format()
+        .map_err(|e| e.to_string())?
+        .decode()
+        .map_err(|e| e.to_string())?;
+    let oriented = thumbs::apply_orientation(&img, orientation);
+    let out = if has_alpha {
+        let mut buf = std::io::Cursor::new(Vec::new());
+        oriented
+            .write_to(&mut buf, image::ImageFormat::Png)
+            .map_err(|e| e.to_string())?;
+        buf.into_inner()
+    } else {
+        let rgba = oriented.to_rgba8();
+        let mut flat = image::RgbImage::new(rgba.width(), rgba.height());
+        for (x, y, px) in rgba.enumerate_pixels() {
+            let a = px.0[3] as f32 / 255.0;
+            let blend = |c: u8| (c as f32 * a + 255.0 * (1.0 - a)).round() as u8;
+            flat.put_pixel(
+                x,
+                y,
+                image::Rgb([blend(px.0[0]), blend(px.0[1]), blend(px.0[2])]),
+            );
+        }
+        let mut buf = std::io::Cursor::new(Vec::new());
+        let encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut buf, 92);
+        flat.write_with_encoder(encoder)
+            .map_err(|e| e.to_string())?;
+        buf.into_inner()
+    };
+    std::fs::create_dir_all(&paths.thumbs_dir).map_err(|e| e.to_string())?;
+    std::fs::write(&base, out).map_err(|e| e.to_string())?;
+    let (w, h) = if orientation >= 5 { (sh, sw) } else { (sw, sh) };
+    Ok((base, w, h))
+}
+
+#[tauri::command]
+pub fn edit_open(db: State<'_, Db>, paths: State<'_, AppPaths>, id: i64) -> Result<Value, String> {
+    let conn = db.0.lock().unwrap();
+    let img = images_query::get_image_by_id(&conn, id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "图片不存在".to_string())?;
+    let (base, w, h) = ensure_edit_base(&paths, id, Path::new(&img.filepath))?;
+    let edits = edit_session::get_edits(&conn, id).map_err(|e| e.to_string())?;
+    Ok(serde_json::json!({
+        "basePath": base.to_string_lossy(),
+        "width": w,
+        "height": h,
+        "edits": edits,
+        "filepath": img.filepath,
+    }))
+}
+
+#[tauri::command]
+pub fn edit_bake(
+    db: State<'_, Db>,
+    paths: State<'_, AppPaths>,
+    id: i64,
+    edits: Value,
+    spec: Value,
+    input_path: String,
+) -> Result<Value, String> {
+    let conn = db.0.lock().unwrap();
+    let (base, _, _) = ensure_edit_base(&paths, id, Path::new(&input_path))?;
+    edit_session::edit_bake(&conn, id, &edits, &spec, &base, &paths.thumbs_dir)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn edit_export(
+    db: State<'_, Db>,
+    paths: State<'_, AppPaths>,
+    id: i64,
+    edits: Value,
+    spec: Value,
+    input_path: String,
+    dest_dir: String,
+    output: Value,
+) -> Result<Value, String> {
+    let _ = id;
+    let (base, _, _) = ensure_edit_base(&paths, id, Path::new(&input_path))?;
+    if !Path::new(&dest_dir).exists() {
+        return Ok(serde_json::json!({ "error": "导出目录不存在" }));
+    }
+    let src_ext = Path::new(&input_path)
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| format!(".{}", e.to_ascii_lowercase()))
+        .unwrap_or_else(|| ".jpg".into());
+    let supported = ["jpeg", "png", "webp"];
+    let out_format = output
+        .get("format")
+        .and_then(|f| f.as_str())
+        .filter(|f| supported.contains(f))
+        .map(String::from)
+        .unwrap_or_else(|| match src_ext.as_str() {
+            ".png" => "png".into(),
+            ".webp" => "webp".into(),
+            _ => "jpeg".into(),
+        });
+    let ext = match out_format.as_str() {
+        "png" => ".png",
+        "webp" => ".webp",
+        _ => ".jpg",
+    };
+    let max_edge = output
+        .get("maxEdge")
+        .and_then(|v| v.as_f64())
+        .filter(|v| *v > 0.0)
+        .map(|v| v as u32);
+    let dims = image::ImageReader::open(&base)
+        .map_err(|e| e.to_string())?
+        .with_guessed_format()
+        .map_err(|e| e.to_string())?
+        .into_dimensions()
+        .map_err(|e| e.to_string())?;
+    let resize = max_edge
+        .filter(|m| dims.0.max(dims.1) > *m)
+        .map(|m| serde_json::json!({ "width": m, "height": m }));
+    let stem = Path::new(&input_path)
+        .file_stem()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "image".into());
+    let size_tag = if resize.is_some() {
+        format!("-{}px", max_edge.unwrap())
+    } else {
+        String::new()
+    };
+    let mut dest = Path::new(&dest_dir).join(format!("{stem}-edited{size_tag}{ext}"));
+    let mut n = 1u32;
+    while dest.exists() {
+        dest = Path::new(&dest_dir).join(format!("{stem}-edited{size_tag}_{n}{ext}"));
+        n += 1;
+    }
+    let mut spec = spec.clone();
+    let quality = output
+        .get("quality")
+        .and_then(|v| v.as_f64())
+        .filter(|q| *q > 0.0)
+        .map(|q| q.round().clamp(1.0, 100.0) as i64);
+    let encode = spec
+        .as_object_mut()
+        .ok_or_else(|| "spec 非对象".to_string())?
+        .entry("encode")
+        .or_insert_with(|| serde_json::json!({}));
+    let encode_obj = encode
+        .as_object_mut()
+        .ok_or_else(|| "spec.encode 非对象".to_string())?;
+    let mut encode_params = encode_obj
+        .get("params")
+        .cloned()
+        .unwrap_or_else(|| serde_json::json!({}));
+    encode_params["format"] = Value::String(out_format.clone());
+    if let Some(q) = quality {
+        encode_params["quality"] = Value::from(q);
+    }
+    if let Some(r) = resize {
+        encode_params["resize"] = r;
+    }
+    encode_obj["params"] = encode_params;
+
+    match executor::render_spec_to_file(&spec, Path::new(&base), &dest) {
+        Ok(out) => Ok(serde_json::json!({
+            "ok": true,
+            "path": dest.to_string_lossy(),
+            "width": out.width,
+            "height": out.height,
+        })),
+        Err(e) => Ok(serde_json::json!({ "error": format!("导出失败：{}", e) })),
+    }
 }
 
 #[tauri::command]

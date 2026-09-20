@@ -126,3 +126,12 @@
   磁盘-DB 双回滚）。import_images/rename_image 命令 + 接缝。测试 4 个（真实 JPEG 夹具）。
   vitest golden 像素比对移交 cargo 门禁 golden_audit（基线已属 Rust 执行器），vitest 保留
   spec 快照与结构断言；cargo 70/70 + golden 门禁；vitest 961/961。对等度：29/58 通道。
+- 17:10-18:20 R22 多 agent 集成：3 个并行 agent 完成 4 大内核——
+  A scan.rs/exif_read.rs（目录扫描/导入收集/NEF 配对 + EXIF 18 字段/taken_at，16 测试）；
+  B edit_session.rs（getEdits/saveEdits/editBake/editExport/editHistory，saveEditedImage
+  原子替换+回滚铁律直译，11 测试）；C update_image.rs（updateImage 日期移动+白名单/
+  rebuild 缩略图/损坏记录扫描删除/重复查找，10 测试）。三 agent 并行 cargo 排队互不冲突。
+  命令层集成 19 个命令（含 edit_open normalizeBase 等价、edit_export 命名循环、saveEdits）。
+  cargo 108/108；golden 门禁全绿；vitest 961/961。对等度：45/58 通道。
+  剩余：对话框/openPath/backupDatabase（插件轮）、toFileUrl/asset 协议、syncCameraFolder/
+  setImagesRoot、编辑渲染进度事件（事件系统）。
