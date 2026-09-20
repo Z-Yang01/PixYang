@@ -296,3 +296,13 @@
   import_one 落库），共享库的回填标记已被 Electron 启动消耗，重复移植属防御性冗余；
   若未来出现纯 Tauri 新库且确有历史数据，再按需补。
   验证：cargo 126/126 + golden 门禁 ✅；vitest 969/969 ✅；typecheck ✅；lint 0 error ✅。
+
+- 2026-09-21 07:15-07:30 R34（夜间自动化第十一轮）编辑打开时清理烘焙残留 temp（64/64 维持）：
+  Electron openEditSession 会在打开编辑器时清掉上次烘焙中断的残留 temp（a-temp.jpg/png/webp
+  三变体），且托管记录同名的文件绝不误删；Tauri edit_open 无此步——崩溃中断的烘焙会在图片
+  目录永久留 temp 垃圾。修复：edit_session_snapshot 镜像该清理（COLLATE NOCASE 围栏查
+  images.filepath，非托管才删）；同函数顺带补上 Electron 有而 Rust 漏掉的 hidden 拒编辑
+  守卫（Ok({error:"隐藏的 NEF 记录不支持编辑"})，镜像契约）。测试 +2（残留清理生效、
+  托管同名保留）。启动时的全库 stale 清理（Electron 800ms 后台）未移植：打开时清理已覆盖
+  常见路径，避免 Tauri setup 阶段引入后台任务，记录为已知取舍。
+  验证：cargo 128/128 + golden 门禁 ✅；vitest 969/969 ✅；typecheck ✅；lint 0 error ✅。

@@ -628,6 +628,30 @@ pub(crate) fn edit_session_snapshot(
     let img = images_query::get_image_by_id(conn, id)
         .map_err(|e| e.to_string())?
         .ok_or_else(|| "图片不存在".to_string())?;
+    if img.hidden.unwrap_or(0) != 0 {
+        return Ok(serde_json::json!({ "error": "隐藏的 NEF 记录不支持编辑" }));
+    }
+    // 清理上次烘焙中断的残留 temp（各格式变体）；托管记录同名的文件不是残留，绝不删
+    //（镜像 Electron openEditSession）
+    if let (Some(dir), Some(stem)) = (
+        Path::new(&img.filepath).parent(),
+        Path::new(&img.filepath).file_stem(),
+    ) {
+        for variant in [".jpg", ".png", ".webp"] {
+            let stale = dir.join(format!("{}-temp{}", stem.to_string_lossy(), variant));
+            if !stale.exists() {
+                continue;
+            }
+            let managed: Result<i64, rusqlite::Error> = conn.query_row(
+                "SELECT 1 FROM images WHERE filepath = ?1 COLLATE NOCASE",
+                [stale.to_string_lossy()],
+                |r| r.get(0),
+            );
+            if let Err(rusqlite::Error::QueryReturnedNoRows) = managed {
+                let _ = std::fs::remove_file(&stale);
+            }
+        }
+    }
     let (base, w, h) = ensure_edit_base(thumbs_dir, id, Path::new(&img.filepath))?;
     let saved_edits = edit_session::get_edits(conn, id).map_err(|e| e.to_string())?;
     let src_ext = Path::new(&img.filepath)
@@ -1129,6 +1153,40 @@ mod edit_cmd_tests {
             )
             .unwrap();
         assert_eq!(stored, "");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+    #[test]
+    fn 快照清理上次烘焙残留temp() {
+        let dir = fresh_dir("open_stale");
+        let src = make_jpeg(&dir, "a.jpg", 40, 30, 100);
+        let conn = edit_mem_db();
+        let id = seed_record(&conn, "a.jpg", &src);
+        std::fs::write(dir.join("a-temp.png"), b"stale").unwrap();
+        std::fs::write(dir.join("a-temp.webp"), b"stale").unwrap();
+        let thumbs = dir.join("thumbs");
+        std::fs::create_dir_all(&thumbs).unwrap();
+        let snap = edit_session_snapshot(&conn, &thumbs, id).unwrap();
+        assert!(snap.get("error").is_none(), "{snap}");
+        assert!(!dir.join("a-temp.png").exists());
+        assert!(!dir.join("a-temp.webp").exists());
+        assert!(src.exists());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn 快照不删托管同名temp() {
+        let dir = fresh_dir("open_managed");
+        let src = make_jpeg(&dir, "a.jpg", 40, 30, 100);
+        let conn = edit_mem_db();
+        let id = seed_record(&conn, "a.jpg", &src);
+        let managed_lookalike = dir.join("a-temp.jpg");
+        std::fs::write(&managed_lookalike, b"real record").unwrap();
+        let _ = seed_record(&conn, "a-temp.jpg", &managed_lookalike);
+        let thumbs = dir.join("thumbs");
+        std::fs::create_dir_all(&thumbs).unwrap();
+        let snap = edit_session_snapshot(&conn, &thumbs, id).unwrap();
+        assert!(snap.get("error").is_none(), "{snap}");
+        assert!(managed_lookalike.exists(), "托管同名文件绝不能被当残留删除");
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
