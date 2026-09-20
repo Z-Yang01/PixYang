@@ -52,7 +52,7 @@ export function onThumbnailsReady(cb) {
 }
 
 export function onOrientationBackfill(cb) {
-  return listen('orientation-backfill', cb);
+  return listen('orientation-backfill-done', cb);
 }
 
 export function onEditPreviewReady(cb) {

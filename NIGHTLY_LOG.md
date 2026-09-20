@@ -284,3 +284,15 @@
   刚烘焙的图。测试策略：线程胶水层不另测（依赖的 rebuild 内核已有测试覆盖），
   烘焙后网格缩略图自动恢复标注「需人工复核」。
   验证：cargo 126/126 + golden 门禁 ✅；vitest 969/969 ✅；typecheck ✅；lint 0 error ✅。
+
+- 2026-09-21 06:45-07:00 R33（夜间自动化第十轮）事件通道名审计（64/64 维持）：
+  对 preload（契约层）/ tauriBridgeMedia（Tauri 监听层）/ progress.rs（Tauri 发射层）
+  三层的全部 5 个事件通道名做逐一核对：rebuild-progress / import-progress /
+  thumbnails-ready / edit-preview-ready 四个一致；orientation-backfill 两层都写成了
+  "orientation-backfill"，而 preload 实际监听 "orientation-backfill-done"（R23 立常量时
+  凭猜测命名、测试也钉住了错名）。修正 progress.rs 常量 + 对齐测试 + 前端监听名。
+  同轮决策记录：Electron 启动时的 orientation 一次性回填（backfillOrientations，settings
+  标记防重入）不移植——Tauri 导入链路本就持久化 orientation（scan.rs EXIF 采集 +
+  import_one 落库），共享库的回填标记已被 Electron 启动消耗，重复移植属防御性冗余；
+  若未来出现纯 Tauri 新库且确有历史数据，再按需补。
+  验证：cargo 126/126 + golden 门禁 ✅；vitest 969/969 ✅；typecheck ✅；lint 0 error ✅。
