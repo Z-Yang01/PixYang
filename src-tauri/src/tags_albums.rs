@@ -498,3 +498,114 @@ mod write_tests {
         assert!(get_album_images(&conn, a.id).unwrap().is_empty());
     }
 }
+
+// ── 预设通道（迁移接缝 4c）：params 以原样 JSON 存取，upgradeEdits 规整由前端桥接层负责 ──
+
+#[derive(Debug, Serialize)]
+pub struct PresetRow {
+    pub id: i64,
+    pub name: String,
+    pub params: serde_json::Value,
+    #[serde(rename = "createdAt")]
+    pub created_at: Option<String>,
+}
+
+pub fn get_presets(conn: &Connection) -> rusqlite::Result<Vec<PresetRow>> {
+    let mut stmt = conn.prepare(
+        "SELECT id, name, params_json, created_at FROM presets ORDER BY created_at DESC",
+    )?;
+    let rows = stmt.query_map([], |r| {
+        let raw: String = r.get(2)?;
+        let params = serde_json::from_str(&raw).unwrap_or(serde_json::Value::Null);
+        Ok(PresetRow {
+            id: r.get(0)?,
+            name: r.get(1)?,
+            params,
+            created_at: r.get(3)?,
+        })
+    })?;
+    rows.collect()
+}
+
+/// 镜像 JS 返回契约：`{id, name} | {error: '同名预设已存在'}`
+pub fn create_preset(
+    conn: &Connection,
+    name: &str,
+    params: &serde_json::Value,
+) -> rusqlite::Result<serde_json::Value> {
+    let clean_name: String = name.chars().take(100).collect();
+    let json = serde_json::to_string(params).unwrap_or_default();
+    let inserted = conn.execute(
+        "INSERT INTO presets (name, params_json) VALUES (?1, ?2)",
+        rusqlite::params![clean_name, json],
+    );
+    if inserted.is_err() {
+        return Ok(serde_json::json!({ "error": "同名预设已存在" }));
+    }
+    let id: i64 = conn.query_row(
+        "SELECT id FROM presets WHERE name = ?1",
+        [&clean_name],
+        |r| r.get(0),
+    )?;
+    Ok(serde_json::json!({ "id": id, "name": clean_name }))
+}
+
+pub fn delete_preset(conn: &Connection, id: i64) -> rusqlite::Result<()> {
+    conn.execute("DELETE FROM presets WHERE id = ?1", [id])?;
+    Ok(())
+}
+
+#[cfg(test)]
+mod preset_tests {
+    use super::*;
+
+    fn mem_db() -> Connection {
+        let conn = crate::images_query::tests::mem_db();
+        conn.execute_batch(
+            "CREATE TABLE presets (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL UNIQUE,
+                params_json TEXT NOT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            );",
+        )
+        .unwrap();
+        conn
+    }
+
+    #[test]
+    fn 建预设_重名错误_名字截断百字() {
+        let conn = mem_db();
+        let p = serde_json::json!({ "exposure": 1 });
+        let row = create_preset(&conn, "p1", &p).unwrap();
+        assert_eq!(row["id"], 1);
+        assert_eq!(row["name"], "p1");
+        let dup = create_preset(&conn, "p1", &p).unwrap();
+        assert_eq!(dup["error"], "同名预设已存在");
+        let long: String = "长".repeat(150);
+        create_preset(&conn, &long, &p).unwrap();
+        let list = get_presets(&conn).unwrap();
+        let row = list.iter().find(|r| r.name.starts_with('长')).unwrap();
+        assert_eq!(row.name.chars().count(), 100);
+    }
+
+    #[test]
+    fn 列表按创建时间倒序_坏json参数置空() {
+        let conn = mem_db();
+        conn.execute_batch(
+            "INSERT INTO presets (name, params_json, created_at) VALUES
+               ('old', '{\"a\":1}', '2026-01-01'),
+               ('new', '{\"b\":2}', '2026-09-01'),
+               ('bad', 'not-json', '2026-05-01');",
+        )
+        .unwrap();
+        let list = get_presets(&conn).unwrap();
+        assert_eq!(list.len(), 3);
+        assert_eq!(list[0].name, "new");
+        assert_eq!(list[0].params["b"], 2);
+        assert_eq!(list[1].name, "bad");
+        assert!(list[1].params.is_null());
+        delete_preset(&conn, list[0].id).unwrap();
+        assert_eq!(get_presets(&conn).unwrap().len(), 2);
+    }
+}

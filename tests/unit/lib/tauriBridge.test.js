@@ -2,6 +2,9 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { isTauriAvailable, tauriInvoke, tauriApi } from '@/lib/tauriBridge';
 import api from '@/lib/api';
+import editSchema from '../../../shared/editSchema.cjs';
+
+const { upgradeEdits } = editSchema;
 
 afterEach(() => {
   delete window.__TAURI__;
@@ -120,5 +123,22 @@ describe('tauriBridge', () => {
     expect(invoke).toHaveBeenCalledWith('delete_image', { id: 7 });
     await api.batchDeleteImages([1, 2]);
     expect(invoke).toHaveBeenCalledWith('batch_delete_images', { ids: [1, 2] });
+  });
+
+  it('接缝 4c：presets 通道走 Rust 命令且桥接层做 upgradeEdits 规整', async () => {
+    const invoke = vi.fn().mockResolvedValue([
+      { id: 1, name: 'p', params: { exposure: 1 }, createdAt: '2026-09-20' },
+    ]);
+    window.__TAURI__ = { core: { invoke } };
+    const list = await api.getPresets();
+    expect(invoke).toHaveBeenCalledWith('get_presets', {});
+    expect(list[0].params).toEqual(upgradeEdits({ exposure: 1 }));
+    await api.createPreset('p', { exposure: 2 });
+    expect(invoke).toHaveBeenCalledWith('create_preset', {
+      name: 'p',
+      params: upgradeEdits({ exposure: 2 }),
+    });
+    await api.deletePreset(1);
+    expect(invoke).toHaveBeenCalledWith('delete_preset', { id: 1 });
   });
 });

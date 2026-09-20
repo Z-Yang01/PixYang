@@ -49,6 +49,9 @@ pub fn run() {
             commands::get_album_images,
             commands::delete_image,
             commands::batch_delete_images,
+            commands::get_presets,
+            commands::create_preset,
+            commands::delete_preset,
         ])
         .run(tauri::generate_context!())
         .expect("tauri 启动失败");

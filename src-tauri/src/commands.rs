@@ -258,6 +258,30 @@ pub fn get_album_images(
     tags_albums::get_album_images(&conn, album_id).map_err(|e| e.to_string())
 }
 
+// ── 预设通道（迁移接缝 4c：params 原样 JSON 存取，upgradeEdits 在前端桥接层） ──
+
+#[tauri::command]
+pub fn get_presets(db: State<'_, Db>) -> Result<Vec<tags_albums::PresetRow>, String> {
+    let conn = db.0.lock().unwrap();
+    tags_albums::get_presets(&conn).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn create_preset(
+    db: State<'_, Db>,
+    name: String,
+    params: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    let conn = db.0.lock().unwrap();
+    tags_albums::create_preset(&conn, &name, &params).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn delete_preset(db: State<'_, Db>, id: i64) -> Result<(), String> {
+    let conn = db.0.lock().unwrap();
+    tags_albums::delete_preset(&conn, id).map_err(|e| e.to_string())
+}
+
 // ── 删除通道（迁移接缝 4b） ──
 
 #[tauri::command]

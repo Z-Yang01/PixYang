@@ -1,6 +1,9 @@
 // Tauri 后端探测与调用封装。Electron 运行时 window.__TAURI__ 不存在，
 // isTauriAvailable() 为 false，api.js 维持原 IPC 路径；桥仅供逐步迁移的调用方使用。
 // 依赖 tauri.conf.json 的 app.withGlobalTauri 注入的全局，不新增 npm 依赖。
+import editSchema from '../../shared/editSchema.cjs';
+
+const { upgradeEdits } = editSchema;
 
 function tauriCore() {
   if (typeof window === 'undefined') return null;
@@ -47,4 +50,19 @@ export const tauriApi = {
   removeFromAlbum: (albumId, imageId) => tauriInvoke('remove_from_album', { albumId, imageId }),
   deleteImage: (id) => tauriInvoke('delete_image', { id }),
   batchDeleteImages: (ids) => tauriInvoke('batch_delete_images', { ids }),
+  // presets：upgradeEdits 规整在桥接层（与 Electron 主进程同用 shared/editSchema.cjs）
+  getPresets: async () => {
+    const rows = await tauriInvoke('get_presets');
+    return rows.map((r) => {
+      let params = null;
+      try {
+        params = upgradeEdits(r.params);
+      } catch {
+        params = null;
+      }
+      return { id: r.id, name: r.name, params, createdAt: r.createdAt };
+    });
+  },
+  createPreset: (name, params) => tauriInvoke('create_preset', { name, params: upgradeEdits(params) }),
+  deletePreset: (id) => tauriInvoke('delete_preset', { id }),
 };
