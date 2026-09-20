@@ -82,4 +82,17 @@ describe('tauriBridge', () => {
     expect(window.pixyang.getImages).toHaveBeenCalledWith({ date: '2026-09' });
     expect(invoke).not.toHaveBeenCalled();
   });
+
+  it('接缝 2：标签/相册只读通道走 Rust 命令', async () => {
+    const invoke = vi.fn().mockResolvedValue([]);
+    window.__TAURI__ = { core: { invoke } };
+    await api.getTags();
+    expect(invoke).toHaveBeenCalledWith('get_tags', {});
+    await api.getAlbums();
+    expect(invoke).toHaveBeenCalledWith('get_albums', {});
+    await api.getImageTags(7);
+    expect(invoke).toHaveBeenCalledWith('get_image_tags', { imageId: 7 });
+    await api.getBatchImageTags([1, 2, 3]);
+    expect(invoke).toHaveBeenCalledWith('get_batch_image_tags', { imageIds: [1, 2, 3] });
+  });
 });
