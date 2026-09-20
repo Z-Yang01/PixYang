@@ -67,6 +67,11 @@ mod tests {
         items.iter().map(|s| s.to_string()).collect()
     }
 
+    // taken 键与实现同约定：join 后小写。测试不硬编码分隔符，保持平台中性
+    fn key(dir: &Path, name: &str) -> String {
+        dir.join(name).to_string_lossy().to_lowercase()
+    }
+
     fn no_disk(_: &Path) -> bool {
         false
     }
@@ -99,9 +104,9 @@ mod tests {
 
     #[test]
     fn 占用时派生_1_2_递增() {
-        let dir = Path::new(r"E:\pics");
-        let taken = taken_set(&[r"e:\pics\a.jpg", r"e:\pics\a_1.jpg"]);
-        let disk = |p: &Path| p.ends_with("a_2.jpg");
+        let dir = Path::new("E:\\pics");
+        let taken = taken_set(&[&key(dir, "a.jpg"), &key(dir, "a_1.jpg")]);
+        let disk = |p: &Path| p.to_string_lossy().ends_with("a_2.jpg");
         assert_eq!(
             generate_unique_filename(dir, "a.jpg", &taken, disk),
             "a_3.jpg"
@@ -110,8 +115,8 @@ mod tests {
 
     #[test]
     fn taken_查找前先小写完整路径() {
-        let dir = Path::new(r"E:\pics");
-        let taken = taken_set(&[r"e:\pics\dsc_1.jpg"]);
+        let dir = Path::new("E:\\pics");
+        let taken = taken_set(&[&key(dir, "dsc_1.jpg")]);
         assert_eq!(
             generate_unique_filename(dir, "dsc_1.jpg", &taken, no_disk),
             "dsc_1_1.jpg"
@@ -120,8 +125,8 @@ mod tests {
 
     #[test]
     fn 无扩展名文件同样派生_1() {
-        let dir = Path::new(r"E:\pics");
-        let taken = taken_set(&[r"e:\pics\a"]);
+        let dir = Path::new("E:\\pics");
+        let taken = taken_set(&[&key(dir, "a")]);
         assert_eq!(generate_unique_filename(dir, "a", &taken, no_disk), "a_1");
     }
 }

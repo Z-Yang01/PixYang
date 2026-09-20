@@ -34,3 +34,6 @@
 - 12:10-12:16 R6 完成：src/main.rs 桌面入口（pixyang::run()，release 隐控制台）+
   capabilities/default.json（core:default 基线）+ CI 新增 rust job（windows，先 vite build
   再 cargo test，rust-cache 加速）。cargo 18/18；vitest 952/952。
+- 12:18-12:24 R7 完成：naming 测试平台中性化（taken 键用与实现相同的 join+lowercase 变换构造，
+  disk 谓词改字符串后缀，解除 win32 分隔符耦合，为 ubuntu cargo 铺路）+ AGENTS.md 登记
+  src-tauri 结构与 Rust/Tauri 约定。cargo 18/18；vitest 952/952；AGENTS.md prettier 通过。
