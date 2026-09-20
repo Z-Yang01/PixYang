@@ -63,10 +63,15 @@ export const tauriApi = {
       return { id: r.id, name: r.name, params, createdAt: r.createdAt };
     });
   },
-  createPreset: (name, params) => tauriInvoke('create_preset', { name, params: upgradeEdits(params) }),
+  createPreset: (name, params) =>
+    tauriInvoke('create_preset', { name, params: upgradeEdits(params) }),
   deletePreset: (id) => tauriInvoke('delete_preset', { id }),
   getImagesRoot: () => tauriInvoke('get_images_root'),
   getDatabasePath: () => tauriInvoke('get_database_path'),
   getAllImageIds: (options) => tauriInvoke('get_all_image_ids', { query: options ?? {} }),
   fileExists: (filepath) => tauriInvoke('file_exists', { filepath }),
+  makeThumbnailTiers: (filepath, thumbsDir, id) =>
+    tauriInvoke('make_thumbnail_tiers', { filepath, thumbsDir, id }),
+  extractNefPreview: (nefPath, outPath) => tauriInvoke('extract_nef_preview', { nefPath, outPath }),
+  imageMeta: (filepath) => tauriInvoke('image_meta', { filepath }),
 };

@@ -126,9 +126,9 @@ describe('tauriBridge', () => {
   });
 
   it('接缝 4c：presets 通道走 Rust 命令且桥接层做 upgradeEdits 规整', async () => {
-    const invoke = vi.fn().mockResolvedValue([
-      { id: 1, name: 'p', params: { exposure: 1 }, createdAt: '2026-09-20' },
-    ]);
+    const invoke = vi
+      .fn()
+      .mockResolvedValue([{ id: 1, name: 'p', params: { exposure: 1 }, createdAt: '2026-09-20' }]);
     window.__TAURI__ = { core: { invoke } };
     const list = await api.getPresets();
     expect(invoke).toHaveBeenCalledWith('get_presets', {});
@@ -153,5 +153,23 @@ describe('tauriBridge', () => {
     expect(invoke).toHaveBeenCalledWith('get_all_image_ids', { query: { tagId: 3 } });
     await api.fileExists('E:/managed/a.jpg');
     expect(invoke).toHaveBeenCalledWith('file_exists', { filepath: 'E:/managed/a.jpg' });
+  });
+
+  it('接缝 5 阶段 1：缩略图/NEF/meta 命令参数形状', async () => {
+    const invoke = vi.fn().mockResolvedValue({ width: 100, height: 60 });
+    window.__TAURI__ = { core: { invoke } };
+    await tauriApi.makeThumbnailTiers('E:/p/a.jpg', 'E:/thumbs', 9);
+    expect(invoke).toHaveBeenCalledWith('make_thumbnail_tiers', {
+      filepath: 'E:/p/a.jpg',
+      thumbsDir: 'E:/thumbs',
+      id: 9,
+    });
+    await tauriApi.extractNefPreview('E:/p/a.nef', 'E:/thumbs/a.jpg');
+    expect(invoke).toHaveBeenCalledWith('extract_nef_preview', {
+      nefPath: 'E:/p/a.nef',
+      outPath: 'E:/thumbs/a.jpg',
+    });
+    await tauriApi.imageMeta('E:/p/a.jpg');
+    expect(invoke).toHaveBeenCalledWith('image_meta', { filepath: 'E:/p/a.jpg' });
   });
 });

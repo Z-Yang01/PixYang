@@ -6,6 +6,7 @@ use crate::image_group::{self, ImportFile, PairGroup};
 use crate::images_query;
 use crate::naming;
 use crate::tags_albums;
+use crate::thumbs;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::path::Path;
@@ -316,6 +317,40 @@ pub fn file_exists(
 ) -> Result<bool, String> {
     let conn = db.0.lock().unwrap();
     db::managed_file_exists(&conn, &paths.default_images_dir, &filepath).map_err(|e| e.to_string())
+}
+
+// ── 缩略图内核命令（迁移接缝 5 阶段 1） ──
+
+#[tauri::command]
+pub fn make_thumbnail_tiers(
+    filepath: String,
+    thumbs_dir: String,
+    id: i64,
+) -> Result<(u32, u32), String> {
+    let (small, medium, w, h) =
+        thumbs::generate_tiers(std::path::Path::new(&filepath)).map_err(|e| e.to_string())?;
+    let dir = std::path::Path::new(&thumbs_dir);
+    std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+    std::fs::write(dir.join(format!("{id}.jpg")), small).map_err(|e| e.to_string())?;
+    std::fs::write(dir.join(format!("{id}_s.jpg")), medium).map_err(|e| e.to_string())?;
+    Ok((w, h))
+}
+
+#[tauri::command]
+pub fn extract_nef_preview(
+    nef_path: String,
+    out_path: String,
+) -> Result<Option<(u32, u32)>, String> {
+    thumbs::extract_nef_preview(
+        std::path::Path::new(&nef_path),
+        std::path::Path::new(&out_path),
+    )
+    .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn image_meta(filepath: String) -> Result<(u32, u32, u32, bool), String> {
+    thumbs::image_meta(std::path::Path::new(&filepath)).map_err(|e| e.to_string())
 }
 
 #[tauri::command]

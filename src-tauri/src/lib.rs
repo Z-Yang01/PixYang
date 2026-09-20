@@ -5,6 +5,7 @@ pub mod image_group;
 pub mod images_query;
 pub mod naming;
 pub mod tags_albums;
+pub mod thumbs;
 
 use tauri::Manager;
 
@@ -60,6 +61,9 @@ pub fn run() {
             commands::get_database_path,
             commands::get_all_image_ids,
             commands::file_exists,
+            commands::make_thumbnail_tiers,
+            commands::extract_nef_preview,
+            commands::image_meta,
         ])
         .run(tauri::generate_context!())
         .expect("tauri 启动失败");
