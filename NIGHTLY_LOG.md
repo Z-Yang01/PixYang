@@ -242,3 +242,14 @@
   事件形态需点击级冒烟最终确认（两种形态桥内均已兼容）。
   验证：vitest 969/969 ✅；typecheck ✅；lint 0 error ✅；Rust 零改动免 cargo。
   【通道对齐 64/64 全通】下一步=人工 tauri 全功能点击级冒烟，通过后安排 Electron 删除轮。
+
+- 2026-09-21 04:45-05:00 R29（夜间自动化第六轮）加固测试：R26/R27 新增 Rust 内核补测（64/64 维持）：
+  通道层已全通，按预案转测试加固。两处此前只有前端 mock 覆盖的 Rust 契约补上真实内核测试：
+  1) edit_open 提取内核 edit_session_snapshot（命令层瘦身），+2 测试：完整契约字段
+     （id/source/hasNef/savedEdits/basePath/宽高）与图片不存在报错；
+  2) edit_render_preview 提取内核 render_edit_preview_kernel（emit 留命令层），+4 测试：
+     首次渲染落盘+写回 thumbnail_edit_path+缓存元数据（editVersion=1/render-rust-1）、
+     版本未变命中缓存跳过渲染（坏 spec 不报错即证短路）、版本前进后缓存失效（坏 spec 报
+     渲染失败）、渲染失败不写缩略图路径。ensure_edit_base 参数改为 thumbs_dir 便于内核直测。
+  夹具自建（edit_session 测试助手未标 pub，避免越权改动既有模块）。
+  验证：cargo 125/125 + golden 门禁 ✅；vitest 969/969 ✅；typecheck ✅；lint 0 error ✅。

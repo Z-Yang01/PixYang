@@ -566,13 +566,13 @@ pub fn edit_cancel(id: String) -> Value {
 
 /// normalizeBase 等价：自动转正 + alpha 源写 PNG，其余 JPEG q92；缓存于 thumbs/edit-{id}-base.*
 fn ensure_edit_base(
-    paths: &AppPaths,
+    thumbs_dir: &Path,
     id: i64,
     src: &Path,
 ) -> Result<(std::path::PathBuf, u32, u32), String> {
     let (sw, sh, orientation, has_alpha) = thumbs::image_meta(src).map_err(|e| e.to_string())?;
     let ext = if has_alpha { "png" } else { "jpg" };
-    let base = paths.thumbs_dir.join(format!("edit-{id}-base.{ext}"));
+    let base = thumbs_dir.join(format!("edit-{id}-base.{ext}"));
     if base.exists() {
         let dims = image::ImageReader::open(&base)
             .map_err(|e| e.to_string())?
@@ -613,20 +613,23 @@ fn ensure_edit_base(
             .map_err(|e| e.to_string())?;
         buf.into_inner()
     };
-    std::fs::create_dir_all(&paths.thumbs_dir).map_err(|e| e.to_string())?;
+    std::fs::create_dir_all(thumbs_dir).map_err(|e| e.to_string())?;
     std::fs::write(&base, out).map_err(|e| e.to_string())?;
     let (w, h) = if orientation >= 5 { (sh, sw) } else { (sw, sh) };
     Ok((base, w, h))
 }
 
-#[tauri::command]
-pub fn edit_open(db: State<'_, Db>, paths: State<'_, AppPaths>, id: i64) -> Result<Value, String> {
-    let conn = db.0.lock().unwrap();
-    let img = images_query::get_image_by_id(&conn, id)
+// 编辑会话快照（契约镜像 Electron openEditSession 成功返回）
+pub(crate) fn edit_session_snapshot(
+    conn: &rusqlite::Connection,
+    thumbs_dir: &Path,
+    id: i64,
+) -> Result<Value, String> {
+    let img = images_query::get_image_by_id(conn, id)
         .map_err(|e| e.to_string())?
         .ok_or_else(|| "图片不存在".to_string())?;
-    let (base, w, h) = ensure_edit_base(&paths, id, Path::new(&img.filepath))?;
-    let saved_edits = edit_session::get_edits(&conn, id).map_err(|e| e.to_string())?;
+    let (base, w, h) = ensure_edit_base(thumbs_dir, id, Path::new(&img.filepath))?;
+    let saved_edits = edit_session::get_edits(conn, id).map_err(|e| e.to_string())?;
     let src_ext = Path::new(&img.filepath)
         .extension()
         .and_then(|e| e.to_str())
@@ -644,35 +647,38 @@ pub fn edit_open(db: State<'_, Db>, paths: State<'_, AppPaths>, id: i64) -> Resu
     }))
 }
 
-// 编辑预览缩略图（镜像 Electron edit-preview-ready 链路）：spec 已由桥内按 400 长边构建代理，
-// 渲染/缓存元数据/写库/发事件在此闭环；渲染失败不影响已保存的编辑参数
 #[tauri::command]
-pub fn edit_render_preview(
-    db: State<'_, Db>,
-    paths: State<'_, AppPaths>,
-    app: AppHandle,
+pub fn edit_open(db: State<'_, Db>, paths: State<'_, AppPaths>, id: i64) -> Result<Value, String> {
+    let conn = db.0.lock().unwrap();
+    edit_session_snapshot(&conn, &paths.thumbs_dir, id)
+}
+
+// 编辑预览缩略图（镜像 Electron edit-preview-ready 链路）：spec 已由桥内按 400 长边构建代理，
+// 渲染/缓存元数据/写库在内核闭环，命令层只补事件；渲染失败不影响已保存的编辑参数
+pub(crate) fn render_edit_preview_kernel(
+    conn: &rusqlite::Connection,
+    thumbs_dir: &Path,
     id: i64,
-    spec: Value,
-    input_path: String,
+    spec: &Value,
+    input_path: &Path,
 ) -> Result<Value, String> {
     const RENDER_VERSION: &str = "render-rust-1";
-    let conn = db.0.lock().unwrap();
-    let img = images_query::get_image_by_id(&conn, id)
+    let img = images_query::get_image_by_id(conn, id)
         .map_err(|e| e.to_string())?
         .ok_or_else(|| "图片不存在".to_string())?;
     if img.hidden.unwrap_or(0) != 0 {
         return Ok(serde_json::json!({ "error": "隐藏的 NEF 记录不支持编辑预览" }));
     }
     let edits_version = || -> Result<i64, String> {
-        Ok(edit_session::get_edits(&conn, id)
+        Ok(edit_session::get_edits(conn, id)
             .map_err(|e| e.to_string())?
             .get("version")
             .and_then(|v| v.as_i64())
             .unwrap_or(0))
     };
     let version_before = edits_version()?;
-    let (base, _, _) = ensure_edit_base(&paths, id, Path::new(&input_path))?;
-    let preview = paths.thumbs_dir.join(format!("edit-{id}.jpg"));
+    let (base, _, _) = ensure_edit_base(thumbs_dir, id, input_path)?;
+    let preview = thumbs_dir.join(format!("edit-{id}.jpg"));
     let preview_meta = PathBuf::from(format!("{}.meta.json", preview.to_string_lossy()));
     if preview.exists() {
         let cached = std::fs::read_to_string(&preview_meta)
@@ -687,7 +693,7 @@ pub fn edit_render_preview(
             return Ok(serde_json::json!({ "path": preview.to_string_lossy() }));
         }
     }
-    if let Err(e) = executor::render_spec_to_file(&spec, &base, &preview) {
+    if let Err(e) = executor::render_spec_to_file(spec, &base, &preview) {
         return Ok(serde_json::json!({ "error": format!("渲染失败：{e}") }));
     }
     if edits_version()? == version_before {
@@ -704,12 +710,39 @@ pub fn edit_render_preview(
         "UPDATE images SET thumbnail_edit_path = ?1 WHERE id = ?2",
         rusqlite::params![preview.to_string_lossy(), id],
     );
-    progress::emit_progress(
-        &app,
-        progress::EDIT_PREVIEW_READY,
-        serde_json::json!({ "id": id, "path": preview.to_string_lossy() }),
-    );
     Ok(serde_json::json!({ "path": preview.to_string_lossy() }))
+}
+
+#[tauri::command]
+pub fn edit_render_preview(
+    db: State<'_, Db>,
+    paths: State<'_, AppPaths>,
+    app: AppHandle,
+    id: i64,
+    spec: Value,
+    input_path: String,
+) -> Result<Value, String> {
+    let conn = db.0.lock().unwrap();
+    let result = render_edit_preview_kernel(
+        &conn,
+        &paths.thumbs_dir,
+        id,
+        &spec,
+        Path::new(&input_path),
+    );
+    if let Some(path) = result
+        .as_ref()
+        .ok()
+        .and_then(|v| v.get("path"))
+        .and_then(|p| p.as_str())
+    {
+        progress::emit_progress(
+            &app,
+            progress::EDIT_PREVIEW_READY,
+            serde_json::json!({ "id": id, "path": path }),
+        );
+    }
+    result
 }
 
 #[tauri::command]
@@ -722,7 +755,7 @@ pub fn edit_bake(
     input_path: String,
 ) -> Result<Value, String> {
     let conn = db.0.lock().unwrap();
-    let (base, _, _) = ensure_edit_base(&paths, id, Path::new(&input_path))?;
+    let (base, _, _) = ensure_edit_base(&paths.thumbs_dir, id, Path::new(&input_path))?;
     edit_session::edit_bake(&conn, id, &edits, &spec, &base, &paths.thumbs_dir)
         .map_err(|e| e.to_string())
 }
@@ -739,7 +772,7 @@ pub fn edit_export(
     output: Value,
 ) -> Result<Value, String> {
     let _ = id;
-    let (base, _, _) = ensure_edit_base(&paths, id, Path::new(&input_path))?;
+    let (base, _, _) = ensure_edit_base(&paths.thumbs_dir, id, Path::new(&input_path))?;
     if !Path::new(&dest_dir).exists() {
         return Ok(serde_json::json!({ "error": "导出目录不存在" }));
     }
@@ -876,4 +909,211 @@ pub fn get_import_dates(db: State<'_, Db>) -> Result<Vec<images_query::ImportDat
 pub fn get_stats(db: State<'_, Db>) -> Result<images_query::StatsRow, String> {
     let conn = db.0.lock().unwrap();
     images_query::get_stats(&conn).map_err(|e| e.to_string())
+}
+
+
+#[cfg(test)]
+mod edit_cmd_tests {
+    use super::*;
+    use image::{DynamicImage, RgbaImage};
+    use std::path::PathBuf;
+
+    fn edit_mem_db() -> rusqlite::Connection {
+        let conn = crate::images_query::tests::mem_db();
+        conn.execute_batch(
+            "DROP TABLE IF EXISTS edits;
+             DROP TABLE IF EXISTS edit_history;
+             CREATE TABLE edits (
+               image_id INTEGER PRIMARY KEY REFERENCES images(id) ON DELETE CASCADE,
+               version INTEGER NOT NULL DEFAULT 0,
+               params_json TEXT NOT NULL,
+               updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+             );
+             CREATE TABLE edit_history (
+               image_id INTEGER NOT NULL REFERENCES images(id) ON DELETE CASCADE,
+               step INTEGER NOT NULL,
+               command_json TEXT NOT NULL,
+               PRIMARY KEY (image_id, step)
+             );",
+        )
+        .unwrap();
+        let has_col: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM pragma_table_info('images') WHERE name = 'thumbnail_edit_path'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        if has_col == 0 {
+            conn.execute(
+                "ALTER TABLE images ADD COLUMN thumbnail_edit_path TEXT DEFAULT ''",
+                [],
+            )
+            .unwrap();
+        }
+        conn
+    }
+
+    fn fresh_dir(tag: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("pixyang_cmd_{tag}"));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    fn make_jpeg(dir: &Path, name: &str, w: u32, h: u32, gray: u8) -> PathBuf {
+        let img = DynamicImage::from(RgbaImage::from_fn(w, h, |_, _| {
+            image::Rgba([gray, gray, 60, 255])
+        }));
+        let p = dir.join(name);
+        img.save(&p).unwrap();
+        p
+    }
+
+    fn seed_record(conn: &rusqlite::Connection, filename: &str, filepath: &Path) -> i64 {
+        conn.execute(
+            "INSERT INTO images (filename, filepath, import_date, format, width, height)
+             VALUES (?1, ?2, '2026-09-21', 'jpg', 10, 8)",
+            rusqlite::params![filename, filepath.to_string_lossy()],
+        )
+        .unwrap();
+        conn.last_insert_rowid()
+    }
+
+    fn valid_spec() -> Value {
+        serde_json::json!({
+            "specVersion": 1,
+            "stages": [
+                { "kind": "exposure", "params": { "ev": 0.5 } },
+                { "kind": "encode", "params": { "format": "jpeg", "quality": 80 } }
+            ]
+        })
+    }
+
+    #[test]
+    fn edit_snapshot_返回完整契约() {
+        let dir = fresh_dir("open");
+        let src = make_jpeg(&dir, "a.jpg", 40, 30, 100);
+        let conn = edit_mem_db();
+        let id = seed_record(&conn, "a.jpg", &src);
+        conn.execute(
+            "UPDATE images SET raw_path = ?1 WHERE id = ?2",
+            rusqlite::params![dir.join("a.nef").to_string_lossy(), id],
+        )
+        .unwrap();
+        let thumbs = dir.join("thumbs");
+        std::fs::create_dir_all(&thumbs).unwrap();
+        let snap = edit_session_snapshot(&conn, &thumbs, id).unwrap();
+        assert_eq!(snap["id"], id);
+        assert_eq!(snap["source"], "jpg");
+        assert_eq!(snap["hasNef"], true);
+        assert_eq!(snap["width"], 40);
+        assert_eq!(snap["height"], 30);
+        assert!(snap["savedEdits"].is_null());
+        let base = snap["basePath"].as_str().unwrap();
+        assert!(base.contains(&format!("edit-{id}-base")));
+        assert!(Path::new(base).exists());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn edit_snapshot_图片不存在_报错() {
+        let conn = edit_mem_db();
+        let dir = fresh_dir("open_missing");
+        std::fs::create_dir_all(&dir).unwrap();
+        let err = edit_session_snapshot(&conn, &dir, 999).unwrap_err();
+        assert_eq!(err, "图片不存在");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn 预览渲染_落盘_写回缩略图路径与缓存元数据() {
+        let dir = fresh_dir("preview_ok");
+        let src = make_jpeg(&dir, "a.jpg", 40, 30, 100);
+        let conn = edit_mem_db();
+        let id = seed_record(&conn, "a.jpg", &src);
+        let thumbs = dir.join("thumbs");
+        std::fs::create_dir_all(&thumbs).unwrap();
+        edit_session::save_edit_params(&conn, id, &serde_json::json!({ "exposure": 0.5 }), None)
+            .unwrap();
+        let result = render_edit_preview_kernel(&conn, &thumbs, id, &valid_spec(), &src).unwrap();
+        let preview = thumbs.join(format!("edit-{id}.jpg"));
+        assert_eq!(result["path"].as_str().unwrap(), preview.to_string_lossy());
+        assert!(preview.exists());
+        let stored: String = conn
+            .query_row(
+                "SELECT thumbnail_edit_path FROM images WHERE id = ?1",
+                [id],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(stored.as_str(), preview.to_string_lossy());
+        let meta =
+            std::fs::read_to_string(thumbs.join(format!("edit-{id}.jpg.meta.json"))).unwrap();
+        let meta: Value = serde_json::from_str(&meta).unwrap();
+        assert_eq!(meta["editVersion"], 1);
+        assert_eq!(meta["renderVersion"], "render-rust-1");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn 预览渲染_版本未变命中缓存跳过渲染() {
+        let dir = fresh_dir("preview_cache");
+        let src = make_jpeg(&dir, "a.jpg", 40, 30, 100);
+        let conn = edit_mem_db();
+        let id = seed_record(&conn, "a.jpg", &src);
+        let thumbs = dir.join("thumbs");
+        std::fs::create_dir_all(&thumbs).unwrap();
+        edit_session::save_edit_params(&conn, id, &serde_json::json!({ "exposure": 0.5 }), None)
+            .unwrap();
+        render_edit_preview_kernel(&conn, &thumbs, id, &valid_spec(), &src).unwrap();
+        let cached = thumbs.join(format!("edit-{id}.jpg"));
+        let bytes = std::fs::read(&cached).unwrap();
+        let broken_spec = serde_json::json!({ "specVersion": 1 });
+        let result = render_edit_preview_kernel(&conn, &thumbs, id, &broken_spec, &src).unwrap();
+        assert_eq!(result["path"].as_str().unwrap(), cached.to_string_lossy());
+        assert_eq!(std::fs::read(&cached).unwrap(), bytes);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn 预览渲染_版本前进后缓存失效() {
+        let dir = fresh_dir("preview_stale");
+        let src = make_jpeg(&dir, "a.jpg", 40, 30, 100);
+        let conn = edit_mem_db();
+        let id = seed_record(&conn, "a.jpg", &src);
+        let thumbs = dir.join("thumbs");
+        std::fs::create_dir_all(&thumbs).unwrap();
+        edit_session::save_edit_params(&conn, id, &serde_json::json!({ "exposure": 0.5 }), None)
+            .unwrap();
+        render_edit_preview_kernel(&conn, &thumbs, id, &valid_spec(), &src).unwrap();
+        edit_session::save_edit_params(&conn, id, &serde_json::json!({ "exposure": 1.5 }), None)
+            .unwrap();
+        let broken_spec = serde_json::json!({ "specVersion": 1 });
+        let result = render_edit_preview_kernel(&conn, &thumbs, id, &broken_spec, &src).unwrap();
+        assert!(result["error"].as_str().unwrap_or("").starts_with("渲染失败"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn 预览渲染_失败不写缩略图路径() {
+        let dir = fresh_dir("preview_fail");
+        let src = make_jpeg(&dir, "a.jpg", 40, 30, 100);
+        let conn = edit_mem_db();
+        let id = seed_record(&conn, "a.jpg", &src);
+        let thumbs = dir.join("thumbs");
+        std::fs::create_dir_all(&thumbs).unwrap();
+        let broken_spec = serde_json::json!({ "specVersion": 1 });
+        let result = render_edit_preview_kernel(&conn, &thumbs, id, &broken_spec, &src).unwrap();
+        assert!(result["error"].as_str().unwrap_or("").starts_with("渲染失败"));
+        let stored: String = conn
+            .query_row(
+                "SELECT thumbnail_edit_path FROM images WHERE id = ?1",
+                [id],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(stored, "");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }
