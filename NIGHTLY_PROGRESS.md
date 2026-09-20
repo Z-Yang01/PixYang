@@ -1,8 +1,10 @@
 # NIGHTLY_PROGRESS — Rust/Tauri 结构推进
 
+状态：**已收尾（2026-09-20 11:47）**。会话在 03:29 槽间休眠中被中断，恢复时已过 08:10/08:55 停止线，
+按硬性规则停止，共完成 3 轮。下一窗口可直接从「下一步」清单继续。
+
 分支：`auto/nightly/pixyang-rust-tauri-20260920-0114`（基线 optimize/architecture + wip 6d20c40）
-停止条件：本地时间 >= 08:10 停开新轮；任何情况 08:55 停止；最多 10 轮。
-约束：CARGO_BUILD_JOBS=1 / cargo test --jobs 1 / vitest --maxWorkers=2；单轮 ≤3-5 文件、净变更 <200 行。
+提交链：6d20c40 wip → 65e3ff7 R1 → 018752e R2 → b164a7c R3 → 09fde04 最终日志
 
 ## 总体路线（渐进式，不做大爆炸迁移）
 
