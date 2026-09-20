@@ -49,6 +49,21 @@ impl Db {
         let rows = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?;
         rows.collect()
     }
+
+    /// 对象形态（镜像 JS getAllSettings 的 {key: value}），命令层直接序列化
+    pub fn get_all_settings_map(
+        &self,
+    ) -> Result<std::collections::BTreeMap<String, String>, rusqlite::Error> {
+        let conn = self.0.lock().unwrap();
+        let mut stmt = conn.prepare("SELECT key, value FROM settings")?;
+        let rows = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?;
+        let mut map = std::collections::BTreeMap::new();
+        for row in rows {
+            let (k, v) = row?;
+            map.insert(k, v);
+        }
+        Ok(map)
+    }
 }
 
 fn ensure_settings_table(conn: &Connection) -> Result<(), rusqlite::Error> {

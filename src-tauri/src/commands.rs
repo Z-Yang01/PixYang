@@ -13,7 +13,7 @@ use crate::tags_albums;
 use crate::thumbs;
 use crate::update_image;
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde_json::{json, Value};
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use tauri::{AppHandle, State};
@@ -142,8 +142,13 @@ pub fn set_setting(db: State<'_, Db>, key: String, value: String) -> Result<(), 
 }
 
 #[tauri::command]
-pub fn get_settings(db: State<'_, Db>) -> Result<Vec<(String, String)>, String> {
-    db.get_all_settings().map_err(|e| e.to_string())
+pub fn get_settings(db: State<'_, Db>) -> Result<Value, String> {
+    let map = db.get_all_settings_map().map_err(|e| e.to_string())?;
+    Ok(Value::Object(
+        map.into_iter()
+            .map(|(k, v)| (k, Value::String(v)))
+            .collect(),
+    ))
 }
 
 // ── 标签/相册只读通道（迁移接缝 2） ──
@@ -734,12 +739,10 @@ pub fn batch_delete_images(
 // ── 图片列表查询通道（迁移接缝 3） ──
 
 #[tauri::command]
-pub fn get_images(
-    db: State<'_, Db>,
-    query: images_query::ImageQuery,
-) -> Result<(Vec<images_query::ImageRow>, i64), String> {
+pub fn get_images(db: State<'_, Db>, query: images_query::ImageQuery) -> Result<Value, String> {
     let conn = db.0.lock().unwrap();
-    images_query::get_images(&conn, &query).map_err(|e| e.to_string())
+    let (rows, total) = images_query::get_images(&conn, &query).map_err(|e| e.to_string())?;
+    Ok(json!({ "images": rows, "total": total }))
 }
 
 #[tauri::command]
