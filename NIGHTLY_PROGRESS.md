@@ -27,7 +27,7 @@
 | src-tauri/src/error.rs | —（错误类型，待首个文件操作命令引入时建） | 未开始 |
 | **接缝 1：settings** | getSetting/setSetting/getSettings → rusqlite 同库读写 | ✅ R8 完成（db.rs 3 测试 + api.js TAURI_SEAMS 分发） |
 | **接缝 2：tags/albums 只读** | getTags/getAlbums/getImageTags/getBatchImageTags | ✅ R9 完成（tags_albums.rs 4 测试，SQL 逐字镜像） |
-| 接缝 3：图片列表查询 | getImages/getStats/getImportDates | 未开始 |
+| **接缝 3：图片列表查询** | getImages/getImage/getImportDates/getStats | ✅ R10 完成（images_query.rs 9 测试，动态查询全语义镜像） |
 | 接缝 4：文件操作 | 导入/删除/重命名（磁盘 I/O + DB 事务，需 error.rs） | 未开始 |
 | 接缝 5：缩略图/渲染 | sharp→Rust 等价或 sidecar 方案（golden 锁定，最高风险） | 未开始 |
 | Electron 删除 | 前置条件：接缝 1-5 全部切换 + tauri dev 全功能冒烟 | **阻塞中（对等未达）** |
