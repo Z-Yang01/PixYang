@@ -98,3 +98,9 @@
   PNG eXIf 块取放（手写 CRC32，IHDR 后插入）/ relay_exif 按源格式分派（跨格式原样返回）+
   relay_exif_files 文件便捷封装。4 测试（含熵区伪造段、跨格式、往返 CRC 校验）。
   cargo 53/53；clippy 干净。无前端接线（阶段3 saveEditedImage 平移时的内部依赖）。
+- 15:35-16:00 R18 接缝5 阶段3-1（渲染像素内核平移）：render.rs 直译 shared 六内核
+  （饱和度 luma-mix/暗角椭圆衰减/颜色分级真亮度加权/HSL 8 色相带/蒙版 radial+linear+range/
+  曲线 LUT rgb+通道复合）——测试策略为 node 跑真实 shared 函数生成对拍向量
+  （tests/render_vectors.json，8 组确定性输入输出），Rust 测试逐字节断言：**8/8 一次全过**，
+  平移零偏差。参数走 serde_json::Value 镜像 JS 动态归一化（含 `|| 0`/clamp/截断语义）。
+  cargo 61/61。剩：执行器装配（仿射累积/几何/编码/EXIF 回接）→ golden 重锁。

@@ -5,6 +5,7 @@ pub mod exif_relay;
 pub mod image_group;
 pub mod images_query;
 pub mod naming;
+pub mod render;
 pub mod tags_albums;
 pub mod thumbs;
 
