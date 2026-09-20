@@ -25,7 +25,18 @@
 | src/lib/tauriBridge.js | window.__TAURI__ 探测/调用封装 | ✅ R5，6 测试 |
 | CI rust job | windows：vite build → cargo test --jobs 1 | ✅ R6 |
 | src-tauri/src/error.rs | —（错误类型，待首个文件操作命令引入时建） | 未开始 |
-| 更多命令移植 | 缩略图路径推导、日期移动语义、metadata 读取 | 未开始 |
+| **接缝 1：settings** | getSetting/setSetting/getSettings → rusqlite 同库读写 | ✅ R8 完成（db.rs 3 测试 + api.js TAURI_SEAMS 分发） |
+| 接缝 2：tags/albums 只读通道 | getTags/getAlbums 等 | 未开始 |
+| 接缝 3：图片列表查询 | getImages/getStats/getImportDates | 未开始 |
+| 接缝 4：文件操作 | 导入/删除/重命名（磁盘 I/O + DB 事务，需 error.rs） | 未开始 |
+| 接缝 5：缩略图/渲染 | sharp→Rust 等价或 sidecar 方案（golden 锁定，最高风险） | 未开始 |
+| Electron 删除 | 前置条件：接缝 1-5 全部切换 + tauri dev 全功能冒烟 | **阻塞中（对等未达）** |
+
+## 接缝迁移状态总览
+
+- 已接通：settings 三通道（Tauri 运行时走 Rust+rusqlite 同库；Electron 运行时行为不变）。
+- 未接通：其余 55 个通道仍仅 Electron。**应用整体仍在 Electron 上运行**；
+  全部接缝完成并经 tauri dev 全功能冒烟后，才可执行 Electron 删除。
 
 ## 下一步（按优先级）
 
