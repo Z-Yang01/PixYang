@@ -263,3 +263,12 @@
   （镜像 Electron cleanupEditDerivedFiles 文件侧；记录行随五表事务删除，无需重置列）。
   测试 +1（文件清理_含编辑派生文件：六类文件全部清除、缺失静默跳过）。
   验证：cargo 126/126 + golden 门禁 ✅；vitest 969/969 ✅；typecheck ✅；lint 0 error ✅。
+
+- 2026-09-21 05:45-06:00 R31（夜间自动化第八轮）烘焙后清底图缓存（64/64 维持）：
+  副作用清理审计第二处命中——Tauri edit_bake 只清编辑预览+meta，不清编辑底图缓存
+  （edit-{id}-base.jpg/png）；而 ensure_edit_base 按存在性无条件复用底图，烘焙后原图像素
+  已替换，残留底图会让同一图片的下一次编辑从烘焙前像素开始。Electron 侧正是为此在烘焙后
+  整组清除（main.js cleanupEditBaseCache 注释）。修复：bake 清理组扩展两个底图变体；
+  既有 bake 测试扩展断言（底图 jpg/png 均被清除）。取消/删除路径无需处理：取消在 Tauri
+  无会话状态（底图与原像素一致可复用），删除侧 R30 已覆盖。
+  验证：cargo 126/126 + golden 门禁 ✅；vitest 969/969 ✅；typecheck ✅；lint 0 error ✅。

@@ -453,9 +453,13 @@ pub fn edit_bake(
         return Ok(saved);
     }
 
+    // 烘焙后原图已是新像素：预览与底图缓存必须整组清除（ensure_edit_base 按存在性复用，
+    // 残留底图会让下次编辑从烘焙前像素开始——镜像 Electron cleanupEditBaseCache）
     let preview = thumbs_dir.join(format!("edit-{id}.jpg"));
     let preview_meta = PathBuf::from(format!("{}.meta.json", preview.to_string_lossy()));
-    for p in [preview, preview_meta] {
+    let base_jpg = thumbs_dir.join(format!("edit-{id}-base.jpg"));
+    let base_png = thumbs_dir.join(format!("edit-{id}-base.png"));
+    for p in [preview, preview_meta, base_jpg, base_png] {
         if p.exists() {
             let _ = std::fs::remove_file(p);
         }
@@ -818,6 +822,10 @@ mod tests {
         let preview = thumbs_dir_edit_preview(&thumbs, id);
         std::fs::write(&preview, b"p").unwrap();
         std::fs::write(format!("{}.meta.json", preview.to_string_lossy()), b"m").unwrap();
+        let base_jpg = thumbs.join(format!("edit-{id}-base.jpg"));
+        let base_png = thumbs.join(format!("edit-{id}-base.png"));
+        std::fs::write(&base_jpg, b"b").unwrap();
+        std::fs::write(&base_png, b"b").unwrap();
 
         let spec = json!({
             "specVersion": 1,
@@ -847,6 +855,8 @@ mod tests {
         assert!(!thumbs.join(format!("{id}_s.jpg")).exists());
         assert!(!preview.exists());
         assert!(!Path::new(&format!("{}.meta.json", preview.to_string_lossy())).exists());
+        assert!(!base_jpg.exists());
+        assert!(!base_png.exists());
         let edits = get_edits(&conn, id).unwrap();
         assert_eq!(edits["params"]["basic"]["exposure"], 0);
         assert_eq!(edits["params"]["orientation"]["rotate"], 0);
