@@ -77,9 +77,9 @@ describe('tauriBridge', () => {
   it('api 未接缝通道不受 Tauri 接缝影响', async () => {
     const invoke = vi.fn();
     window.__TAURI__ = { core: { invoke } };
-    window.pixyang = { deleteImage: vi.fn().mockResolvedValue(true) };
-    await api.deleteImage(42);
-    expect(window.pixyang.deleteImage).toHaveBeenCalledWith(42);
+    window.pixyang = { importImages: vi.fn().mockResolvedValue([]) };
+    await api.importImages([]);
+    expect(window.pixyang.importImages).toHaveBeenCalledWith([]);
     expect(invoke).not.toHaveBeenCalled();
   });
 
@@ -111,5 +111,14 @@ describe('tauriBridge', () => {
     expect(invoke).toHaveBeenCalledWith('get_import_dates', {});
     await api.getStats();
     expect(invoke).toHaveBeenCalledWith('get_stats', {});
+  });
+
+  it('接缝 4b：删除通道走 Rust 命令', async () => {
+    const invoke = vi.fn().mockResolvedValue(null);
+    window.__TAURI__ = { core: { invoke } };
+    await api.deleteImage(7);
+    expect(invoke).toHaveBeenCalledWith('delete_image', { id: 7 });
+    await api.batchDeleteImages([1, 2]);
+    expect(invoke).toHaveBeenCalledWith('batch_delete_images', { ids: [1, 2] });
   });
 });

@@ -1,7 +1,7 @@
 // Tauri 命令壳：薄封装内核模块（naming/image_group），编排宿主关注点（磁盘 I/O、DTO）。
 // 命令不内嵌业务逻辑；错误统一 String（跨 IPC 序列化最简形态）。
 
-use crate::db::Db;
+use crate::db::{self, AppPaths, Db};
 use crate::image_group::{self, ImportFile, PairGroup};
 use crate::images_query;
 use crate::naming;
@@ -256,6 +256,28 @@ pub fn get_album_images(
 ) -> Result<Vec<images_query::ImageRow>, String> {
     let conn = db.0.lock().unwrap();
     tags_albums::get_album_images(&conn, album_id).map_err(|e| e.to_string())
+}
+
+// ── 删除通道（迁移接缝 4b） ──
+
+#[tauri::command]
+pub fn delete_image(
+    db: State<'_, Db>,
+    paths: State<'_, AppPaths>,
+    id: i64,
+) -> Result<Option<images_query::ImageRow>, String> {
+    let conn = db.0.lock().unwrap();
+    db::delete_image(&conn, id, &paths.thumbs_dir).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn batch_delete_images(
+    db: State<'_, Db>,
+    paths: State<'_, AppPaths>,
+    ids: Vec<i64>,
+) -> Result<Vec<images_query::ImageRow>, String> {
+    let conn = db.0.lock().unwrap();
+    db::batch_delete_images(&conn, &ids, &paths.thumbs_dir).map_err(|e| e.to_string())
 }
 
 // ── 图片列表查询通道（迁移接缝 3） ──

@@ -35,6 +35,8 @@ const TAURI_SEAMS = new Set([
   'deleteAlbum',
   'addToAlbum',
   'removeFromAlbum',
+  'deleteImage',
+  'batchDeleteImages',
 ]);
 
 const api = {

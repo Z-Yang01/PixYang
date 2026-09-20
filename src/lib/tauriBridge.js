@@ -45,4 +45,6 @@ export const tauriApi = {
   deleteAlbum: (id) => tauriInvoke('delete_album', { id }),
   addToAlbum: (albumId, imageIds) => tauriInvoke('add_to_album', { albumId, imageIds }),
   removeFromAlbum: (albumId, imageId) => tauriInvoke('remove_from_album', { albumId, imageId }),
+  deleteImage: (id) => tauriInvoke('delete_image', { id }),
+  batchDeleteImages: (ids) => tauriInvoke('batch_delete_images', { ids }),
 };

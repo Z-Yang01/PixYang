@@ -1,6 +1,7 @@
 // SQLite 内核：迁移窗口内与 Electron 共用同一库文件（userData/pixyang.db，WAL）。
 // 表结构由 Electron 侧 migrateSchema 拥有；这里只做 settings 读写，缺表时按同式补齐。
 
+use crate::error::PixError;
 use rusqlite::{Connection, OptionalExtension};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
@@ -79,6 +80,105 @@ pub fn default_db_path() -> PathBuf {
     PathBuf::from("pixyang.db")
 }
 
+/// 缩略图目录与 Electron userData/thumbnails 同位
+pub fn default_thumbnails_dir() -> PathBuf {
+    let mut base = default_db_path();
+    base.set_file_name("thumbnails");
+    base
+}
+
+/// 托管状态：连接 + 宿主派生路径（缩略图目录等）
+pub struct AppPaths {
+    pub thumbs_dir: PathBuf,
+}
+
+// ── 删除通道（迁移接缝 4b）：镜像 deleteImageRecord/deleteImageFiles/deleteImage/batchDeleteImages ──
+
+fn delete_image_record_statements(conn: &Connection, id: i64) -> rusqlite::Result<usize> {
+    let mut n = conn.execute("DELETE FROM image_tags WHERE image_id = ?1", [id])?;
+    n += conn.execute("DELETE FROM album_images WHERE image_id = ?1", [id])?;
+    n += conn.execute("DELETE FROM edits WHERE image_id = ?1", [id])?;
+    n += conn.execute("DELETE FROM edit_history WHERE image_id = ?1", [id])?;
+    n += conn.execute("DELETE FROM images WHERE id = ?1", [id])?;
+    Ok(n)
+}
+
+/// 事务内清理记录：image_tags/album_images/edits/edit_history/images 五表；图不存在返回 None
+pub fn delete_image_record(
+    conn: &Connection,
+    id: i64,
+) -> Result<Option<crate::images_query::ImageRow>, PixError> {
+    let img = crate::images_query::get_image_by_id(conn, id)?;
+    if img.is_none() {
+        return Ok(None);
+    }
+    let tx = conn.unchecked_transaction()?;
+    delete_image_record_statements(&tx, id)?;
+    tx.commit()?;
+    Ok(img)
+}
+
+/// 文件清理：原图 + 配对 NEF + 双档缩略图；单个失败吞掉继续（与 JS 同策略），不回滚记录删除
+pub fn delete_image_files(
+    filepath: Option<&str>,
+    raw_path: Option<&str>,
+    thumbs_dir: &Path,
+    id: i64,
+) {
+    for p in [filepath, raw_path].into_iter().flatten() {
+        let path = Path::new(p);
+        if path.exists() {
+            let _ = std::fs::remove_file(path);
+        }
+    }
+    for name in [format!("{id}.jpg"), format!("{id}_s.jpg")] {
+        let _ = std::fs::remove_file(thumbs_dir.join(name));
+    }
+}
+
+pub fn delete_image(
+    conn: &Connection,
+    id: i64,
+    thumbs_dir: &Path,
+) -> Result<Option<crate::images_query::ImageRow>, PixError> {
+    let img = delete_image_record(conn, id)?;
+    if let Some(img) = &img {
+        delete_image_files(
+            Some(img.filepath.as_str()),
+            img.raw_path.as_deref(),
+            thumbs_dir,
+            id,
+        );
+    }
+    Ok(img)
+}
+
+pub fn batch_delete_images(
+    conn: &Connection,
+    ids: &[i64],
+    thumbs_dir: &Path,
+) -> Result<Vec<crate::images_query::ImageRow>, PixError> {
+    let tx = conn.unchecked_transaction()?;
+    let mut results = Vec::new();
+    for id in ids {
+        let img = crate::images_query::get_image_by_id(conn, *id)?;
+        if let Some(img) = img {
+            delete_image_record_statements(&tx, *id)?;
+            results.push(img);
+        }
+    }
+    tx.commit()?;
+    for img in &results {
+        delete_image_files(
+            Some(img.filepath.as_str()),
+            img.raw_path.as_deref(),
+            thumbs_dir,
+            img.id,
+        );
+    }
+    Ok(results)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -117,6 +217,79 @@ mod tests {
         let db = Db::open(&dir.join("t.db")).unwrap();
         db.set_setting("k", "v").unwrap();
         assert_eq!(db.get_setting("k").unwrap().as_deref(), Some("v"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+}
+
+#[cfg(test)]
+mod delete_tests {
+    use super::*;
+    use crate::images_query::tests::mem_db as full_mem_db;
+
+    #[test]
+    fn 删除图片_五表清理_源文件与缩略图删除() {
+        let dir = std::env::temp_dir().join("pixyang_del_test");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("thumbs")).unwrap();
+        let f1 = dir.join("a.jpg");
+        let raw = dir.join("a.nef");
+        std::fs::write(&f1, b"x").unwrap();
+        std::fs::write(&raw, b"y").unwrap();
+
+        let conn = full_mem_db();
+        conn.execute_batch(&format!(
+            "CREATE TABLE edits (image_id INTEGER NOT NULL); CREATE TABLE edit_history (image_id INTEGER NOT NULL);
+             INSERT INTO images (id, filename, filepath, import_date, raw_path) VALUES (1, 'a.jpg', '{}', '2026-01-01', '{}');
+             INSERT INTO tags (id, name) VALUES (1, 't'); INSERT INTO image_tags VALUES (1, 1);
+             INSERT INTO albums (id, name) VALUES (1, 'al'); INSERT INTO album_images VALUES (1, 1, 0);
+             INSERT INTO edits (image_id) VALUES (1); INSERT INTO edit_history (image_id) VALUES (1);",
+            f1.to_string_lossy().replace("\\", "/"),
+            raw.to_string_lossy().replace("\\", "/")
+        ))
+        .unwrap();
+        std::fs::write(dir.join("thumbs").join("1.jpg"), b"t").unwrap();
+        std::fs::write(dir.join("thumbs").join("1_s.jpg"), b"t").unwrap();
+
+        let thumbs = dir.join("thumbs");
+        let img = delete_image(&conn, 1, &thumbs).unwrap().unwrap();
+        assert_eq!(img.id, 1);
+        assert!(!f1.exists());
+        assert!(!raw.exists());
+        assert!(!thumbs.join("1.jpg").exists());
+        assert!(!thumbs.join("1_s.jpg").exists());
+        let tag_count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM image_tags", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(tag_count, 0);
+        assert!(delete_image(&conn, 1, &thumbs).unwrap().is_none());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn 批量删除_缺失id跳过_仅删存在的() {
+        let dir = std::env::temp_dir().join("pixyang_bdel_test");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let conn = full_mem_db();
+        conn.execute_batch(&format!(
+            "CREATE TABLE edits (image_id INTEGER NOT NULL); CREATE TABLE edit_history (image_id INTEGER NOT NULL);
+             INSERT INTO images (id, filename, filepath, import_date) VALUES
+               (1, 'a.jpg', '{}', '2026-01-01'), (2, 'b.jpg', '{}', '2026-01-01');",
+            dir.join("a.jpg").to_string_lossy().replace("\\", "/"),
+            dir.join("b.jpg").to_string_lossy().replace("\\", "/")
+        ))
+        .unwrap();
+        std::fs::write(dir.join("a.jpg"), b"a").unwrap();
+        std::fs::write(dir.join("b.jpg"), b"b").unwrap();
+
+        let results = batch_delete_images(&conn, &[1, 999, 2], &dir).unwrap();
+        assert_eq!(results.len(), 2);
+        assert!(!dir.join("a.jpg").exists());
+        assert!(!dir.join("b.jpg").exists());
+        let left: i64 = conn
+            .query_row("SELECT COUNT(*) FROM images", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(left, 0);
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

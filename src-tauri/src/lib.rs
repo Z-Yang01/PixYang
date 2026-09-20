@@ -1,5 +1,6 @@
 pub mod commands;
 pub mod db;
+pub mod error;
 pub mod image_group;
 pub mod images_query;
 pub mod naming;
@@ -16,6 +17,9 @@ pub fn run() {
             let database =
                 db::Db::open(&db::default_db_path()).map_err(|e| format!("数据库打开失败: {e}"))?;
             app.manage(database);
+            app.manage(db::AppPaths {
+                thumbs_dir: db::default_thumbnails_dir(),
+            });
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -43,6 +47,8 @@ pub fn run() {
             commands::add_to_album,
             commands::remove_from_album,
             commands::get_album_images,
+            commands::delete_image,
+            commands::batch_delete_images,
         ])
         .run(tauri::generate_context!())
         .expect("tauri 启动失败");
