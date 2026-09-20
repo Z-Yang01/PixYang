@@ -18,27 +18,39 @@
 
 | 模块 | 来源（JS 语义） | 状态 |
 |---|---|---|
-| src-tauri/src/naming.rs | electron/database.js 唯一命名（盘∪库查重）+ pairBase | ✅ R1 完成，6 测试 |
-| src-tauri/src/image_group.rs | importImages 分组（dirname::pairBase 键/插入序/raw_source 合成配对）+ 日期围栏 + 安全文件名 | ✅ R2 完成，10 测试 |
-| src-tauri/src/error.rs | —（错误类型，待文件操作模块引入时一并建） | 未开始 |
-| src-tauri tauri 依赖 + 命令壳 | —（首次编译重，单独一轮） | 未开始 |
-| src/lib/tauriBridge.js | window.__TAURI__ 全局探测封装 | 未开始 |
+| src-tauri/src/naming.rs | electron/database.js 唯一命名（盘∪库查重）+ pairBase | ✅ R1，6 测试；R7 平台中性化 |
+| src-tauri/src/image_group.rs | importImages 分组（dirname::pairBase 键/插入序/raw_source 合成配对）+ 日期围栏 + 安全文件名 | ✅ R2，10 测试 |
+| src-tauri/src/commands.rs | tauri 命令壳：unique_filename（真磁盘查重）/ group_import_files | ✅ R3，2 测试 |
+| src-tauri 脚手架 | tauri.conf.json（withGlobalTauri）+ build.rs + run() + main.rs + icons + capabilities | ✅ R4/R6 |
+| src/lib/tauriBridge.js | window.__TAURI__ 探测/调用封装 | ✅ R5，6 测试 |
+| CI rust job | windows：vite build → cargo test --jobs 1 | ✅ R6 |
+| src-tauri/src/error.rs | —（错误类型，待首个文件操作命令引入时建） | 未开始 |
+| 更多命令移植 | 缩略图路径推导、日期移动语义、metadata 读取 | 未开始 |
 
-## 轮次记录
+## 下一步（按优先级）
 
-### R1（01:14-01:18，用时 4 分钟）
-- src-tauri 零依赖骨架：Cargo.toml（pixyang lib，edition 2021）、src/lib.rs、src/naming.rs、.gitignore(/target)。
-- naming.rs：extname/basename_no_ext（镜像 node 语义：段首点不算扩展名、'a.'→'.'）、
-  pair_base（先剥真实扩展名再小写）、generate_unique_filename（小写全路径合并集∪磁盘注入谓词，
-  派生 `主名_N 扩展名` 从 1 起）。
-- 测试 6 例全过；期间修正一处测试数据错误（taken 集按契约存已小写键）。
-- 验证：cargo 6/6 ✅；vitest 946/946 ✅。
+1. 首个真实文件操作命令（如 copy_import_file）→ 引入 error.rs + tauri v2 权限细化。
+2. ubuntu cargo 覆盖（naming 已中性化；验证 image_group 的 dirname 分隔符断言后开 runner）。
+3. tauriBridge 与 api.js 的第一个真实接缝（某个纯查询类 IPC 走双后端）。
+4. `tauri dev` 冒烟（需 WebView2 运行时，跑之前先确认本机已装）。
 
-### R2（02:00-02:22，用时 22 分钟）
-- image_group.rs：ImportFile/PairGroup + group_import_files（镜像 JS 分组：键 = `dirname::pair_base`、
-  首次出现插入序、`.nef` 小写判定入 nef 槽、jpg 的 raw_source/raw_filename 合成配对且组内已有 nef 不覆盖）
-  + effective_import_date（^\d{4}-\d{2}-\d{2}$ 否则回退今天）+ safe_basename（剥末段拒 ''/'.'/'..'）
-  + dirname/basename（node 常用情形镜像）。
-- 镜像测试抓到两处移植错误并修复：扩展名漏 toLowerCase（.NEF 错入 jpg 槽，连带 3 例失败）、
-  日期正则横线索引写错（4 非 3）。
-- 验证：cargo 16/16 ✅；vitest 946/946 ✅。
+## 轮次记录（窗口外续作，2026-09-20 上午）
+
+### R4（11:50-11:59）
+- tauri.conf.json（withGlobalTauri=true、frontendDist=../dist）+ build.rs + lib.rs run()
+  （generate_handler! 编译期校验命令签名）。tauri-build 要求 Windows 资源图标 → 复用
+  build/icon.ico 到 src-tauri/icons/icon.ico。约束：generate_context! 编译期读 ../dist。
+- 验证：cargo 18/18 ✅；vitest 946/946 ✅。提交 2ae6649。
+
+### R5（12:03-12:07）
+- src/lib/tauriBridge.js：isTauriAvailable/tauriInvoke/tauriApi；Electron 运行时显式报错、
+  零 npm 依赖。+6 vitest。验证：vitest 952/952 ✅。提交 f944b63。
+
+### R6（12:10-12:16）
+- src/main.rs 桌面入口 + capabilities/default.json（core:default）+ CI `rust` job
+  （windows：vite build → cargo test，rust-cache）。提交 1401773。
+
+### R7（12:18-12:24）
+- naming 测试平台中性化（taken 键用同实现 join+lowercase 构造、disk 谓词字符串后缀）；
+  AGENTS.md 登记 src-tauri 目录结构与 Rust/Tauri 约定。
+- 验证：cargo 18/18 ✅；vitest 952/952 ✅；AGENTS.md prettier ✅。提交 6a3b3fe。
