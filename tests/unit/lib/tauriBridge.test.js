@@ -1,9 +1,11 @@
 // @vitest-environment happy-dom
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { isTauriAvailable, tauriInvoke, tauriApi } from '@/lib/tauriBridge';
+import api from '@/lib/api';
 
 afterEach(() => {
   delete window.__TAURI__;
+  delete window.pixyang;
 });
 
 describe('tauriBridge', () => {
@@ -50,5 +52,34 @@ describe('tauriBridge', () => {
     const files = [{ filename: 'a.jpg', filepath: 'E:/c/a.jpg' }];
     await tauriApi.groupImportFiles(files);
     expect(invoke).toHaveBeenCalledWith('group_import_files', { files });
+  });
+
+  it('api 设置通道在 Tauri 可用时走 Rust 命令', async () => {
+    const invoke = vi.fn().mockResolvedValue('dark');
+    window.__TAURI__ = { core: { invoke } };
+    window.pixyang = { getSetting: vi.fn() };
+    await expect(api.getSetting('theme')).resolves.toBe('dark');
+    expect(invoke).toHaveBeenCalledWith('get_setting', { key: 'theme' });
+    expect(window.pixyang.getSetting).not.toHaveBeenCalled();
+  });
+
+  it('api 设置通道在 Electron 运行时仍走 pixyang 桥', async () => {
+    window.pixyang = {
+      getSetting: vi.fn().mockResolvedValue('dark'),
+      setSetting: vi.fn().mockResolvedValue(undefined),
+    };
+    await expect(api.getSetting('theme')).resolves.toBe('dark');
+    expect(window.pixyang.getSetting).toHaveBeenCalledWith('theme');
+    await api.setSetting('theme', 'light');
+    expect(window.pixyang.setSetting).toHaveBeenCalledWith('theme', 'light');
+  });
+
+  it('api 其余通道不受 Tauri 接缝影响', async () => {
+    const invoke = vi.fn();
+    window.__TAURI__ = { core: { invoke } };
+    window.pixyang = { getImages: vi.fn().mockResolvedValue([]) };
+    await api.getImages({ date: '2026-09' });
+    expect(window.pixyang.getImages).toHaveBeenCalledWith({ date: '2026-09' });
+    expect(invoke).not.toHaveBeenCalled();
   });
 });

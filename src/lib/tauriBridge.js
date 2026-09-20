@@ -23,4 +23,7 @@ export const tauriApi = {
   uniqueFilename: (dir, name, taken = []) =>
     tauriInvoke('unique_filename', { args: { dir, name, taken } }),
   groupImportFiles: (files) => tauriInvoke('group_import_files', { files }),
+  getSettings: () => tauriInvoke('get_settings'),
+  getSetting: (key) => tauriInvoke('get_setting', { key }),
+  setSetting: (key, value) => tauriInvoke('set_setting', { key, value }),
 };

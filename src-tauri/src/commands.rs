@@ -1,11 +1,13 @@
 // Tauri 命令壳：薄封装内核模块（naming/image_group），编排宿主关注点（磁盘 I/O、DTO）。
 // 命令不内嵌业务逻辑；错误统一 String（跨 IPC 序列化最简形态）。
 
+use crate::db::Db;
 use crate::image_group::{self, ImportFile, PairGroup};
 use crate::naming;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::path::Path;
+use tauri::State;
 
 #[derive(Debug, Deserialize)]
 pub struct UniqueFilenameArgs {
@@ -116,4 +118,21 @@ mod tests {
         assert_eq!(out.len(), 1);
         assert!(out[0].jpg.is_some() && out[0].nef.is_some());
     }
+}
+
+// ── 设置通道（迁移接缝 1：与 Electron 读写同一 pixyang.db 的 settings 表） ──
+
+#[tauri::command]
+pub fn get_setting(db: State<'_, Db>, key: String) -> Result<Option<String>, String> {
+    db.get_setting(&key).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn set_setting(db: State<'_, Db>, key: String, value: String) -> Result<(), String> {
+    db.set_setting(&key, &value).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn get_settings(db: State<'_, Db>) -> Result<Vec<(String, String)>, String> {
+    db.get_all_settings().map_err(|e| e.to_string())
 }
