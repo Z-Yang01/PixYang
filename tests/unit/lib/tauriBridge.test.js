@@ -74,12 +74,12 @@ describe('tauriBridge', () => {
     expect(window.pixyang.setSetting).toHaveBeenCalledWith('theme', 'light');
   });
 
-  it('api 其余通道不受 Tauri 接缝影响', async () => {
+  it('api 未接缝通道不受 Tauri 接缝影响', async () => {
     const invoke = vi.fn();
     window.__TAURI__ = { core: { invoke } };
-    window.pixyang = { getImages: vi.fn().mockResolvedValue([]) };
-    await api.getImages({ date: '2026-09' });
-    expect(window.pixyang.getImages).toHaveBeenCalledWith({ date: '2026-09' });
+    window.pixyang = { deleteImage: vi.fn().mockResolvedValue(true) };
+    await api.deleteImage(42);
+    expect(window.pixyang.deleteImage).toHaveBeenCalledWith(42);
     expect(invoke).not.toHaveBeenCalled();
   });
 
@@ -94,5 +94,22 @@ describe('tauriBridge', () => {
     expect(invoke).toHaveBeenCalledWith('get_image_tags', { imageId: 7 });
     await api.getBatchImageTags([1, 2, 3]);
     expect(invoke).toHaveBeenCalledWith('get_batch_image_tags', { imageIds: [1, 2, 3] });
+  });
+
+  it('接缝 3：图片列表查询通道走 Rust 命令', async () => {
+    const invoke = vi.fn().mockResolvedValue({ images: [], total: 0 });
+    window.__TAURI__ = { core: { invoke } };
+    await api.getImages({ tagId: 9, sortBy: 'import_date' });
+    expect(invoke).toHaveBeenCalledWith('get_images', {
+      query: { tagId: 9, sortBy: 'import_date' },
+    });
+    await api.getImages();
+    expect(invoke).toHaveBeenCalledWith('get_images', { query: {} });
+    await api.getImage(5);
+    expect(invoke).toHaveBeenCalledWith('get_image', { id: 5 });
+    await api.getImportDates();
+    expect(invoke).toHaveBeenCalledWith('get_import_dates', {});
+    await api.getStats();
+    expect(invoke).toHaveBeenCalledWith('get_stats', {});
   });
 });

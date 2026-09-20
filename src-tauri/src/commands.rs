@@ -3,6 +3,7 @@
 
 use crate::db::Db;
 use crate::image_group::{self, ImportFile, PairGroup};
+use crate::images_query;
 use crate::naming;
 use crate::tags_albums;
 use serde::{Deserialize, Serialize};
@@ -168,4 +169,33 @@ pub fn get_batch_image_tags(
 pub fn get_albums(db: State<'_, Db>) -> Result<Vec<tags_albums::AlbumRow>, String> {
     let conn = db.0.lock().unwrap();
     tags_albums::get_albums(&conn).map_err(|e| e.to_string())
+}
+
+// ── 图片列表查询通道（迁移接缝 3） ──
+
+#[tauri::command]
+pub fn get_images(
+    db: State<'_, Db>,
+    query: images_query::ImageQuery,
+) -> Result<(Vec<images_query::ImageRow>, i64), String> {
+    let conn = db.0.lock().unwrap();
+    images_query::get_images(&conn, &query).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn get_image(db: State<'_, Db>, id: i64) -> Result<Option<images_query::ImageRow>, String> {
+    let conn = db.0.lock().unwrap();
+    images_query::get_image_by_id(&conn, id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn get_import_dates(db: State<'_, Db>) -> Result<Vec<images_query::ImportDateRow>, String> {
+    let conn = db.0.lock().unwrap();
+    images_query::get_import_dates(&conn).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn get_stats(db: State<'_, Db>) -> Result<images_query::StatsRow, String> {
+    let conn = db.0.lock().unwrap();
+    images_query::get_stats(&conn).map_err(|e| e.to_string())
 }

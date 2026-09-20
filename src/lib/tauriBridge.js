@@ -30,4 +30,8 @@ export const tauriApi = {
   getAlbums: () => tauriInvoke('get_albums'),
   getImageTags: (imageId) => tauriInvoke('get_image_tags', { imageId }),
   getBatchImageTags: (imageIds) => tauriInvoke('get_batch_image_tags', { imageIds }),
+  getImages: (options) => tauriInvoke('get_images', { query: options ?? {} }),
+  getImage: (id) => tauriInvoke('get_image', { id }),
+  getImportDates: () => tauriInvoke('get_import_dates'),
+  getStats: () => tauriInvoke('get_stats'),
 };

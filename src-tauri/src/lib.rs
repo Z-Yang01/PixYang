@@ -1,6 +1,7 @@
 pub mod commands;
 pub mod db;
 pub mod image_group;
+pub mod images_query;
 pub mod naming;
 pub mod tags_albums;
 
@@ -27,6 +28,10 @@ pub fn run() {
             commands::get_image_tags,
             commands::get_batch_image_tags,
             commands::get_albums,
+            commands::get_images,
+            commands::get_image,
+            commands::get_import_dates,
+            commands::get_stats,
         ])
         .run(tauri::generate_context!())
         .expect("tauri 启动失败");
