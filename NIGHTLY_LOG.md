@@ -457,3 +457,15 @@
   prettier 稳定形。全部门禁复跑：vitest 766/766、lint 0 error、typecheck ✅、vite build ✅、
   cargo 全量 144+golden_audit ✅（cases/render_vectors JSON 经 serde 语义解析，空白重排安全）；
   NSIS 安装包重打。此后新改动的格式合规由 format:check 强制。
+- 2026-09-21 23:40 R41 Rust 业务表 schema 自举 + 16 查询索引（优化建议 5·速度，实为 P0 补漏）：
+  R36 记忆断言「Rust 有完整 schema 自举」经核不实——tags_albums.rs/images_query.rs 的 CREATE
+  TABLE 全在 cfg(test) 夹具内，生产 Db::open 只建 settings；全新安装且无旧 Electron 库时
+  所有业务命令 no such table（老用户经 migrate_legacy_snapshot 带库进场故未暴露）。将 legacy
+  electron/database.js（git 90df410）migrateSchema 全量移植为 db.rs::ensure_business_schema：
+  8 业务表 IF NOT EXISTS、images 28 列终态收敛回迁（逐列容错+updated_at 按 created_at 回填）、
+  settings 11 默认值 INSERT OR IGNORE、16 索引（hidden 复合/NOCASE 表达式/日期排序表达式索引），
+  挂入 Db::open。日期翻页 ORDER BY 经 EXPLAIN QUERY PLAN 断言实证命中
+  idx_images_visible_sort_date（大库全表扫+临时排序 → 索引扫描，翻页提速核心）。
+  +3 cargo 测试（fresh 自举/legacy 回迁幂等/默认值不覆盖），cargo 146+golden_audit 全绿；
+  vitest 766/766、lint 0 error、vite build ✅；NSIS 安装包重打。base64 缩略图一次性迁移未移植
+  （现网库早已由 Electron 迁完，观察项）。

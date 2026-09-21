@@ -47,6 +47,7 @@ impl Db {
             conn.pragma_update(None, "journal_mode", "WAL")?;
         }
         ensure_settings_table(&conn)?;
+        ensure_business_schema(&conn)?;
         Ok(Self {
             write: std::sync::Arc::new(Mutex::new(conn)),
             path: stored,
@@ -119,6 +120,211 @@ fn ensure_settings_table(conn: &Connection) -> Result<(), rusqlite::Error> {
             value TEXT NOT NULL
         )",
     )
+}
+
+// 业务表唯一自举（R41）：R36 删 Electron 后旧 migrateSchema 失去承接方，全新安装曾因
+// no such table 全链路不可用。语义逐句移植自 electron/database.js（git 90df410）。
+const BUSINESS_TABLES: &str = "
+CREATE TABLE IF NOT EXISTS images (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  filename TEXT NOT NULL,
+  filepath TEXT NOT NULL UNIQUE,
+  original_path TEXT DEFAULT '',
+  raw_path TEXT DEFAULT '',
+  original_raw_path TEXT DEFAULT '',
+  hidden INTEGER DEFAULT 0,
+  orientation INTEGER DEFAULT 1,
+  rotation INTEGER DEFAULT 0,
+  flip_h INTEGER DEFAULT 0,
+  flip_v INTEGER DEFAULT 0,
+  import_date TEXT NOT NULL DEFAULT '',
+  taken_at TEXT DEFAULT '',
+  size INTEGER DEFAULT 0,
+  width INTEGER DEFAULT 0,
+  height INTEGER DEFAULT 0,
+  format TEXT DEFAULT '',
+  thumbnail TEXT DEFAULT '',
+  thumbnail_path TEXT DEFAULT '',
+  thumbnail_small_path TEXT DEFAULT '',
+  thumbnail_edit_path TEXT DEFAULT '',
+  rating INTEGER DEFAULT 0,
+  favorite INTEGER DEFAULT 0,
+  notes TEXT DEFAULT '',
+  hash TEXT DEFAULT '',
+  flag INTEGER DEFAULT 0,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS tags (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL UNIQUE,
+  color TEXT DEFAULT '#6366f1'
+);
+CREATE TABLE IF NOT EXISTS image_tags (
+  image_id INTEGER NOT NULL,
+  tag_id INTEGER NOT NULL,
+  PRIMARY KEY (image_id, tag_id),
+  FOREIGN KEY (image_id) REFERENCES images(id) ON DELETE CASCADE,
+  FOREIGN KEY (tag_id) REFERENCES tags(id) ON DELETE CASCADE
+);
+CREATE TABLE IF NOT EXISTS albums (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  description TEXT DEFAULT '',
+  cover_image_id INTEGER,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS album_images (
+  album_id INTEGER NOT NULL,
+  image_id INTEGER NOT NULL,
+  sort_order INTEGER DEFAULT 0,
+  PRIMARY KEY (album_id, image_id),
+  FOREIGN KEY (album_id) REFERENCES albums(id) ON DELETE CASCADE,
+  FOREIGN KEY (image_id) REFERENCES images(id) ON DELETE CASCADE
+);
+CREATE TABLE IF NOT EXISTS edits (
+  image_id INTEGER PRIMARY KEY REFERENCES images(id) ON DELETE CASCADE,
+  version INTEGER NOT NULL DEFAULT 0,
+  params_json TEXT NOT NULL,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS edit_history (
+  image_id INTEGER NOT NULL REFERENCES images(id) ON DELETE CASCADE,
+  step INTEGER NOT NULL,
+  command_json TEXT NOT NULL,
+  PRIMARY KEY (image_id, step)
+);
+CREATE TABLE IF NOT EXISTS presets (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL UNIQUE,
+  params_json TEXT NOT NULL,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+";
+
+// 旧库逐列回迁清单：任意旧形态 images 表收敛到终态 28 列（超集含 legacy
+// CREATE+migrateSchema 全部列）；updated_at 用可空+回填
+// （SQLite 禁止对有数据行的表添加非常量默认列）
+fn migrate_images_columns(conn: &Connection) {
+    let has_filename: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('images') WHERE name = 'filename'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap_or(0);
+    if has_filename == 0 {
+        return;
+    }
+    let cols: [(&str, &str); 23] = [
+        ("import_date", "ALTER TABLE images ADD COLUMN import_date TEXT DEFAULT ''"),
+        ("taken_at", "ALTER TABLE images ADD COLUMN taken_at TEXT DEFAULT ''"),
+        ("original_path", "ALTER TABLE images ADD COLUMN original_path TEXT DEFAULT ''"),
+        ("raw_path", "ALTER TABLE images ADD COLUMN raw_path TEXT DEFAULT ''"),
+        (
+            "original_raw_path",
+            "ALTER TABLE images ADD COLUMN original_raw_path TEXT DEFAULT ''",
+        ),
+        ("hidden", "ALTER TABLE images ADD COLUMN hidden INTEGER DEFAULT 0"),
+        ("orientation", "ALTER TABLE images ADD COLUMN orientation INTEGER DEFAULT 1"),
+        ("rotation", "ALTER TABLE images ADD COLUMN rotation INTEGER DEFAULT 0"),
+        ("flip_h", "ALTER TABLE images ADD COLUMN flip_h INTEGER DEFAULT 0"),
+        ("flip_v", "ALTER TABLE images ADD COLUMN flip_v INTEGER DEFAULT 0"),
+        ("updated_at", "ALTER TABLE images ADD COLUMN updated_at DATETIME"),
+        ("size", "ALTER TABLE images ADD COLUMN size INTEGER DEFAULT 0"),
+        ("width", "ALTER TABLE images ADD COLUMN width INTEGER DEFAULT 0"),
+        ("height", "ALTER TABLE images ADD COLUMN height INTEGER DEFAULT 0"),
+        ("format", "ALTER TABLE images ADD COLUMN format TEXT DEFAULT ''"),
+        ("thumbnail", "ALTER TABLE images ADD COLUMN thumbnail TEXT DEFAULT ''"),
+        ("thumbnail_path", "ALTER TABLE images ADD COLUMN thumbnail_path TEXT DEFAULT ''"),
+        (
+            "thumbnail_small_path",
+            "ALTER TABLE images ADD COLUMN thumbnail_small_path TEXT DEFAULT ''",
+        ),
+        (
+            "thumbnail_edit_path",
+            "ALTER TABLE images ADD COLUMN thumbnail_edit_path TEXT DEFAULT ''",
+        ),
+        ("rating", "ALTER TABLE images ADD COLUMN rating INTEGER DEFAULT 0"),
+        ("favorite", "ALTER TABLE images ADD COLUMN favorite INTEGER DEFAULT 0"),
+        ("notes", "ALTER TABLE images ADD COLUMN notes TEXT DEFAULT ''"),
+        ("hash", "ALTER TABLE images ADD COLUMN hash TEXT DEFAULT ''"),
+    ];
+    for (name, ddl) in cols {
+        let exists: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM pragma_table_info('images') WHERE name = ?1",
+                [name],
+                |r| r.get(0),
+            )
+            .unwrap_or(1);
+        if exists > 0 {
+            continue;
+        }
+        if let Err(e) = conn.execute_batch(ddl) {
+            eprintln!("[db migrate] 添加列 {name} 失败: {e}");
+            continue;
+        }
+        if name == "updated_at" {
+            let _ = conn.execute_batch(
+                "UPDATE images SET updated_at = COALESCE(created_at, '1970-01-01 00:00:00') WHERE updated_at IS NULL",
+            );
+        }
+    }
+    let has_flag: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('images') WHERE name = 'flag'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap_or(1);
+    if has_flag == 0 {
+        if let Err(e) = conn.execute_batch("ALTER TABLE images ADD COLUMN flag INTEGER DEFAULT 0") {
+            eprintln!("[db migrate] 添加列 flag 失败: {e}");
+        }
+    }
+}
+
+// 常用查询索引：隐藏过滤+排序/筛选组合列，避免大库每页全表扫；
+// NOCASE 表达式索引服务 Windows 路径去重（BINARY 索引不被 NOCASE 比较命中）
+const BUSINESS_INDEXES: &str = "
+CREATE INDEX IF NOT EXISTS idx_images_hidden ON images(hidden);
+CREATE INDEX IF NOT EXISTS idx_images_import_date ON images(import_date);
+CREATE INDEX IF NOT EXISTS idx_images_favorite ON images(favorite);
+CREATE INDEX IF NOT EXISTS idx_images_taken_at ON images(taken_at);
+CREATE INDEX IF NOT EXISTS idx_images_filename ON images(filename);
+CREATE INDEX IF NOT EXISTS idx_images_original_path ON images(original_path);
+CREATE INDEX IF NOT EXISTS idx_images_original_raw_path ON images(original_raw_path);
+CREATE INDEX IF NOT EXISTS idx_images_original_path_nc ON images(original_path COLLATE NOCASE);
+CREATE INDEX IF NOT EXISTS idx_images_original_raw_path_nc ON images(original_raw_path COLLATE NOCASE);
+CREATE INDEX IF NOT EXISTS idx_images_hidden_import_date ON images(hidden, import_date);
+CREATE INDEX IF NOT EXISTS idx_images_hidden_taken_at ON images(hidden, taken_at);
+CREATE INDEX IF NOT EXISTS idx_images_hidden_favorite ON images(hidden, favorite);
+CREATE INDEX IF NOT EXISTS idx_image_tags_tag_id ON image_tags(tag_id);
+CREATE INDEX IF NOT EXISTS idx_album_images_image_id ON album_images(image_id);
+CREATE INDEX IF NOT EXISTS idx_images_visible_sort_date ON images(hidden, CASE WHEN taken_at != '' THEN taken_at ELSE import_date END, id);
+";
+
+const SETTINGS_DEFAULTS: &str = "
+INSERT OR IGNORE INTO settings (key, value) VALUES
+  ('theme', 'dark'),
+  ('images_root', ''),
+  ('camera_folder', ''),
+  ('db_path', ''),
+  ('grid_rows', '3'),
+  ('grid_columns', '5'),
+  ('grid_gap', '12'),
+  ('content_padding', '16'),
+  ('orientation_backfilled', 'false'),
+  ('sort_by', 'import_date'),
+  ('sort_order', 'DESC');
+";
+
+pub fn ensure_business_schema(conn: &Connection) -> Result<(), rusqlite::Error> {
+    conn.execute_batch(BUSINESS_TABLES)?;
+    migrate_images_columns(conn);
+    conn.execute_batch(SETTINGS_DEFAULTS)?;
+    conn.execute_batch(BUSINESS_INDEXES)
 }
 
 /// 旧版（Electron）userData 路径（app name 'pixyang'）——迁移来源，保留只读兼容
@@ -570,6 +776,138 @@ mod path_tests {
         }
         // 缺失文件静默跳过：重复调用不报错
         delete_image_files(None, None, &dir.join("thumbs"), id);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn open_全新库自举业务表与索引() {
+        let dir = std::env::temp_dir().join("pixyang_db_schema_fresh");
+        let _ = std::fs::remove_dir_all(&dir);
+        let db = Db::open(&dir.join("t.db")).unwrap();
+        let conn = db.open_read().unwrap();
+        for t in [
+            "images",
+            "tags",
+            "image_tags",
+            "albums",
+            "album_images",
+            "edits",
+            "edit_history",
+            "presets",
+            "settings",
+        ] {
+            let n: i64 = conn
+                .query_row(
+                    "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name = ?1",
+                    [t],
+                    |r| r.get(0),
+                )
+                .unwrap();
+            assert_eq!(n, 1, "缺业务表: {t}");
+        }
+        let idx: i64 = conn
+            .query_row(
+                "SELECT COUNT(DISTINCT name) FROM sqlite_master WHERE type='index' AND name LIKE 'idx_%'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert!(idx >= 15, "索引数不足: {idx}");
+        conn.execute(
+            "INSERT INTO images (filename, filepath, import_date) VALUES ('a.jpg', '/x/a.jpg', '2026-01-01')",
+            [],
+        )
+        .unwrap();
+        let stats = crate::images_query::get_stats(&conn).unwrap();
+        assert_eq!(stats.total_images, 1);
+        let plan: String = conn
+            .query_row(
+                "EXPLAIN QUERY PLAN SELECT id FROM images WHERE hidden = 0 ORDER BY CASE WHEN taken_at != '' THEN taken_at ELSE import_date END DESC, id DESC LIMIT 15 OFFSET 0",
+                [],
+                |r| r.get(3),
+            )
+            .unwrap();
+        assert!(
+            plan.contains("idx_images_visible_sort_date"),
+            "日期翻页未命中表达式索引: {plan}"
+        );
+        drop(conn);
+        drop(db);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn open_旧库缺列回迁并回填更新时间且可重复打开() {
+        let dir = std::env::temp_dir().join("pixyang_db_schema_legacy");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let p = dir.join("t.db");
+        {
+            let conn = Connection::open(&p).unwrap();
+            conn.execute_batch(
+                "CREATE TABLE images (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    filename TEXT NOT NULL,
+                    filepath TEXT UNIQUE,
+                    notes TEXT DEFAULT '',
+                    created_at DATETIME
+                 );
+                 INSERT INTO images (filename, filepath, created_at) VALUES ('a', '/a', '2020-01-02 03:04:05');",
+            )
+            .unwrap();
+        }
+        let db = Db::open(&p).unwrap();
+        let cols_after_first: i64;
+        {
+            let conn = db.write_lock();
+            let n: i64 = conn
+                .query_row(
+                    "SELECT COUNT(*) FROM pragma_table_info('images') WHERE name IN ('hidden','taken_at','thumbnail_edit_path','hash','updated_at')",
+                    [],
+                    |r| r.get(0),
+                )
+                .unwrap();
+            assert_eq!(n, 5, "缺列未回迁齐");
+            let ua: String = conn
+                .query_row(
+                    "SELECT updated_at FROM images WHERE filename = 'a'",
+                    [],
+                    |r| r.get(0),
+                )
+                .unwrap();
+            assert_eq!(ua, "2020-01-02 03:04:05", "updated_at 应按 created_at 回填");
+            cols_after_first = conn
+                .query_row("SELECT COUNT(*) FROM pragma_table_info('images')", [], |r| r.get(0))
+                .unwrap();
+        }
+        drop(db);
+        let db2 = Db::open(&p).unwrap();
+        let conn = db2.open_read().unwrap();
+        let n: i64 = conn
+            .query_row("SELECT COUNT(*) FROM pragma_table_info('images')", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(n, cols_after_first, "重复打开不得再加列");
+        drop(conn);
+        drop(db2);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn 默认设置只补缺不覆盖既有值() {
+        let dir = std::env::temp_dir().join("pixyang_db_schema_defaults");
+        let _ = std::fs::remove_dir_all(&dir);
+        let p = dir.join("t.db");
+        let db = Db::open(&p).unwrap();
+        assert_eq!(db.get_setting("theme").unwrap().as_deref(), Some("dark"));
+        db.set_setting("theme", "midnight").unwrap();
+        drop(db);
+        let db2 = Db::open(&p).unwrap();
+        assert_eq!(
+            db2.get_setting("theme").unwrap().as_deref(),
+            Some("midnight"),
+            "INSERT OR IGNORE 不得覆盖用户设置"
+        );
+        drop(db2);
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
