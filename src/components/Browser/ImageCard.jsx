@@ -14,7 +14,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { Heart, Check, FolderPlus, Eye, Pencil, Trash2, Images } from 'lucide-react';
+import { Heart, Check, FolderPlus, Eye, Pencil, Trash2, Images, ImageOff } from 'lucide-react';
 import StarRating from '@/components/common/StarRating';
 
 const ImageCard = memo(function ImageCard({
@@ -89,6 +89,7 @@ const ImageCard = memo(function ImageCard({
             />
           ) : (
             <div className="image-card-placeholder">
+              <ImageOff className="size-6" />
               <span>{image.format?.toUpperCase() || 'IMAGE'}</span>
             </div>
           )}

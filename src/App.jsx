@@ -382,6 +382,16 @@ export default function App() {
 
   const isGallery = location.pathname === '/' || location.pathname === '/favorites';
 
+  const openInfoFromGrid = useCallback((img) => {
+    infoFromViewerRef.current = false;
+    setInfoImage(img);
+  }, []);
+
+  const clearFiltersAndHome = useCallback(() => {
+    useGalleryStore.getState().clearFilters();
+    navigate('/');
+  }, [navigate]);
+
   // 全局快捷键：实时依赖经 ref 读取，仅注册一次
   useGlobalShortcuts({
     isModalOpen: () => anyModalOpen(useGalleryStore.getState()),
@@ -443,14 +453,11 @@ export default function App() {
     <ImageGrid
       viewerActive={!!viewerImage}
       onView={openViewer}
-      onInfo={(img) => {
-        infoFromViewerRef.current = false;
-        setInfoImage(img);
-      }}
+      onInfo={openInfoFromGrid}
       onImageUpdated={handleImageUpdated}
       onCountsChanged={handleCountsChanged}
       onImport={openImport}
-      onClearFilters={() => { useGalleryStore.getState().clearFilters(); navigate('/'); }}
+      onClearFilters={clearFiltersAndHome}
       onColumnsChange={handleColumnsChange}
     />
   );

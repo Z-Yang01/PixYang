@@ -54,7 +54,11 @@ export default function BatchBar({
         <DropdownMenuContent align="start">
           {[5, 4, 3, 2, 1].map(n => (
             <DropdownMenuItem key={n} onClick={() => onBatchUpdate?.({ rating: n })}>
-              <span style={{ color: 'var(--star)', letterSpacing: 1 }}>{'★'.repeat(n)}</span>
+              <span className="batch-rating-preview">
+                {Array.from({ length: n }, (_, i) => (
+                  <Star key={i} className="size-3" fill="currentColor" strokeWidth={0} />
+                ))}
+              </span>
               {n} 星
             </DropdownMenuItem>
           ))}

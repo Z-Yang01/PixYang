@@ -400,3 +400,10 @@
   按钮/复选框/侧栏项/查看器关闭 :active 按压回弹（60-90ms）；卡片 hover 边框/上浮提速；
   查看器开合 200→140ms；骨架屏 shimmer 提速；勾选 popIn 提速。vitest 974/974；vite build 过；
   NSIS 安装包已重打（bundle/nsis/PixYang_0.1.0_x64-setup.exe，4.1MB）。
+- 2026-09-21 20:50 R33 全面测试+优化速度+UI 美化（布局/图标）：① 速度——R-7 挂账落位：
+  useGalleryData 整 store 解构改逐字段选择器订阅；App 传网格的 onInfo/onClearFilters 内联
+  lambda 稳定化（useCallback），消除 App 重渲染击穿 ImageCard memo；+1 回归用例锁定无关
+  字段不触发 wiring 重渲染。② 图标——卡片占位换 ImageOff+格式文字纵向排布；批量评分下拉
+  文本星换 lucide 实心星。③ 布局——日期计数软胶囊、分页条顶部发丝分隔线、页码数字等宽、
+  空态图标圆角底板。cargo 全量+golden 门禁 ✅（合并基线）；vitest 975/975；typecheck ✅；
+  lint 0 error；vite build ✅；NSIS 安装包重打。

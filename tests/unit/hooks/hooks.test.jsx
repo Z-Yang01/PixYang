@@ -190,6 +190,24 @@ describe('useGalleryData wiring', () => {
     await act(async () => { previewCb({ id: 1, path: 'C:/edit/a.png' }); });
     expect(useGalleryStore.getState().thumbVersion).toBe(before + 1);
   });
+
+  it('无关字段变化不触发 wiring 宿主重渲染（审查批 8 R-7 选择器化）', async () => {
+    let renders = 0;
+    function CountingHarness() {
+      renders += 1;
+      useGalleryData({});
+      return null;
+    }
+    render(<CountingHarness />);
+    await waitFor(() => expect(renders).toBeGreaterThan(0));
+    const before = renders;
+    act(() => { useGalleryStore.setState({ thumbVersion: 99 }); });
+    act(() => { useGalleryStore.setState({ selectedIds: new Set([1, 2]) }); });
+    act(() => { useGalleryStore.setState({ loading: true }); });
+    expect(renders).toBe(before);
+    act(() => { useGalleryStore.setState({ page: 3 }); });
+    expect(renders).toBeGreaterThan(before);
+  });
 });
 
 describe('useBatchActions 全选全部', () => {

@@ -2720,3 +2720,56 @@ body {
   transform: scale(0.92);
   transition-duration: 60ms;
 }
+
+/* ── R33 布局与图标打磨 ── */
+.image-card-placeholder {
+  flex-direction: column;
+  gap: 8px;
+}
+
+.image-card-placeholder svg {
+  color: var(--text-muted);
+  opacity: 0.6;
+  stroke-width: 1.4;
+}
+
+.batch-rating-preview {
+  display: inline-flex;
+  gap: 1px;
+  color: var(--star);
+  min-width: 22px;
+}
+
+.grid-date-count {
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--bg-hover);
+  color: var(--text-muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.pagination-bar {
+  border-top: 1px solid var(--border);
+  padding-top: 10px;
+}
+
+.pagination-info {
+  font-variant-numeric: tabular-nums;
+}
+
+.empty-state-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 96px;
+  height: 96px;
+  border-radius: 24px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+}
+
+.empty-state-icon svg {
+  width: 44px;
+  height: 44px;
+}

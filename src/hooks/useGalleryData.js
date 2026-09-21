@@ -6,12 +6,18 @@ import useGalleryStore from '../store/galleryStore';
 // 图库数据 wiring：筛选/分页变化时触发 store.loadImages（搜索 200ms 防抖），
 // 订阅主进程回填/缩略图事件。数据本身（images/stats/tags...）都在 galleryStore。
 export default function useGalleryData({ onThumbnailsReady } = {}) {
-  const {
-    search, sortBy, sortOrder,
-    filterTag, filterAlbum, filterFavorites, filterDate, dateRange,
-    page, gridSettings,
-    loadImages, loadStats,
-  } = useGalleryStore();
+  const search = useGalleryStore(s => s.search);
+  const sortBy = useGalleryStore(s => s.sortBy);
+  const sortOrder = useGalleryStore(s => s.sortOrder);
+  const filterTag = useGalleryStore(s => s.filterTag);
+  const filterAlbum = useGalleryStore(s => s.filterAlbum);
+  const filterFavorites = useGalleryStore(s => s.filterFavorites);
+  const filterDate = useGalleryStore(s => s.filterDate);
+  const dateRange = useGalleryStore(s => s.dateRange);
+  const page = useGalleryStore(s => s.page);
+  const gridSettings = useGalleryStore(s => s.gridSettings);
+  const loadImages = useGalleryStore(s => s.loadImages);
+  const loadStats = useGalleryStore(s => s.loadStats);
 
   const lastSearchRef = useRef(search);
 
