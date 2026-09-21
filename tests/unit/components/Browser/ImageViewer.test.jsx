@@ -107,6 +107,36 @@ describe('ImageViewer', () => {
     expect(onPrev).toHaveBeenCalledTimes(1);
   });
 
+  it('几何工具精简：垂直翻转入口已移除，水平翻转可用；存量 flip_v 仍渲染', () => {
+    render(<ImageViewer {...baseProps()} />);
+    expect(screen.queryByTitle(/垂直翻转/)).toBeNull();
+    const img = () => document.querySelector('img.viewer-image');
+    fireEvent.click(screen.getByTitle('水平翻转 (H)'));
+    expect(img().style.transform).toContain('scale(-1, 1)');
+    // V 键不再触发任何翻转
+    fireEvent.keyDown(window, { key: 'v' });
+    expect(img().style.transform).toContain('scale(-1, 1)');
+    cleanup();
+    render(<ImageViewer {...baseProps({ image: { ...testImage, flip_v: 1 } })} />);
+    expect(img().style.transform).toContain('scale(1, -1)');
+  });
+
+  it('无几何变更时保存按钮禁用；旋转后可保存且仅写元数据', async () => {
+    const onImageUpdated = vi.fn();
+    render(<ImageViewer {...baseProps({ onImageUpdated })} />);
+    const save = screen.getByTitle('保存旋转/翻转');
+    expect(save).toBeDisabled();
+    fireEvent.click(screen.getByTitle('右旋 90° (R)'));
+    expect(save).toBeEnabled();
+    fireEvent.click(save);
+    await vi.waitFor(() => {
+      expect(window.pixyang.updateImage).toHaveBeenCalledWith(3, {
+        rotation: 90, flipH: 0, flipV: 0,
+      });
+      expect(onImageUpdated).toHaveBeenCalledWith(3, { rotation: 90, flip_h: 0, flip_v: 0 });
+    });
+  });
+
   it('按 1-5 数字键评分：调用 updateImage 并回调 onImageUpdated', async () => {
     const onImageUpdated = vi.fn();
     render(<ImageViewer {...baseProps({ onImageUpdated })} />);

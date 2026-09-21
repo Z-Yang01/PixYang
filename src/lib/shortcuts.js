@@ -46,7 +46,6 @@ export const VIEWER_ACTIONS = {
   RotateCw: 'rotateCw',
   RotateCcw: 'rotateCcw',
   FlipH: 'flipH',
-  FlipV: 'flipV',
   Favorite: 'favorite',
   Rate1: 'rate1',
   Rate2: 'rate2',
@@ -80,7 +79,7 @@ export const SHORTCUT_GROUPS = [
       { keys: ['+/-', '滚轮'], desc: '放大 / 缩小' },
       { keys: ['0'], desc: '重置缩放与变换' },
       { keys: ['R', 'Shift+R'], desc: '右旋 / 左旋 90°' },
-      { keys: ['H', 'V'], desc: '水平 / 垂直翻转' },
+      { keys: ['H'], desc: '水平翻转' },
       { keys: ['F'], desc: '切换收藏' },
       { keys: ['1–5'], desc: '设置评分' },
       { keys: ['I'], desc: '打开 / 关闭详情面板' },
@@ -143,7 +142,6 @@ export function matchViewerShortcut(e) {
   if (key === 'r') return VIEWER_ACTIONS.RotateCw;
   if (key === 'R') return VIEWER_ACTIONS.RotateCcw;
   if (key === 'h' || key === 'H') return VIEWER_ACTIONS.FlipH;
-  if (key === 'v' || key === 'V') return VIEWER_ACTIONS.FlipV;
   if (key === 'f' || key === 'F') return VIEWER_ACTIONS.Favorite;
   if (key === 'i' || key === 'I') return VIEWER_ACTIONS.ToggleInfo;
   if (key >= '1' && key <= '5') return /** @type {any} */ (`rate${key}`);

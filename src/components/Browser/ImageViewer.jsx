@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import {
-  RotateCw, RotateCcw, FlipHorizontal2, FlipVertical2, Save, Heart, HeartOff,
+  RotateCw, RotateCcw, FlipHorizontal2, Save, Heart, HeartOff,
   Star, X, ChevronLeft, ChevronRight, Camera, Calendar, Info, Pencil,
   Crop, RotateCcwSquare, Loader2, SlidersHorizontal, Undo2, Redo2,
 } from 'lucide-react';
@@ -617,17 +617,16 @@ export default function ImageViewer({
     }
   }, [pushHistory, editBusy]);
 
-  const applyFlip = useCallback((axis) => {
+  // 几何变换精简：旋转 + 水平翻转即可表达全部朝向（垂直翻转 ≡ 180° 旋转 + 水平翻转），
+  // 故不提供垂直翻转入口；flip_v 元数据管线保留，存量数据的垂直翻转仍正常显示与保存
+  const applyFlip = useCallback(() => {
     if (editBusy) return;
     if (editingRef.current) {
-      const o = editOpsRef.current;
-      const next = axis === 'H' ? { ...o, flipH: !o.flipH } : { ...o, flipV: !o.flipV };
-      pushHistory(next, axis === 'H' ? '水平翻转' : '垂直翻转');
+      const next = { ...editOpsRef.current, flipH: !editOpsRef.current.flipH };
+      pushHistory(next, '水平翻转');
       setEditOps(next);
-    } else if (axis === 'H') {
-      setFlipH(f => !f);
     } else {
-      setFlipV(f => !f);
+      setFlipH(f => !f);
     }
   }, [pushHistory, editBusy]);
 
@@ -812,8 +811,7 @@ export default function ImageViewer({
         case VIEWER_ACTIONS.ZoomOut: if (!compareActive) setZoom(z => Math.max(z - 0.25, 0.25)); break;
         case VIEWER_ACTIONS.RotateCw: applyRotate(90); break;
         case VIEWER_ACTIONS.RotateCcw: applyRotate(270); break;
-        case VIEWER_ACTIONS.FlipH: applyFlip('H'); break;
-        case VIEWER_ACTIONS.FlipV: applyFlip('V'); break;
+        case VIEWER_ACTIONS.FlipH: applyFlip(); break;
         case VIEWER_ACTIONS.Favorite: toggleFavorite(); break;
         case VIEWER_ACTIONS.ToggleInfo: if (!editingRef.current) onOpenInfo?.(image); break;
         case VIEWER_ACTIONS.ZoomReset:
@@ -963,10 +961,16 @@ export default function ImageViewer({
     toggleFavorite();
   };
 
+  // 与已存元数据比对：无几何变更时保存按钮禁用，重复点击不再发无意义 IPC/补丁
+  const orientationDirty =
+    rotation !== (image?.rotation || 0) ||
+    flipH !== !!image?.flip_h ||
+    flipV !== !!image?.flip_v;
+
   // 保存旋转/翻转（查看态：仅写元数据，前端 CSS 呈现）
   const handleSaveRotation = async (e) => {
     e.stopPropagation();
-    if (!api.isBridgeAvailable() || !image) return;
+    if (!api.isBridgeAvailable() || !image || !orientationDirty) return;
     try {
       const result = await api.updateImage(image.id, {
         rotation,
@@ -1221,11 +1225,8 @@ export default function ImageViewer({
         <Button variant="ghost" size="icon" onClick={() => applyRotate(90)} title="右旋 90° (R)">
           <RotateCw className="size-5" />
         </Button>
-        <Button variant="ghost" size="icon" onClick={() => applyFlip('H')} title="水平翻转 (H)">
+        <Button variant="ghost" size="icon" onClick={applyFlip} title="水平翻转 (H)">
           <FlipHorizontal2 className="size-5" />
-        </Button>
-        <Button variant="ghost" size="icon" onClick={() => applyFlip('V')} title="垂直翻转 (V)">
-          <FlipVertical2 className="size-5" />
         </Button>
         {editing && (
           <>
@@ -1263,7 +1264,7 @@ export default function ImageViewer({
             >
               <Pencil className="size-5" />
             </Button>
-            <Button variant="ghost" size="icon" onClick={handleSaveRotation} title="保存旋转/翻转">
+            <Button variant="ghost" size="icon" onClick={handleSaveRotation} disabled={!orientationDirty} title="保存旋转/翻转">
               <Save className="size-5" />
             </Button>
           </>

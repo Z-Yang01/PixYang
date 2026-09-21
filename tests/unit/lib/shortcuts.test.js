@@ -121,7 +121,9 @@ describe('matchViewerShortcut', () => {
     expect(matchViewerShortcut(keyEvent('r'))).toBe(VIEWER_ACTIONS.RotateCw);
     expect(matchViewerShortcut(keyEvent('R'))).toBe(VIEWER_ACTIONS.RotateCcw);
     expect(matchViewerShortcut(keyEvent('h'))).toBe(VIEWER_ACTIONS.FlipH);
-    expect(matchViewerShortcut(keyEvent('v'))).toBe(VIEWER_ACTIONS.FlipV);
+    // 垂直翻转入口已移除（旋转 + 水平翻转即可表达全部朝向）
+    expect(matchViewerShortcut(keyEvent('v'))).toBeNull();
+    expect(matchViewerShortcut(keyEvent('V'))).toBeNull();
     expect(matchViewerShortcut(keyEvent('f'))).toBe(VIEWER_ACTIONS.Favorite);
     expect(matchViewerShortcut(keyEvent('i'))).toBe(VIEWER_ACTIONS.ToggleInfo);
     expect(matchViewerShortcut(keyEvent('Escape'))).toBeNull();
