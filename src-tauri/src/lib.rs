@@ -37,12 +37,14 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
+            // 便携数据目录：安装目录\data（可写探测失败回退 %APPDATA%/pixyang），
+            // 首次启动把旧位置（Electron userData）的库/缩略图快照复制过来（非破坏）
+            let data_dir = db::resolve_data_dir();
+            let _ = db::migrate_legacy_snapshot(&data_dir);
+
             // panic 落盘：同步命令 panic 会中止进程（闪退），此钩子保住现场供诊断
             {
-                let log_dir = db::default_db_path()
-                    .parent()
-                    .unwrap_or(std::path::Path::new("."))
-                    .to_path_buf();
+                let log_dir = data_dir.clone();
                 let _ = std::fs::create_dir_all(&log_dir);
                 std::panic::set_hook(Box::new(move |info| {
                     use std::io::Write;
@@ -71,18 +73,27 @@ pub fn run() {
                     eprintln!("[panic] {loc}: {msg}");
                 }));
             }
-            let database =
-                db::Db::open(&db::default_db_path()).map_err(|e| format!("数据库打开失败: {e}"))?;
-            let default_images_dir = db::default_db_path()
-                .parent()
-                .unwrap_or(std::path::Path::new("."))
-                .join("images");
-            let images_root = database
-                .get_setting("images_root")
-                .unwrap_or(None)
+
+            let db_path = data_dir.join("pixyang.db");
+            let database = db::Db::open(&db_path).map_err(|e| format!("数据库打开失败: {e}"))?;
+            let default_images_dir = data_dir.join("images");
+            let thumbs_dir = data_dir.join("thumbnails");
+            let _ = std::fs::create_dir_all(&thumbs_dir);
+
+            // 图片根：设置优先；未设置但旧默认目录（%APPDATA%/pixyang/images）有照片时
+            // 沿用旧位置（不搬用户照片，绝对路径仍可访问）
+            let legacy_images_dir = db::legacy_data_dir().join("images");
+            let images_root_setting = database.get_setting("images_root").unwrap_or(None);
+            let images_root = images_root_setting
                 .filter(|s| !s.is_empty())
                 .map(std::path::PathBuf::from)
-                .unwrap_or_else(|| default_images_dir.clone());
+                .unwrap_or_else(|| {
+                    if legacy_images_dir.is_dir() {
+                        legacy_images_dir.clone()
+                    } else {
+                        default_images_dir.clone()
+                    }
+                });
             let _ = std::fs::create_dir_all(&images_root);
             {
                 let conn = database.write_lock();
@@ -95,18 +106,12 @@ pub fn run() {
                 use tauri::Manager;
                 let scope = app.asset_protocol_scope();
                 let _ = scope.allow_directory(&images_root, true);
-                let _ = scope.allow_directory(&db::default_thumbnails_dir(), true);
-                let _ = scope.allow_directory(
-                    &db::default_db_path()
-                        .parent()
-                        .unwrap_or(std::path::Path::new("."))
-                        .to_path_buf(),
-                    true,
-                );
+                let _ = scope.allow_directory(&thumbs_dir, true);
+                let _ = scope.allow_directory(&data_dir, true);
             }
             app.manage(database);
             app.manage(db::AppPaths {
-                thumbs_dir: db::default_thumbnails_dir(),
+                thumbs_dir,
                 default_images_dir,
             });
             Ok(())

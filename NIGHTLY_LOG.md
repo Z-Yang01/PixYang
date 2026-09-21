@@ -363,3 +363,8 @@
   IO 移锁外）；③ 剩余同步重 IO 命令（EXIF/扫描/批量/删除/改名/导出等 11 个）转
   async+spawn_blocking。cargo 143/143 + golden；clippy 0 error；vitest 971/971。
   新安装包已重打（bundle/nsis/PixYang_0.1.0_x64-setup.exe），release exe 启动冒烟通过。
+- 2026-09-21 05:45 R28 便携化（用户需求：数据放安装路径不落 C 盘）：数据目录 = 安装目录\data
+  （可写探测失败回退 %APPDATA%）。首次启动非破坏快照迁移：pixyang.db(+wal/shm) + thumbnails/*
+  复制到 data\（旧位置保留只读兼容）。照片本体不搬：images_root 设置优先，未设置但旧默认
+  目录有照片时沿用旧绝对路径（可在设置页用图片根迁移搬到新盘）。实测：release exe 启动后
+  data\ 生成完整库（933 可见图/5 标签/2 相册/851 缩略图）。cargo 143/143 + golden；vitest 971/971。

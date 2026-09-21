@@ -121,27 +121,77 @@ fn ensure_settings_table(conn: &Connection) -> Result<(), rusqlite::Error> {
     )
 }
 
-/// 镜像 Electron userData 路径（app name 'pixyang'），迁移窗口内双栈读写同一库文件
-pub fn default_db_path() -> PathBuf {
+/// 旧版（Electron）userData 路径（app name 'pixyang'）——迁移来源，保留只读兼容
+pub fn legacy_data_dir() -> PathBuf {
     #[cfg(windows)]
     {
         if let Some(dir) = std::env::var_os("APPDATA") {
-            return PathBuf::from(dir).join("pixyang").join("pixyang.db");
+            return PathBuf::from(dir).join("pixyang");
         }
     }
     #[cfg(not(windows))]
     {
         if let Some(dir) = std::env::var_os("HOME") {
-            return PathBuf::from(dir)
-                .join(".config")
-                .join("pixyang")
-                .join("pixyang.db");
+            return PathBuf::from(dir).join(".config").join("pixyang");
         }
     }
-    PathBuf::from("pixyang.db")
+    PathBuf::from(".")
 }
 
-/// 缩略图目录与 Electron userData/thumbnails 同位
+/// 便携数据目录：安装目录\data（可写探测通过才启用）；失败回退旧版 %APPDATA% 位置
+pub fn exe_portable_dir() -> Option<PathBuf> {
+    let exe = std::env::current_exe().ok()?;
+    let dir = exe.parent()?.join("data");
+    std::fs::create_dir_all(&dir).ok()?;
+    let probe = dir.join(".write-test");
+    std::fs::write(&probe, b"1").ok()?;
+    std::fs::remove_file(&probe).ok()?;
+    Some(dir)
+}
+
+pub fn resolve_data_dir() -> PathBuf {
+    exe_portable_dir().unwrap_or_else(legacy_data_dir)
+}
+
+/// 一次性快照迁移：旧位置（Electron userData）的库/缩略图复制进便携 data（非破坏，
+/// 旧版应用仍可读原位置；目标已有库视为已迁移跳过）。返回是否执行了复制。
+pub fn migrate_legacy_snapshot(data_dir: &Path) -> bool {
+    let legacy = legacy_data_dir();
+    if legacy == data_dir {
+        return false;
+    }
+    let src_db = legacy.join("pixyang.db");
+    let dst_db = data_dir.join("pixyang.db");
+    if !src_db.exists() || dst_db.exists() {
+        return false;
+    }
+    let _ = std::fs::create_dir_all(data_dir);
+    for name in ["pixyang.db", "pixyang.db-wal", "pixyang.db-shm"] {
+        let from = legacy.join(name);
+        if from.exists() {
+            let _ = std::fs::copy(&from, data_dir.join(name));
+        }
+    }
+    let (src_thumbs, dst_thumbs) = (legacy.join("thumbnails"), data_dir.join("thumbnails"));
+    if src_thumbs.is_dir() {
+        let _ = std::fs::create_dir_all(&dst_thumbs);
+        if let Ok(entries) = std::fs::read_dir(&src_thumbs) {
+            for e in entries.flatten() {
+                let to = dst_thumbs.join(e.file_name());
+                if !to.exists() {
+                    let _ = std::fs::copy(e.path(), &to);
+                }
+            }
+        }
+    }
+    true
+}
+
+pub fn default_db_path() -> PathBuf {
+    resolve_data_dir().join("pixyang.db")
+}
+
+/// 缩略图目录随数据目录（便携模式=安装目录\data\thumbnails）
 pub fn default_thumbnails_dir() -> PathBuf {
     let mut base = default_db_path();
     base.set_file_name("thumbnails");
