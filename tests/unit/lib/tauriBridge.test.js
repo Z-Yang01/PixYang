@@ -66,7 +66,7 @@ describe('tauriBridge', () => {
     expect(window.pixyang.getSetting).not.toHaveBeenCalled();
   });
 
-  it('api 设置通道在 Electron 运行时仍走 pixyang 桥', async () => {
+  it('api 设置通道无 Tauri 桥时仍走 pixyang 透传', async () => {
     window.pixyang = {
       getSetting: vi.fn().mockResolvedValue('dark'),
       setSetting: vi.fn().mockResolvedValue(undefined),
@@ -151,7 +151,7 @@ describe('tauriBridge', () => {
     expect(invoke).toHaveBeenCalledWith('backup_database', {});
   });
 
-  it('接缝 R24：对话框/外壳通道在 Electron 运行时仍走 pixyang 桥', async () => {
+  it('接缝 R24：对话框/外壳通道无 Tauri 桥时仍走 pixyang 透传', async () => {
     window.pixyang = {
       selectDirectory: vi.fn().mockResolvedValue('E:/elect'),
       openPath: vi.fn().mockResolvedValue(''),

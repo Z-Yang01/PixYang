@@ -483,3 +483,28 @@
   均已托管或随 effect 清理）。+1 契约测试断言「卸载必须清掉该定时器」（临时摘掉清理即失败，
   已实证回滚）。cargo 146+golden_audit ✅、vitest 767/767（连跑三遍无 uncaught）、lint 0 error、
   typecheck ✅、format:check ✅、vite build ✅；NSIS 安装包重打。
+- 2026-09-22 00:20 R43 冗余代码清理（无生产引用的 IPC 面与遗留换算）：
+  ① 删除 4 条从未被调用的 tauri 命令及其 generate_handler 注册——commands::edit_cancel（纯桩函数
+  `let _ = id; {ok:true}`，前端无此通道）、commands::rebuild_thumbnails（JS 只用
+  rebuild_thumbnails_with_events，无事件变体无入口；内核 rebuild_thumbnails_unlocked 保留）、
+  interact::select_directory / select_export_directory（桥层直接调 tauri-plugin-dialog 的 JS API，
+  两条命令从未被 invoke；Rust 侧 dialog 仍由 backup_database 使用，插件与 Window 依赖不变）。
+  ② db.rs 收敛冗余 API 面：Db::get_all_settings、Db::get_all_settings_map（均零生产引用）、
+  free fn all_settings（仅被死方法引用）、default_thumbnails_dir（零引用，AppPaths 另有派生）；
+  原「全量设置返回键值对列表」用例改锁生产路径 all_settings_map 并断 BTreeMap 键序，补上该函数
+  此前无测的空档。③ 删除前端遗留 CSS 预览换算 editParams.cssFilter / tintMatrixValues——现网预览
+  走 previewFilterChain+needsMatrix，且其挂载的 SVG id `pixyang-tint` 已不存在（引用即空转），
+  连带 3 例旧测试。④ 3 处测试标题的过期「Electron 运行时」口径改为「无 Tauri 桥时走 pixyang 透传」。
+  排查口径留档：JS/TS 全量 export + galleryStore action 引用计数（91 项，生产零引用 3 项已清）、
+  Rust pub fn/pub 项（190+38 项，生产零引用 4 项已清；Db::from_connection 与
+  previewUniforms.simulateShaderPixel 属测试夹具/契约预言机，保留）、前端文件级孤儿扫描 0 命中、
+  api.js 65 通道全部有生产调用方。cargo 146+golden_audit ✅（lib 侧 0 warning 保持）、
+  vitest 764/764、lint 0 error、typecheck ✅、format:check ✅、vite build ✅；NSIS 安装包重打。
+- 口径待决（R43 上报，未擅自处理）：
+  ① orientation-backfill-done 事件链无生产者——tauriBridgeMedia.onOrientationBackfill +
+  useGalleryData 订阅 + progress::ORIENTATION_BACKFILL 常量 + settings 默认 orientation_backfilled
+  四方齐备，但 Rust 侧无任何 emit（Electron 时代的后台转正任务未移植）：删链路 vs 补实现待定。
+  ② 6 个仅单测触达的桥包装（uniqueFilename/groupImportFiles/makeThumbnailTiers/extractNefPreview/
+  imageMeta/renderEdit）不在 api.js 通道清单内，对应 Rust 内核函数仍被导入/渲染管线内部调用，
+  属「暴露但无人用」的兼容面，删否待定。③ TAURI_PARITY.md（根，39KB）与 docs/TAURI_PARITY.md
+  （7.8KB）双份并存，且都仍以 TAURI_SEAMS/Electron 为口径（R36/R38 后已过期）。

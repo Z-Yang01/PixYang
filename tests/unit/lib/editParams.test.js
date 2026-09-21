@@ -1,12 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import {
-  EDIT_DEFAULTS,
-  sanitizeEditOps,
-  hasEdits,
-  cssFilter,
-  tintMatrixValues,
-  CROP_RATIOS,
-} from '@/lib/editParams';
+import { EDIT_DEFAULTS, sanitizeEditOps, hasEdits, CROP_RATIOS } from '@/lib/editParams';
 
 describe('sanitizeEditOps', () => {
   it('默认值与非法值回退', () => {
@@ -41,28 +34,6 @@ describe('hasEdits', () => {
     expect(hasEdits({ ...EDIT_DEFAULTS, crop: { left: 1, top: 1, width: 10, height: 10 } })).toBe(
       true
     );
-  });
-});
-
-describe('cssFilter / tintMatrixValues', () => {
-  it('曝光/对比度/饱和度换算与 sharp 语义一致', () => {
-    expect(cssFilter(EDIT_DEFAULTS)).toBe('brightness(1.0000) contrast(1.0000) saturate(1.0000)');
-    expect(cssFilter({ exposure: 1 })).toContain('brightness(2.0000)');
-    expect(cssFilter({ contrast: 50 })).toContain('contrast(2.0000)');
-    expect(cssFilter({ saturation: -100 })).toContain('saturate(0.0000)');
-  });
-
-  it('色温挂载 SVG 矩阵引用；中性色温无引用', () => {
-    expect(cssFilter({ temperature: 0 })).not.toContain('url(');
-    expect(cssFilter({ temperature: 50 })).toContain('url(#pixyang-tint)');
-  });
-
-  it('暖色温矩阵 R 通道增益 > 1、B 通道 < 1', () => {
-    const warm = tintMatrixValues({ temperature: 50 });
-    const [rGain] = warm.split(' ');
-    expect(Number(rGain)).toBeGreaterThan(1);
-    const bGain = warm.trim().split(/\s+/)[8];
-    expect(Number(bGain)).toBeLessThan(1);
   });
 });
 

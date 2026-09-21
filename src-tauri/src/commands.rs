@@ -664,22 +664,6 @@ pub async fn update_images(
 }
 
 #[tauri::command]
-pub async fn rebuild_thumbnails(
-    db: State<'_, Db>,
-    paths: State<'_, AppPaths>,
-    all: bool,
-) -> Result<Value, String> {
-    let db = db.inner().clone();
-    let paths = paths.inner().clone();
-    tauri::async_runtime::spawn_blocking(move || {
-        update_image::rebuild_thumbnails_unlocked(&db, &paths.thumbs_dir, all, None)
-            .map_err(|e| e.to_string())
-    })
-    .await
-    .map_err(|e| format!("后台任务失败: {e}"))?
-}
-
-#[tauri::command]
 pub async fn rebuild_thumbnails_with_events(
     app: AppHandle,
     db: State<'_, Db>,
@@ -771,12 +755,6 @@ pub fn save_edit_params(
 pub fn get_edit_history(db: State<'_, Db>, id: i64) -> Result<Vec<Value>, String> {
     let conn = db.open_read().map_err(|e| e.to_string())?;
     edit_session::get_edit_history(&conn, id).map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-pub fn edit_cancel(id: String) -> Value {
-    let _ = id;
-    serde_json::json!({ "ok": true })
 }
 
 /// 镜像 ensureEditBase：base 解析顺序 ① raw_path 存在且可提取 → NEF 预览底图（source='nef'）；

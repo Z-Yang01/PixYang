@@ -155,7 +155,7 @@ describe('App 组合根冒烟', () => {
     expect(await screen.findAllByText('风景')).not.toHaveLength(0);
   });
 
-  it('window.pixyang 缺失（非 Electron 环境）时不崩、渲染空壳', () => {
+  it('window.pixyang 缺失（无桥环境）时不崩、渲染空壳', () => {
     delete window.pixyang;
     renderApp('/');
     expect(screen.getByText('PixYang')).toBeInTheDocument();

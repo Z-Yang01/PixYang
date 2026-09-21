@@ -78,25 +78,6 @@ impl Db {
         )?;
         Ok(())
     }
-
-    pub fn get_all_settings(&self) -> Result<Vec<(String, String)>, rusqlite::Error> {
-        let conn = self.write_lock();
-        all_settings(&conn)
-    }
-
-    /// 对象形态（镜像 JS getAllSettings 的 {key: value}），命令层直接序列化
-    pub fn get_all_settings_map(
-        &self,
-    ) -> Result<std::collections::BTreeMap<String, String>, rusqlite::Error> {
-        let conn = self.write_lock();
-        all_settings_map(&conn)
-    }
-}
-
-pub fn all_settings(conn: &Connection) -> Result<Vec<(String, String)>, rusqlite::Error> {
-    let mut stmt = conn.prepare("SELECT key, value FROM settings")?;
-    let rows = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?;
-    rows.collect()
 }
 
 /// 对象形态（镜像 JS getAllSettings 的 {key: value}），读命令经 open_read 连接调用
@@ -397,13 +378,6 @@ pub fn default_db_path() -> PathBuf {
     resolve_data_dir().join("pixyang.db")
 }
 
-/// 缩略图目录随数据目录（便携模式=安装目录\data\thumbnails）
-pub fn default_thumbnails_dir() -> PathBuf {
-    let mut base = default_db_path();
-    base.set_file_name("thumbnails");
-    base
-}
-
 /// 托管状态：连接 + 宿主派生路径（缩略图目录、默认图片根）
 #[derive(Clone)]
 pub struct AppPaths {
@@ -568,15 +542,20 @@ mod tests {
     }
 
     #[test]
-    fn 全量设置返回键值对列表() {
-        let db = mem_db();
-        db.set_setting("a", "1").unwrap();
-        db.set_setting("b", "2").unwrap();
-        let mut all = db.get_all_settings().unwrap();
-        all.sort();
+    fn 全量设置按键排序返回映射() {
+        let conn = Connection::open_in_memory().unwrap();
+        ensure_settings_table(&conn).unwrap();
+        conn.execute_batch(
+            "INSERT INTO settings (key, value) VALUES ('b', '2'), ('a', '1'), ('theme', 'dark');",
+        )
+        .unwrap();
         assert_eq!(
-            all,
-            vec![("a".into(), "1".into()), ("b".into(), "2".into())]
+            all_settings_map(&conn).unwrap().into_iter().collect::<Vec<_>>(),
+            vec![
+                ("a".into(), "1".into()),
+                ("b".into(), "2".into()),
+                ("theme".into(), "dark".into())
+            ]
         );
     }
 

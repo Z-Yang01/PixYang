@@ -104,26 +104,6 @@ export function hasEdits(ops) {
   );
 }
 
-// 色温预览：SVG feColorMatrix 逐通道增益，与 sharp 管线的 RGB 增益同数学语义
-// （sharp linearA = [g*(1+tk*0.1), g, g*(1-tk*0.1)]，预览端只取色温比例因子）
-export function tintMatrixValues(ops) {
-  const s = sanitizeEditOps(ops);
-  const k = (s.temperature / 100) * 0.1;
-  const r = (1 + k).toFixed(4);
-  const b = (1 - k).toFixed(4);
-  return `${r} 0 0 0 0  0 1 0 0 0  0 0 ${b} 0 0  0 0 0 1 0`;
-}
-
-// 组合 CSS filter（含色温矩阵引用）
-export function cssFilter(ops) {
-  const s = sanitizeEditOps(ops);
-  const brightness = Math.pow(2, s.exposure);
-  const contrastF = 1 + s.contrast / 50;
-  const saturate = 1 + s.saturation / 100;
-  const tint = s.temperature !== 0 ? 'url(#pixyang-tint) ' : '';
-  return `${tint}brightness(${brightness.toFixed(4)}) contrast(${contrastF.toFixed(4)}) saturate(${saturate.toFixed(4)})`;
-}
-
 // ── UI 平铺模型 ↔ EditParams v1（持久化结构）双向转换 ──
 
 // UI 平铺 ops → EditParams v1（经 zod 归一化，可入 edits 表）

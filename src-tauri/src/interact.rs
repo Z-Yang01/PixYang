@@ -5,26 +5,6 @@ use tauri_plugin_dialog::DialogExt;
 
 use crate::db::{self, AppPaths, Db};
 
-#[tauri::command]
-pub async fn select_directory(window: Window) -> Option<String> {
-    window
-        .dialog()
-        .file()
-        .set_title("选择要导入的图片文件夹")
-        .blocking_pick_folder()
-        .map(|p| p.to_string())
-}
-
-#[tauri::command]
-pub async fn select_export_directory(window: Window) -> Option<String> {
-    window
-        .dialog()
-        .file()
-        .set_title("选择导出的目标文件夹")
-        .blocking_pick_folder()
-        .map(|p| p.to_string())
-}
-
 // 托管边界同 Electron isManagedPath：图库根 + 数据库所在目录，Path::starts_with 按组件比较等价于 r + path.sep 前缀
 pub(crate) fn is_managed_path(
     images_root: &std::path::Path,
