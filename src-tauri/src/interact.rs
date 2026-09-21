@@ -67,6 +67,43 @@ fn backup_failure(error: Option<String>) -> BackupResult {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::is_managed_path;
+    use std::path::{Path, PathBuf};
+
+    fn roots() -> (PathBuf, PathBuf) {
+        (PathBuf::from("E:/Pic/library"), PathBuf::from("C:/Users/u/AppData/Roaming/pixyang"))
+    }
+
+    #[test]
+    fn 图库根与数据库目录内路径均受管() {
+        let (img, db) = roots();
+        assert!(is_managed_path(&img, &db, &img));
+        assert!(is_managed_path(&img, &db, &img.join("2026-09/a.jpg")));
+        assert!(is_managed_path(&img, &db, &db));
+        assert!(is_managed_path(&img, &db, &db.join("pixyang.db")));
+    }
+
+    #[test]
+    fn 目录外_同前缀名字迷惑_与上级逃逸均不受管() {
+        let (img, db) = roots();
+        // 同前缀但不同路径组件（starts_with 按组件比较，不被字符串前缀迷惑）
+        assert!(!is_managed_path(&img, &db, &Path::new("E:/Pic/libraryEvil")));
+        assert!(!is_managed_path(&img, &db, &Path::new("E:/Pic/library2/a.jpg")));
+        assert!(!is_managed_path(&img, &db, &Path::new("E:/tmp/x.jpg")));
+        assert!(!is_managed_path(&img, &db, &Path::new("D:/Pic/library")));
+    }
+
+    #[test]
+    fn 空数据库目录回退时仅图库根受管() {
+        let (img, _) = roots();
+        let fallback = PathBuf::from(".");
+        assert!(is_managed_path(&img, &fallback, &img.join("a.jpg")));
+        assert!(!is_managed_path(&img, &fallback, &Path::new("C:/Windows/explorer.exe")));
+    }
+}
+
 #[tauri::command]
 pub async fn backup_database(db: State<'_, Db>, window: Window) -> Result<BackupResult, String> {
     let stamp = std::time::SystemTime::now()
