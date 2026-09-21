@@ -436,3 +436,10 @@
   setImagesRoot 在 TAURI_SEAMS 有接缝但 tauriApi 无包装，Tauri 运行时设置页两操作会
   TypeError——补桥（sync_camera_folder 无参 / set_images_root {dirPath}，对齐 camera.rs）。
   vitest 766/766（+68）；typecheck ✅；lint 0 error；vite build ✅；NSIS 安装包重打（含修复）。
+- 2026-09-21 22:15 R38 api.js 收敛（优化建议 2）：删除 TAURI_SEAMS 全量名单（R37 修复后它已
+  覆盖除 getPathForFile 外的全部 64 方法，纯冗余），路由改由桥包装存在性驱动——
+  tauriMedia[name] ?? tauriApi[name] 命中且 isTauriAvailable() 走 Rust 命令，否则透传
+  window.pixyang。结构上根除 R37 类「有接缝无包装」TypeError：包装缺失时自动降级为透传/
+  undefined 而非崩溃。on*/toFileUrl* 特判分支随之删除（媒体包装天然落在 tauriMedia 命名空间）。
+  AGENTS.md 接缝约定同步改为「加同名包装即自动接缝」。契约测试 68 例全数原样通过，即为
+  本次重构的回归网。vitest 766/766；typecheck ✅；lint 0 error；vite build ✅；NSIS 安装包重打。

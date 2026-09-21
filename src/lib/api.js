@@ -1,6 +1,6 @@
 // 统一 window.pixyang 访问层：集中守卫，组件不再散布 if (!window.pixyang) 判断。
-// 生产运行时（Tauri）通道走 Rust 命令（tauriBridge）；window.pixyang 透传面保留给
-// 单测注入与无桥环境的空数据降级。
+// 生产运行时（Tauri）路由规则：tauriBridge/tauriBridgeMedia 存在同名包装且 Tauri 可用 → Rust 命令；
+// 否则透传 window.pixyang（单测注入面/无桥降级，缺失时返回 undefined 按空数据处理）。
 import { isTauriAvailable, tauriApi } from './tauriBridge';
 import * as tauriMedia from './tauriBridgeMedia';
 
@@ -14,74 +14,6 @@ const passthrough =
     if (!bridge || typeof bridge[name] !== 'function') return undefined;
     return bridge[name](...args);
   };
-
-// 已接 Rust 命令的通道（无 Tauri 运行时回落 window.pixyang 注入面）
-const TAURI_SEAMS = new Set([
-  'getSettings',
-  'getSetting',
-  'setSetting',
-  'getTags',
-  'getAlbums',
-  'getImageTags',
-  'getBatchImageTags',
-  'getImages',
-  'getImage',
-  'getImportDates',
-  'getStats',
-  'getAlbumImages',
-  'createTag',
-  'deleteTag',
-  'addTagToImage',
-  'removeTagFromImage',
-  'addTagToImages',
-  'createAlbum',
-  'renameAlbum',
-  'deleteAlbum',
-  'addToAlbum',
-  'removeFromAlbum',
-  'deleteImage',
-  'batchDeleteImages',
-  'getPresets',
-  'createPreset',
-  'deletePreset',
-  'getImagesRoot',
-  'getDatabasePath',
-  'getAllImageIds',
-  'fileExists',
-  'importImages',
-  'renameImage',
-  'getExif',
-  'scanDirectory',
-  'collectImportFiles',
-  'updateImage',
-  'updateImages',
-  'rebuildThumbnails',
-  'scanBrokenRecords',
-  'deleteBrokenRecords',
-  'findDuplicates',
-  'getEdits',
-  'saveEdits',
-  'getEditHistory',
-  'editCancel',
-  'editOpen',
-  'editBake',
-  'editExport',
-  'syncCameraFolder',
-  'setImagesRoot',
-  'toFileUrl',
-  'toFileUrls',
-  'onRebuildProgress',
-  'onImportProgress',
-  'onThumbnailsReady',
-  'onOrientationBackfill',
-  'selectDirectory',
-  'selectExportDirectory',
-  'openPath',
-  'backupDatabase',
-  'exportImages',
-  'exportAlbumImages',
-  'onEditPreviewReady',
-]);
 
 const api = {
   isBridgeAvailable: () => !!px() || isTauriAvailable(),
@@ -154,10 +86,9 @@ for (const name of [
   'onEditPreviewReady',
 ]) {
   api[name] = (...args) => {
-    if (!TAURI_SEAMS.has(name) || !isTauriAvailable()) return passthrough(name)(...args);
-    if (name.startsWith('on')) return tauriMedia[name](...args);
-    if (name === 'toFileUrl' || name === 'toFileUrls') return tauriMedia[name](...args);
-    return tauriApi[name](...args);
+    const impl = tauriMedia[name] ?? tauriApi[name];
+    if (impl && isTauriAvailable()) return impl(...args);
+    return passthrough(name)(...args);
   };
 }
 

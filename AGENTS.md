@@ -70,7 +70,7 @@ tests/            vitest（node 环境 + per-file happy-dom pragma）
 - 前端组件/store **不得直调 `window.__TAURI__` 或 `window.pixyang`**，一律经 `src/lib/api.js`（守卫集中在该层，无桥时方法返回 undefined）。
 - 错误处理保持现有风格：`try/catch` + `console.error('[xxx] ...', e.message)`。
 - 通道命名遵循现有约定：`src/lib/api.js` 方法名 ↔ Rust 命令 snake_case，映射集中在 `tauriBridge.js`。
-- 新功能需在 `src-tauri/src/` 实现并注册 tauri 命令，再在 `tauriBridge.js` 与 `api.js` 的 `TAURI_SEAMS` 接缝。
+- 新功能需在 `src-tauri/src/` 实现并注册 tauri 命令，再在 `tauriBridge.js`（或 `tauriBridgeMedia.js`，事件/URL 类）加同名包装，`api.js` 即按包装存在性自动接缝；无包装的方法只透传 `window.pixyang`。
 - 数据库列/表的修改放在 Rust 侧兼容迁移中完成（缺表按同式补齐，参考 `db.rs`/`tags_albums.rs`）。
 - 中文 UI 文案，保持现有术语（图库、导入、相册、标签、收藏等）。
 
