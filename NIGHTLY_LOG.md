@@ -443,3 +443,9 @@
   undefined 而非崩溃。on*/toFileUrl* 特判分支随之删除（媒体包装天然落在 tauriMedia 命名空间）。
   AGENTS.md 接缝约定同步改为「加同名包装即自动接缝」。契约测试 68 例全数原样通过，即为
   本次重构的回归网。vitest 766/766；typecheck ✅；lint 0 error；vite build ✅；NSIS 安装包重打。
+- 2026-09-21 22:40 R39 换行噪声根除（优化建议 3）：新增 .gitattributes——`* text=auto` 提交侧
+  归一化 + src-tauri/Cargo.toml、Cargo.lock、gen/schemas/*.json 显式 `-text`（Rust 工具链每次
+  构建以 LF 原地重写这些文件，系统级 core.autocrlf=true（Qoder 内置 git etc/gitconfig，不改
+  配置）与纯 LF 工作副本产生转换歧义，长期呈现空 diff 假脏）。实证：cargo check 重写后
+  git status 全绿、autocrlf 警告从 8 条归零。配置类改动不触碰 JS/Rust 源码，R38 门禁结果
+  与安装包继续有效；后续轮次不再手工绕开这三个文件。
