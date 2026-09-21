@@ -54,7 +54,7 @@ describe('dateKeyOf / groupImagesByDate', () => {
       { id: 4, import_date: '2026-05-15' },
       { id: 5, import_date: '2026-04-18' },
     ];
-    const { items, counts } = groupImagesByDate(images);
+    const { items } = groupImagesByDate(images);
     const headers = items.filter((i) => i.type === 'header');
     expect(headers.map((h) => h.date)).toEqual(['2026-05-15', '2026-04-18']);
     expect(items.filter((i) => i.type === 'card')).toHaveLength(5);
