@@ -15,32 +15,37 @@ import {
   ChevronDown,
   ChevronRight,
   Keyboard,
+  BookOpen,
 } from 'lucide-react';
 import useGalleryStore from '@/store/galleryStore';
 
 export default function Sidebar({
-  collapsed, onToggleCollapse,
-  onImport, onShowShortcuts,
+  collapsed,
+  onToggleCollapse,
+  onImport,
+  onShowShortcuts,
+  onShowHelp,
 }) {
-  const stats = useGalleryStore(s => s.stats);
-  const tags = useGalleryStore(s => s.tags);
-  const albums = useGalleryStore(s => s.albums);
-  const importDates = useGalleryStore(s => s.importDates);
-  const filterTag = useGalleryStore(s => s.filterTag);
-  const filterAlbum = useGalleryStore(s => s.filterAlbum);
-  const filterDate = useGalleryStore(s => s.filterDate);
-  const filterFavorites = useGalleryStore(s => s.filterFavorites);
-  const dateRange = useGalleryStore(s => s.dateRange);
-  const setFilterTag = useGalleryStore(s => s.setFilterTag);
-  const setFilterAlbum = useGalleryStore(s => s.setFilterAlbum);
-  const setFilterDate = useGalleryStore(s => s.setFilterDate);
-  const clearFilters = useGalleryStore(s => s.clearFilters);
+  const stats = useGalleryStore((s) => s.stats);
+  const tags = useGalleryStore((s) => s.tags);
+  const albums = useGalleryStore((s) => s.albums);
+  const importDates = useGalleryStore((s) => s.importDates);
+  const filterTag = useGalleryStore((s) => s.filterTag);
+  const filterAlbum = useGalleryStore((s) => s.filterAlbum);
+  const filterDate = useGalleryStore((s) => s.filterDate);
+  const filterFavorites = useGalleryStore((s) => s.filterFavorites);
+  const dateRange = useGalleryStore((s) => s.dateRange);
+  const setFilterTag = useGalleryStore((s) => s.setFilterTag);
+  const setFilterAlbum = useGalleryStore((s) => s.setFilterAlbum);
+  const setFilterDate = useGalleryStore((s) => s.setFilterDate);
+  const clearFilters = useGalleryStore((s) => s.clearFilters);
   const navigate = useNavigate();
   const location = useLocation();
 
   const [dateExpand, setDateExpand] = useState(false);
 
-  const hasActiveFilter = filterTag || filterAlbum || filterDate || filterFavorites || dateRange.from || dateRange.to;
+  const hasActiveFilter =
+    filterTag || filterAlbum || filterDate || filterFavorites || dateRange.from || dateRange.to;
   const isGallery = location.pathname === '/' || location.pathname === '/favorites';
 
   const handleFilterTag = (id) => {
@@ -63,7 +68,9 @@ export default function Sidebar({
   return (
     <aside className="sidebar">
       <div className="sidebar-header">
-        <div className="sidebar-logo"><Images strokeWidth={2} /></div>
+        <div className="sidebar-logo">
+          <Images strokeWidth={2} />
+        </div>
         {!collapsed && <span className="sidebar-title">PixYang</span>}
         <Button
           variant="ghost"
@@ -81,18 +88,31 @@ export default function Sidebar({
         <div className="nav-section">
           {!collapsed && <div className="nav-section-title">图库</div>}
           {/* 只清收藏会残留标签/相册/日期筛选且折叠态无处可清，「全部图片」应回到无筛选视图（审查批 8 Q-06） */}
-          <NavLink to="/" end className={({ isActive }) => `nav-item ${isActive && !filterFavorites ? 'active' : ''}`}
-            onClick={() => clearFilters()} title="全部图片">
+          <NavLink
+            to="/"
+            end
+            className={({ isActive }) => `nav-item ${isActive && !filterFavorites ? 'active' : ''}`}
+            onClick={() => clearFilters()}
+            title="全部图片"
+          >
             <LayoutGrid strokeWidth={1.75} />
             {!collapsed && <span>全部图片</span>}
             {!collapsed && <span className="nav-badge">{stats.totalImages}</span>}
           </NavLink>
-          <NavLink to="/favorites" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`} title="收藏夹">
+          <NavLink
+            to="/favorites"
+            className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
+            title="收藏夹"
+          >
             <Heart strokeWidth={1.75} fill={filterFavorites ? 'currentColor' : 'none'} />
             {!collapsed && <span>收藏夹</span>}
             {!collapsed && <span className="nav-badge">{stats.favorites}</span>}
           </NavLink>
-          <NavLink to="/albums" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`} title="相册">
+          <NavLink
+            to="/albums"
+            className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
+            title="相册"
+          >
             <FolderOpen strokeWidth={1.75} />
             {!collapsed && <span>相册</span>}
             {!collapsed && <span className="nav-badge">{stats.totalAlbums}</span>}
@@ -106,14 +126,18 @@ export default function Sidebar({
               <div className="nav-section-title">
                 按相册筛选
                 {filterAlbum && (
-                  <Button variant="ghost" size="xs" onClick={() => handleFilterAlbum(null)}
-                    className="ml-1.5 text-[10px] h-5 px-1.5">
+                  <Button
+                    variant="ghost"
+                    size="xs"
+                    onClick={() => handleFilterAlbum(null)}
+                    className="ml-1.5 text-[10px] h-5 px-1.5"
+                  >
                     清除
                   </Button>
                 )}
               </div>
             )}
-            {albums.map(album => (
+            {albums.map((album) => (
               <button
                 key={album.id}
                 className={`nav-item ${filterAlbum === album.id ? 'active' : ''}`}
@@ -132,10 +156,17 @@ export default function Sidebar({
         {importDates.length > 0 && (
           <div className="nav-section">
             {!collapsed && (
-              <div className="nav-section-title" style={{ cursor: 'pointer', display: 'flex', justifyContent: 'space-between' }}
-                onClick={() => setDateExpand(!dateExpand)}>
+              <div
+                className="nav-section-title"
+                style={{ cursor: 'pointer', display: 'flex', justifyContent: 'space-between' }}
+                onClick={() => setDateExpand(!dateExpand)}
+              >
                 <span>按日期筛选</span>
-                {dateExpand ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}
+                {dateExpand ? (
+                  <ChevronDown className="size-3.5" />
+                ) : (
+                  <ChevronRight className="size-3.5" />
+                )}
               </div>
             )}
             {!collapsed && dateExpand && (
@@ -168,21 +199,28 @@ export default function Sidebar({
               <div className="nav-section-title">
                 按标签筛选
                 {filterTag && (
-                  <Button variant="ghost" size="xs" onClick={() => handleFilterTag(null)}
-                    className="ml-1.5 text-[10px] h-5 px-1.5">
+                  <Button
+                    variant="ghost"
+                    size="xs"
+                    onClick={() => handleFilterTag(null)}
+                    className="ml-1.5 text-[10px] h-5 px-1.5"
+                  >
                     清除
                   </Button>
                 )}
               </div>
             )}
-            {tags.slice(0, 15).map(tag => (
+            {tags.slice(0, 15).map((tag) => (
               <button
                 key={tag.id}
                 className={`nav-item ${filterTag === tag.id ? 'active' : ''}`}
                 onClick={() => handleFilterTag(filterTag === tag.id ? null : tag.id)}
                 title={tag.name}
               >
-                <span className="tag-dot" style={{ background: tag.color, margin: '0 4px 0 3px' }} />
+                <span
+                  className="tag-dot"
+                  style={{ background: tag.color, margin: '0 4px 0 3px' }}
+                />
                 {!collapsed && <span>{tag.name}</span>}
                 {!collapsed && <span className="nav-badge">{tag.image_count}</span>}
               </button>
@@ -205,7 +243,11 @@ export default function Sidebar({
         {/* 设置 */}
         <div className="nav-section">
           {!collapsed && <div className="nav-section-title">其他</div>}
-          <NavLink to="/settings" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`} title="设置">
+          <NavLink
+            to="/settings"
+            className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
+            title="设置"
+          >
             <Settings strokeWidth={1.75} />
             {!collapsed && <span>设置</span>}
           </NavLink>
@@ -233,6 +275,18 @@ export default function Sidebar({
           >
             <Keyboard />
             {!collapsed && <span>快捷键</span>}
+          </Button>
+        )}
+        {onShowHelp && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="w-full mt-1"
+            onClick={onShowHelp}
+            title="使用说明"
+          >
+            <BookOpen />
+            {!collapsed && <span>使用说明</span>}
           </Button>
         )}
       </div>

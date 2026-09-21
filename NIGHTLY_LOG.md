@@ -377,3 +377,6 @@
   tauriBridgeMedia.toFileUrl/toFileUrls 返回同步值，组件按 Electron IPC 契约 .then 消费即崩。
   改为返回 Promise（缺失时 resolve 空串/空映射，await/.then 均兼容）。vitest 971/971；
   新安装包已重打。
+- 2026-09-21 06:45 R30 应用内使用说明：HelpGuide 弹窗（六分区：图库浏览/导入/编辑/标签相册/
+  数据与维护/快捷键指引）+ 侧边栏"使用说明"入口 + App 门禁/Escape 接线 + 3 个组件测试。
+  NSIS 安装包随附说明（4.1MB）。vitest 971/971 + 3 新测试全绿。
