@@ -231,12 +231,6 @@ const ROUTES = [
   { method: 'onRebuildProgress', args: [() => {}], kind: 'event', evt: 'rebuild-progress' },
   { method: 'onImportProgress', args: [() => {}], kind: 'event', evt: 'import-progress' },
   { method: 'onThumbnailsReady', args: [() => {}], kind: 'event', evt: 'thumbnails-ready' },
-  {
-    method: 'onOrientationBackfill',
-    args: [() => {}],
-    kind: 'event',
-    evt: 'orientation-backfill-done',
-  },
   { method: 'onEditPreviewReady', args: [() => {}], kind: 'event', evt: 'edit-preview-ready' },
   { method: 'getPathForFile', args: ['f'], kind: 'pixyang' },
 ];

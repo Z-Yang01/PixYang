@@ -1,11 +1,11 @@
 # NIGHTLY_PROGRESS — Rust/Tauri 结构推进
 
-状态：**通道对齐 64/64 全通（R28 收官）**。对齐口径自 R24 起以
-`docs/TAURI_PARITY.md` 为唯一权威（基准=api.js 暴露的 59 数据通道+5 事件；旧「58 通道」
-为手工清点口径，已废弃）。夜间自动化（每 30 分钟一轮）自 2026-09-21 02:15 起接管推进，
-R24-R28 五轮完成最后 10+ 通道与两处勘误修复，逐轮记录见 NIGHTLY_LOG.md。
+状态：**通道对齐 63/63 全通**（R28 收官时为 64/64；2026-09-22 R44 删除无生产者的
+orientation-backfill-done 事件链后为 63）。对齐口径自 R24 起以
+`docs/TAURI_PARITY.md` 为唯一权威（基准=api.js 暴露的 59 数据通道+4 事件；旧「58 通道」
+为手工清点口径，已废弃）。Electron 层已于 2026-09-21 R36 整体删除，逐轮记录见 NIGHTLY_LOG.md。
 **下一步 = 人工 tauri 全功能点击级冒烟**（`cd src-tauri && cargo run`，重点：编辑保存后
-网格缩略图即时更新、烘焙/导出、拖拽导入），通过后即可安排 Electron 删除轮。
+网格缩略图即时更新、烘焙/导出、拖拽导入）。
 
 分支：`auto/nightly/pixyang-rust-tauri-20260920-0114`（基线 optimize/architecture + wip 6d20c40）
 提交链：6d20c40 wip → 65e3ff7 R1 → 018752e R2 → b164a7c R3 → 09fde04 最终日志
@@ -39,7 +39,7 @@ R24-R28 五轮完成最后 10+ 通道与两处勘误修复，逐轮记录见 NIG
 | 接缝 4d：日期移动/更新 | updateImage（白名单 UPDATE + NEF 随日期移动） | 未开始 |
 | **接缝 4c：presets** | getPresets/createPreset/deletePreset（params JSON 原样存取，upgradeEdits 在桥接层） | ✅ R13 完成（2 测试） |
 | **接缝 5：缩略图/渲染** | 方案 A image-rs 纯 Rust（已拍板，SEAM5_DECISION.md） | ✅ R16-R20 完成（四阶段，+18 测试，golden 门禁切换） |
-| Electron 删除 | 前置条件：接缝 1-5 全部切换 + tauri dev 全功能冒烟 | **阻塞中（对等未达）** |
+| Electron 删除 | 前置条件：接缝 1-5 全部切换 + tauri dev 全功能冒烟 | **✅ 已删除（2026-09-21 R36）** |
 
 ## 接缝迁移状态总览
 

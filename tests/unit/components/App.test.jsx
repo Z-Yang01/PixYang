@@ -70,7 +70,6 @@ function createPixyangMock(overrides = {}) {
     batchDeleteImages: vi.fn().mockResolvedValue(undefined),
     getImagesRoot: vi.fn().mockResolvedValue('C:/PixData'),
     getDatabasePath: vi.fn().mockResolvedValue('C:/db/pixyang.db'),
-    onOrientationBackfill: vi.fn().mockReturnValue(() => {}),
     onThumbnailsReady: vi.fn().mockReturnValue(() => {}),
     onRebuildProgress: vi.fn().mockReturnValue(() => {}),
     getPathForFile: vi.fn().mockReturnValue(''),

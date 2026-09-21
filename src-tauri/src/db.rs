@@ -296,7 +296,6 @@ INSERT OR IGNORE INTO settings (key, value) VALUES
   ('grid_columns', '5'),
   ('grid_gap', '12'),
   ('content_padding', '16'),
-  ('orientation_backfilled', 'false'),
   ('sort_by', 'import_date'),
   ('sort_order', 'DESC');
 ";

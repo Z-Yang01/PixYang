@@ -17,7 +17,6 @@ export default function useGalleryData({ onThumbnailsReady } = {}) {
   const page = useGalleryStore((s) => s.page);
   const gridSettings = useGalleryStore((s) => s.gridSettings);
   const loadImages = useGalleryStore((s) => s.loadImages);
-  const loadStats = useGalleryStore((s) => s.loadStats);
 
   const lastSearchRef = useRef(search);
 
@@ -50,16 +49,6 @@ export default function useGalleryData({ onThumbnailsReady } = {}) {
     search,
     loadImages,
   ]);
-
-  // 启动时方向回填完成后刷新列表
-  useEffect(() => {
-    if (!api.isBridgeAvailable()) return;
-    const off = api.onOrientationBackfill(() => {
-      loadImages();
-      loadStats();
-    });
-    return off;
-  }, [loadImages, loadStats]);
 
   // 后台缩略图生成完成后： bump 版本刷新缩略图 URL 并轻量刷新列表
   useEffect(() => {

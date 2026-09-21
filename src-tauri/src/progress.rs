@@ -4,7 +4,6 @@ use tauri::{AppHandle, Emitter};
 pub const REBUILD_PROGRESS: &str = "rebuild-progress";
 pub const IMPORT_PROGRESS: &str = "import-progress";
 pub const THUMBNAILS_READY: &str = "thumbnails-ready";
-pub const ORIENTATION_BACKFILL: &str = "orientation-backfill-done";
 pub const EDIT_PREVIEW_READY: &str = "edit-preview-ready";
 
 pub fn emit_progress(app: &AppHandle, event: &str, payload: Value) {
@@ -26,7 +25,6 @@ mod tests {
         assert_eq!(REBUILD_PROGRESS, "rebuild-progress");
         assert_eq!(IMPORT_PROGRESS, "import-progress");
         assert_eq!(THUMBNAILS_READY, "thumbnails-ready");
-        assert_eq!(ORIENTATION_BACKFILL, "orientation-backfill-done");
         assert_eq!(EDIT_PREVIEW_READY, "edit-preview-ready");
     }
 

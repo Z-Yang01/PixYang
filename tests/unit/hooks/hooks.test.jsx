@@ -117,7 +117,6 @@ describe('useGalleryData wiring', () => {
       getTags: vi.fn().mockResolvedValue([]),
       getAlbums: vi.fn().mockResolvedValue([]),
       getImportDates: vi.fn().mockResolvedValue([]),
-      onOrientationBackfill: vi.fn().mockReturnValue(() => {}),
       onThumbnailsReady: vi.fn().mockReturnValue(() => {}),
     };
   });

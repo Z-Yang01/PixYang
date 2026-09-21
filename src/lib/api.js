@@ -81,7 +81,6 @@ for (const name of [
   'getSettings',
   'getSetting',
   'setSetting',
-  'onOrientationBackfill',
   'onThumbnailsReady',
   'onEditPreviewReady',
 ]) {

@@ -1,10 +1,11 @@
 # TAURI_PARITY — Electron→Tauri 通道对齐权威清单
 
-建档：2026-09-21 R24（夜间自动化）。**基准**：`src/lib/api.js` 统一访问层暴露的 64 个通道
-（59 数据通道 + 5 事件），即 `preload.js` `window.pixyang` 的前端可见契约。逐一核对
+建档：2026-09-21 R24（夜间自动化）。**基准**：`src/lib/api.js` 统一访问层暴露的 63 个通道
+（59 数据通道 + 4 事件），即 `preload.js` `window.pixyang` 的前端可见契约。逐一核对
 `src/lib/api.js` `TAURI_SEAMS` 接缝 × `src/lib/tauriBridge.js` 包装 × `src-tauri/src/` 命令注册。
+（2026-09-22 R44：删除无生产者的 `onOrientationBackfill` 事件链，基准 64→63，见「行为对齐补全」表。）
 
-**当前对齐度：64/64 ✅ 全通。**（R25 导出；R27 编辑预览；R28 拖拽导入原生事件源闭环）
+**当前对齐度：63/63 ✅ 全通。**（R25 导出；R27 编辑预览；R28 拖拽导入原生事件源闭环）
 状态含义：✅ 已通（Tauri 运行时走 Rust/原生能力，Electron 运行时原路径不变）／
 ❌ 缺失（仅 Electron）。**通道层无剩余缺口**；Electron 删除前置条件仅剩 tauri 全功能
 点击级冒烟（人工）。
@@ -68,7 +69,7 @@ getBatchImageTags / addTagToImages 全部 ✅（tags_albums.rs，SQL 逐字镜�
 
 getAlbums / createAlbum / renameAlbum / deleteAlbum / addToAlbum / removeFromAlbum 全部 ✅。
 另：`getAlbumImages` 为 Rust 侧备用通道（get_album_images 已注册，前端 api.js 循环未暴露、无消费方），
-不计入 64 基准。
+不计入 63 基准。
 
 ## 导出（3）
 
@@ -87,17 +88,20 @@ getDatabasePath ✅；backupDatabase ✅（R24 接缝；backup_database VACUUM I
 
 getSettings / getSetting / setSetting ✅（db.rs 同库读写，get_settings 返回 {key:value} 对象）。
 
-## 事件（5）
+## 事件（4）
 
 | 通道 | 状态 | 备注 |
 |---|---|---|
-| onRebuildProgress / onImportProgress / onThumbnailsReady / onOrientationBackfill | ✅ | progress.rs Emitter + tauriBridgeMedia listen |
+| onRebuildProgress / onImportProgress / onThumbnailsReady | ✅ | progress.rs Emitter + tauriBridgeMedia listen |
 | onEditPreviewReady | ✅ | R27：saveEdits 成功后桥内异步调度（400 长边代理 spec，buildProxySpec 缩放 crop/蒙版坐标）→ edit_render_preview 渲染 edit-{id}.jpg + 缓存元数据（editVersion/render-rust-1）+ 写 thumbnail_edit_path + Emitter 发事件；useGalleryData 既有消费端直接生效。**需人工复核**：编辑保存后网格缩略图即时更新（cargo run 点击级） |
+
+（`onOrientationBackfill` 已于 R44 删除：Tauri 导入即持久化方向、后台回填属有意不移植，
+该事件自迁移完成起无任何 Rust 生产者，订阅链属死代码。）
 
 ## 剩余缺口
 
-**无（64/64 全通）。** 后续工作 = tauri 全功能点击级冒烟（人工，`cd src-tauri && cargo run`）
-+ 已标注「需人工复核」项的逐项确认 + Electron 删除轮。
+**无（63/63 全通）。** 后续工作 = tauri 全功能点击级冒烟（人工，`cd src-tauri && cargo run`）
++ 已标注「需人工复核」项的逐项确认。
 
 ## 行为对齐补全（R30-R35，通道清单之外的副作用/行为类修复）
 
@@ -109,6 +113,7 @@ getSettings / getSetting / setSetting ✅（db.rs 同库读写，get_settings �
 | R33 | 事件通道名三层审计：orientation-backfill → orientation-backfill-done（R23 错名修正） | 埋雷 |
 | R34 | 编辑打开时清理烘焙残留 temp（非托管才删）+ hidden 拒编辑守卫 | 磁盘泄漏/契约 |
 | R35 | 编辑预览磁盘 LRU 上限 500（按 edits.updated_at 清最旧），对齐 enforceEditPreviewLimit | 磁盘泄漏 |
+| R44（2026-09-22） | 删除无生产者的 orientation-backfill-done 事件链（tauriBridgeMedia 包装、api.js 通道、useGalleryData 订阅、progress.rs 常量、db.rs settings 默认行）；方向在 Tauri 导入时已持久化（scan.rs EXIF），后台回填属 R33 有意不移植 | 死代码 |
 
 已记录的接受性取舍（不移植，理由见 NIGHTLY_LOG 当轮）：启动时全库 stale temp 清理
 （R34，打开时清理已覆盖常见路径）、orientation 一次性启动回填（R33，共享库已被
