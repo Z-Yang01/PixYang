@@ -557,3 +557,9 @@
   deps，body 读取的字段全部在列）。均为有意设计而非隐患，后续轮次无需重复审计；按
   AGENTS「warning 不阻塞」保留不掩盖（不加 eslint-disable）。清理 gallery.test.js 未使用
   解构（9→8）。零生产代码改动。需人工复核：无。
+- 2026-09-22 03:35 A-6 待决项②核查（零改动）：逐名验证 R43 所列 6 个「仅单测触达」桥包装
+  （uniqueFilename/groupImportFiles/makeThumbnailTiers/extractNefPreview/imageMeta/renderEdit）
+  ——grep 全仓确认生产代码零调用（仅 tauriBridge.js 定义处；renderEditPreviewAfterSave 为
+  另一内部函数且在用）。R43 断言属实，②维持「暴露但无人用」待人工裁决（删则需连同其单测
+  一起删，不属凑绿删测）。今晚 PixYang 累计：R44 死代码链删除+文档收口、R45 路径守卫测试、
+  覆盖率复验、lint 审计定性。需人工复核：仅剩 ② 与点击级冒烟。
