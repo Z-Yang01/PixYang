@@ -539,3 +539,11 @@
   （update_image/update_images/scan_broken_records/sync_camera_folder 均已注册，git log 取证）。
   纯文档修正，无代码改动；用户未提交改动（themes.ts / index.css / release/）原样未动。
   需人工复核：无。
+- 2026-09-22 03:10 A-3 R45 安全守卫测试 + 用户 WIP 编译性验证：①interact.rs is_managed_path
+  （openPath 的路径逃逸防线）+3 测试——组件级 starts_with 不受同前缀名字迷惑
+  （libraryEvil/library2）、跨盘/上级逃逸拒绝、db 目录回退 "." 时仅图库根受管；
+  ②用户未提交 WIP（themes.ts / styles/index.css）npx vite build 通过 6.09s（对标 B 轮
+  cargo check 口径）。教训记录：本仓 generate_context! 编译期读 ../dist，cargo test 前须
+  先 vite build（AGENTS 既有约定，轮内误删 dist 后已按约定重建再跑）。
+  验证：cargo 149（146+3）+ golden_audit ✅；全程串行。仅提交 interact.rs；dist 为测试
+  必需中间产物，轮末删除。需人工复核：无。
