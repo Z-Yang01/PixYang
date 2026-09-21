@@ -7,6 +7,7 @@ import {
   TriangleAlertIcon,
 } from "lucide-react"
 import { Toaster as Sonner, type ToasterProps } from "sonner"
+import { isLightTheme } from "@/lib/themes"
 
 const Toaster = ({ ...props }: ToasterProps) => {
   const [theme, setTheme] = React.useState<"dark" | "light">("dark")
@@ -14,7 +15,7 @@ const Toaster = ({ ...props }: ToasterProps) => {
   React.useEffect(() => {
     const update = () => {
       setTheme(
-        document.documentElement.getAttribute("data-theme") === "light"
+        isLightTheme(document.documentElement.getAttribute("data-theme"))
           ? "light"
           : "dark"
       )

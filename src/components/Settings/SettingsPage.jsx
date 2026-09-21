@@ -3,13 +3,14 @@ import { Button } from '@/components/ui/button';
 import ConfirmDialog from '../Layout/ConfirmDialog';
 import useGalleryStore from '@/store/galleryStore';
 import api from '@/lib/api';
+import { THEMES, normalizeTheme } from '@/lib/themes';
 
 const DEFAULT_SETTINGS = { theme: 'dark', rows: 3, columns: 5, gap: 12, padding: 16 };
 
 // 以当前生效值（store 网格设置 + DOM 主题）为草稿初值：
 // 用 DEFAULT_SETTINGS 起步会在 loadSettings 返回前把已持久化网格瞬时覆盖成默认值（审查批 8 R-1）
 const readCurrentUiSettings = () => ({
-  theme: document.documentElement.getAttribute('data-theme') === 'light' ? 'light' : 'dark',
+  theme: normalizeTheme(document.documentElement.getAttribute('data-theme')),
   ...useGalleryStore.getState().gridSettings,
 });
 
@@ -72,7 +73,7 @@ export default function SettingsPage({ onSettingsChanged, onImagesChanged }) {
     if (!api.isBridgeAvailable()) return;
     const settings = await api.getSettings();
     const next = {
-      theme: settings.theme === 'light' ? 'light' : 'dark',
+      theme: normalizeTheme(settings.theme),
       rows: clamp(settings.grid_rows, 1, 10, 3),
       columns: clamp(settings.grid_columns, 2, 10, 5),
       gap: clamp(settings.grid_gap, 0, 48, 12),
@@ -333,23 +334,24 @@ export default function SettingsPage({ onSettingsChanged, onImagesChanged }) {
 
         <section className="settings-section">
           <h2>外观</h2>
-          <div className="info-row">
+          <div className="info-row info-row-stack">
             <span className="info-label">主题模式</span>
-            <div className="button-row">
-              <Button
-                variant={draft.theme === 'dark' ? 'default' : 'secondary'}
-                size="sm"
-                onClick={() => updateDraft({ theme: 'dark' })}
-              >
-                深色
-              </Button>
-              <Button
-                variant={draft.theme === 'light' ? 'default' : 'secondary'}
-                size="sm"
-                onClick={() => updateDraft({ theme: 'light' })}
-              >
-                浅色
-              </Button>
+            <div className="theme-grid">
+              {THEMES.map(t => (
+                <button
+                  key={t.id}
+                  type="button"
+                  className={`theme-card${draft.theme === t.id ? ' active' : ''}`}
+                  onClick={() => updateDraft({ theme: t.id })}
+                >
+                  <span className="theme-swatches">
+                    <i style={{ background: t.swatch[0] }} />
+                    <i style={{ background: t.swatch[1] }} />
+                  </span>
+                  <span className="theme-name">{t.name}</span>
+                  <span className="theme-desc">{t.desc}</span>
+                </button>
+              ))}
             </div>
           </div>
         </section>

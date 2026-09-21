@@ -12,6 +12,7 @@ import {
   matchesListFilters,
 } from './lib/gallery';
 import api from './lib/api';
+import { normalizeTheme } from './lib/themes';
 import useGalleryStore, { anyModalOpen } from './store/galleryStore';
 import useGalleryData from './hooks/useGalleryData';
 import useGlobalShortcuts from './hooks/useGlobalShortcuts';
@@ -113,7 +114,7 @@ export default function App() {
         padding: Number(settings.content_padding || 16),
       });
       useGalleryStore.getState().setSortFromSettings(settings.sort_by, settings.sort_order);
-      document.documentElement.setAttribute('data-theme', settings.theme === 'light' ? 'light' : 'dark');
+      document.documentElement.setAttribute('data-theme', normalizeTheme(settings.theme));
     })();
   }, []);
 

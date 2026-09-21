@@ -407,3 +407,8 @@
   文本星换 lucide 实心星。③ 布局——日期计数软胶囊、分页条顶部发丝分隔线、页码数字等宽、
   空态图标圆角底板。cargo 全量+golden 门禁 ✅（合并基线）；vitest 975/975；typecheck ✅；
   lint 0 error；vite build ✅；NSIS 安装包重打。
+- 2026-09-21 21:00 R34 多主题体系 + 美化：5 套全局主题（深色/午夜蓝/森林夜/浅色/羊皮纸），
+  src/lib/themes.ts 单一事实源（白名单归一化+浅色系判定），每套主题全套 --bg-*/按钮/覆盖层/
+  shadcn token 变量块；App 启动主题归一化；设置页主题模式改色板预览选择卡（即时预览+保存持久化）；
+  sonner 弹层按浅色系（含羊皮纸）判定主题；+4 用例（themes 工具 3、新主题选择保存链路 1）。
+  vitest 979/979；typecheck ✅；lint 0 error；vite build ✅；NSIS 安装包重打。

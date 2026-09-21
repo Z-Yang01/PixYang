@@ -1858,6 +1858,207 @@ body {
   --ring: #5b6ef5;
 }
 
+/* ── 午夜蓝（冷调靛蓝夜色） ── */
+[data-theme="midnight"] {
+  color-scheme: dark;
+  --bg-primary: #0b1220;
+  --bg-secondary: #101a2b;
+  --bg-card: #121d31;
+  --bg-hover: #1a2740;
+  --bg-input: #0e1727;
+  --border: #223049;
+  --border-light: #2e3f5c;
+  --text-primary: #e6edf7;
+  --text-secondary: #9fb0c8;
+  --text-muted: #6b7d99;
+  --accent-color: #38bdf8;
+  --accent-color-hover: #7dd3fc;
+  --accent-color-glow: rgba(56, 189, 248, 0.16);
+  --shadow: 0 1px 3px rgba(2, 6, 16, 0.4);
+  --shadow-lg: 0 8px 28px rgba(2, 6, 16, 0.55);
+  --danger: #f87171;
+  --danger-hover: #fca5a5;
+  --success: #4ade80;
+  --warning: #fbbf24;
+  --star: #fbbf24;
+
+  --btn-primary-bg: rgba(56, 189, 248, 0.16);
+  --btn-primary-bg-hover: rgba(56, 189, 248, 0.28);
+  --btn-primary-border: rgba(56, 189, 248, 0.4);
+  --btn-primary-border-hover: rgba(125, 211, 252, 0.65);
+  --btn-primary-text: #bae6fd;
+  --btn-primary-text-hover: #e0f2fe;
+  --btn-danger-bg: rgba(248, 113, 113, 0.12);
+  --btn-danger-bg-hover: #ef4444;
+  --btn-danger-border: rgba(248, 113, 113, 0.4);
+  --btn-danger-border-hover: #ef4444;
+  --btn-danger-text: #fca5a5;
+  --btn-danger-text-hover: #ffffff;
+  --btn-secondary-bg: #131f35;
+  --btn-secondary-bg-hover: #1b2a45;
+
+  --overlay-gradient: linear-gradient(to top, rgba(0, 0, 0, 0.72) 0%, rgba(0, 0, 0, 0.3) 45%, transparent 100%);
+  --card-stars-bg: rgba(10, 16, 28, 0.6);
+  --card-checkbox-bg: rgba(10, 16, 28, 0.4);
+  --dialog-backdrop: rgba(4, 8, 18, 0.6);
+  --viewer-overlay: rgba(7, 11, 22, 0.96);
+
+  /* shadcn/ui tokens (midnight) */
+  --background: #0b1220;
+  --foreground: #e6edf7;
+  --card: #121d31;
+  --card-foreground: #e6edf7;
+  --popover: #101a2b;
+  --popover-foreground: #e6edf7;
+  --primary: #38bdf8;
+  --primary-foreground: #0b1220;
+  --secondary: #1a2740;
+  --secondary-foreground: #e6edf7;
+  --muted: #1a2740;
+  --muted-foreground: #9fb0c8;
+  --accent: #1a2740;
+  --accent-foreground: #e6edf7;
+  --destructive: #f87171;
+  --destructive-foreground: #0b1220;
+  --border: #223049;
+  --input: #0e1727;
+  --ring: #38bdf8;
+}
+
+/* ── 森林夜（沉静墨绿） ── */
+[data-theme="forest"] {
+  color-scheme: dark;
+  --bg-primary: #0e1713;
+  --bg-secondary: #121e18;
+  --bg-card: #15241c;
+  --bg-hover: #1c2f25;
+  --bg-input: #101d16;
+  --border: #24382c;
+  --border-light: #31493a;
+  --text-primary: #e7f0e9;
+  --text-secondary: #a3b8a9;
+  --text-muted: #6e8577;
+  --accent-color: #34d399;
+  --accent-color-hover: #6ee7b7;
+  --accent-color-glow: rgba(52, 211, 153, 0.15);
+  --shadow: 0 1px 3px rgba(3, 10, 6, 0.4);
+  --shadow-lg: 0 8px 28px rgba(3, 10, 6, 0.55);
+  --danger: #f87171;
+  --danger-hover: #fca5a5;
+  --success: #4ade80;
+  --warning: #fbbf24;
+  --star: #fbbf24;
+
+  --btn-primary-bg: rgba(52, 211, 153, 0.14);
+  --btn-primary-bg-hover: rgba(52, 211, 153, 0.26);
+  --btn-primary-border: rgba(52, 211, 153, 0.38);
+  --btn-primary-border-hover: rgba(110, 231, 183, 0.65);
+  --btn-primary-text: #a7f3d0;
+  --btn-primary-text-hover: #d1fae5;
+  --btn-danger-bg: rgba(248, 113, 113, 0.12);
+  --btn-danger-bg-hover: #ef4444;
+  --btn-danger-border: rgba(248, 113, 113, 0.4);
+  --btn-danger-border-hover: #ef4444;
+  --btn-danger-text: #fca5a5;
+  --btn-danger-text-hover: #ffffff;
+  --btn-secondary-bg: #14231b;
+  --btn-secondary-bg-hover: #1c2f25;
+
+  --overlay-gradient: linear-gradient(to top, rgba(0, 0, 0, 0.72) 0%, rgba(0, 0, 0, 0.3) 45%, transparent 100%);
+  --card-stars-bg: rgba(8, 18, 12, 0.6);
+  --card-checkbox-bg: rgba(8, 18, 12, 0.4);
+  --dialog-backdrop: rgba(3, 10, 6, 0.6);
+  --viewer-overlay: rgba(6, 13, 9, 0.96);
+
+  /* shadcn/ui tokens (forest) */
+  --background: #0e1713;
+  --foreground: #e7f0e9;
+  --card: #15241c;
+  --card-foreground: #e7f0e9;
+  --popover: #121e18;
+  --popover-foreground: #e7f0e9;
+  --primary: #34d399;
+  --primary-foreground: #0e1713;
+  --secondary: #1c2f25;
+  --secondary-foreground: #e7f0e9;
+  --muted: #1c2f25;
+  --muted-foreground: #a3b8a9;
+  --accent: #1c2f25;
+  --accent-foreground: #e7f0e9;
+  --destructive: #f87171;
+  --destructive-foreground: #0e1713;
+  --border: #24382c;
+  --input: #101d16;
+  --ring: #34d399;
+}
+
+/* ── 羊皮纸（暖调纸张色） ── */
+[data-theme="sepia"] {
+  color-scheme: light;
+  --bg-primary: #f5efe2;
+  --bg-secondary: #fbf7ec;
+  --bg-card: #fdf9ef;
+  --bg-hover: #ece2cd;
+  --bg-input: #f2ead8;
+  --border: #ddd2ba;
+  --border-light: #cabc9c;
+  --text-primary: #3d3324;
+  --text-secondary: #6b5d47;
+  --text-muted: #9a8a70;
+  --accent-color: #b45309;
+  --accent-color-hover: #92400e;
+  --accent-color-glow: rgba(180, 83, 9, 0.14);
+  --shadow: 0 1px 3px rgba(80, 60, 25, 0.08);
+  --shadow-lg: 0 8px 24px rgba(80, 60, 25, 0.14);
+  --danger: #c53030;
+  --danger-hover: #e53e3e;
+  --success: #2f7d44;
+  --warning: #b45309;
+  --star: #d97706;
+
+  --btn-primary-bg: rgba(180, 83, 9, 0.1);
+  --btn-primary-bg-hover: rgba(180, 83, 9, 0.18);
+  --btn-primary-border: rgba(180, 83, 9, 0.32);
+  --btn-primary-border-hover: rgba(146, 64, 14, 0.5);
+  --btn-primary-text: #92400e;
+  --btn-primary-text-hover: #7c2d12;
+  --btn-danger-bg: rgba(197, 48, 48, 0.08);
+  --btn-danger-bg-hover: #c53030;
+  --btn-danger-border: rgba(197, 48, 48, 0.32);
+  --btn-danger-border-hover: #c53030;
+  --btn-danger-text: #c53030;
+  --btn-danger-text-hover: #ffffff;
+  --btn-secondary-bg: #fdf9ef;
+  --btn-secondary-bg-hover: #ece2cd;
+
+  --overlay-gradient: linear-gradient(to top, rgba(0, 0, 0, 0.72) 0%, rgba(0, 0, 0, 0.3) 45%, transparent 100%);
+  --card-stars-bg: rgba(30, 22, 10, 0.55);
+  --card-checkbox-bg: rgba(30, 22, 10, 0.35);
+  --dialog-backdrop: rgba(60, 45, 20, 0.35);
+  --viewer-overlay: rgba(30, 24, 14, 0.96);
+
+  /* shadcn/ui tokens (sepia) */
+  --background: #f5efe2;
+  --foreground: #3d3324;
+  --card: #fdf9ef;
+  --card-foreground: #3d3324;
+  --popover: #fbf7ec;
+  --popover-foreground: #3d3324;
+  --primary: #b45309;
+  --primary-foreground: #ffffff;
+  --secondary: #ece2cd;
+  --secondary-foreground: #3d3324;
+  --muted: #ece2cd;
+  --muted-foreground: #6b5d47;
+  --accent: #ece2cd;
+  --accent-foreground: #3d3324;
+  --destructive: #c53030;
+  --destructive-foreground: #ffffff;
+  --border: #ddd2ba;
+  --input: #f2ead8;
+  --ring: #b45309;
+}
+
 body {
   transition: background-color 0.3s ease, color 0.3s ease;
 }
@@ -2772,4 +2973,76 @@ body {
 .empty-state-icon svg {
   width: 44px;
   height: 44px;
+}
+
+/* ── R34 主题选择卡 ── */
+.info-row-stack {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.theme-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
+  gap: 10px;
+  width: 100%;
+}
+
+.theme-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px;
+  text-align: left;
+  background: var(--bg-secondary);
+  border: 2px solid var(--border);
+  border-radius: 12px;
+  cursor: pointer;
+  transition:
+    border-color var(--transition-fast),
+    box-shadow var(--transition),
+    transform var(--transition-fast);
+}
+
+.theme-card:hover {
+  border-color: var(--border-light);
+  transform: translateY(-1px);
+}
+
+.theme-card:active {
+  transform: scale(0.98);
+}
+
+.theme-card.active {
+  border-color: var(--accent-color);
+  box-shadow: 0 0 0 3px var(--accent-color-glow);
+}
+
+.theme-swatches {
+  display: flex;
+  margin-bottom: 4px;
+}
+
+.theme-swatches i {
+  width: 26px;
+  height: 18px;
+  border-radius: 5px;
+  border: 1px solid var(--border);
+}
+
+.theme-swatches i + i {
+  margin-left: -6px;
+  border-radius: 5px 8px 8px 5px;
+}
+
+.theme-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.theme-desc {
+  font-size: 11px;
+  color: var(--text-muted);
 }

@@ -84,6 +84,19 @@ describe('SettingsPage', () => {
     });
   });
 
+  it('选择新主题卡（午夜蓝）并保存：setSetting theme=midnight 且预览即改 data-theme', async () => {
+    document.documentElement.setAttribute('data-theme', 'dark');
+    renderPage();
+    await screen.findByText('C:/PixData');
+    fireEvent.click(screen.getByText('午夜蓝'));
+    expect(document.documentElement.getAttribute('data-theme')).toBe('midnight');
+    fireEvent.click(screen.getByText('保存'));
+    await vi.waitFor(() => {
+      expect(window.pixyang.setSetting).toHaveBeenCalledWith('theme', 'midnight');
+    });
+    document.documentElement.setAttribute('data-theme', 'dark');
+  });
+
   it('点「撤回」重新加载设置并清除未保存态', async () => {
     renderPage();
     await screen.findByText('C:/PixData');
