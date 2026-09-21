@@ -6,12 +6,14 @@ export function groupImagesByDate(images) {
   const items = [];
   const counts = {};
   let lastDate = '';
+  let run = 0;
   images.forEach((image, index) => {
     const date = dateKeyOf(image);
     if (date) counts[date] = (counts[date] || 0) + 1;
     if (date && date !== lastDate) {
-      items.push({ type: 'header', date });
+      items.push({ type: 'header', date, run });
       lastDate = date;
+      run += 1;
     }
     items.push({ type: 'card', image, index });
   });

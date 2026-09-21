@@ -508,3 +508,10 @@
   imageMeta/renderEdit）不在 api.js 通道清单内，对应 Rust 内核函数仍被导入/渲染管线内部调用，
   属「暴露但无人用」的兼容面，删否待定。③ TAURI_PARITY.md（根，39KB）与 docs/TAURI_PARITY.md
   （7.8KB）双份并存，且都仍以 TAURI_SEAMS/Electron 为口径（R36/R38 后已过期）。
+- 2026-09-21 07:45 R32 排序切换图片消失修复（用户实测反馈，可复现）：根因=时间线游程分组下，
+  非日期排序（大小/评分）使同一日期形成多个不相邻游程 → 分组头 React key（h-日期）重复 →
+  React 调和丢弃中间卡片 → 只剩日期头堆叠。修复：分组头带游程序号唯一化
+  （gallery.js groupImagesByDate + ImageGrid key）。CDP 暴力验证：12 次快速切换后 20 卡
+  全部 235px 正常渲染。cargo 143/143 + golden；vitest 974/974；安装包重打。
+  附注：非日期排序下日期头碎片化（29 头/20 卡）是游程分组的既定设计；若要"每日期仅一个
+  分组头"需改为聚簇分组（UX 决策，待定）。

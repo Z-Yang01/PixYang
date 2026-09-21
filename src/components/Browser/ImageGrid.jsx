@@ -544,7 +544,7 @@ export default function ImageGrid({
           if (item.type === 'header') {
             return (
               <div
-                key={`h-${item.date}`}
+                key={`h-${item.date}-${item.run}`}
                 className="grid-date-header"
                 style={{ gridColumn: '1 / -1' }}
               >
