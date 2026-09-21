@@ -515,3 +515,27 @@
   全部 235px 正常渲染。cargo 143/143 + golden；vitest 974/974；安装包重打。
   附注：非日期排序下日期头碎片化（29 头/20 卡）是游程分组的既定设计；若要"每日期仅一个
   分组头"需改为聚簇分组（UX 决策，待定）。
+
+## 无人值守续作（2026-09-22）
+
+- 2026-09-22 02:20 R44 死代码清理 + 文档收口（B→C→D→A 轮转的 A 轮）：
+  ① 裁决 R43 待决项①——删除无生产者的 orientation-backfill-done 事件链（7 文件）：
+  tauriBridgeMedia.onOrientationBackfill 包装、api.js 通道、useGalleryData 订阅 effect
+  （连带失去唯一消费者的 loadStats 订阅）、progress.rs ORIENTATION_BACKFILL 常量与测试断言行、
+  db.rs settings 默认行 orientation_backfilled（全仓零读取）、契约测试与两处注入 mock 条目。
+  依据：Tauri 导入即持久化方向（scan.rs EXIF），后台回填属 R33 有意不移植，事件自迁移完成起
+  无任何 emit；Electron 层 R36 已删，「旧版消费标记」前提不复存在。R43 待决项②（6 个仅单测
+  触达的桥包装）维持待定不删——属「暴露但无人用」兼容面，删否留给人工。
+  ② 裁决 R43 待决项③——删除根目录过期 TAURI_PARITY.md（39KB，仍以 TAURI_SEAMS/Electron
+  为口径），docs/TAURI_PARITY.md 为唯一权威；两文件同步更新为 63 通道口径（59 数据+4 事件），
+  NIGHTLY_PROGRESS.md 头部状态与 Electron 删除行修正为已删 R36。
+- 验证：vitest 764/764 ✅（56 文件，条目式契约测试数量不变）；typecheck ✅；lint 0 error
+  （9 warning 均在未触碰旧文件）；format:check ✅；cargo 146/146 + golden_audit ✅
+  （CARGO_BUILD_JOBS=1 --jobs 1）。全程串行。
+- 提交 744dd26（仅本轮 10 文件；用户未提交的 themes.ts / styles/index.css / release/ 原样未动）。
+- 需人工复核：无新增（既有项不变：tauri 点击级冒烟、R27 网格缩略图即时更新）。
+- 2026-09-22 02:45 A-2 文档勘正（B→C→D→A 轮转）：NIGHTLY_PROGRESS.md 模块表两行与事实相悖——
+  error.rs 标「未开始」但已随 R12 落地；接缝4d updateImage 标「未开始」但 R22 已交付
+  （update_image/update_images/scan_broken_records/sync_camera_folder 均已注册，git log 取证）。
+  纯文档修正，无代码改动；用户未提交改动（themes.ts / index.css / release/）原样未动。
+  需人工复核：无。
