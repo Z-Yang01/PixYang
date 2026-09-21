@@ -469,3 +469,17 @@
   +3 cargo 测试（fresh 自举/legacy 回迁幂等/默认值不覆盖），cargo 146+golden_audit 全绿；
   vitest 766/766、lint 0 error、vite build ✅；NSIS 安装包重打。base64 缩略图一次性迁移未移植
   （现网库早已由 Electron 迁完，观察项）。
+- 2026-09-21 23:55 R42 编译告警清零 + 提示定时器泄漏根治（「检测代码」两处非阻塞观察收口）：
+  Rust 8 条 unused 告警全清，cargo check --all-targets 的 lib 侧归零（仅剩中文测试名触发的
+  non_snake_case，属项目约定不动）：camera.rs set_images_root 删掉从未使用的 AppHandle 参数
+  及其 clone（迁移路径不派发事件，桥侧只传 dirPath，注入型参数移除对 JS 无感）；commands.rs
+  edit_export 的 edits 保留形参并显式 let _ = edits（Tauri 按参数名反序列化，改名等于改 API）；
+  edit_session.rs enforce_edit_preview_limit 的 thumbs_dir 改 _thumbs_dir（预览路径列内即绝对
+  路径）；file_ops.rs 删除两处死变量 ext/old_ext；executor.rs:605 apply_unsharp_approx 补 ?
+  （原先锐化内部失败被静默吞掉、产出未处理图，现与相邻 stage 一致上抛）；commands.rs/_src、
+  update_image.rs/_id3 两处测试夹具收敛。前端：SettingsPage showSaved 的 2500ms 清提示定时器
+  改由 ref 托管——再次提示先清旧定时器、组件卸载 clearTimeout，根治 vitest 文件级 teardown 的
+  偶发 uncaught timeout（全仓 setTimeout 扫描确认仅此一处未托管：App/ImageViewer/useGalleryData
+  均已托管或随 effect 清理）。+1 契约测试断言「卸载必须清掉该定时器」（临时摘掉清理即失败，
+  已实证回滚）。cargo 146+golden_audit ✅、vitest 767/767（连跑三遍无 uncaught）、lint 0 error、
+  typecheck ✅、format:check ✅、vite build ✅；NSIS 安装包重打。

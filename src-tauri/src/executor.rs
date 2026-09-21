@@ -608,7 +608,7 @@ pub fn render_spec_to_file(
                         p.height,
                         0.8 + sharpness / 50.0,
                         p.channels,
-                    );
+                    )?;
                 }
             }
             "lens" => {

@@ -119,7 +119,6 @@ pub fn import_one(
             return Ok(None);
         }
     };
-    let ext = naming::extname(&safe_name).to_string();
     let taken: std::collections::HashSet<String> = std::collections::HashSet::new();
     let unique_name =
         naming::generate_unique_filename(&sub_dir, &safe_name, &taken, |p| p.exists());
@@ -407,7 +406,6 @@ pub fn rename_image(conn: &Connection, id: i64, new_filename: &str) -> Result<Va
 
     let mut new_raw_path = img.raw_path.clone().unwrap_or_default();
     if !img.raw_path.as_deref().unwrap_or("").is_empty() {
-        let old_ext = naming::extname(&img.filename);
         let raw_ext = naming::extname(img.raw_path.as_deref().unwrap_or(""));
         let new_raw_name = format!("{}{}", naming::basename_no_ext(new_filename), raw_ext);
         let candidate_raw =

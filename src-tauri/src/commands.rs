@@ -1157,6 +1157,8 @@ pub async fn edit_export(
 ) -> Result<Value, String> {
     let db = db.inner().clone();
     let paths = paths.inner().clone();
+    // edits 由桥层随 spec 一并传入（渲染指令在 spec 中，此处不使用原始参数）
+    let _ = edits;
     tauri::async_runtime::spawn_blocking(move || {
         let raw_opt = {
             let conn = db.write_lock();
@@ -1676,7 +1678,7 @@ mod edit_cmd_tests {
     #[test]
     fn 预览LRU_超限清最旧且文件列同步删除() {
         let dir = fresh_dir("preview_lru");
-        let src = make_jpeg(&dir, "a.jpg", 40, 30, 100);
+        let _src = make_jpeg(&dir, "a.jpg", 40, 30, 100);
         let conn = edit_mem_db();
         let thumbs = dir.join("thumbs");
         std::fs::create_dir_all(&thumbs).unwrap();

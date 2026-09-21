@@ -782,12 +782,10 @@ pub async fn sync_camera_folder(
 pub async fn set_images_root(
     db: State<'_, Db>,
     paths: State<'_, AppPaths>,
-    app: tauri::AppHandle,
     dir_path: String,
 ) -> Result<Value, String> {
     let db = db.inner().clone();
     let paths = paths.inner().clone();
-    let app = app.clone();
     tauri::async_runtime::spawn_blocking(move || {
         let conn = db.write_lock();
         match migrate_images_root(

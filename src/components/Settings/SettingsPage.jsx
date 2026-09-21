@@ -59,9 +59,15 @@ export default function SettingsPage({ onSettingsChanged, onImagesChanged }) {
 
   const hasChanges = JSON.stringify(draft) !== JSON.stringify(savedRef.current);
 
+  // 提示定时器必须随组件卸载清理：卸载后 2500ms 回调仍会 setState，
+  // 单测里表现为文件级 teardown 的偶发 uncaught timeout
+  const msgTimerRef = useRef(null);
+  useEffect(() => () => clearTimeout(msgTimerRef.current), []);
+
   const showSaved = (text = '已保存') => {
     setMessage(text);
-    setTimeout(() => setMessage(''), 2500);
+    clearTimeout(msgTimerRef.current);
+    msgTimerRef.current = setTimeout(() => setMessage(''), 2500);
   };
 
   const applyPreview = (d) => {

@@ -493,6 +493,36 @@ describe('SettingsPage（补充：存储/相机/维护/备份/重复图片等交
     expect(await screen.findByText('设置已保存')).toBeInTheDocument();
   });
 
+  it('保存提示定时器随卸载清理', async () => {
+    const realSet = global.setTimeout;
+    const realClear = global.clearTimeout;
+    const started = [];
+    const cleared = [];
+    const s = vi.spyOn(global, 'setTimeout').mockImplementation((fn, ms, ...rest) => {
+      const id = realSet(fn, ms, ...rest);
+      if (ms === 2500) started.push(id);
+      return id;
+    });
+    const c = vi.spyOn(global, 'clearTimeout').mockImplementation((id) => {
+      cleared.push(id);
+      realClear(id);
+    });
+    try {
+      const { unmount } = renderPage();
+      await screen.findByText('C:/PixData');
+      fireEvent.change(screen.getByDisplayValue('3'), { target: { value: '4' } });
+      fireEvent.click(screen.getByText('保存'));
+      expect(await screen.findByText('设置已保存')).toBeInTheDocument();
+      expect(started).toHaveLength(1);
+      unmount();
+      expect(cleared).toContain(started[0]);
+    } finally {
+      s.mockRestore();
+      c.mockRestore();
+      started.forEach((id) => realClear(id));
+    }
+  });
+
   it('加载设置：非法数值回退默认、越界数值收敛', async () => {
     window.pixyang.getSettings.mockResolvedValue({
       ...baseSettings,

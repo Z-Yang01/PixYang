@@ -89,7 +89,7 @@ pub fn get_edits(conn: &Connection, id: i64) -> Result<Value, PixError> {
 /// （文件+缓存元数据删除、路径列清空；edits 行保留，下次保存自愈）。返回清理数。
 pub fn enforce_edit_preview_limit(
     conn: &Connection,
-    thumbs_dir: &Path,
+    _thumbs_dir: &Path,
     limit: i64,
 ) -> Result<i64, PixError> {
     let rows: Vec<(i64, String)> = {

@@ -1112,7 +1112,7 @@ mod tests {
         let conn = mem_db();
         let id1 = insert_image(&conn, "ok1.jpg", &f1, "", "2026-01-01", 0);
         let id2 = insert_image(&conn, "ok2.jpg", &f2, "", "2026-01-01", 0);
-        let id3 = insert_image(
+        let _id3 = insert_image(
             &conn,
             "gone.jpg",
             &files.join("gone.jpg"),
