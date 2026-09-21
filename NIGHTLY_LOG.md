@@ -393,3 +393,10 @@
   截图与控制台错误（meta CSP 拒绝、undefined.length）比对确认来自 13:10 的旧安装包
   （修复落地前产物）。18:59 的新安装包含全部修复（meta CSP 移除/形状/Promise 契约/响应性/便携化）。
   便携库实测：933 可见图/5 标签完整迁移。
+- 2026-09-21 20:25 R32 UI 美化（方向：速度感/即触即达，纯样式零逻辑）：新增 --transition-fast
+  令牌（90ms 锐化曲线）；网格卡片 content-visibility:auto + contain-intrinsic-size（离屏跳过渲染，
+  滚动更跟手）；缩略图 @starting-style 载入淡入；.content-area overscroll-behavior:contain +
+  scrollbar-gutter:stable（滚动不逃逸链路、无布局跳动）；两处 transition:all 收敛为具体属性；
+  按钮/复选框/侧栏项/查看器关闭 :active 按压回弹（60-90ms）；卡片 hover 边框/上浮提速；
+  查看器开合 200→140ms；骨架屏 shimmer 提速；勾选 popIn 提速。vitest 974/974；vite build 过；
+  NSIS 安装包已重打（bundle/nsis/PixYang_0.1.0_x64-setup.exe，4.1MB）。
