@@ -551,3 +551,9 @@
   stmts 92.24% / branch 86.95% / funcs 82.23%——全部高于门槛 75/70/50，且较 R36 基线
   （91.73/85.25/80.37）上升（R44 死代码删除移除了低价值分母）。零文件改动，无需提交。
   需人工复核：无。
+- 2026-09-22 03:25 A-5 lint 警告全量审计（结论性）：9 条警告逐一定性——ImageGrid 两处
+  （按 pageIdsKey 拉标签/裁剪缓存，注释言明的性能设计）、ImageViewer 五处（pushHistory
+  为 ref 模式 useCallback，快照经参数传入，无陈旧闭包风险）、InfoPanel 一处（手工展开
+  deps，body 读取的字段全部在列）。均为有意设计而非隐患，后续轮次无需重复审计；按
+  AGENTS「warning 不阻塞」保留不掩盖（不加 eslint-disable）。清理 gallery.test.js 未使用
+  解构（9→8）。零生产代码改动。需人工复核：无。
