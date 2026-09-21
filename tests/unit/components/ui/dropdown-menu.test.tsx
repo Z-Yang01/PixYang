@@ -36,11 +36,7 @@ function MenuHarness(props: {
       </DropdownMenuTrigger>
       <DropdownMenuContent sideOffset={props.sideOffset} className="my-content">
         <DropdownMenuGroup>
-          <DropdownMenuItem
-            inset
-            onSelect={() => props.onSelect?.('复制')}
-            className="my-item"
-          >
+          <DropdownMenuItem inset onSelect={() => props.onSelect?.('复制')} className="my-item">
             复制<DropdownMenuShortcut>⌘C</DropdownMenuShortcut>
           </DropdownMenuItem>
           <DropdownMenuItem variant="destructive" onSelect={() => props.onSelect?.('删除')}>
@@ -122,7 +118,13 @@ describe('ui/DropdownMenu', () => {
     function Controlled() {
       const [open, setOpen] = React.useState(false);
       return (
-        <DropdownMenu open={open} onOpenChange={(o) => { onOpenChange(o); setOpen(o); }}>
+        <DropdownMenu
+          open={open}
+          onOpenChange={(o) => {
+            onOpenChange(o);
+            setOpen(o);
+          }}
+        >
           <DropdownMenuTrigger>打开菜单</DropdownMenuTrigger>
           <DropdownMenuContent>
             <DropdownMenuItem>复制</DropdownMenuItem>
@@ -172,11 +174,20 @@ describe('ui/DropdownMenu', () => {
     render(<MenuHarness />);
     openMenu(screen.getByRole('button', { name: '打开菜单' }));
     const r2 = await screen.findByRole('menuitemradio', { name: '大图' });
-    expect(screen.getByRole('menuitemradio', { name: '小图' })).toHaveAttribute('data-state', 'checked');
+    expect(screen.getByRole('menuitemradio', { name: '小图' })).toHaveAttribute(
+      'data-state',
+      'checked'
+    );
     fireEvent.click(r2);
     await vi.waitFor(() => {
-      expect(screen.getByRole('menuitemradio', { name: '大图' })).toHaveAttribute('data-state', 'checked');
-      expect(screen.getByRole('menuitemradio', { name: '小图' })).toHaveAttribute('data-state', 'unchecked');
+      expect(screen.getByRole('menuitemradio', { name: '大图' })).toHaveAttribute(
+        'data-state',
+        'checked'
+      );
+      expect(screen.getByRole('menuitemradio', { name: '小图' })).toHaveAttribute(
+        'data-state',
+        'unchecked'
+      );
     });
   });
 

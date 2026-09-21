@@ -9,7 +9,10 @@ const initialSnapshot = useGalleryStore.getState();
 
 function deferred() {
   let resolve, reject;
-  const promise = new Promise((res, rej) => { resolve = res; reject = rej; });
+  const promise = new Promise((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
   return { promise, resolve, reject };
 }
 
@@ -20,7 +23,11 @@ function renderPage(props = {}) {
 }
 
 const baseSettings = {
-  theme: 'dark', grid_rows: 3, grid_columns: 5, grid_gap: 12, content_padding: 16,
+  theme: 'dark',
+  grid_rows: 3,
+  grid_columns: 5,
+  grid_gap: 12,
+  content_padding: 16,
   camera_folder: '',
 };
 
@@ -35,7 +42,9 @@ describe('SettingsPage（补充：存储/相机/维护/备份/重复图片等交
       setSetting: vi.fn().mockResolvedValue(undefined),
       selectDirectory: vi.fn().mockResolvedValue(null),
       setImagesRoot: vi.fn().mockResolvedValue({ path: 'C:/PixData', moved: 0 }),
-      syncCameraFolder: vi.fn().mockResolvedValue({ scanned: 0, imported: 0, attached: 0, skipped: 0 }),
+      syncCameraFolder: vi
+        .fn()
+        .mockResolvedValue({ scanned: 0, imported: 0, attached: 0, skipped: 0 }),
       rebuildThumbnails: vi.fn().mockResolvedValue({ rebuilt: 0, failed: 0, total: 0 }),
       scanBrokenRecords: vi.fn().mockResolvedValue([]),
       deleteBrokenRecords: vi.fn().mockResolvedValue(0),
@@ -157,7 +166,12 @@ describe('SettingsPage（补充：存储/相机/维护/备份/重复图片等交
     window.pixyang.getSettings.mockResolvedValue({ ...baseSettings, camera_folder: 'D:/DCIM' });
     const onImagesChanged = vi.fn();
     window.pixyang.syncCameraFolder.mockResolvedValue({
-      scanned: 10, imported: 2, jpgImported: 1, nefImported: 1, attached: 3, skipped: 4,
+      scanned: 10,
+      imported: 2,
+      jpgImported: 1,
+      nefImported: 1,
+      attached: 3,
+      skipped: 4,
     });
     renderPage({ onImagesChanged });
     await screen.findByText('D:/DCIM');
@@ -170,7 +184,12 @@ describe('SettingsPage（补充：存储/相机/维护/备份/重复图片等交
 
   it('立即同步：无新增时提示扫描数', async () => {
     window.pixyang.getSettings.mockResolvedValue({ ...baseSettings, camera_folder: 'D:/DCIM' });
-    window.pixyang.syncCameraFolder.mockResolvedValue({ scanned: 7, imported: 0, attached: 0, skipped: 0 });
+    window.pixyang.syncCameraFolder.mockResolvedValue({
+      scanned: 7,
+      imported: 0,
+      attached: 0,
+      skipped: 0,
+    });
     renderPage();
     await screen.findByText('D:/DCIM');
     fireEvent.click(screen.getByText('立即同步'));
@@ -191,7 +210,10 @@ describe('SettingsPage（补充：存储/相机/维护/备份/重复图片等交
     const d = deferred();
     let progressCb = null;
     window.pixyang.rebuildThumbnails.mockImplementation(() => d.promise);
-    window.pixyang.onRebuildProgress = vi.fn((cb) => { progressCb = cb; return vi.fn(); });
+    window.pixyang.onRebuildProgress = vi.fn((cb) => {
+      progressCb = cb;
+      return vi.fn();
+    });
     renderPage({ onImagesChanged });
     await screen.findByText('C:/PixData');
     // 「重建缩略图」同时是分区标签与按钮文案，用 role 精确定位按钮
@@ -203,7 +225,9 @@ describe('SettingsPage（补充：存储/相机/维护/备份/重复图片等交
     act(() => progressCb(null));
     expect(await screen.findByText('正在重建缩略图...')).toBeInTheDocument();
     d.resolve({ rebuilt: 3, failed: 1, total: 4 });
-    expect(await screen.findByText(/缩略图重建完成：3 成功，1 失败（共 4 张）/)).toBeInTheDocument();
+    expect(
+      await screen.findByText(/缩略图重建完成：3 成功，1 失败（共 4 张）/)
+    ).toBeInTheDocument();
     expect(onImagesChanged).toHaveBeenCalled();
     expect(screen.getByRole('button', { name: '重建缩略图' })).toBeInTheDocument();
   });
@@ -260,7 +284,9 @@ describe('SettingsPage（补充：存储/相机/维护/备份/重复图片等交
     await screen.findByText('C:/PixData');
     fireEvent.click(screen.getByText('扫描失效记录'));
     fireEvent.click(await screen.findByText('清理 2 条'));
-    expect(await screen.findByText(/已清理 1 条失效记录，另解绑 1 条仅原图缺失的记录/)).toBeInTheDocument();
+    expect(
+      await screen.findByText(/已清理 1 条失效记录，另解绑 1 条仅原图缺失的记录/)
+    ).toBeInTheDocument();
   });
 
   it('扫描失效记录：无失效时提示且不弹框', async () => {
@@ -297,24 +323,31 @@ describe('SettingsPage（补充：存储/相机/维护/备份/重复图片等交
   });
 
   it('失效记录扫描：整盘离线熔断返回 {error} 时提示而非全库判失效（审查批 7 O6）', async () => {
-    window.pixyang.scanBrokenRecords.mockResolvedValue({ error: '图片根目录不可访问（磁盘可能离线），已中止扫描' });
+    window.pixyang.scanBrokenRecords.mockResolvedValue({
+      error: '图片根目录不可访问（磁盘可能离线），已中止扫描',
+    });
     renderPage();
     await screen.findByText('C:/PixData');
     fireEvent.click(screen.getByText('扫描失效记录'));
-    expect(await screen.findByText('图片根目录不可访问（磁盘可能离线），已中止扫描')).toBeInTheDocument();
+    expect(
+      await screen.findByText('图片根目录不可访问（磁盘可能离线），已中止扫描')
+    ).toBeInTheDocument();
     expect(screen.queryByText('清理失效记录')).not.toBeInTheDocument(); // 不进入清理态
     expect(window.pixyang.deleteBrokenRecords).not.toHaveBeenCalled();
   });
 
   it('查找重复图片：分组展示、切换保留项并删除释放空间', async () => {
     const onImagesChanged = vi.fn();
-    const groups = [{
-      key: 'g1', wasted: 2 * 1048576,
-      items: [
-        { id: 1, filename: 'a.jpg', size: 1048576, thumbnail_path: 'C:/t/a.jpg', format: 'jpg' },
-        { id: 2, filename: 'b.jpg', size: 1048576, thumbnail_path: '', format: 'png' },
-      ],
-    }];
+    const groups = [
+      {
+        key: 'g1',
+        wasted: 2 * 1048576,
+        items: [
+          { id: 1, filename: 'a.jpg', size: 1048576, thumbnail_path: 'C:/t/a.jpg', format: 'jpg' },
+          { id: 2, filename: 'b.jpg', size: 1048576, thumbnail_path: '', format: 'png' },
+        ],
+      },
+    ];
     window.pixyang.findDuplicates.mockResolvedValue(groups);
     window.pixyang.toFileUrls.mockResolvedValue({ 'C:/t/a.jpg': 'blob:a' });
     renderPage({ onImagesChanged });
@@ -342,10 +375,15 @@ describe('SettingsPage（补充：存储/相机/维护/备份/重复图片等交
   });
 
   it('查找重复图片：toFileUrls 返回 null 时占位展示且可取消关闭', async () => {
-    const groups = [{
-      key: 'g1', wasted: 1048576,
-      items: [{ id: 1, filename: 'a.jpg', size: 1048576, thumbnail_path: 'C:/t/a.jpg', format: 'jpg' }],
-    }];
+    const groups = [
+      {
+        key: 'g1',
+        wasted: 1048576,
+        items: [
+          { id: 1, filename: 'a.jpg', size: 1048576, thumbnail_path: 'C:/t/a.jpg', format: 'jpg' },
+        ],
+      },
+    ];
     window.pixyang.findDuplicates.mockResolvedValue(groups);
     window.pixyang.toFileUrls.mockResolvedValue(null);
     renderPage();
@@ -361,10 +399,13 @@ describe('SettingsPage（补充：存储/相机/维护/备份/重复图片等交
   });
 
   it('重复图片对话框：单张组无删除项时按钮禁用（format 缺失显示 IMG 占位）', async () => {
-    const groups = [{
-      key: 'g1', wasted: 0,
-      items: [{ id: 9, filename: 'solo', size: 0, thumbnail_path: '', format: '' }],
-    }];
+    const groups = [
+      {
+        key: 'g1',
+        wasted: 0,
+        items: [{ id: 9, filename: 'solo', size: 0, thumbnail_path: '', format: '' }],
+      },
+    ];
     window.pixyang.findDuplicates.mockResolvedValue(groups);
     renderPage();
     await screen.findByText('C:/PixData');
@@ -376,13 +417,16 @@ describe('SettingsPage（补充：存储/相机/维护/备份/重复图片等交
   });
 
   it('重复图片对话框：点击遮罩关闭，点击内容区不关闭', async () => {
-    const groups = [{
-      key: 'g1', wasted: 1048576,
-      items: [
-        { id: 1, filename: 'a.jpg', size: 1048576, thumbnail_path: 'C:/t/a.jpg', format: 'jpg' },
-        { id: 2, filename: 'b.jpg', size: 1048576, thumbnail_path: '', format: 'png' },
-      ],
-    }];
+    const groups = [
+      {
+        key: 'g1',
+        wasted: 1048576,
+        items: [
+          { id: 1, filename: 'a.jpg', size: 1048576, thumbnail_path: 'C:/t/a.jpg', format: 'jpg' },
+          { id: 2, filename: 'b.jpg', size: 1048576, thumbnail_path: '', format: 'png' },
+        ],
+      },
+    ];
     window.pixyang.findDuplicates.mockResolvedValue(groups);
     renderPage();
     await screen.findByText('C:/PixData');
@@ -420,10 +464,14 @@ describe('SettingsPage（补充：存储/相机/维护/备份/重复图片等交
     renderPage();
     await screen.findByText('C:/PixData');
     fireEvent.click(screen.getByText('恢复默认设置'));
-    expect(await screen.findByText(/将把界面设置（主题、网格、间距）恢复为默认值/)).toBeInTheDocument();
+    expect(
+      await screen.findByText(/将把界面设置（主题、网格、间距）恢复为默认值/)
+    ).toBeInTheDocument();
     fireEvent.click(screen.getByText('取消'));
     await vi.waitFor(() => {
-      expect(screen.queryByText(/将把界面设置（主题、网格、间距）恢复为默认值/)).not.toBeInTheDocument();
+      expect(
+        screen.queryByText(/将把界面设置（主题、网格、间距）恢复为默认值/)
+      ).not.toBeInTheDocument();
     });
     expect(screen.queryByText('有未保存的修改')).not.toBeInTheDocument();
   });
@@ -431,9 +479,9 @@ describe('SettingsPage（补充：存储/相机/维护/备份/重复图片等交
   it('保存时对越界数值做 clamp：行/列/间距/留白分别收敛到边界', async () => {
     renderPage();
     await screen.findByText('C:/PixData');
-    fireEvent.change(screen.getByDisplayValue('3'), { target: { value: '0' } });    // rows → 1
-    fireEvent.change(screen.getByDisplayValue('5'), { target: { value: '99' } });   // columns → 10
-    fireEvent.change(screen.getByDisplayValue('12'), { target: { value: '-5' } });  // gap → 0
+    fireEvent.change(screen.getByDisplayValue('3'), { target: { value: '0' } }); // rows → 1
+    fireEvent.change(screen.getByDisplayValue('5'), { target: { value: '99' } }); // columns → 10
+    fireEvent.change(screen.getByDisplayValue('12'), { target: { value: '-5' } }); // gap → 0
     fireEvent.change(screen.getByDisplayValue('16'), { target: { value: '999' } }); // padding → 64
     fireEvent.click(screen.getByText('保存'));
     await vi.waitFor(() => {

@@ -4,32 +4,72 @@ import { render, fireEvent, cleanup } from '@testing-library/react';
 import MaskOverlay from '@/components/Browser/MaskOverlay';
 
 const radial = (over = {}) => ({
-  type: 'radial', id: 'm1', cx: 500, cy: 500, rx: 200, ry: 100, rotation: 0, feather: 0.5, invert: false,
-  adjustments: { exposure: 0, contrast: 0, saturation: 0, temperature: 0, tint: 0 }, ...over,
+  type: 'radial',
+  id: 'm1',
+  cx: 500,
+  cy: 500,
+  rx: 200,
+  ry: 100,
+  rotation: 0,
+  feather: 0.5,
+  invert: false,
+  adjustments: { exposure: 0, contrast: 0, saturation: 0, temperature: 0, tint: 0 },
+  ...over,
 });
 const linear = (over = {}) => ({
-  type: 'linear', id: 'm2', x0: 100, y0: 200, x1: 300, y1: 200, feather: 0.5, invert: false,
-  adjustments: { exposure: 0, contrast: 0, saturation: 0, temperature: 0, tint: 0 }, ...over,
+  type: 'linear',
+  id: 'm2',
+  x0: 100,
+  y0: 200,
+  x1: 300,
+  y1: 200,
+  feather: 0.5,
+  invert: false,
+  adjustments: { exposure: 0, contrast: 0, saturation: 0, temperature: 0, tint: 0 },
+  ...over,
 });
 
 // 底图显示区域固定 1000×1000 @ (0,0)，rotation=0 时 client 坐标 == 底图像素坐标
 const fakeImgEl = () => ({
-  getBoundingClientRect: () => ({ left: 0, top: 0, right: 1000, bottom: 1000, width: 1000, height: 1000, x: 0, y: 0, toJSON: () => {} }),
+  getBoundingClientRect: () => ({
+    left: 0,
+    top: 0,
+    right: 1000,
+    bottom: 1000,
+    width: 1000,
+    height: 1000,
+    x: 0,
+    y: 0,
+    toJSON: () => {},
+  }),
 });
 
 const baseProps = (over = {}) => ({
-  masks: [], selectedMaskId: null, width: 1000, height: 1000,
-  rotation: 0, flipH: false, flipV: false,
+  masks: [],
+  selectedMaskId: null,
+  width: 1000,
+  height: 1000,
+  rotation: 0,
+  flipH: false,
+  flipV: false,
   imgRef: { current: fakeImgEl() },
-  tool: null, epoch: 0,
-  onSelect: vi.fn(), onCreate: vi.fn(), onChangeMask: vi.fn(), onCommit: vi.fn(),
+  tool: null,
+  epoch: 0,
+  onSelect: vi.fn(),
+  onCreate: vi.fn(),
+  onChangeMask: vi.fn(),
+  onCommit: vi.fn(),
   ...over,
 });
 
 function setup(over = {}) {
   const props = baseProps(over);
   const utils = render(<MaskOverlay {...props} />);
-  return { ...utils, props, rerender: (next = {}) => utils.rerender(<MaskOverlay {...props} {...next} />) };
+  return {
+    ...utils,
+    props,
+    rerender: (next = {}) => utils.rerender(<MaskOverlay {...props} {...next} />),
+  };
 }
 
 describe('MaskOverlay（蒙版几何 overlay）', () => {
@@ -52,7 +92,10 @@ describe('MaskOverlay（蒙版几何 overlay）', () => {
   it('径向选中显示中心/rx/ry 手柄，位置沿椭圆轴（含旋转）', () => {
     const { container } = setup({ masks: [radial({ rotation: 90 })], selectedMaskId: 'm1' });
     const handles = Object.fromEntries(
-      [...container.querySelectorAll('[data-mask-handle]')].map((h) => [h.getAttribute('data-mask-handle'), h]),
+      [...container.querySelectorAll('[data-mask-handle]')].map((h) => [
+        h.getAttribute('data-mask-handle'),
+        h,
+      ])
     );
     expect(Object.keys(handles).sort()).toEqual(['center', 'feather', 'rot', 'rx', 'ry']);
     // rotation 90：rx 手柄在 (cx, cy+rx)，ry 手柄在 (cx-ry, cy)
@@ -74,7 +117,9 @@ describe('MaskOverlay（蒙版几何 overlay）', () => {
   it('线性蒙版渲染线段，选中显示 p0/p1 端点手柄', () => {
     const { container } = setup({ masks: [linear()], selectedMaskId: 'm2' });
     expect(container.querySelector('line.editor-mask-shape')).not.toBeNull();
-    const kinds = [...container.querySelectorAll('[data-mask-handle]')].map((h) => h.getAttribute('data-mask-handle'));
+    const kinds = [...container.querySelectorAll('[data-mask-handle]')].map((h) =>
+      h.getAttribute('data-mask-handle')
+    );
     expect(kinds).toEqual(['p0', 'p1']);
     expect(container.querySelector('[data-mask-handle="p0"]').style.left).toBe('10%');
     expect(container.querySelector('[data-mask-handle="p1"]').style.left).toBe('30%');
@@ -95,13 +140,22 @@ describe('MaskOverlay（蒙版几何 overlay）', () => {
     expect(container.querySelector('ellipse.editor-mask-shape.is-draft')).not.toBeNull();
     fireEvent.pointerUp(window);
     expect(props.onCreate).toHaveBeenCalledTimes(1);
-    expect(props.onCreate).toHaveBeenCalledWith('radial', { cx: 100, cy: 100, rx: 400, ry: 300, rotation: 0 });
+    expect(props.onCreate).toHaveBeenCalledWith('radial', {
+      cx: 100,
+      cy: 100,
+      rx: 400,
+      ry: 300,
+      rotation: 0,
+    });
     expect(container.querySelector('.is-draft')).toBeNull();
   });
 
   it('拖拽创建线性：提交起终点', () => {
     const { container, props } = setup({ tool: 'linear' });
-    fireEvent.pointerDown(container.querySelector('[data-mask-create]'), { clientX: 100, clientY: 200 });
+    fireEvent.pointerDown(container.querySelector('[data-mask-create]'), {
+      clientX: 100,
+      clientY: 200,
+    });
     fireEvent.pointerMove(window, { clientX: 400, clientY: 800 });
     fireEvent.pointerUp(window);
     expect(props.onCreate).toHaveBeenCalledWith('linear', { x0: 100, y0: 200, x1: 400, y1: 800 });
@@ -109,7 +163,10 @@ describe('MaskOverlay（蒙版几何 overlay）', () => {
 
   it('位移过小的按下不创建（视为点击）', () => {
     const { container, props } = setup({ tool: 'radial' });
-    fireEvent.pointerDown(container.querySelector('[data-mask-create]'), { clientX: 100, clientY: 100 });
+    fireEvent.pointerDown(container.querySelector('[data-mask-create]'), {
+      clientX: 100,
+      clientY: 100,
+    });
     fireEvent.pointerMove(window, { clientX: 101, clientY: 101 });
     fireEvent.pointerUp(window);
     expect(props.onCreate).not.toHaveBeenCalled();
@@ -133,7 +190,10 @@ describe('MaskOverlay（蒙版几何 overlay）', () => {
 
   it('中心手柄拖动移动椭圆并钳制在图内', () => {
     const { container, props } = setup({ masks: [radial()], selectedMaskId: 'm1' });
-    fireEvent.pointerDown(container.querySelector('[data-mask-handle="center"]'), { clientX: 500, clientY: 500 });
+    fireEvent.pointerDown(container.querySelector('[data-mask-handle="center"]'), {
+      clientX: 500,
+      clientY: 500,
+    });
     fireEvent.pointerMove(window, { clientX: 1200, clientY: -100 });
     expect(props.onChangeMask).toHaveBeenCalledWith('m1', { cx: 1000, cy: 0 });
     fireEvent.pointerUp(window);
@@ -143,7 +203,10 @@ describe('MaskOverlay（蒙版几何 overlay）', () => {
   it('rx 手柄拖动沿椭圆轴缩放（旋转蒙版投影），最小半径 1', () => {
     const { container, props } = setup({ masks: [radial({ rotation: 90 })], selectedMaskId: 'm1' });
     // mask rotation 90：椭圆系 u 轴沿底图 y；指针在 (300,500) → 底图 dy=0 → 投影 0 → 钳到最小 1
-    fireEvent.pointerDown(container.querySelector('[data-mask-handle="rx"]'), { clientX: 300, clientY: 500 });
+    fireEvent.pointerDown(container.querySelector('[data-mask-handle="rx"]'), {
+      clientX: 300,
+      clientY: 500,
+    });
     fireEvent.pointerMove(window, { clientX: 300, clientY: 500 });
     expect(props.onChangeMask).toHaveBeenCalledWith('m1', { rx: 1 });
     props.onChangeMask.mockClear();
@@ -155,7 +218,10 @@ describe('MaskOverlay（蒙版几何 overlay）', () => {
 
   it('线性端点手柄拖动更新对应端点', () => {
     const { container, props } = setup({ masks: [linear()], selectedMaskId: 'm2' });
-    fireEvent.pointerDown(container.querySelector('[data-mask-handle="p1"]'), { clientX: 300, clientY: 200 });
+    fireEvent.pointerDown(container.querySelector('[data-mask-handle="p1"]'), {
+      clientX: 300,
+      clientY: 200,
+    });
     fireEvent.pointerMove(window, { clientX: 800, clientY: 600 });
     expect(props.onChangeMask).toHaveBeenCalledWith('m2', { x1: 800, y1: 600 });
     props.onChangeMask.mockClear();
@@ -174,7 +240,10 @@ describe('MaskOverlay（蒙版几何 overlay）', () => {
 
   it('epoch 变化中断进行中的创建手势（撤销/历史跳转保护）', () => {
     const utils = setup({ tool: 'radial' });
-    fireEvent.pointerDown(utils.container.querySelector('[data-mask-create]'), { clientX: 100, clientY: 100 });
+    fireEvent.pointerDown(utils.container.querySelector('[data-mask-create]'), {
+      clientX: 100,
+      clientY: 100,
+    });
     utils.rerender({ epoch: 1 });
     expect(utils.container.querySelector('.is-draft')).toBeNull();
     fireEvent.pointerMove(window, { clientX: 500, clientY: 500 });
@@ -183,14 +252,23 @@ describe('MaskOverlay（蒙版几何 overlay）', () => {
   });
 
   it('旋转手柄拖动更新 rotation（方位角+90°）；羽化手柄拖动更新 feather', () => {
-    const { container, props } = setup({ masks: [radial({ rotation: 0, feather: 0.5 })], selectedMaskId: 'm1' });
+    const { container, props } = setup({
+      masks: [radial({ rotation: 0, feather: 0.5 })],
+      selectedMaskId: 'm1',
+    });
     // 指针在中心正右方：atan2(0,300)=0° → rotation = 0+90 = 90（椭圆系上方转到指向右方）
-    fireEvent.pointerDown(container.querySelector('[data-mask-handle="rot"]'), { clientX: 500, clientY: 270 });
+    fireEvent.pointerDown(container.querySelector('[data-mask-handle="rot"]'), {
+      clientX: 500,
+      clientY: 270,
+    });
     fireEvent.pointerMove(window, { clientX: 800, clientY: 500 });
     expect(props.onChangeMask).toHaveBeenCalledWith('m1', { rotation: 90 });
     fireEvent.pointerUp(window);
     // 羽化手柄拖向中心（proj→0）：feather = 1 − 0/200 = 1（实芯缩到 0）
-    fireEvent.pointerDown(container.querySelector('[data-mask-handle="feather"]'), { clientX: 400, clientY: 500 });
+    fireEvent.pointerDown(container.querySelector('[data-mask-handle="feather"]'), {
+      clientX: 400,
+      clientY: 500,
+    });
     fireEvent.pointerMove(window, { clientX: 450, clientY: 500 });
     expect(props.onChangeMask).toHaveBeenCalledWith('m1', { feather: 0.75 });
     fireEvent.pointerMove(window, { clientX: 500, clientY: 500 });
@@ -203,7 +281,15 @@ describe('MaskOverlay（蒙版几何 overlay）', () => {
   });
 
   it('range 蒙版无位置几何：不渲染形状/手柄，经 chip 选中', () => {
-    const range = { type: 'range', id: 'm3', center: 0.4, range: 0.2, feather: 0.1, invert: false, adjustments: { exposure: -0.5, contrast: 0, saturation: 0, temperature: 0, tint: 0 } };
+    const range = {
+      type: 'range',
+      id: 'm3',
+      center: 0.4,
+      range: 0.2,
+      feather: 0.1,
+      invert: false,
+      adjustments: { exposure: -0.5, contrast: 0, saturation: 0, temperature: 0, tint: 0 },
+    };
     const { container, props } = setup({ masks: [radial(), range], selectedMaskId: 'm3' });
     expect(container.querySelectorAll('.editor-mask-shape')).toHaveLength(1);
     expect(container.querySelectorAll('[data-mask-handle]')).toHaveLength(0);
@@ -213,10 +299,19 @@ describe('MaskOverlay（蒙版几何 overlay）', () => {
 
   it('创建手势无 up 直接 blur 也结算（Alt+Tab 切走兜底，审查批 7 M3）', () => {
     const { container, props } = setup({ tool: 'radial' });
-    fireEvent.pointerDown(container.querySelector('[data-mask-create]'), { clientX: 100, clientY: 100 });
+    fireEvent.pointerDown(container.querySelector('[data-mask-create]'), {
+      clientX: 100,
+      clientY: 100,
+    });
     fireEvent.pointerMove(window, { clientX: 500, clientY: 400 });
     fireEvent.blur(window);
-    expect(props.onCreate).toHaveBeenCalledWith('radial', { cx: 100, cy: 100, rx: 400, ry: 300, rotation: 0 });
+    expect(props.onCreate).toHaveBeenCalledWith('radial', {
+      cx: 100,
+      cy: 100,
+      rx: 400,
+      ry: 300,
+      rotation: 0,
+    });
     expect(container.querySelector('.is-draft')).toBeNull();
     fireEvent.blur(window); // 无手势时不重复结算
     expect(props.onCreate).toHaveBeenCalledTimes(1);
@@ -224,7 +319,10 @@ describe('MaskOverlay（蒙版几何 overlay）', () => {
 
   it('手柄拖动无 up 直接 blur 收敛为一条历史', () => {
     const { container, props } = setup({ masks: [radial()], selectedMaskId: 'm1' });
-    fireEvent.pointerDown(container.querySelector('[data-mask-handle="center"]'), { clientX: 500, clientY: 500 });
+    fireEvent.pointerDown(container.querySelector('[data-mask-handle="center"]'), {
+      clientX: 500,
+      clientY: 500,
+    });
     fireEvent.pointerMove(window, { clientX: 600, clientY: 600 });
     fireEvent.blur(window);
     expect(props.onChangeMask).toHaveBeenCalledWith('m1', { cx: 600, cy: 600 });

@@ -1,11 +1,46 @@
 import { useEffect, useRef } from 'react';
 
 const MASK_ADJ_SLIDERS = [
-  { key: 'exposure', label: '曝光', min: -2, max: 2, step: 0.05, fmt: (v) => `${v > 0 ? '+' : ''}${v.toFixed(2)}` },
-  { key: 'contrast', label: '对比度', min: -50, max: 50, step: 1, fmt: (v) => `${v > 0 ? '+' : ''}${v}` },
-  { key: 'saturation', label: '饱和度', min: -100, max: 100, step: 1, fmt: (v) => `${v > 0 ? '+' : ''}${v}` },
-  { key: 'temperature', label: '色温', min: -100, max: 100, step: 1, fmt: (v) => `${v > 0 ? '+' : ''}${v}` },
-  { key: 'tint', label: '色调', min: -100, max: 100, step: 1, fmt: (v) => `${v > 0 ? '+' : ''}${v}` },
+  {
+    key: 'exposure',
+    label: '曝光',
+    min: -2,
+    max: 2,
+    step: 0.05,
+    fmt: (v) => `${v > 0 ? '+' : ''}${v.toFixed(2)}`,
+  },
+  {
+    key: 'contrast',
+    label: '对比度',
+    min: -50,
+    max: 50,
+    step: 1,
+    fmt: (v) => `${v > 0 ? '+' : ''}${v}`,
+  },
+  {
+    key: 'saturation',
+    label: '饱和度',
+    min: -100,
+    max: 100,
+    step: 1,
+    fmt: (v) => `${v > 0 ? '+' : ''}${v}`,
+  },
+  {
+    key: 'temperature',
+    label: '色温',
+    min: -100,
+    max: 100,
+    step: 1,
+    fmt: (v) => `${v > 0 ? '+' : ''}${v}`,
+  },
+  {
+    key: 'tint',
+    label: '色调',
+    min: -100,
+    max: 100,
+    step: 1,
+    fmt: (v) => `${v > 0 ? '+' : ''}${v}`,
+  },
 ];
 
 const TYPE_LABEL = { radial: '径向', linear: '线性', range: '亮度' };
@@ -31,7 +66,8 @@ export default function MaskPanel({ masks, session, selectedId, onSelect, onComm
     return () => window.removeEventListener('blur', onBlur);
   }, [onCommit]);
 
-  const nextMasks = (mapper) => mapper(masks.map((m) => ({ ...m, adjustments: { ...m.adjustments } })));
+  const nextMasks = (mapper) =>
+    mapper(masks.map((m) => ({ ...m, adjustments: { ...m.adjustments } })));
 
   const applyNext = (mapper, commitLabel) => {
     const next = nextMasks(mapper);
@@ -41,13 +77,18 @@ export default function MaskPanel({ masks, session, selectedId, onSelect, onComm
     return next;
   };
 
-  const updateSelected = (patch, commitLabel) => (
-    applyNext((list) => list.map((m) => (m.id === selectedId ? { ...m, ...patch } : m)), commitLabel)
-  );
+  const updateSelected = (patch, commitLabel) =>
+    applyNext(
+      (list) => list.map((m) => (m.id === selectedId ? { ...m, ...patch } : m)),
+      commitLabel
+    );
 
-  const setAdj = (key, value) => (
-    applyNext((list) => list.map((m) => (m.id === selectedId ? { ...m, adjustments: { ...m.adjustments, [key]: value } } : m)))
-  );
+  const setAdj = (key, value) =>
+    applyNext((list) =>
+      list.map((m) =>
+        m.id === selectedId ? { ...m, adjustments: { ...m.adjustments, [key]: value } } : m
+      )
+    );
 
   const selected = masks.find((m) => m.id === selectedId) || null;
   const W = session?.width || 0;
@@ -56,34 +97,137 @@ export default function MaskPanel({ masks, session, selectedId, onSelect, onComm
   const pct = (v) => `${Math.round((Number(v) || 0) * 100)}%`;
 
   // 几何滑杆行：radial 为位置椭圆系，linear 为渐变端点，range 为亮度带（无位置语义）
-  const geoRows = selected ? (selected.type === 'radial' ? [
-    { key: 'cx', label: '中心 X', min: 0, max: W, step: 1, get: () => selected.cx, set: (v) => ({ cx: v }) },
-    { key: 'cy', label: '中心 Y', min: 0, max: H, step: 1, get: () => selected.cy, set: (v) => ({ cy: v }) },
-    { key: 'rx', label: '半径 X', min: 1, max: Math.max(1, W), step: 1, get: () => selected.rx, set: (v) => ({ rx: v }) },
-    { key: 'ry', label: '半径 Y', min: 1, max: Math.max(1, H), step: 1, get: () => selected.ry, set: (v) => ({ ry: v }) },
-    { key: 'rotation', label: '旋转', min: -180, max: 180, step: 1, get: () => selected.rotation, set: (v) => ({ rotation: v }) },
-  ] : selected.type === 'range' ? [
-    { key: 'center', label: '中心亮度', min: 0, max: 1, step: 0.01, get: () => selected.center, set: (v) => ({ center: v }), fmt: pct },
-    { key: 'range', label: '范围', min: 0, max: 1, step: 0.01, get: () => selected.range, set: (v) => ({ range: v }), fmt: pct },
-  ] : [
-    { key: 'x0', label: '起点 X', min: -W, max: W, get: () => selected.x0, set: (v) => ({ x0: v }) },
-    { key: 'y0', label: '起点 Y', min: -H, max: H, get: () => selected.y0, set: (v) => ({ y0: v }) },
-    { key: 'x1', label: '终点 X', min: -W, max: W, get: () => selected.x1, set: (v) => ({ x1: v }) },
-    { key: 'y1', label: '终点 Y', min: -H, max: H, get: () => selected.y1, set: (v) => ({ y1: v }) },
-  ]) : [];
+  const geoRows = selected
+    ? selected.type === 'radial'
+      ? [
+          {
+            key: 'cx',
+            label: '中心 X',
+            min: 0,
+            max: W,
+            step: 1,
+            get: () => selected.cx,
+            set: (v) => ({ cx: v }),
+          },
+          {
+            key: 'cy',
+            label: '中心 Y',
+            min: 0,
+            max: H,
+            step: 1,
+            get: () => selected.cy,
+            set: (v) => ({ cy: v }),
+          },
+          {
+            key: 'rx',
+            label: '半径 X',
+            min: 1,
+            max: Math.max(1, W),
+            step: 1,
+            get: () => selected.rx,
+            set: (v) => ({ rx: v }),
+          },
+          {
+            key: 'ry',
+            label: '半径 Y',
+            min: 1,
+            max: Math.max(1, H),
+            step: 1,
+            get: () => selected.ry,
+            set: (v) => ({ ry: v }),
+          },
+          {
+            key: 'rotation',
+            label: '旋转',
+            min: -180,
+            max: 180,
+            step: 1,
+            get: () => selected.rotation,
+            set: (v) => ({ rotation: v }),
+          },
+        ]
+      : selected.type === 'range'
+        ? [
+            {
+              key: 'center',
+              label: '中心亮度',
+              min: 0,
+              max: 1,
+              step: 0.01,
+              get: () => selected.center,
+              set: (v) => ({ center: v }),
+              fmt: pct,
+            },
+            {
+              key: 'range',
+              label: '范围',
+              min: 0,
+              max: 1,
+              step: 0.01,
+              get: () => selected.range,
+              set: (v) => ({ range: v }),
+              fmt: pct,
+            },
+          ]
+        : [
+            {
+              key: 'x0',
+              label: '起点 X',
+              min: -W,
+              max: W,
+              get: () => selected.x0,
+              set: (v) => ({ x0: v }),
+            },
+            {
+              key: 'y0',
+              label: '起点 Y',
+              min: -H,
+              max: H,
+              get: () => selected.y0,
+              set: (v) => ({ y0: v }),
+            },
+            {
+              key: 'x1',
+              label: '终点 X',
+              min: -W,
+              max: W,
+              get: () => selected.x1,
+              set: (v) => ({ x1: v }),
+            },
+            {
+              key: 'y1',
+              label: '终点 Y',
+              min: -H,
+              max: H,
+              get: () => selected.y1,
+              set: (v) => ({ y1: v }),
+            },
+          ]
+    : [];
 
   const sliderRow = ({ key, label, min = 0, max, step, get, set, fmt }) => (
     <label className="editor-slider-row" key={key}>
       <span>{label}</span>
       <input
-        type="range" min={min} max={max} step={step} value={Number(get()) || 0}
-        onPointerDown={() => { dragRef.current = `geo-${key}`; }}
+        type="range"
+        min={min}
+        max={max}
+        step={step}
+        value={Number(get()) || 0}
+        onPointerDown={() => {
+          dragRef.current = `geo-${key}`;
+        }}
         onPointerUp={() => {
-          if (dragRef.current) { dragRef.current = null; onCommit?.('蒙版调整', latestRef.current); }
+          if (dragRef.current) {
+            dragRef.current = null;
+            onCommit?.('蒙版调整', latestRef.current);
+          }
         }}
         onChange={(e) => {
           const v = Number(e.target.value);
-          const next = applyNext((list) => list.map((m) => (m.id === selectedId ? { ...m, ...set(v) } : m)));
+          const next = applyNext((list) =>
+            list.map((m) => (m.id === selectedId ? { ...m, ...set(v) } : m))
+          );
           if (!dragRef.current) onCommit?.('蒙版调整', next);
         }}
       />
@@ -112,12 +256,27 @@ export default function MaskPanel({ masks, session, selectedId, onSelect, onComm
           <label className="editor-slider-row">
             <span>羽化</span>
             <input
-              type="range" min={0} max={1} step={0.05} value={Number(selected.feather) || 0}
+              type="range"
+              min={0}
+              max={1}
+              step={0.05}
+              value={Number(selected.feather) || 0}
               disabled={selected.type === 'linear'}
-              title={selected.type === 'linear' ? '线性蒙版过渡由渐变线本身定义' : selected.type === 'range' ? '亮度带外的过渡宽度' : undefined}
-              onPointerDown={() => { dragRef.current = 'feather'; }}
+              title={
+                selected.type === 'linear'
+                  ? '线性蒙版过渡由渐变线本身定义'
+                  : selected.type === 'range'
+                    ? '亮度带外的过渡宽度'
+                    : undefined
+              }
+              onPointerDown={() => {
+                dragRef.current = 'feather';
+              }}
               onPointerUp={() => {
-                if (dragRef.current) { dragRef.current = null; onCommit?.('蒙版调整', latestRef.current); }
+                if (dragRef.current) {
+                  dragRef.current = null;
+                  onCommit?.('蒙版调整', latestRef.current);
+                }
               }}
               onChange={(e) => {
                 const v = Number(e.target.value);
@@ -130,7 +289,8 @@ export default function MaskPanel({ masks, session, selectedId, onSelect, onComm
           <label className="editor-slider-row editor-mask-invert">
             <span>反相</span>
             <input
-              type="checkbox" checked={!!selected.invert}
+              type="checkbox"
+              checked={!!selected.invert}
               onChange={(e) => updateSelected({ invert: e.target.checked }, '蒙版调整')}
             />
           </label>
@@ -139,10 +299,19 @@ export default function MaskPanel({ masks, session, selectedId, onSelect, onComm
             <label className="editor-slider-row" key={key}>
               <span>{label}</span>
               <input
-                type="range" min={min} max={max} step={step} value={selected.adjustments?.[key] ?? 0}
-                onPointerDown={() => { dragRef.current = `adj-${key}`; }}
+                type="range"
+                min={min}
+                max={max}
+                step={step}
+                value={selected.adjustments?.[key] ?? 0}
+                onPointerDown={() => {
+                  dragRef.current = `adj-${key}`;
+                }}
                 onPointerUp={() => {
-                  if (dragRef.current) { dragRef.current = null; onCommit?.('蒙版调整', latestRef.current); }
+                  if (dragRef.current) {
+                    dragRef.current = null;
+                    onCommit?.('蒙版调整', latestRef.current);
+                  }
                 }}
                 onChange={(e) => {
                   const next = setAdj(key, Number(e.target.value));

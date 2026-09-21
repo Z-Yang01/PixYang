@@ -118,13 +118,21 @@ export function matchGridShortcut(e) {
   if (isTypingTarget(e.target)) return null;
   if (isEditableEvent(e)) return null;
   switch (e.key) {
-    case 'ArrowLeft': return GRID_ACTIONS.MoveLeft;
-    case 'ArrowRight': return GRID_ACTIONS.MoveRight;
-    case 'ArrowUp': return GRID_ACTIONS.MoveUp;
-    case 'ArrowDown': return GRID_ACTIONS.MoveDown;
-    case 'Enter': return GRID_ACTIONS.Open;
-    case ' ': case 'Spacebar': return GRID_ACTIONS.ToggleSelect;
-    default: return null;
+    case 'ArrowLeft':
+      return GRID_ACTIONS.MoveLeft;
+    case 'ArrowRight':
+      return GRID_ACTIONS.MoveRight;
+    case 'ArrowUp':
+      return GRID_ACTIONS.MoveUp;
+    case 'ArrowDown':
+      return GRID_ACTIONS.MoveDown;
+    case 'Enter':
+      return GRID_ACTIONS.Open;
+    case ' ':
+    case 'Spacebar':
+      return GRID_ACTIONS.ToggleSelect;
+    default:
+      return null;
   }
 }
 

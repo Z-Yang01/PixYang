@@ -36,17 +36,17 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 
 export default function App() {
   // 共享状态来自 galleryStore（筛选/勾选/网格/图片/共享数据）
-  const images = useGalleryStore(s => s.images);
-  const totalImages = useGalleryStore(s => s.totalImages);
-  const filterFavorites = useGalleryStore(s => s.filterFavorites);
-  const filterTag = useGalleryStore(s => s.filterTag);
-  const filterAlbum = useGalleryStore(s => s.filterAlbum);
-  const selectedIds = useGalleryStore(s => s.selectedIds);
-  const gridSettings = useGalleryStore(s => s.gridSettings);
-  const page = useGalleryStore(s => s.page);
-  const search = useGalleryStore(s => s.search);
-  const filterDate = useGalleryStore(s => s.filterDate);
-  const dateRange = useGalleryStore(s => s.dateRange);
+  const images = useGalleryStore((s) => s.images);
+  const totalImages = useGalleryStore((s) => s.totalImages);
+  const filterFavorites = useGalleryStore((s) => s.filterFavorites);
+  const filterTag = useGalleryStore((s) => s.filterTag);
+  const filterAlbum = useGalleryStore((s) => s.filterAlbum);
+  const selectedIds = useGalleryStore((s) => s.selectedIds);
+  const gridSettings = useGalleryStore((s) => s.gridSettings);
+  const page = useGalleryStore((s) => s.page);
+  const search = useGalleryStore((s) => s.search);
+  const filterDate = useGalleryStore((s) => s.filterDate);
+  const dateRange = useGalleryStore((s) => s.dateRange);
 
   // App 级弹层状态（生命周期短，无需入 store）
   const [viewerImage, setViewerImage] = useState(null);
@@ -72,10 +72,16 @@ export default function App() {
   const infoFromViewerRef = useRef(false);
 
   // App 级弹层注册进 store 模态门禁（网格键盘导航/全局快捷键共用，堵空格/Delete 穿透）
-  const setModal = useGalleryStore(s => s.setModal);
-  useEffect(() => { setModal('import', !!showImport); }, [setModal, showImport]);
-  useEffect(() => { setModal('shortcuts', !!showShortcuts); }, [setModal, showShortcuts]);
-  useEffect(() => { setModal('help', !!showHelp); }, [setModal, showHelp]);
+  const setModal = useGalleryStore((s) => s.setModal);
+  useEffect(() => {
+    setModal('import', !!showImport);
+  }, [setModal, showImport]);
+  useEffect(() => {
+    setModal('shortcuts', !!showShortcuts);
+  }, [setModal, showShortcuts]);
+  useEffect(() => {
+    setModal('help', !!showHelp);
+  }, [setModal, showHelp]);
 
   useGalleryData();
 
@@ -99,7 +105,9 @@ export default function App() {
     handleSyncEdits,
   } = useBatchActions({ showToast });
 
-  useEffect(() => { setModal('batchAction', !!pendingBatchAction); }, [setModal, pendingBatchAction]);
+  useEffect(() => {
+    setModal('batchAction', !!pendingBatchAction);
+  }, [setModal, pendingBatchAction]);
 
   // 网格设置与排序持久化恢复 + 初始主题
   useEffect(() => {
@@ -137,7 +145,7 @@ export default function App() {
   useEffect(() => {
     const current = viewerImageRef.current;
     if (!current || images.length === 0) return;
-    const updated = images.find(img => img.id === current.id);
+    const updated = images.find((img) => img.id === current.id);
     if (updated) {
       setViewerImage(updated);
       return;
@@ -155,9 +163,10 @@ export default function App() {
   useEffect(() => {
     const current = infoImageRef.current;
     if (!current || images.length === 0) return;
-    const fresh = images.find(img => img.id === current.id);
+    const fresh = images.find((img) => img.id === current.id);
     if (fresh) {
-      if (fresh !== current) setInfoImage(prev => (prev && prev.id === fresh.id ? { ...prev, ...fresh } : prev));
+      if (fresh !== current)
+        setInfoImage((prev) => (prev && prev.id === fresh.id ? { ...prev, ...fresh } : prev));
       return;
     }
     if (!infoFromViewerRef.current) setInfoImage(null);
@@ -189,17 +198,17 @@ export default function App() {
 
   // 标签/相册被删除后，清理指向它们的悬空筛选（否则图库会一直显示空的筛选结果）；
   // appDataLoaded 前不过滤：启动直达带 location.state 的深链时列表还是空数组，会误清合法筛选
-  const tags = useGalleryStore(s => s.tags);
-  const albums = useGalleryStore(s => s.albums);
-  const appDataLoaded = useGalleryStore(s => s.appDataLoaded);
+  const tags = useGalleryStore((s) => s.tags);
+  const albums = useGalleryStore((s) => s.albums);
+  const appDataLoaded = useGalleryStore((s) => s.appDataLoaded);
   useEffect(() => {
-    if (appDataLoaded && filterTag !== null && !tags.some(t => t.id === filterTag)) {
+    if (appDataLoaded && filterTag !== null && !tags.some((t) => t.id === filterTag)) {
       useGalleryStore.getState().setFilterTag(null);
     }
   }, [tags, filterTag, appDataLoaded]);
 
   useEffect(() => {
-    if (appDataLoaded && filterAlbum !== null && !albums.some(a => a.id === filterAlbum)) {
+    if (appDataLoaded && filterAlbum !== null && !albums.some((a) => a.id === filterAlbum)) {
       useGalleryStore.getState().setFilterAlbum(null);
     }
   }, [albums, filterAlbum, appDataLoaded]);
@@ -214,11 +223,13 @@ export default function App() {
   const openViewer = useCallback((image, index) => {
     setViewerImage(image);
     // 记录当前筛选下的全局位置，支持查看器跨页翻页
-    setViewerIndex(globalIndexOfPage(
-      useGalleryStore.getState().page,
-      useGalleryStore.getState().gridSettings,
-      index
-    ));
+    setViewerIndex(
+      globalIndexOfPage(
+        useGalleryStore.getState().page,
+        useGalleryStore.getState().gridSettings,
+        index
+      )
+    );
   }, []);
 
   const closeViewer = useCallback(() => {
@@ -286,7 +297,7 @@ export default function App() {
       // 收藏页下取消收藏的图片应立即从列表移除
       if (store.filterFavorites && updates.favorite === 0) {
         const nextTotal = Math.max(0, store.totalImages - 1);
-        store.setImages(prev => removeImageFromList(prev, id));
+        store.setImages((prev) => removeImageFromList(prev, id));
         store.setTotalImages(nextTotal);
         store.setPage(pageAfterDelete(store.page, nextTotal, store.gridSettings));
         // 行已离开收藏列表：勾选集同步剪枝，否则批量操作打向不可见图片
@@ -294,7 +305,7 @@ export default function App() {
         store.loadStats();
         return;
       }
-      store.setImages(prev => applyLightLocalUpdate(prev, id, updates));
+      store.setImages((prev) => applyLightLocalUpdate(prev, id, updates));
       if ('favorite' in updates) store.loadStats();
       // 改日期会新增/清空日期桶：侧栏日期列表与计数不重拉就停在旧数据（审查批 8 Q-07）
       if ('import_date' in updates) store.loadAppData();
@@ -310,7 +321,7 @@ export default function App() {
         }
       }
       if (infoImageRef.current?.id === id) {
-        setInfoImage(prev => ({ ...prev, ...updates }));
+        setInfoImage((prev) => ({ ...prev, ...updates }));
       }
       return;
     }
@@ -320,7 +331,7 @@ export default function App() {
     if (infoImageRef.current) {
       // 同批内面板可能已被 onClose 置 null（守卫读的是渲染期 ref）：prev 为空必须保持 null，
       // 否则 {...null} 生成 {_refresh} 幽灵对象把面板重挂成打向 undefined id 的空壳
-      setInfoImage(prev => (prev ? { ...prev, _refresh: Date.now() } : null));
+      setInfoImage((prev) => (prev ? { ...prev, _refresh: Date.now() } : null));
     }
   }, []);
 
@@ -342,8 +353,15 @@ export default function App() {
     // 清除所有筛选，确保新导入的图片在「全部图片」中可见；
     // 有筛选被清除时防抖 effect 会自动重新加载，无筛选变化时这里兜底加载一次，避免双重请求
     const store = useGalleryStore.getState();
-    const hadFilters = !!(store.filterTag || store.filterAlbum || store.filterFavorites || store.filterDate
-      || store.dateRange.from || store.dateRange.to || store.search);
+    const hadFilters = !!(
+      store.filterTag ||
+      store.filterAlbum ||
+      store.filterFavorites ||
+      store.filterDate ||
+      store.dateRange.from ||
+      store.dateRange.to ||
+      store.search
+    );
     store.clearFilters();
     navigate('/', { state: {} });
     if (!hadFilters) store.loadImages();
@@ -353,19 +371,22 @@ export default function App() {
   }, [navigate, showToast]);
 
   // 拖拽导入
-  const handleDragCollect = useCallback((files) => {
-    if (files && files.length > 0) {
-      setImportInitialFiles(prev => {
-        if (!prev) return files;
-        const seen = new Set(prev.map(f => f.filepath));
-        const extra = files.filter(f => !seen.has(f.filepath));
-        return extra.length > 0 ? [...prev, ...extra] : prev;
-      });
-      setShowImport(true);
-    } else {
-      showToast('拖入的内容中没有可导入的图片', 'info');
-    }
-  }, [showToast]);
+  const handleDragCollect = useCallback(
+    (files) => {
+      if (files && files.length > 0) {
+        setImportInitialFiles((prev) => {
+          if (!prev) return files;
+          const seen = new Set(prev.map((f) => f.filepath));
+          const extra = files.filter((f) => !seen.has(f.filepath));
+          return extra.length > 0 ? [...prev, ...extra] : prev;
+        });
+        setShowImport(true);
+      } else {
+        showToast('拖入的内容中没有可导入的图片', 'info');
+      }
+    },
+    [showToast]
+  );
   const dragImport = useDragImport({ enabled: !showImport, onCollect: handleDragCollect });
 
   // Ctrl+滚轮调整网格列数（立即生效，防抖持久化）
@@ -428,12 +449,18 @@ export default function App() {
       searchInputRef.current?.focus();
       searchInputRef.current?.select();
     },
-    onToggleHelp: () => setShowShortcuts(v => !v),
+    onToggleHelp: () => setShowShortcuts((v) => !v),
     // 勾选动作只在图库/收藏页生效：相册/标签/设置页下勾选集不可见，
     // Ctrl+A+Delete 不应再对看不见的选择执行全选/删除
-    onSelectAll: () => { if (isGallery) handleSelectAllAllRef.current(); },
-    onExportSelected: () => { if (isGallery) handleExportSelected(); },
-    onDeleteSelected: () => { if (isGallery) handleBatchDelete(); },
+    onSelectAll: () => {
+      if (isGallery) handleSelectAllAllRef.current();
+    },
+    onExportSelected: () => {
+      if (isGallery) handleExportSelected();
+    },
+    onDeleteSelected: () => {
+      if (isGallery) handleBatchDelete();
+    },
     onClearSelection: () => useGalleryStore.getState().clearSelection(),
   });
   const showShortcutsRef = useRef(null);
@@ -468,17 +495,13 @@ export default function App() {
       <div className={`app-layout${sidebarCollapsed ? ' sidebar-collapsed' : ''}`}>
         <Sidebar
           collapsed={sidebarCollapsed}
-          onToggleCollapse={() => setSidebarCollapsed(c => !c)}
+          onToggleCollapse={() => setSidebarCollapsed((c) => !c)}
           onImport={openImport}
           onShowShortcuts={() => setShowShortcuts(true)}
           onShowHelp={() => setShowHelp(true)}
         />
         <div className="main-content">
-          <TopBar
-            showFilters={isGallery}
-            onImport={openImport}
-            searchInputRef={searchInputRef}
-          />
+          <TopBar showFilters={isGallery} onImport={openImport} searchInputRef={searchInputRef} />
           {isGallery && (
             <BatchBar
               onClear={() => useGalleryStore.getState().clearSelection()}
@@ -495,37 +518,56 @@ export default function App() {
             {/* / 与 /favorites 共用同一实例（galleryGrid），切换时不重挂、保留网格缓存 */}
             <Route path="/" element={galleryGrid} />
             <Route path="/favorites" element={galleryGrid} />
-            <Route path="/albums" element={
-              <AlbumsView
-                onSelectAlbum={(id) => { navigate('/', { state: { albumId: id } }); }}
-                onRefresh={() => { useGalleryStore.getState().refreshAppData(); }}
-              />
-            } />
-            <Route path="/tags" element={
-              <TagManager
-                onSelectTag={(id) => { navigate('/', { state: { tagId: id } }); }}
-                onRefresh={() => { useGalleryStore.getState().refreshAppData(); }}
-              />
-            } />
-            <Route path="/settings" element={
-              <SettingsPage
-                onSettingsChanged={() => {
-                  if (!api.isBridgeAvailable()) return;
-                  (async () => {
-                    const settings = await api.getSettings();
-                    if (!settings) return;
-                    useGalleryStore.getState().patchGridSettings({
-                      rows: Number(settings.grid_rows || 3),
-                      columns: Number(settings.grid_columns || 5),
-                      gap: Number(settings.grid_gap || 12),
-                      padding: Number(settings.content_padding || 16),
-                    });
-                    useGalleryStore.getState().setSortFromSettings(settings.sort_by, settings.sort_order);
-                  })();
-                }}
-                onImagesChanged={handleImageUpdated}
-              />
-            } />
+            <Route
+              path="/albums"
+              element={
+                <AlbumsView
+                  onSelectAlbum={(id) => {
+                    navigate('/', { state: { albumId: id } });
+                  }}
+                  onRefresh={() => {
+                    useGalleryStore.getState().refreshAppData();
+                  }}
+                />
+              }
+            />
+            <Route
+              path="/tags"
+              element={
+                <TagManager
+                  onSelectTag={(id) => {
+                    navigate('/', { state: { tagId: id } });
+                  }}
+                  onRefresh={() => {
+                    useGalleryStore.getState().refreshAppData();
+                  }}
+                />
+              }
+            />
+            <Route
+              path="/settings"
+              element={
+                <SettingsPage
+                  onSettingsChanged={() => {
+                    if (!api.isBridgeAvailable()) return;
+                    (async () => {
+                      const settings = await api.getSettings();
+                      if (!settings) return;
+                      useGalleryStore.getState().patchGridSettings({
+                        rows: Number(settings.grid_rows || 3),
+                        columns: Number(settings.grid_columns || 5),
+                        gap: Number(settings.grid_gap || 12),
+                        padding: Number(settings.content_padding || 16),
+                      });
+                      useGalleryStore
+                        .getState()
+                        .setSortFromSettings(settings.sort_by, settings.sort_order);
+                    })();
+                  }}
+                  onImagesChanged={handleImageUpdated}
+                />
+              }
+            />
           </Routes>
         </div>
 
@@ -569,7 +611,10 @@ export default function App() {
 
         {showImport && (
           <ImportDialog
-            onClose={() => { setShowImport(false); setImportInitialFiles(null); }}
+            onClose={() => {
+              setShowImport(false);
+              setImportInitialFiles(null);
+            }}
             onDone={handleImportDone}
             initialFiles={importInitialFiles}
           />

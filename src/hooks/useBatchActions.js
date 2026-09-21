@@ -33,10 +33,16 @@ export default function useBatchActions({ showToast }) {
 
   const handleSelectAllAll = useCallback(async () => {
     if (!api.isBridgeAvailable()) return;
-    const snapshotFilter = (st) => JSON.stringify([
-      st.search, st.filterTag, st.filterAlbum, st.filterFavorites,
-      st.filterDate, st.dateRange.from, st.dateRange.to,
-    ]);
+    const snapshotFilter = (st) =>
+      JSON.stringify([
+        st.search,
+        st.filterTag,
+        st.filterAlbum,
+        st.filterFavorites,
+        st.filterDate,
+        st.dateRange.from,
+        st.dateRange.to,
+      ]);
     const store = useGalleryStore.getState();
     const filterKeyAtRequest = snapshotFilter(store);
     const ids = await api.getAllImageIds({

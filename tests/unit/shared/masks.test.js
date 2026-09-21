@@ -20,13 +20,28 @@ describe('normalizeMasks / hasMaskData', () => {
   });
 
   it('仅存在非零调整视为有数据', () => {
-    expect(masks.hasMaskData([{ type: 'radial', cx: 1, cy: 1, rx: 5, ry: 5, adjustments: {} }])).toBe(false);
-    expect(masks.hasMaskData([{ type: 'linear', x0: 0, y0: 0, x1: 10, y1: 0, adjustments: { exposure: 0.5 } }])).toBe(true);
+    expect(
+      masks.hasMaskData([{ type: 'radial', cx: 1, cy: 1, rx: 5, ry: 5, adjustments: {} }])
+    ).toBe(false);
+    expect(
+      masks.hasMaskData([
+        { type: 'linear', x0: 0, y0: 0, x1: 10, y1: 0, adjustments: { exposure: 0.5 } },
+      ])
+    ).toBe(true);
   });
 });
 
 describe('radialWeight', () => {
-  const m = { type: 'radial', cx: 100, cy: 100, rx: 50, ry: 50, rotation: 0, feather: 0.5, invert: false };
+  const m = {
+    type: 'radial',
+    cx: 100,
+    cy: 100,
+    rx: 50,
+    ry: 50,
+    rotation: 0,
+    feather: 0.5,
+    invert: false,
+  };
 
   it('中心全量、边缘归零、羽化区间线性', () => {
     expect(masks.radialWeight(m, 100, 100)).toBe(1);
@@ -78,8 +93,20 @@ describe('applyMaskedAdjustment / applyMasksInPlace', () => {
   it('原位应用与权重函数一致（4 通道跳过 alpha；灰度跳过）', () => {
     const W = 4;
     const H = 1;
-    const m = { type: 'radial', cx: 0, cy: 0, rx: 3, ry: 3, rotation: 0, feather: 1, invert: false, adjustments: masks.normalizeAdjustments({ exposure: 1 }) };
-    const data = Buffer.from([200, 100, 50, 255, 200, 100, 50, 255, 200, 100, 50, 255, 200, 100, 50, 255]);
+    const m = {
+      type: 'radial',
+      cx: 0,
+      cy: 0,
+      rx: 3,
+      ry: 3,
+      rotation: 0,
+      feather: 1,
+      invert: false,
+      adjustments: masks.normalizeAdjustments({ exposure: 1 }),
+    };
+    const data = Buffer.from([
+      200, 100, 50, 255, 200, 100, 50, 255, 200, 100, 50, 255, 200, 100, 50, 255,
+    ]);
     masks.applyMasksInPlace(data, W, H, [m], 4);
     for (let x = 0; x < W; x++) {
       const w = masks.radialWeight(m, x, 0);
@@ -97,8 +124,25 @@ describe('applyMaskedAdjustment / applyMasksInPlace', () => {
     masks.applyMasksInPlace(data, 1, 1, [], 3);
     expect([...data]).toEqual([100, 100, 100]);
     const two = [
-      { type: 'radial', cx: 0, cy: 0, rx: 10, ry: 10, feather: 0, invert: false, adjustments: masks.normalizeAdjustments({ exposure: 1 }) },
-      { type: 'linear', x0: -10, y0: 0, x1: 10, y1: 0, invert: false, adjustments: masks.normalizeAdjustments({ exposure: 1 }) },
+      {
+        type: 'radial',
+        cx: 0,
+        cy: 0,
+        rx: 10,
+        ry: 10,
+        feather: 0,
+        invert: false,
+        adjustments: masks.normalizeAdjustments({ exposure: 1 }),
+      },
+      {
+        type: 'linear',
+        x0: -10,
+        y0: 0,
+        x1: 10,
+        y1: 0,
+        invert: false,
+        adjustments: masks.normalizeAdjustments({ exposure: 1 }),
+      },
     ];
     const d2 = Buffer.from([100, 100, 100]);
     masks.applyMasksInPlace(d2, 1, 1, two, 3);
@@ -140,19 +184,40 @@ describe('rangeWeight / range 亮度蒙版', () => {
   });
 
   it('normalizeMasks 上限 8 个（与 WebGL 预览 uniform 上限一致）', () => {
-    const many = Array.from({ length: 10 }, (_, i) => (
-      { type: 'range', id: `r${i}`, center: 0.1 * i, adjustments: { exposure: 0.1 } }
-    ));
+    const many = Array.from({ length: 10 }, (_, i) => ({
+      type: 'range',
+      id: `r${i}`,
+      center: 0.1 * i,
+      adjustments: { exposure: 0.1 },
+    }));
     expect(masks.normalizeMasks(many)).toHaveLength(8);
   });
 
   it('applyMasksInPlace：亮度带内像素被调整、带外不变（灰阶梯度）', () => {
-    const m = masks.normalizeMasks([{ type: 'range', center: 0.2, range: 0.05, feather: 0, invert: false, adjustments: { exposure: 1 } }])[0];
+    const m = masks.normalizeMasks([
+      {
+        type: 'range',
+        center: 0.2,
+        range: 0.05,
+        feather: 0,
+        invert: false,
+        adjustments: { exposure: 1 },
+      },
+    ])[0];
     const data = Buffer.from([26, 26, 26, 230, 230, 230]);
     masks.applyMasksInPlace(data, 2, 1, [m], 3);
     // 26/255≈0.102，|L-0.2|=0.098 > range → 不变；另一像素同理
     expect([...data]).toEqual([26, 26, 26, 230, 230, 230]);
-    const m2 = masks.normalizeMasks([{ type: 'range', center: 0.4, range: 0.2, feather: 0, invert: false, adjustments: { exposure: 1 } }])[0];
+    const m2 = masks.normalizeMasks([
+      {
+        type: 'range',
+        center: 0.4,
+        range: 0.2,
+        feather: 0,
+        invert: false,
+        adjustments: { exposure: 1 },
+      },
+    ])[0];
     const d2 = Buffer.from([102, 102, 102, 204, 204, 204]);
     masks.applyMasksInPlace(d2, 2, 1, [m2], 3);
     expect(d2[0]).toBe(204);

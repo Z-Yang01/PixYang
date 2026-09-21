@@ -23,9 +23,12 @@ function normalizeView(view) {
   const cropIn = view?.crop;
   let crop = null;
   if (
-    cropIn
-    && [cropIn.left, cropIn.top, cropIn.width, cropIn.height].every((n) => Number.isFinite(Number(n)))
-    && Number(cropIn.width) > 0 && Number(cropIn.height) > 0
+    cropIn &&
+    [cropIn.left, cropIn.top, cropIn.width, cropIn.height].every((n) =>
+      Number.isFinite(Number(n))
+    ) &&
+    Number(cropIn.width) > 0 &&
+    Number(cropIn.height) > 0
   ) {
     crop = {
       x0: clamp01(Number(cropIn.left) / width),
@@ -58,7 +61,16 @@ function imageFrameToDisplayFrame(nx, ny, rotation, flipH, flipV) {
 function displayFrameToImageFrame(dx, dy, rotation, flipH, flipV) {
   let x = dx;
   let y = dy;
-  if (rotation === 90) { x = dy; y = 1 - dx; } else if (rotation === 180) { x = 1 - dx; y = 1 - dy; } else if (rotation === 270) { x = 1 - dy; y = dx; }
+  if (rotation === 90) {
+    x = dy;
+    y = 1 - dx;
+  } else if (rotation === 180) {
+    x = 1 - dx;
+    y = 1 - dy;
+  } else if (rotation === 270) {
+    x = 1 - dy;
+    y = dx;
+  }
   if (flipH) x = 1 - x;
   if (flipV) y = 1 - y;
   return { x, y };
@@ -68,8 +80,20 @@ function displayFrameToImageFrame(dx, dy, rotation, flipH, flipV) {
 // 旋转/翻转只交换/镜像轴，矩形仍保持轴对齐，两对角变换后取包围盒即可。
 function cropRectInDisplayFrame(view) {
   if (!view.crop) return null;
-  const a = imageFrameToDisplayFrame(view.crop.x0, view.crop.y0, view.rotation, view.flipH, view.flipV);
-  const b = imageFrameToDisplayFrame(view.crop.x1, view.crop.y1, view.rotation, view.flipH, view.flipV);
+  const a = imageFrameToDisplayFrame(
+    view.crop.x0,
+    view.crop.y0,
+    view.rotation,
+    view.flipH,
+    view.flipV
+  );
+  const b = imageFrameToDisplayFrame(
+    view.crop.x1,
+    view.crop.y1,
+    view.rotation,
+    view.flipH,
+    view.flipV
+  );
   return {
     x0: Math.min(a.x, b.x),
     y0: Math.min(a.y, b.y),

@@ -2,18 +2,52 @@ import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { formatSizeDisplay as formatSize } from '@/lib/format';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import {
-  RotateCw, RotateCcw, FlipHorizontal2, Save, Heart, HeartOff,
-  Star, X, ChevronLeft, ChevronRight, Camera, Calendar, Info, Pencil,
-  Crop, RotateCcwSquare, Loader2, SlidersHorizontal, Undo2, Redo2,
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import {
+  RotateCw,
+  RotateCcw,
+  FlipHorizontal2,
+  Save,
+  Heart,
+  HeartOff,
+  Star,
+  X,
+  ChevronLeft,
+  ChevronRight,
+  Camera,
+  Calendar,
+  Info,
+  Pencil,
+  Crop,
+  RotateCcwSquare,
+  Loader2,
+  SlidersHorizontal,
+  Undo2,
+  Redo2,
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { matchViewerShortcut, VIEWER_ACTIONS, ratingFromViewerAction, isEnterSubmit } from '@/lib/shortcuts';
+import {
+  matchViewerShortcut,
+  VIEWER_ACTIONS,
+  ratingFromViewerAction,
+  isEnterSubmit,
+} from '@/lib/shortcuts';
 import api from '@/lib/api';
 import {
-  EDIT_DEFAULTS, CROP_RATIOS, sanitizeEditOps, previewFilterChain, needsMatrix,
-  toEditParams, fromEditParams, opsChanged,
+  EDIT_DEFAULTS,
+  CROP_RATIOS,
+  sanitizeEditOps,
+  previewFilterChain,
+  needsMatrix,
+  toEditParams,
+  fromEditParams,
+  opsChanged,
 } from '@/lib/editParams';
 import useGalleryStore from '@/store/galleryStore';
 import builtinPresetsModule from '../../../shared/builtinPresets.cjs';
@@ -42,8 +76,17 @@ const clamp = (v, min, max) => Math.min(max, Math.max(min, v));
 const EDIT_SETTLE_MS = 160;
 
 export default function ImageViewer({
-  image, imageIndex = 0, totalCount = 0, onClose, onPrev, onNext, hasPrev, hasNext, onImageUpdated,
-  onOpenInfo, closeGuardRef,
+  image,
+  imageIndex = 0,
+  totalCount = 0,
+  onClose,
+  onPrev,
+  onNext,
+  hasPrev,
+  hasNext,
+  onImageUpdated,
+  onOpenInfo,
+  closeGuardRef,
 }) {
   const [thumbSrc, setThumbSrc] = useState(null);
   const [fullSrc, setFullSrc] = useState(null);
@@ -131,7 +174,7 @@ export default function ImageViewer({
     loadImage();
     const loadId = image?.id;
     if (!image || !api.isBridgeAvailable()) return;
-    api.getImageTags(image.id).then(tags => {
+    api.getImageTags(image.id).then((tags) => {
       // 快速翻页时丢弃过期标签响应（loadId 在闭包内恒等于 image.id，须比对 ref）
       if (imageIdRef.current === loadId) setImgTags(tags || []);
     });
@@ -168,21 +211,24 @@ export default function ImageViewer({
     }
   }, [image, onImageUpdated]);
 
-  const setRating = useCallback(async (r) => {
-    if (!api.isBridgeAvailable() || !image) return;
-    const prev = localRating;
-    const newRating = r === localRating ? 0 : r;
-    setLocalRating(newRating);
-    try {
-      const result = await api.updateImage(image.id, { rating: newRating });
-      if (result?.error) throw new Error(result.error);
-      onImageUpdated?.(image.id, { rating: newRating });
-    } catch (e) {
-      console.error('[查看器] 评分写入失败:', e.message);
-      setLocalRating(prev);
-      toast.error('评分保存失败');
-    }
-  }, [image, localRating, onImageUpdated]);
+  const setRating = useCallback(
+    async (r) => {
+      if (!api.isBridgeAvailable() || !image) return;
+      const prev = localRating;
+      const newRating = r === localRating ? 0 : r;
+      setLocalRating(newRating);
+      try {
+        const result = await api.updateImage(image.id, { rating: newRating });
+        if (result?.error) throw new Error(result.error);
+        onImageUpdated?.(image.id, { rating: newRating });
+      } catch (e) {
+        console.error('[查看器] 评分写入失败:', e.message);
+        setLocalRating(prev);
+        toast.error('评分保存失败');
+      }
+    },
+    [image, localRating, onImageUpdated]
+  );
 
   // ── 编辑会话（非破坏：保存=只写参数；烘焙替代=显式动作才写像素）──
 
@@ -277,43 +323,57 @@ export default function ImageViewer({
   }, []);
 
   // 历史栈条目：{ ops, label }——label 供历史面板展示
-  const pushHistory = useCallback((snapshot, label = '调整') => {
-    const h = historyRef.current;
-    if (!h) return;
-    const json = JSON.stringify(snapshot);
-    if (json === JSON.stringify(h.stack[h.index]?.ops)) return;
-    h.stack = h.stack.slice(0, h.index + 1);
-    // 浅拷贝快照：防止后续原处 mutate 污染整个历史栈
-    h.stack.push({ ops: { ...snapshot }, label });
-    h.index = h.stack.length - 1;
-    syncHistInfo();
-  }, [syncHistInfo]);
+  const pushHistory = useCallback(
+    (snapshot, label = '调整') => {
+      const h = historyRef.current;
+      if (!h) return;
+      const json = JSON.stringify(snapshot);
+      if (json === JSON.stringify(h.stack[h.index]?.ops)) return;
+      h.stack = h.stack.slice(0, h.index + 1);
+      // 浅拷贝快照：防止后续原处 mutate 污染整个历史栈
+      h.stack.push({ ops: { ...snapshot }, label });
+      h.index = h.stack.length - 1;
+      syncHistInfo();
+    },
+    [syncHistInfo]
+  );
 
-  const jumpToHistory = useCallback((index) => {
-    const h = historyRef.current;
-    if (!h || index < 0 || index >= h.stack.length) return;
-    h.index = index;
-    cropDragRef.current = null; // 拖拽中跳转：丢弃陈旧手势基准，防写回污染已跳转状态
-    setEditEpoch(e => e + 1);   // 同步中断曲线拖拽
-    setEditOps(h.stack[index].ops);
-    syncHistInfo();
-  }, [syncHistInfo]);
+  const jumpToHistory = useCallback(
+    (index) => {
+      const h = historyRef.current;
+      if (!h || index < 0 || index >= h.stack.length) return;
+      h.index = index;
+      cropDragRef.current = null; // 拖拽中跳转：丢弃陈旧手势基准，防写回污染已跳转状态
+      setEditEpoch((e) => e + 1); // 同步中断曲线拖拽
+      setEditOps(h.stack[index].ops);
+      syncHistInfo();
+    },
+    [syncHistInfo]
+  );
 
-  const applyHistory = useCallback((dir) => {
-    const h = historyRef.current;
-    if (!h) return;
-    const next = dir === 'undo' ? h.index - 1 : h.index + 1;
-    if (next < 0 || next >= h.stack.length) return;
-    jumpToHistory(next);
-  }, [jumpToHistory]);
+  const applyHistory = useCallback(
+    (dir) => {
+      const h = historyRef.current;
+      if (!h) return;
+      const next = dir === 'undo' ? h.index - 1 : h.index + 1;
+      if (next < 0 || next >= h.stack.length) return;
+      jumpToHistory(next);
+    },
+    [jumpToHistory]
+  );
 
   // 当前编辑参数（含裁剪框）
-  const composeOps = useCallback(() => (
-    sanitizeEditOps({
-      ...editOpsRef.current,
-      crop: editOpsRef.current.crop && editOpsRef.current.crop.width > 0 ? editOpsRef.current.crop : null,
-    })
-  ), []);
+  const composeOps = useCallback(
+    () =>
+      sanitizeEditOps({
+        ...editOpsRef.current,
+        crop:
+          editOpsRef.current.crop && editOpsRef.current.crop.width > 0
+            ? editOpsRef.current.crop
+            : null,
+      }),
+    []
+  );
 
   const editDirty = editing && opsChanged(composeOps(), savedBaselineRef.current);
 
@@ -393,7 +453,7 @@ export default function ImageViewer({
       setRotation(0);
       setFlipH(false);
       setFlipV(false);
-      setBust(b => b + 1);
+      setBust((b) => b + 1);
       toast.success('已烘焙并替代原图');
       // 结构性变化：像素/尺寸/缩略图已变，走全量刷新（查看器内 image 由 App 同步 effect 更新）
       onImageUpdated?.();
@@ -453,34 +513,78 @@ export default function ImageViewer({
 
   // 蒙版动作：默认几何取当前底图尺寸比例；id 生成一次即稳定。
   // 拖拽绘制（MaskOverlay）走同一入口，几何项由 overlay 传入（底图像素坐标）覆盖默认值
-  const addMaskWithGeometry = useCallback((type, geometry = {}) => {
-    if ((editOpsRef.current.masks || []).length >= 8) {
-      toast.error('最多支持 8 个蒙版');
-      return;
-    }
-    const W = editSessionRef.current?.width || 1000;
-    const H = editSessionRef.current?.height || 1000;
-    const id = `mask-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-    const adjustments = { exposure: -0.5, contrast: 0, saturation: 0, temperature: 0, tint: 0 };
-    const mask = type === 'radial'
-      ? { type: 'radial', id, cx: W / 2, cy: H / 2, rx: Math.round(W * 0.25), ry: Math.round(H * 0.25), rotation: 0, feather: 0.5, invert: false, adjustments, ...geometry }
-      : type === 'range'
-        ? { type: 'range', id, center: 0.35, range: 0.25, feather: 0.25, invert: false, adjustments, ...geometry }
-        : { type: 'linear', id, x0: 0, y0: Math.round(H * 0.3), x1: 0, y1: Math.round(H * 0.7), feather: 0.5, invert: false, adjustments, ...geometry };
-    const next = sanitizeEditOps({ ...editOpsRef.current, masks: [...(editOpsRef.current.masks || []), mask] });
-    pushHistory(next, type === 'radial' ? '添加径向蒙版' : type === 'range' ? '添加亮度蒙版' : '添加线性蒙版');
-    setEditOps(next);
-    setSelectedMaskId(id);
-  }, [pushHistory]);
+  const addMaskWithGeometry = useCallback(
+    (type, geometry = {}) => {
+      if ((editOpsRef.current.masks || []).length >= 8) {
+        toast.error('最多支持 8 个蒙版');
+        return;
+      }
+      const W = editSessionRef.current?.width || 1000;
+      const H = editSessionRef.current?.height || 1000;
+      const id = `mask-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+      const adjustments = { exposure: -0.5, contrast: 0, saturation: 0, temperature: 0, tint: 0 };
+      const mask =
+        type === 'radial'
+          ? {
+              type: 'radial',
+              id,
+              cx: W / 2,
+              cy: H / 2,
+              rx: Math.round(W * 0.25),
+              ry: Math.round(H * 0.25),
+              rotation: 0,
+              feather: 0.5,
+              invert: false,
+              adjustments,
+              ...geometry,
+            }
+          : type === 'range'
+            ? {
+                type: 'range',
+                id,
+                center: 0.35,
+                range: 0.25,
+                feather: 0.25,
+                invert: false,
+                adjustments,
+                ...geometry,
+              }
+            : {
+                type: 'linear',
+                id,
+                x0: 0,
+                y0: Math.round(H * 0.3),
+                x1: 0,
+                y1: Math.round(H * 0.7),
+                feather: 0.5,
+                invert: false,
+                adjustments,
+                ...geometry,
+              };
+      const next = sanitizeEditOps({
+        ...editOpsRef.current,
+        masks: [...(editOpsRef.current.masks || []), mask],
+      });
+      pushHistory(
+        next,
+        type === 'radial' ? '添加径向蒙版' : type === 'range' ? '添加亮度蒙版' : '添加线性蒙版'
+      );
+      setEditOps(next);
+      setSelectedMaskId(id);
+    },
+    [pushHistory]
+  );
 
   const addMask = useCallback((type) => addMaskWithGeometry(type), [addMaskWithGeometry]);
 
   // overlay 手柄拖动：实时写 editOps.masks（走 sanitizeEditOps 归一化通道），历史由 pointerup 收敛
   const updateMaskGeometry = useCallback((id, patch) => {
-    setEditOps(o => sanitizeEditOps({
-      ...o,
-      masks: (o.masks || []).map((m) => (m.id === id ? { ...m, ...patch } : m)),
-    }));
+    setEditOps((o) =>
+      sanitizeEditOps({
+        ...o,
+        masks: (o.masks || []).map((m) => (m.id === id ? { ...m, ...patch } : m)),
+      })
+    );
   }, []);
 
   const commitMaskGesture = useCallback(() => {
@@ -492,12 +596,15 @@ export default function ImageViewer({
     setCropMode(false);
     setShowBefore(false);
     setCompareMode('toggle');
-    setMaskTool(cur => (cur === type ? null : type));
+    setMaskTool((cur) => (cur === type ? null : type));
   }, []);
 
   const deleteSelectedMask = useCallback(() => {
     if (!selectedMaskId) return;
-    const next = sanitizeEditOps({ ...editOpsRef.current, masks: (editOpsRef.current.masks || []).filter((m) => m.id !== selectedMaskId) });
+    const next = sanitizeEditOps({
+      ...editOpsRef.current,
+      masks: (editOpsRef.current.masks || []).filter((m) => m.id !== selectedMaskId),
+    });
     pushHistory(next, '删除蒙版');
     setEditOps(next);
     setSelectedMaskId(null);
@@ -505,46 +612,59 @@ export default function ImageViewer({
 
   // 应用预设：scope='basic' 只覆盖影调（几何保持当前构图）；
   // scope='all' 连旋转/翻转/裁剪一起应用（crop 坐标基于保存时的底图尺寸，跨尺寸图需手动微调）
-  const applyPreset = useCallback((presetParams, scope = 'basic') => {
-    const p = presetParams?.basic;
-    if (!p) return;
-    const next = {
-      ...EDIT_DEFAULTS,
-      rotation: editOpsRef.current.rotation,
-      flipH: editOpsRef.current.flipH,
-      flipV: editOpsRef.current.flipV,
-      crop: editOpsRef.current.crop,
-      masks: editOpsRef.current.masks,
-      ...p,
-      curves: presetParams.curves || EDIT_DEFAULTS.curves,
-      colorGrading: presetParams.colorGrading || EDIT_DEFAULTS.colorGrading,
-      vignette: presetParams.lens?.vignette || EDIT_DEFAULTS.vignette,
-    };
-    if (scope === 'all') {
-      const o = presetParams.orientation;
-      if (o) {
-        next.rotation = Number(o.rotate) || 0;
-        next.flipH = !!o.flipH;
-        next.flipV = !!o.flipV;
-      }
-      if (presetParams.crop && presetParams.crop.w > 0) {
-        // 裁剪坐标基于保存时的底图尺寸——按当前图尺寸钳制，越界部分收敛到边界内
-        const W = editSessionRef.current?.width || 0;
-        const H = editSessionRef.current?.height || 0;
-        let cx = Math.max(0, presetParams.crop.x);
-        let cy = Math.max(0, presetParams.crop.y);
-        let cw = Math.max(1, Math.min(presetParams.crop.w, W - cx));
-        let ch = Math.max(1, Math.min(presetParams.crop.h, H - cy));
-        if (cw >= 8 && ch >= 8) {
-          next.crop = { left: cx, top: cy, width: cw, height: ch, ratio: presetParams.crop.ratio || 'free' };
+  const applyPreset = useCallback(
+    (presetParams, scope = 'basic') => {
+      const p = presetParams?.basic;
+      if (!p) return;
+      const next = {
+        ...EDIT_DEFAULTS,
+        rotation: editOpsRef.current.rotation,
+        flipH: editOpsRef.current.flipH,
+        flipV: editOpsRef.current.flipV,
+        crop: editOpsRef.current.crop,
+        masks: editOpsRef.current.masks,
+        ...p,
+        curves: presetParams.curves || EDIT_DEFAULTS.curves,
+        colorGrading: presetParams.colorGrading || EDIT_DEFAULTS.colorGrading,
+        vignette: presetParams.lens?.vignette || EDIT_DEFAULTS.vignette,
+      };
+      if (scope === 'all') {
+        const o = presetParams.orientation;
+        if (o) {
+          next.rotation = Number(o.rotate) || 0;
+          next.flipH = !!o.flipH;
+          next.flipV = !!o.flipV;
+        }
+        if (presetParams.crop && presetParams.crop.w > 0) {
+          // 裁剪坐标基于保存时的底图尺寸——按当前图尺寸钳制，越界部分收敛到边界内
+          const W = editSessionRef.current?.width || 0;
+          const H = editSessionRef.current?.height || 0;
+          let cx = Math.max(0, presetParams.crop.x);
+          let cy = Math.max(0, presetParams.crop.y);
+          let cw = Math.max(1, Math.min(presetParams.crop.w, W - cx));
+          let ch = Math.max(1, Math.min(presetParams.crop.h, H - cy));
+          if (cw >= 8 && ch >= 8) {
+            next.crop = {
+              left: cx,
+              top: cy,
+              width: cw,
+              height: ch,
+              ratio: presetParams.crop.ratio || 'free',
+            };
+          }
         }
       }
-    }
-    pushHistory(next, presetParams?.name ? `预设「${presetParams.name}」` : '应用预设');
-    setEditOps(next);
-    const scopeLabel = scope === 'all' ? '（含几何）' : '';
-    toast.success(presetParams?.name ? `已应用预设「${presetParams.name}」${scopeLabel}` : `已应用预设${scopeLabel}`);
-  }, [pushHistory]);
+      pushHistory(next, presetParams?.name ? `预设「${presetParams.name}」` : '应用预设');
+      setEditOps(next);
+      const scopeLabel = scope === 'all' ? '（含几何）' : '';
+      toast.success(
+        presetParams?.name
+          ? `已应用预设「${presetParams.name}」${scopeLabel}`
+          : `已应用预设${scopeLabel}`
+      );
+    },
+    [pushHistory]
+  );
 
   const savePreset = useCallback(async () => {
     const name = presetName.trim();
@@ -559,10 +679,13 @@ export default function ImageViewer({
     toast.success(`预设「${name}」已保存`);
   }, [presetName, composeOps, loadPresets]);
 
-  const removePreset = useCallback(async (id) => {
-    await api.deletePreset(id);
-    await loadPresets();
-  }, [loadPresets]);
+  const removePreset = useCallback(
+    async (id) => {
+      await api.deletePreset(id);
+      await loadPresets();
+    },
+    [loadPresets]
+  );
 
   const copySettings = useCallback(() => {
     copiedBasicRef.current = { ...editOpsRef.current };
@@ -581,7 +704,11 @@ export default function ImageViewer({
       curves: editOpsRef.current.curves,
       colorGrading: editOpsRef.current.colorGrading,
       vignette: editOpsRef.current.vignette,
-      orientation: { rotate: editOpsRef.current.rotation, flipH: editOpsRef.current.flipH, flipV: editOpsRef.current.flipV },
+      orientation: {
+        rotate: editOpsRef.current.rotation,
+        flipH: editOpsRef.current.flipH,
+        flipV: editOpsRef.current.flipV,
+      },
     });
     toast.success('已复制当前调整参数');
   }, []);
@@ -594,9 +721,15 @@ export default function ImageViewer({
     }
     const next = {
       ...editOpsRef.current,
-      exposure: c.exposure, contrast: c.contrast, highlights: c.highlights,
-      shadows: c.shadows, whites: c.whites, blacks: c.blacks,
-      saturation: c.saturation, temperature: c.temperature, tint: c.tint,
+      exposure: c.exposure,
+      contrast: c.contrast,
+      highlights: c.highlights,
+      shadows: c.shadows,
+      whites: c.whites,
+      blacks: c.blacks,
+      saturation: c.saturation,
+      temperature: c.temperature,
+      tint: c.tint,
     };
     pushHistory(next, '粘贴参数');
     setEditOps(next);
@@ -606,16 +739,22 @@ export default function ImageViewer({
   // 编辑参数统一应用入口（查看态操作 rotation/flip state，编辑态操作 editOps + 历史）
   // 忙态（建立会话/保存/导出/烘焙在途）拒绝变换：opening 期间改查看态旋转会与
   // 主进程已定稿的底图转正参数分叉，baking 期间改 ops 会串入已提交的参数集
-  const applyRotate = useCallback((delta) => {
-    if (editBusy) return;
-    if (editingRef.current) {
-      const next = { ...editOpsRef.current, rotation: (editOpsRef.current.rotation + delta + 360) % 360 };
-      pushHistory(next, '旋转');
-      setEditOps(next);
-    } else {
-      setRotation(r => (r + delta + 360) % 360);
-    }
-  }, [pushHistory, editBusy]);
+  const applyRotate = useCallback(
+    (delta) => {
+      if (editBusy) return;
+      if (editingRef.current) {
+        const next = {
+          ...editOpsRef.current,
+          rotation: (editOpsRef.current.rotation + delta + 360) % 360,
+        };
+        pushHistory(next, '旋转');
+        setEditOps(next);
+      } else {
+        setRotation((r) => (r + delta + 360) % 360);
+      }
+    },
+    [pushHistory, editBusy]
+  );
 
   // 几何变换精简：旋转 + 水平翻转即可表达全部朝向（垂直翻转 ≡ 180° 旋转 + 水平翻转），
   // 故不提供垂直翻转入口；flip_v 元数据管线保留，存量数据的垂直翻转仍正常显示与保存
@@ -626,7 +765,7 @@ export default function ImageViewer({
       pushHistory(next, '水平翻转');
       setEditOps(next);
     } else {
-      setFlipH(f => !f);
+      setFlipH((f) => !f);
     }
   }, [pushHistory, editBusy]);
 
@@ -639,114 +778,152 @@ export default function ImageViewer({
   // ── 裁剪交互 ──
   // 鼠标坐标 → 底图像素坐标：共享 maskGeometry.displayToImage
   //（内部完成 0..1 钳制与先退旋转再退翻转；编辑态整图显示，无 crop）
-  const toImageCoords = useCallback((clientX, clientY) => {
-    const el = editImgRef.current;
-    const w = editSession?.width;
-    const h = editSession?.height;
-    if (!el || !w || !h) return null;
-    const r = el.getBoundingClientRect();
-    if (!r.width || !r.height) return null;
-    const ops = editOpsRef.current;
-    return displayToImage(
-      (clientX - r.left) / r.width,
-      (clientY - r.top) / r.height,
-      { width: w, height: h, rotation: ops.rotation, flipH: ops.flipH, flipV: ops.flipV },
-    );
-  }, [editSession]);
+  const toImageCoords = useCallback(
+    (clientX, clientY) => {
+      const el = editImgRef.current;
+      const w = editSession?.width;
+      const h = editSession?.height;
+      if (!el || !w || !h) return null;
+      const r = el.getBoundingClientRect();
+      if (!r.width || !r.height) return null;
+      const ops = editOpsRef.current;
+      return displayToImage((clientX - r.left) / r.width, (clientY - r.top) / r.height, {
+        width: w,
+        height: h,
+        rotation: ops.rotation,
+        flipH: ops.flipH,
+        flipV: ops.flipV,
+      });
+    },
+    [editSession]
+  );
 
   // 按 mode 更新裁剪框（new/move/八向手柄），clamp 到图像边界，角手柄支持比例锁定
-  const applyCropDrag = useCallback((mode, start, orig, cur) => {
-    const w = editSession?.width;
-    const h = editSession?.height;
-    if (!w || !h) return;
-    const ratio = mode.startsWith('new') || /^[ns][ew]$/.test(mode)
-      ? (CROP_RATIOS.find(r => r.key === cropRatioKey)?.value || null)
-      : null;
-    let rect;
-    if (mode === 'new') {
-      let width = cur.x - start.x;
-      let height = cur.y - start.y;
-      let left = start.x;
-      let top = start.y;
-      if (width < 0) { width = -width; left -= width; }
-      if (height < 0) { height = -height; top -= height; }
-      if (ratio) {
-        height = width / ratio;
-        if (top + height > h) { height = h - top; width = height * ratio; }
-        if (left + width > w) { width = w - left; height = width / ratio; }
-      }
-      rect = { left, top, width, height };
-    } else if (mode === 'move') {
-      const dx = cur.x - start.x;
-      const dy = cur.y - start.y;
-      rect = {
-        ...orig,
-        left: clamp(orig.left + dx, 0, w - orig.width),
-        top: clamp(orig.top + dy, 0, h - orig.height),
-      };
-    } else if (mode.length === 1) {
-      // 边手柄只动被拖的轴，另一轴保持原值：对角锚点 min/abs 语义仅适用于角手柄，
-      // 否则 n/s 纯竖直拖动会把宽度缩到 0，onUp 判 <8 直接清空裁剪框
-      const MIN_SIDE = 8;
-      let { left, top, width, height } = orig;
-      if (mode === 'n') {
-        top = clamp(cur.y, 0, orig.top + orig.height - MIN_SIDE);
-        height = orig.top + orig.height - top;
-      } else if (mode === 's') {
-        height = clamp(cur.y - orig.top, MIN_SIDE, h - orig.top);
-      } else if (mode === 'w') {
-        left = clamp(cur.x, 0, orig.left + orig.width - MIN_SIDE);
-        width = orig.left + orig.width - left;
+  const applyCropDrag = useCallback(
+    (mode, start, orig, cur) => {
+      const w = editSession?.width;
+      const h = editSession?.height;
+      if (!w || !h) return;
+      const ratio =
+        mode.startsWith('new') || /^[ns][ew]$/.test(mode)
+          ? CROP_RATIOS.find((r) => r.key === cropRatioKey)?.value || null
+          : null;
+      let rect;
+      if (mode === 'new') {
+        let width = cur.x - start.x;
+        let height = cur.y - start.y;
+        let left = start.x;
+        let top = start.y;
+        if (width < 0) {
+          width = -width;
+          left -= width;
+        }
+        if (height < 0) {
+          height = -height;
+          top -= height;
+        }
+        if (ratio) {
+          height = width / ratio;
+          if (top + height > h) {
+            height = h - top;
+            width = height * ratio;
+          }
+          if (left + width > w) {
+            width = w - left;
+            height = width / ratio;
+          }
+        }
+        rect = { left, top, width, height };
+      } else if (mode === 'move') {
+        const dx = cur.x - start.x;
+        const dy = cur.y - start.y;
+        rect = {
+          ...orig,
+          left: clamp(orig.left + dx, 0, w - orig.width),
+          top: clamp(orig.top + dy, 0, h - orig.height),
+        };
+      } else if (mode.length === 1) {
+        // 边手柄只动被拖的轴，另一轴保持原值：对角锚点 min/abs 语义仅适用于角手柄，
+        // 否则 n/s 纯竖直拖动会把宽度缩到 0，onUp 判 <8 直接清空裁剪框
+        const MIN_SIDE = 8;
+        let { left, top, width, height } = orig;
+        if (mode === 'n') {
+          top = clamp(cur.y, 0, orig.top + orig.height - MIN_SIDE);
+          height = orig.top + orig.height - top;
+        } else if (mode === 's') {
+          height = clamp(cur.y - orig.top, MIN_SIDE, h - orig.top);
+        } else if (mode === 'w') {
+          left = clamp(cur.x, 0, orig.left + orig.width - MIN_SIDE);
+          width = orig.left + orig.width - left;
+        } else {
+          width = clamp(cur.x - orig.left, MIN_SIDE, w - orig.left);
+        }
+        rect = { left, top, width, height };
       } else {
-        width = clamp(cur.x - orig.left, MIN_SIDE, w - orig.left);
+        // 角手柄：基于对角固定点重算，支持比例锁定
+        const anchors = {
+          n: [orig.left + orig.width / 2, orig.top + orig.height],
+          s: [orig.left + orig.width / 2, orig.top],
+          e: [orig.left, orig.top + orig.height / 2],
+          w: [orig.left + orig.width, orig.top + orig.height / 2],
+          ne: [orig.left, orig.top + orig.height],
+          nw: [orig.left + orig.width, orig.top + orig.height],
+          se: [orig.left, orig.top],
+          sw: [orig.left + orig.width, orig.top],
+        };
+        const [ax, ay] = anchors[mode];
+        let left = Math.min(ax, cur.x);
+        let top = Math.min(ay, cur.y);
+        let width = Math.abs(cur.x - ax);
+        let height = Math.abs(cur.y - ay);
+        if (/^[ns][ew]$/.test(mode) && ratio) {
+          height = width / ratio;
+          if (ay !== orig.top) {
+            top = ay - height;
+          }
+          if (top < 0) {
+            height += top;
+            top = 0;
+            width = height * ratio;
+          }
+          if (left + width > w) {
+            width = w - left;
+            height = width / ratio;
+            if (ay !== orig.top) top = ay - height;
+          }
+        }
+        rect = { left, top, width, height };
       }
-      rect = { left, top, width, height };
-    } else {
-      // 角手柄：基于对角固定点重算，支持比例锁定
-      const anchors = {
-        n: [orig.left + orig.width / 2, orig.top + orig.height], s: [orig.left + orig.width / 2, orig.top],
-        e: [orig.left, orig.top + orig.height / 2], w: [orig.left + orig.width, orig.top + orig.height / 2],
-        ne: [orig.left, orig.top + orig.height], nw: [orig.left + orig.width, orig.top + orig.height],
-        se: [orig.left, orig.top], sw: [orig.left + orig.width, orig.top],
-      };
-      const [ax, ay] = anchors[mode];
-      let left = Math.min(ax, cur.x);
-      let top = Math.min(ay, cur.y);
-      let width = Math.abs(cur.x - ax);
-      let height = Math.abs(cur.y - ay);
-      if (/^[ns][ew]$/.test(mode) && ratio) {
-        height = width / ratio;
-        if (ay !== orig.top) { top = ay - height; }
-        if (top < 0) { height += top; top = 0; width = height * ratio; }
-        if (left + width > w) { width = w - left; height = width / ratio; if (ay !== orig.top) top = ay - height; }
-      }
-      rect = { left, top, width, height };
-    }
-    rect.left = clamp(rect.left, 0, w);
-    rect.top = clamp(rect.top, 0, h);
-    rect.width = clamp(rect.width, 0, w - rect.left);
-    rect.height = clamp(rect.height, 0, h - rect.top);
-    setEditOps(o => ({ ...o, crop: rect }));
-  }, [editSession, cropRatioKey]);
+      rect.left = clamp(rect.left, 0, w);
+      rect.top = clamp(rect.top, 0, h);
+      rect.width = clamp(rect.width, 0, w - rect.left);
+      rect.height = clamp(rect.height, 0, h - rect.top);
+      setEditOps((o) => ({ ...o, crop: rect }));
+    },
+    [editSession, cropRatioKey]
+  );
 
-  const handleCropMouseDown = useCallback((e) => {
-    if (!cropMode || !editSession) return;
-    // 拖动起点入历史（拖动全程算一步：undo 回到拖动前）
-    pushHistory(editOpsRef.current, '裁剪');
-    const handle = e.target.closest?.('[data-crop-handle]')?.getAttribute('data-crop-handle');
-    const inBox = e.target.closest?.('.editor-crop-box');
-    const cur = toImageCoords(e.clientX, e.clientY);
-    if (!cur) return;
-    const ops = editOpsRef.current;
-    if (handle && ops.crop) {
-      cropDragRef.current = { mode: handle, start: cur, orig: { ...ops.crop } };
-    } else if (inBox && ops.crop) {
-      cropDragRef.current = { mode: 'move', start: cur, orig: { ...ops.crop } };
-    } else {
-      cropDragRef.current = { mode: 'new', start: cur, orig: null };
-      setEditOps(o => ({ ...o, crop: { left: cur.x, top: cur.y, width: 0, height: 0 } }));
-    }
-  }, [cropMode, editSession, toImageCoords]);
+  const handleCropMouseDown = useCallback(
+    (e) => {
+      if (!cropMode || !editSession) return;
+      // 拖动起点入历史（拖动全程算一步：undo 回到拖动前）
+      pushHistory(editOpsRef.current, '裁剪');
+      const handle = e.target.closest?.('[data-crop-handle]')?.getAttribute('data-crop-handle');
+      const inBox = e.target.closest?.('.editor-crop-box');
+      const cur = toImageCoords(e.clientX, e.clientY);
+      if (!cur) return;
+      const ops = editOpsRef.current;
+      if (handle && ops.crop) {
+        cropDragRef.current = { mode: handle, start: cur, orig: { ...ops.crop } };
+      } else if (inBox && ops.crop) {
+        cropDragRef.current = { mode: 'move', start: cur, orig: { ...ops.crop } };
+      } else {
+        cropDragRef.current = { mode: 'new', start: cur, orig: null };
+        setEditOps((o) => ({ ...o, crop: { left: cur.x, top: cur.y, width: 0, height: 0 } }));
+      }
+    },
+    [cropMode, editSession, toImageCoords]
+  );
 
   useEffect(() => {
     if (!cropMode) return undefined;
@@ -765,7 +942,7 @@ export default function ImageViewer({
       if (c && c.width >= 8 && c.height >= 8) {
         pushHistory(editOpsRef.current, '裁剪');
       } else {
-        setEditOps(o => ({ ...o, crop: null }));
+        setEditOps((o) => ({ ...o, crop: null }));
       }
     };
     window.addEventListener('mousemove', onMove);
@@ -783,7 +960,13 @@ export default function ImageViewer({
   useEffect(() => {
     const handleKey = (e) => {
       // 滑杆/备注框等表单元素聚焦时不触发查看器快捷键（TEXTAREA 里 f/v 会误写库）
-      if (e.target?.tagName === 'INPUT' || e.target?.tagName === 'SELECT' || e.target?.tagName === 'TEXTAREA' || e.target?.isContentEditable) return;
+      if (
+        e.target?.tagName === 'INPUT' ||
+        e.target?.tagName === 'SELECT' ||
+        e.target?.tagName === 'TEXTAREA' ||
+        e.target?.isContentEditable
+      )
+        return;
       // 弹层（未保存确认/导出/烘焙确认）打开时快捷键归弹层，查看器不得抢键
       if (dialogsOpenRef.current || e.defaultPrevented) return;
       // 编辑态：撤销/重做
@@ -804,19 +987,44 @@ export default function ImageViewer({
       if (!action) return;
       e.preventDefault();
       switch (action) {
-        case VIEWER_ACTIONS.Close: editingRef.current ? requestExitEdit() : onClose(); break;
-        case VIEWER_ACTIONS.Prev: if (hasPrev && !editingRef.current && !editPendingRef.current) onPrev(); break;
-        case VIEWER_ACTIONS.Next: if (hasNext && !editingRef.current && !editPendingRef.current) onNext(); break;
-        case VIEWER_ACTIONS.ZoomIn: if (!compareActive) setZoom(z => Math.min(z + 0.25, 5)); break;
-        case VIEWER_ACTIONS.ZoomOut: if (!compareActive) setZoom(z => Math.max(z - 0.25, 0.25)); break;
-        case VIEWER_ACTIONS.RotateCw: applyRotate(90); break;
-        case VIEWER_ACTIONS.RotateCcw: applyRotate(270); break;
-        case VIEWER_ACTIONS.FlipH: applyFlip(); break;
-        case VIEWER_ACTIONS.Favorite: toggleFavorite(); break;
-        case VIEWER_ACTIONS.ToggleInfo: if (!editingRef.current) onOpenInfo?.(image); break;
+        case VIEWER_ACTIONS.Close:
+          editingRef.current ? requestExitEdit() : onClose();
+          break;
+        case VIEWER_ACTIONS.Prev:
+          if (hasPrev && !editingRef.current && !editPendingRef.current) onPrev();
+          break;
+        case VIEWER_ACTIONS.Next:
+          if (hasNext && !editingRef.current && !editPendingRef.current) onNext();
+          break;
+        case VIEWER_ACTIONS.ZoomIn:
+          if (!compareActive) setZoom((z) => Math.min(z + 0.25, 5));
+          break;
+        case VIEWER_ACTIONS.ZoomOut:
+          if (!compareActive) setZoom((z) => Math.max(z - 0.25, 0.25));
+          break;
+        case VIEWER_ACTIONS.RotateCw:
+          applyRotate(90);
+          break;
+        case VIEWER_ACTIONS.RotateCcw:
+          applyRotate(270);
+          break;
+        case VIEWER_ACTIONS.FlipH:
+          applyFlip();
+          break;
+        case VIEWER_ACTIONS.Favorite:
+          toggleFavorite();
+          break;
+        case VIEWER_ACTIONS.ToggleInfo:
+          if (!editingRef.current) onOpenInfo?.(image);
+          break;
         case VIEWER_ACTIONS.ZoomReset:
-          setZoom(1); setPos({ x: 0, y: 0 });
-          if (!editingRef.current) { setRotation(0); setFlipH(false); setFlipV(false); }
+          setZoom(1);
+          setPos({ x: 0, y: 0 });
+          if (!editingRef.current) {
+            setRotation(0);
+            setFlipH(false);
+            setFlipV(false);
+          }
           break;
         default: {
           const rating = ratingFromViewerAction(action);
@@ -826,7 +1034,22 @@ export default function ImageViewer({
     };
     window.addEventListener('keydown', handleKey);
     return () => window.removeEventListener('keydown', handleKey);
-  }, [hasPrev, hasNext, image, onClose, onPrev, onNext, toggleFavorite, setRating, onOpenInfo, applyRotate, applyFlip, requestExitEdit, applyHistory, compareActive]);
+  }, [
+    hasPrev,
+    hasNext,
+    image,
+    onClose,
+    onPrev,
+    onNext,
+    toggleFavorite,
+    setRating,
+    onOpenInfo,
+    applyRotate,
+    applyFlip,
+    requestExitEdit,
+    applyHistory,
+    compareActive,
+  ]);
 
   // 加载策略：中图占位，原图异步替换；列表小图不用于查看器
   // bust 版本号：烘焙替代后文件内容已变而路径不变，加版本参数绕过浏览器缓存
@@ -839,10 +1062,12 @@ export default function ImageViewer({
     setFullLoaded(false);
     if (image.thumbnail_path) {
       const thumb = await api.toFileUrl(image.thumbnail_path);
-      if (imageIdRef.current === loadId && thumb) setThumbSrc(`${thumb}${thumb.includes('?') ? '&' : '?'}v=${v}`);
+      if (imageIdRef.current === loadId && thumb)
+        setThumbSrc(`${thumb}${thumb.includes('?') ? '&' : '?'}v=${v}`);
     }
     const url = await api.toFileUrl(image.filepath);
-    if (imageIdRef.current === loadId) setFullSrc(url ? `${url}${url.includes('?') ? '&' : '?'}v=${v}` : null);
+    if (imageIdRef.current === loadId)
+      setFullSrc(url ? `${url}${url.includes('?') ? '&' : '?'}v=${v}` : null);
   };
 
   // 原图离屏预解码：解码完成才切换（避免半下载闪烁）；失败也切换，防止卡在缩略图
@@ -869,7 +1094,9 @@ export default function ImageViewer({
       }
       return false;
     };
-    return () => { closeGuardRef.current = null; };
+    return () => {
+      closeGuardRef.current = null;
+    };
   }, [closeGuardRef, requestExitEdit]);
 
   // 组件卸载兜底：无论何种路径退出（收藏页取消收藏移除图片、外部关闭等），
@@ -917,7 +1144,9 @@ export default function ImageViewer({
       const dy = e.clientY - dragStart.current.y;
       setPos({ x: posStart.current.x + dx, y: posStart.current.y + dy });
     };
-    const handleMouseUp = () => { dragging.current = false; };
+    const handleMouseUp = () => {
+      dragging.current = false;
+    };
     window.addEventListener('mousemove', handleMouseMove);
     window.addEventListener('mouseup', handleMouseUp);
     return () => {
@@ -945,15 +1174,18 @@ export default function ImageViewer({
   }, [editing, pushHistory]);
 
   // 滚轮缩放（以鼠标位置为中心）；分屏/并排对比时缩放只作用于 After 层，统一禁用
-  const handleWheel = useCallback((e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (compareActive) return;
-    setZoom(z => {
-      const delta = e.deltaY < 0 ? 0.15 : -0.15;
-      return Math.max(0.25, Math.min(5, z + delta));
-    });
-  }, [compareActive]);
+  const handleWheel = useCallback(
+    (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (compareActive) return;
+      setZoom((z) => {
+        const delta = e.deltaY < 0 ? 0.15 : -0.15;
+        return Math.max(0.25, Math.min(5, z + delta));
+      });
+    },
+    [compareActive]
+  );
 
   // 点赞
   const handleFavToggle = async (e) => {
@@ -963,9 +1195,7 @@ export default function ImageViewer({
 
   // 与已存元数据比对：无几何变更时保存按钮禁用，重复点击不再发无意义 IPC/补丁
   const orientationDirty =
-    rotation !== (image?.rotation || 0) ||
-    flipH !== !!image?.flip_h ||
-    flipV !== !!image?.flip_v;
+    rotation !== (image?.rotation || 0) || flipH !== !!image?.flip_h || flipV !== !!image?.flip_v;
 
   // 保存旋转/翻转（查看态：仅写元数据，前端 CSS 呈现）
   const handleSaveRotation = async (e) => {
@@ -995,10 +1225,14 @@ export default function ImageViewer({
   const handleDoubleClick = () => {
     setZoom(1);
     setPos({ x: 0, y: 0 });
-    if (!editing) { setRotation(0); setFlipH(false); setFlipV(false); }
+    if (!editing) {
+      setRotation(0);
+      setFlipH(false);
+      setFlipV(false);
+    }
   };
 
-  const displaySrc = fullLoaded && fullSrc ? fullSrc : (thumbSrc || fullSrc);
+  const displaySrc = fullLoaded && fullSrc ? fullSrc : thumbSrc || fullSrc;
 
   // M7 WebGL2：shader 消费 RenderSpec（与导出同源），构建失败回退 SVG
   const webglActive = !!(editing && webglAvailable && !webglFailed);
@@ -1054,93 +1288,123 @@ export default function ImageViewer({
   if (!image) return null;
 
   // 编辑状态模型：Export 不改 dirty；Bake 成功后 dirty→clean
-  const editPhase = editError ? 'error'
-    : busyKind === 'saving' ? 'saving'
-    : busyKind === 'exporting' ? 'exporting'
-    : busyKind === 'baking' ? 'baking'
-    : busyKind === 'opening' ? 'opening'
-    : (editing && opsChanged(composeOps(), savedBaselineRef.current)) ? 'dirty'
-    : 'clean';
-  const PHASE_LABELS = { clean: '已保存', dirty: '未保存', saving: '保存中…', exporting: '导出中…', baking: '烘焙中…', opening: '准备中…', error: '出错' };
+  const editPhase = editError
+    ? 'error'
+    : busyKind === 'saving'
+      ? 'saving'
+      : busyKind === 'exporting'
+        ? 'exporting'
+        : busyKind === 'baking'
+          ? 'baking'
+          : busyKind === 'opening'
+            ? 'opening'
+            : editing && opsChanged(composeOps(), savedBaselineRef.current)
+              ? 'dirty'
+              : 'clean';
+  const PHASE_LABELS = {
+    clean: '已保存',
+    dirty: '未保存',
+    saving: '保存中…',
+    exporting: '导出中…',
+    baking: '烘焙中…',
+    opening: '准备中…',
+    error: '出错',
+  };
   const showBeforeOn = showBefore && editing;
   const exportSourceIsPng = (image?.format || '').toLowerCase() === 'png';
-  const exportQualityHidden = exportOpts.format === 'png' || (exportOpts.format === 'auto' && exportSourceIsPng);
+  const exportQualityHidden =
+    exportOpts.format === 'png' || (exportOpts.format === 'auto' && exportSourceIsPng);
 
   // 影调预览滤镜链（与分段渲染管线同序同数学）；needsMatrix 决定主矩阵原语是否渲染。
   // 注意：链只被 After 层消费——对比模式下也必须计算，否则 SVG 回退的 After ≡ Before
   const previewChainRaw = editing ? previewFilterChain(editOps) : null;
-  const previewChain = previewChainRaw ? { ...previewChainRaw, needsMatrix: needsMatrix(editOps) } : null;
+  const previewChain = previewChainRaw
+    ? { ...previewChainRaw, needsMatrix: needsMatrix(editOps) }
+    : null;
 
   // 编辑态：变换（旋转/翻转/缩放/平移）应用于包裹层，图像自身无变换，裁剪框百分比定位自动跟随
   const editTransform = editing
     ? `translate(${pos.x}px, ${pos.y}px) rotate(${editOps.rotation}deg) scale(${zoom * (editOps.flipH ? -1 : 1)}, ${zoom * (editOps.flipV ? -1 : 1)})`
     : undefined;
   const crop = editing ? editOps.crop : null;
-  const cropPct = crop && editSession
-    ? {
-        left: `${(crop.left / editSession.width) * 100}%`,
-        top: `${(crop.top / editSession.height) * 100}%`,
-        width: `${(crop.width / editSession.width) * 100}%`,
-        height: `${(crop.height / editSession.height) * 100}%`,
-      }
-    : null;
+  const cropPct =
+    crop && editSession
+      ? {
+          left: `${(crop.left / editSession.width) * 100}%`,
+          top: `${(crop.top / editSession.height) * 100}%`,
+          width: `${(crop.width / editSession.width) * 100}%`,
+          height: `${(crop.height / editSession.height) * 100}%`,
+        }
+      : null;
 
   // 编辑态渲染层：edited=true 应用变换/滤镜/裁剪框（After）；false 为原始编辑源（Before）
   const editLayer = (edited) => {
     const useWebgl = edited && webglActive && shaderUniforms;
-    const vignetteStyle = !useWebgl && edited && editOps.vignette ? vignettePreviewStyle(editOps.vignette) : null;
+    const vignetteStyle =
+      !useWebgl && edited && editOps.vignette ? vignettePreviewStyle(editOps.vignette) : null;
     return (
-    <div className="editor-transform-layer" style={{ transform: edited ? editTransform : undefined }}>
-      <img
-        ref={editImgRef}
-        className="viewer-image"
-        src={editBaseSrc || displaySrc}
-        alt={image.filename?.replace(/\.\w+$/, '') || image.filename}
-        draggable={false}
-        style={{
-          filter: edited && !useWebgl ? (previewChain ? 'url(#pixyang-basic)' : undefined) : undefined,
-          opacity: editBusy ? 0.75 : 1,
-          transition: dragging.current ? 'none' : undefined,
-        }}
-      />
-      {/* M7 WebGL2 预览层：覆盖底图，shader 内完成影调/曲线/HSL/分级/饱和度/暗角 */}
-      {useWebgl && <canvas ref={setWebglCanvas} className="editor-webgl-canvas" aria-hidden="true" />}
-      {/* 暗角 overlay：CSS 渐变与渲染端 raw pass 同数学（multiply/screen 精确等价；WebGL 时由 shader 内渲染） */}
-      {vignetteStyle && (
-        <div
-          className="editor-vignette-overlay"
-          style={{ background: vignetteStyle.background, mixBlendMode: vignetteStyle.blendMode }}
+      <div
+        className="editor-transform-layer"
+        style={{ transform: edited ? editTransform : undefined }}
+      >
+        <img
+          ref={editImgRef}
+          className="viewer-image"
+          src={editBaseSrc || displaySrc}
+          alt={image.filename?.replace(/\.\w+$/, '') || image.filename}
+          draggable={false}
+          style={{
+            filter:
+              edited && !useWebgl ? (previewChain ? 'url(#pixyang-basic)' : undefined) : undefined,
+            opacity: editBusy ? 0.75 : 1,
+            transition: dragging.current ? 'none' : undefined,
+          }}
         />
-      )}
-      {edited && compareMode === 'toggle' && crop && cropPct && (
-        <div className="editor-crop-box" style={cropPct} data-crop-box="1">
-          {['n', 's', 'e', 'w', 'ne', 'nw', 'se', 'sw'].map(h => (
-            <span key={h} data-crop-handle={h} className={`editor-crop-handle handle-${h}`} />
-          ))}
-          <span className="editor-crop-size">{Math.round(crop.width)}×{Math.round(crop.height)}</span>
-        </div>
-      )}
-      {/* 蒙版 overlay：与裁剪编辑互斥（cropMode 时不渲染），仅在有蒙版或拖拽绘制中时出现 */}
-      {edited && compareMode === 'toggle' && !cropMode && (editOps.masks.length > 0 || maskTool) && (
-        <MaskOverlay
-          masks={editOps.masks}
-          selectedMaskId={selectedMaskId}
-          width={editSession?.width || 0}
-          height={editSession?.height || 0}
-          rotation={editOps.rotation}
-          flipH={editOps.flipH}
-          flipV={editOps.flipV}
-          imgRef={editImgRef}
-          tool={maskTool}
-          epoch={editEpoch}
-          onSelect={setSelectedMaskId}
-          onCreate={addMaskWithGeometry}
-          onChangeMask={updateMaskGeometry}
-          onCommit={commitMaskGesture}
-        />
-      )}
-      {edited && editBusy && <Loader2 className="editor-rendering-spinner animate-spin" />}
-    </div>
+        {/* M7 WebGL2 预览层：覆盖底图，shader 内完成影调/曲线/HSL/分级/饱和度/暗角 */}
+        {useWebgl && (
+          <canvas ref={setWebglCanvas} className="editor-webgl-canvas" aria-hidden="true" />
+        )}
+        {/* 暗角 overlay：CSS 渐变与渲染端 raw pass 同数学（multiply/screen 精确等价；WebGL 时由 shader 内渲染） */}
+        {vignetteStyle && (
+          <div
+            className="editor-vignette-overlay"
+            style={{ background: vignetteStyle.background, mixBlendMode: vignetteStyle.blendMode }}
+          />
+        )}
+        {edited && compareMode === 'toggle' && crop && cropPct && (
+          <div className="editor-crop-box" style={cropPct} data-crop-box="1">
+            {['n', 's', 'e', 'w', 'ne', 'nw', 'se', 'sw'].map((h) => (
+              <span key={h} data-crop-handle={h} className={`editor-crop-handle handle-${h}`} />
+            ))}
+            <span className="editor-crop-size">
+              {Math.round(crop.width)}×{Math.round(crop.height)}
+            </span>
+          </div>
+        )}
+        {/* 蒙版 overlay：与裁剪编辑互斥（cropMode 时不渲染），仅在有蒙版或拖拽绘制中时出现 */}
+        {edited &&
+          compareMode === 'toggle' &&
+          !cropMode &&
+          (editOps.masks.length > 0 || maskTool) && (
+            <MaskOverlay
+              masks={editOps.masks}
+              selectedMaskId={selectedMaskId}
+              width={editSession?.width || 0}
+              height={editSession?.height || 0}
+              rotation={editOps.rotation}
+              flipH={editOps.flipH}
+              flipV={editOps.flipV}
+              imgRef={editImgRef}
+              tool={maskTool}
+              epoch={editEpoch}
+              onSelect={setSelectedMaskId}
+              onCreate={addMaskWithGeometry}
+              onChangeMask={updateMaskGeometry}
+              onCommit={commitMaskGesture}
+            />
+          )}
+        {edited && editBusy && <Loader2 className="editor-rendering-spinner animate-spin" />}
+      </div>
     );
   };
 
@@ -1150,15 +1414,32 @@ export default function ImageViewer({
       {editing && previewChain && (
         <svg width="0" height="0" style={{ position: 'absolute' }} aria-hidden="true">
           <filter id="pixyang-basic" colorInterpolationFilters="sRGB">
-            {previewChain.needsMatrix && <feColorMatrix type="matrix" values={previewChain.matrix} />}
+            {previewChain.needsMatrix && (
+              <feColorMatrix type="matrix" values={previewChain.matrix} />
+            )}
             {previewChain.shadows && previewChain.shadows.invert && (
               <feColorMatrix type="matrix" values="-1 0 0 0 1  0 -1 0 0 1  0 0 -1 0 1  0 0 0 1 0" />
             )}
             {previewChain.shadows && (
               <feComponentTransfer>
-                <feFuncR type="gamma" amplitude="1" exponent={previewChain.shadows.exponent} offset="0" />
-                <feFuncG type="gamma" amplitude="1" exponent={previewChain.shadows.exponent} offset="0" />
-                <feFuncB type="gamma" amplitude="1" exponent={previewChain.shadows.exponent} offset="0" />
+                <feFuncR
+                  type="gamma"
+                  amplitude="1"
+                  exponent={previewChain.shadows.exponent}
+                  offset="0"
+                />
+                <feFuncG
+                  type="gamma"
+                  amplitude="1"
+                  exponent={previewChain.shadows.exponent}
+                  offset="0"
+                />
+                <feFuncB
+                  type="gamma"
+                  amplitude="1"
+                  exponent={previewChain.shadows.exponent}
+                  offset="0"
+                />
               </feComponentTransfer>
             )}
             {previewChain.shadows && previewChain.shadows.invert && (
@@ -1203,9 +1484,13 @@ export default function ImageViewer({
         {!editing && (
           <>
             <Button variant="ghost" size="icon" onClick={handleFavToggle} title="收藏 (F)">
-              {localFavorite ? <Heart className="size-5" fill="currentColor" /> : <HeartOff className="size-5" />}
+              {localFavorite ? (
+                <Heart className="size-5" fill="currentColor" />
+              ) : (
+                <HeartOff className="size-5" />
+              )}
             </Button>
-            {[1, 2, 3, 4, 5].map(n => (
+            {[1, 2, 3, 4, 5].map((n) => (
               <Button
                 key={n}
                 variant="ghost"
@@ -1219,7 +1504,12 @@ export default function ImageViewer({
             ))}
           </>
         )}
-        <Button variant="ghost" size="icon" onClick={() => applyRotate(270)} title="左旋 90° (Shift+R)">
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={() => applyRotate(270)}
+          title="左旋 90° (Shift+R)"
+        >
           <RotateCcw className="size-5" />
         </Button>
         <Button variant="ghost" size="icon" onClick={() => applyRotate(90)} title="右旋 90° (R)">
@@ -1231,22 +1521,33 @@ export default function ImageViewer({
         {editing && (
           <>
             <Button
-              variant="ghost" size="icon" disabled={!histInfo.canUndo}
-              onClick={() => applyHistory('undo')} title="撤销 (Ctrl+Z)"
+              variant="ghost"
+              size="icon"
+              disabled={!histInfo.canUndo}
+              onClick={() => applyHistory('undo')}
+              title="撤销 (Ctrl+Z)"
             >
               <Undo2 className="size-5" />
             </Button>
             <Button
-              variant="ghost" size="icon" disabled={!histInfo.canRedo}
-              onClick={() => applyHistory('redo')} title="重做 (Ctrl+Shift+Z)"
+              variant="ghost"
+              size="icon"
+              disabled={!histInfo.canRedo}
+              onClick={() => applyHistory('redo')}
+              title="重做 (Ctrl+Shift+Z)"
             >
               <Redo2 className="size-5" />
             </Button>
             <Button
-              variant="ghost" size="icon"
+              variant="ghost"
+              size="icon"
               onClick={() => {
-                if (!cropMode) { setShowBefore(false); setCompareMode('toggle'); setMaskTool(null); }
-                setCropMode(m => !m);
+                if (!cropMode) {
+                  setShowBefore(false);
+                  setCompareMode('toggle');
+                  setMaskTool(null);
+                }
+                setCropMode((m) => !m);
               }}
               className={cropMode ? 'is-active' : ''}
               title="裁剪"
@@ -1258,19 +1559,32 @@ export default function ImageViewer({
         {!editing && (
           <>
             <Button
-              variant="ghost" size="icon" onClick={enterEdit}
+              variant="ghost"
+              size="icon"
+              onClick={enterEdit}
               disabled={editBusy}
               title="编辑模式（旋转/翻转在此烘焙为像素，保存后替代原图）"
             >
               <Pencil className="size-5" />
             </Button>
-            <Button variant="ghost" size="icon" onClick={handleSaveRotation} disabled={!orientationDirty} title="保存旋转/翻转">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={handleSaveRotation}
+              disabled={!orientationDirty}
+              title="保存旋转/翻转"
+            >
               <Save className="size-5" />
             </Button>
           </>
         )}
         {onOpenInfo && !editing && (
-          <Button variant="ghost" size="icon" onClick={() => onOpenInfo(image)} title="查看详情 (I)">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => onOpenInfo(image)}
+            title="查看详情 (I)"
+          >
             <Info className="size-5" />
           </Button>
         )}
@@ -1282,13 +1596,17 @@ export default function ImageViewer({
           onClick={(e) => {
             e.stopPropagation();
             if (compareActive) return;
-            const el = editing ? editImgRef.current : (contentRef.current?.querySelector('img.viewer-image') || null);
+            const el = editing
+              ? editImgRef.current
+              : contentRef.current?.querySelector('img.viewer-image') || null;
             const natW = el?.naturalWidth || 0;
             const dispW = el?.getBoundingClientRect().width || 0;
             if (!natW || !dispW) return;
             // 当前显示宽 = fitW × zoom → 实际像素倍率 = natural / fitW
             const zoomActual = (natW * zoomRef.current) / dispW;
-            setZoom(z => (Math.abs(z - zoomActual) < 0.01 ? 1 : Math.min(5, Math.max(0.25, zoomActual))));
+            setZoom((z) =>
+              Math.abs(z - zoomActual) < 0.01 ? 1 : Math.min(5, Math.max(0.25, zoomActual))
+            );
           }}
         >
           {Math.round(zoom * 100)}%
@@ -1297,25 +1615,45 @@ export default function ImageViewer({
 
       <button
         className="viewer-close"
-        onClick={(e) => { e.stopPropagation(); editing ? requestExitEdit() : onClose(); }}
+        onClick={(e) => {
+          e.stopPropagation();
+          editing ? requestExitEdit() : onClose();
+        }}
       >
         <X className="size-5" />
       </button>
 
       {!editing && !editPendingRef.current && hasPrev && (
-        <button className="viewer-nav" style={{ left: 20 }} onClick={(e) => { e.stopPropagation(); onPrev(); }}>
+        <button
+          className="viewer-nav"
+          style={{ left: 20 }}
+          onClick={(e) => {
+            e.stopPropagation();
+            onPrev();
+          }}
+        >
           <ChevronLeft className="size-6" />
         </button>
       )}
       {!editing && !editPendingRef.current && hasNext && (
-        <button className="viewer-nav" style={{ right: 20 }} onClick={(e) => { e.stopPropagation(); onNext(); }}>
+        <button
+          className="viewer-nav"
+          style={{ right: 20 }}
+          onClick={(e) => {
+            e.stopPropagation();
+            onNext();
+          }}
+        >
           <ChevronRight className="size-6" />
         </button>
       )}
 
       <div
         className="viewer-content"
-        ref={(el) => { contentRef.current = el; imgRef.current = el; }}
+        ref={(el) => {
+          contentRef.current = el;
+          imgRef.current = el;
+        }}
         onClick={(e) => e.stopPropagation()}
         onDoubleClick={handleDoubleClick}
         onWheel={handleWheel}
@@ -1323,7 +1661,9 @@ export default function ImageViewer({
         style={cropMode ? { cursor: 'crosshair' } : undefined}
       >
         {editing && !editBaseSrc ? (
-          <div style={{ color: 'white', fontSize: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div
+            style={{ color: 'white', fontSize: 16, display: 'flex', alignItems: 'center', gap: 8 }}
+          >
             <Loader2 className="size-5 animate-spin" /> 正在准备编辑底图...
           </div>
         ) : editing && editError ? (
@@ -1359,32 +1699,60 @@ export default function ImageViewer({
             <span className={`editor-source-tag ${editSession.source === 'nef' ? 'is-nef' : ''}`}>
               {editSession.source === 'nef' ? 'NEF 显影' : 'JPG'}
             </span>
-            <span className={`editor-phase-tag phase-${editPhase}`}>{PHASE_LABELS[editPhase] || editPhase}</span>
+            <span className={`editor-phase-tag phase-${editPhase}`}>
+              {PHASE_LABELS[editPhase] || editPhase}
+            </span>
             <Button
-              variant="ghost" size="xs"
+              variant="ghost"
+              size="xs"
               className={showBeforeOn && compareMode === 'toggle' ? 'is-active' : ''}
-              onClick={() => { setShowBefore(v => !(v && compareMode === 'toggle')); setCompareMode('toggle'); setCropMode(false); setMaskTool(null); }}
+              onClick={() => {
+                setShowBefore((v) => !(v && compareMode === 'toggle'));
+                setCompareMode('toggle');
+                setCropMode(false);
+                setMaskTool(null);
+              }}
               title="整幅切换 Before/After（Before = NEF 显影/JPG 原图）"
             >
               对比
             </Button>
             <Button
-              variant="ghost" size="xs"
+              variant="ghost"
+              size="xs"
               className={showBeforeOn && compareMode === 'split' ? 'is-active' : ''}
               onClick={() => {
-                if (compareMode === 'split') { setShowBefore(false); setCompareMode('toggle'); }
-                else { setShowBefore(true); setCompareMode('split'); setZoom(1); setPos({ x: 0, y: 0 }); setCropMode(false); setMaskTool(null); }
+                if (compareMode === 'split') {
+                  setShowBefore(false);
+                  setCompareMode('toggle');
+                } else {
+                  setShowBefore(true);
+                  setCompareMode('split');
+                  setZoom(1);
+                  setPos({ x: 0, y: 0 });
+                  setCropMode(false);
+                  setMaskTool(null);
+                }
               }}
               title="分屏对比（拖动分割线，左原始/右编辑）"
             >
               分屏
             </Button>
             <Button
-              variant="ghost" size="xs"
+              variant="ghost"
+              size="xs"
               className={showBeforeOn && compareMode === 'side' ? 'is-active' : ''}
               onClick={() => {
-                if (compareMode === 'side') { setShowBefore(false); setCompareMode('toggle'); }
-                else { setShowBefore(true); setCompareMode('side'); setZoom(1); setPos({ x: 0, y: 0 }); setCropMode(false); setMaskTool(null); }
+                if (compareMode === 'side') {
+                  setShowBefore(false);
+                  setCompareMode('toggle');
+                } else {
+                  setShowBefore(true);
+                  setCompareMode('side');
+                  setZoom(1);
+                  setPos({ x: 0, y: 0 });
+                  setCropMode(false);
+                  setMaskTool(null);
+                }
               }}
               title="并排对比（左原始/右编辑）"
             >
@@ -1393,16 +1761,86 @@ export default function ImageViewer({
           </div>
 
           {[
-            { key: 'exposure', label: '曝光', min: -2, max: 2, step: 0.05, fmt: v => `${v > 0 ? '+' : ''}${v.toFixed(2)}` },
-            { key: 'contrast', label: '对比度', min: -50, max: 50, step: 1, fmt: v => `${v > 0 ? '+' : ''}${v}` },
-            { key: 'highlights', label: '高光', min: -100, max: 100, step: 1, fmt: v => `${v > 0 ? '+' : ''}${v}` },
-            { key: 'shadows', label: '阴影', min: -100, max: 100, step: 1, fmt: v => `${v > 0 ? '+' : ''}${v}` },
-            { key: 'whites', label: '白色色阶', min: -100, max: 100, step: 1, fmt: v => `${v > 0 ? '+' : ''}${v}` },
-            { key: 'blacks', label: '黑色色阶', min: -100, max: 100, step: 1, fmt: v => `${v > 0 ? '+' : ''}${v}` },
-            { key: 'saturation', label: '饱和度', min: -100, max: 100, step: 1, fmt: v => `${v > 0 ? '+' : ''}${v}` },
-            { key: 'temperature', label: '色温', min: -100, max: 100, step: 1, fmt: v => `${v > 0 ? '+' : ''}${v}` },
-            { key: 'tint', label: '色调', min: -100, max: 100, step: 1, fmt: v => `${v > 0 ? '+' : ''}${v}` },
-            { key: 'vignette', label: '暗角', min: -100, max: 100, step: 1, fmt: v => `${v > 0 ? '+' : ''}${v}` },
+            {
+              key: 'exposure',
+              label: '曝光',
+              min: -2,
+              max: 2,
+              step: 0.05,
+              fmt: (v) => `${v > 0 ? '+' : ''}${v.toFixed(2)}`,
+            },
+            {
+              key: 'contrast',
+              label: '对比度',
+              min: -50,
+              max: 50,
+              step: 1,
+              fmt: (v) => `${v > 0 ? '+' : ''}${v}`,
+            },
+            {
+              key: 'highlights',
+              label: '高光',
+              min: -100,
+              max: 100,
+              step: 1,
+              fmt: (v) => `${v > 0 ? '+' : ''}${v}`,
+            },
+            {
+              key: 'shadows',
+              label: '阴影',
+              min: -100,
+              max: 100,
+              step: 1,
+              fmt: (v) => `${v > 0 ? '+' : ''}${v}`,
+            },
+            {
+              key: 'whites',
+              label: '白色色阶',
+              min: -100,
+              max: 100,
+              step: 1,
+              fmt: (v) => `${v > 0 ? '+' : ''}${v}`,
+            },
+            {
+              key: 'blacks',
+              label: '黑色色阶',
+              min: -100,
+              max: 100,
+              step: 1,
+              fmt: (v) => `${v > 0 ? '+' : ''}${v}`,
+            },
+            {
+              key: 'saturation',
+              label: '饱和度',
+              min: -100,
+              max: 100,
+              step: 1,
+              fmt: (v) => `${v > 0 ? '+' : ''}${v}`,
+            },
+            {
+              key: 'temperature',
+              label: '色温',
+              min: -100,
+              max: 100,
+              step: 1,
+              fmt: (v) => `${v > 0 ? '+' : ''}${v}`,
+            },
+            {
+              key: 'tint',
+              label: '色调',
+              min: -100,
+              max: 100,
+              step: 1,
+              fmt: (v) => `${v > 0 ? '+' : ''}${v}`,
+            },
+            {
+              key: 'vignette',
+              label: '暗角',
+              min: -100,
+              max: 100,
+              step: 1,
+              fmt: (v) => `${v > 0 ? '+' : ''}${v}`,
+            },
           ].map(({ key, label, min, max, step, fmt }) => (
             <label className="editor-slider-row" key={key}>
               <span
@@ -1416,9 +1854,14 @@ export default function ImageViewer({
                 {label}
               </span>
               <input
-                type="range" min={min} max={max} step={step}
+                type="range"
+                min={min}
+                max={max}
+                step={step}
                 value={editOps[key]}
-                onPointerDown={() => { sliderDragRef.current = key; }}
+                onPointerDown={() => {
+                  sliderDragRef.current = key;
+                }}
                 onPointerUp={() => {
                   if (sliderDragRef.current === key) {
                     sliderDragRef.current = null;
@@ -1441,12 +1884,16 @@ export default function ImageViewer({
             <div className="editor-crop-header">
               <span>曲线</span>
               {hasCurveData(editOps.curves) && (
-                <Button variant="ghost" size="xs" onClick={() => {
-                  const next = { ...editOpsRef.current, curves: EDIT_DEFAULTS.curves };
-                  pushHistory(next, '清除曲线');
-                  setEditEpoch(e => e + 1);
-                  setEditOps(next);
-                }}>
+                <Button
+                  variant="ghost"
+                  size="xs"
+                  onClick={() => {
+                    const next = { ...editOpsRef.current, curves: EDIT_DEFAULTS.curves };
+                    pushHistory(next, '清除曲线');
+                    setEditEpoch((e) => e + 1);
+                    setEditOps(next);
+                  }}
+                >
                   清除
                 </Button>
               )}
@@ -1454,7 +1901,7 @@ export default function ImageViewer({
             <CurveEditor
               curves={editOps.curves || EDIT_DEFAULTS.curves}
               onCommit={() => pushHistory(editOpsRef.current, '曲线')}
-              onChange={(nextCurves) => setEditOps(o => ({ ...o, curves: nextCurves }))}
+              onChange={(nextCurves) => setEditOps((o) => ({ ...o, curves: nextCurves }))}
               epoch={editEpoch}
             />
             <p className="editor-crop-hint">点击添加锚点并拖拽，将锚点拖出面板删除</p>
@@ -1465,11 +1912,18 @@ export default function ImageViewer({
             <div className="editor-crop-header">
               <span>颜色分级</span>
               {hasColorGradingData(editOps.colorGrading) && (
-                <Button variant="ghost" size="xs" onClick={() => {
-                  const next = { ...editOpsRef.current, colorGrading: EDIT_DEFAULTS.colorGrading };
-                  pushHistory(next, '清除分级');
-                  setEditOps(next);
-                }}>
+                <Button
+                  variant="ghost"
+                  size="xs"
+                  onClick={() => {
+                    const next = {
+                      ...editOpsRef.current,
+                      colorGrading: EDIT_DEFAULTS.colorGrading,
+                    };
+                    pushHistory(next, '清除分级');
+                    setEditOps(next);
+                  }}
+                >
                   清除
                 </Button>
               )}
@@ -1498,7 +1952,10 @@ export default function ImageViewer({
                     <span
                       title="双击清除该区间"
                       onDoubleClick={() => {
-                        const next = { ...editOpsRef.current, colorGrading: { ...editOpsRef.current.colorGrading, [key]: [] } };
+                        const next = {
+                          ...editOpsRef.current,
+                          colorGrading: { ...editOpsRef.current.colorGrading, [key]: [] },
+                        };
                         pushHistory(next, `清除分级·${label}`);
                         setEditOps(next);
                       }}
@@ -1508,10 +1965,16 @@ export default function ImageViewer({
                     {sat > 0 && <em>{`${Math.round(hue)}° · ${Math.round(sat)}%`}</em>}
                   </div>
                   <input
-                    type="range" min={0} max={360} step={1} className="editor-hue-slider"
+                    type="range"
+                    min={0}
+                    max={360}
+                    step={1}
+                    className="editor-hue-slider"
                     value={hue}
                     aria-label={`${label}色相`}
-                    onPointerDown={() => { sliderDragRef.current = `grade-${key}`; }}
+                    onPointerDown={() => {
+                      sliderDragRef.current = `grade-${key}`;
+                    }}
                     onPointerUp={commit}
                     onChange={(e) => {
                       const next = setRange(Number(e.target.value), sat);
@@ -1520,10 +1983,15 @@ export default function ImageViewer({
                     }}
                   />
                   <input
-                    type="range" min={0} max={100} step={1}
+                    type="range"
+                    min={0}
+                    max={100}
+                    step={1}
                     value={sat}
                     aria-label={`${label}强度`}
-                    onPointerDown={() => { sliderDragRef.current = `grade-${key}`; }}
+                    onPointerDown={() => {
+                      sliderDragRef.current = `grade-${key}`;
+                    }}
                     onPointerUp={commit}
                     onChange={(e) => {
                       const next = setRange(hue, Number(e.target.value));
@@ -1542,11 +2010,34 @@ export default function ImageViewer({
             <div className="editor-crop-header">
               <span>蒙版（{(editOps.masks || []).length}/8）</span>
               <div style={{ display: 'flex', gap: 4 }}>
-                <Button variant="ghost" size="xs" disabled={(editOps.masks || []).length >= 8} onClick={() => addMask('radial')}>+ 径向</Button>
-                <Button variant="ghost" size="xs" disabled={(editOps.masks || []).length >= 8} onClick={() => addMask('linear')}>+ 线性</Button>
-                <Button variant="ghost" size="xs" disabled={(editOps.masks || []).length >= 8} onClick={() => addMask('range')} title="按亮度范围选择区域（暗部/中间调/高光）">+ 亮度</Button>
                 <Button
-                  variant="ghost" size="xs"
+                  variant="ghost"
+                  size="xs"
+                  disabled={(editOps.masks || []).length >= 8}
+                  onClick={() => addMask('radial')}
+                >
+                  + 径向
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="xs"
+                  disabled={(editOps.masks || []).length >= 8}
+                  onClick={() => addMask('linear')}
+                >
+                  + 线性
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="xs"
+                  disabled={(editOps.masks || []).length >= 8}
+                  onClick={() => addMask('range')}
+                  title="按亮度范围选择区域（暗部/中间调/高光）"
+                >
+                  + 亮度
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="xs"
                   className={maskTool === 'radial' ? 'is-active' : ''}
                   onClick={() => startMaskTool('radial')}
                   title="在图上拖拽绘制径向蒙版（再次点击退出）"
@@ -1554,7 +2045,8 @@ export default function ImageViewer({
                   拖拽径向
                 </Button>
                 <Button
-                  variant="ghost" size="xs"
+                  variant="ghost"
+                  size="xs"
                   className={maskTool === 'linear' ? 'is-active' : ''}
                   onClick={() => startMaskTool('linear')}
                   title="在图上拖拽绘制线性蒙版（再次点击退出）"
@@ -1562,7 +2054,9 @@ export default function ImageViewer({
                   拖拽线性
                 </Button>
                 {selectedMaskId && (
-                  <Button variant="ghost" size="xs" onClick={deleteSelectedMask}>删除</Button>
+                  <Button variant="ghost" size="xs" onClick={deleteSelectedMask}>
+                    删除
+                  </Button>
                 )}
               </div>
             </div>
@@ -1572,10 +2066,12 @@ export default function ImageViewer({
               selectedId={selectedMaskId}
               onSelect={setSelectedMaskId}
               onCommit={(label, next) => pushHistory(next || editOpsRef.current, label)}
-              onChange={(m) => setEditOps(o => sanitizeEditOps({ ...o, masks: m }))}
+              onChange={(m) => setEditOps((o) => sanitizeEditOps({ ...o, masks: m }))}
             />
             {(editOps.masks || []).length > 0 && !webglActive && (
-              <p className="editor-crop-hint">当前环境不支持 WebGL2，预览不显示蒙版效果（保存参数与导出/烘焙结果不受影响）</p>
+              <p className="editor-crop-hint">
+                当前环境不支持 WebGL2，预览不显示蒙版效果（保存参数与导出/烘焙结果不受影响）
+              </p>
             )}
           </div>
 
@@ -1583,17 +2079,23 @@ export default function ImageViewer({
             <div className="editor-crop-header">
               <span>裁剪比例</span>
               {crop && (
-                <Button variant="ghost" size="xs" onClick={() => setEditOps(o => {
-                  const next = { ...o, crop: null };
-                  pushHistory(next, '清除裁剪');
-                  return next;
-                })}>
+                <Button
+                  variant="ghost"
+                  size="xs"
+                  onClick={() =>
+                    setEditOps((o) => {
+                      const next = { ...o, crop: null };
+                      pushHistory(next, '清除裁剪');
+                      return next;
+                    })
+                  }
+                >
                   清除
                 </Button>
               )}
             </div>
             <div className="editor-ratio-row">
-              {CROP_RATIOS.map(r => (
+              {CROP_RATIOS.map((r) => (
                 <button
                   key={r.key}
                   className={`editor-ratio-btn ${cropRatioKey === r.key ? 'active' : ''}`}
@@ -1605,15 +2107,24 @@ export default function ImageViewer({
             </div>
             {!cropMode && (
               <Button
-                variant="secondary" size="sm" className="w-full"
-                onClick={() => { setShowBefore(false); setCompareMode('toggle'); setCropMode(true); setMaskTool(null); }}
+                variant="secondary"
+                size="sm"
+                className="w-full"
+                onClick={() => {
+                  setShowBefore(false);
+                  setCompareMode('toggle');
+                  setCropMode(true);
+                  setMaskTool(null);
+                }}
               >
                 <Crop className="size-4" /> 框选裁剪区域
               </Button>
             )}
             {cropMode && (
               <p className="editor-crop-hint">
-                {cropRatioValueLabel(cropRatioKey) ? `按 ${cropRatioValueLabel(cropRatioKey)} 锁定比例拖拽` : '在图上拖拽框选，可拖动/调整框'}
+                {cropRatioValueLabel(cropRatioKey)
+                  ? `按 ${cropRatioValueLabel(cropRatioKey)} 锁定比例拖拽`
+                  : '在图上拖拽框选，可拖动/调整框'}
               </p>
             )}
           </div>
@@ -1644,32 +2155,72 @@ export default function ImageViewer({
               <span>预设</span>
               <div style={{ display: 'flex', gap: 4 }}>
                 <Button
-                  variant="ghost" size="xs"
+                  variant="ghost"
+                  size="xs"
                   className={applyWithGeometry ? 'is-active' : ''}
-                  onClick={() => setApplyWithGeometry(v => !v)}
+                  onClick={() => setApplyWithGeometry((v) => !v)}
                   title="开启后，点击预设会连旋转/翻转/裁剪一起应用（裁剪坐标基于保存时的底图尺寸）"
                 >
                   含几何
                 </Button>
-                <Button variant="ghost" size="xs" onClick={copySettings} title="复制当前调整参数（影调/曲线/分级/暗角 + 几何，同步时可选择范围）">复制</Button>
-                <Button variant="ghost" size="xs" onClick={pasteSettings} title="粘贴已复制的参数">粘贴</Button>
+                <Button
+                  variant="ghost"
+                  size="xs"
+                  onClick={copySettings}
+                  title="复制当前调整参数（影调/曲线/分级/暗角 + 几何，同步时可选择范围）"
+                >
+                  复制
+                </Button>
+                <Button variant="ghost" size="xs" onClick={pasteSettings} title="粘贴已复制的参数">
+                  粘贴
+                </Button>
               </div>
             </div>
             <div className="editor-builtin-row">
-              {BUILTIN_PRESETS.map(bp => (
-                <button key={bp.name} className="editor-builtin-chip" title={bp.desc} onClick={() => applyPreset({ name: bp.name, basic: bp.basic, curves: bp.curves, colorGrading: bp.colorGrading, lens: bp.lens })}>
+              {BUILTIN_PRESETS.map((bp) => (
+                <button
+                  key={bp.name}
+                  className="editor-builtin-chip"
+                  title={bp.desc}
+                  onClick={() =>
+                    applyPreset({
+                      name: bp.name,
+                      basic: bp.basic,
+                      curves: bp.curves,
+                      colorGrading: bp.colorGrading,
+                      lens: bp.lens,
+                    })
+                  }
+                >
                   {bp.name}
                 </button>
               ))}
             </div>
-            {presets.length > 0 && <p className="editor-crop-hint" style={{ marginTop: 8 }}>我的预设</p>}
-            {presets.length === 0 && <p className="editor-crop-hint" style={{ marginTop: 8 }}>暂无自定义预设，调整参数后可保存为预设。</p>}
-            {presets.map(pr => (
+            {presets.length > 0 && (
+              <p className="editor-crop-hint" style={{ marginTop: 8 }}>
+                我的预设
+              </p>
+            )}
+            {presets.length === 0 && (
+              <p className="editor-crop-hint" style={{ marginTop: 8 }}>
+                暂无自定义预设，调整参数后可保存为预设。
+              </p>
+            )}
+            {presets.map((pr) => (
               <div className="editor-preset-row" key={pr.id}>
-                <button className="editor-preset-name" onClick={() => applyPreset(pr.params, applyWithGeometry ? 'all' : 'basic')} title={applyWithGeometry ? '应用全部（含旋转/翻转/裁剪）' : '应用预设（仅影调）'}>
+                <button
+                  className="editor-preset-name"
+                  onClick={() => applyPreset(pr.params, applyWithGeometry ? 'all' : 'basic')}
+                  title={applyWithGeometry ? '应用全部（含旋转/翻转/裁剪）' : '应用预设（仅影调）'}
+                >
                   {pr.name}
                 </button>
-                <Button variant="ghost" size="icon-xs" onClick={() => removePreset(pr.id)} title="删除预设">
+                <Button
+                  variant="ghost"
+                  size="icon-xs"
+                  onClick={() => removePreset(pr.id)}
+                  title="删除预设"
+                >
                   <X className="size-3" />
                 </Button>
               </div>
@@ -1679,7 +2230,9 @@ export default function ImageViewer({
                 className="h-8 text-xs"
                 value={presetName}
                 onChange={(e) => setPresetName(e.target.value)}
-                onKeyDown={(e) => { if (isEnterSubmit(e)) savePreset(); }}
+                onKeyDown={(e) => {
+                  if (isEnterSubmit(e)) savePreset();
+                }}
                 placeholder="预设名称（保存当前影调）"
               />
               <Button size="sm" onClick={savePreset} disabled={!presetName.trim() || editBusy}>
@@ -1691,14 +2244,18 @@ export default function ImageViewer({
           <div className="editor-panel-footer">
             <div className="editor-footer-row">
               <Button
-                variant="secondary" size="sm" className="w-full"
+                variant="secondary"
+                size="sm"
+                className="w-full"
                 disabled={!histInfo.canUndo}
                 onClick={() => applyHistory('undo')}
               >
                 <Undo2 className="size-4" /> 撤销
               </Button>
               <Button
-                variant="secondary" size="sm" className="w-full"
+                variant="secondary"
+                size="sm"
+                className="w-full"
                 disabled={!histInfo.canRedo}
                 onClick={() => applyHistory('redo')}
               >
@@ -1706,14 +2263,18 @@ export default function ImageViewer({
               </Button>
             </div>
             <Button
-              variant="secondary" size="sm" className="w-full"
+              variant="secondary"
+              size="sm"
+              className="w-full"
               disabled={editBusy}
               onClick={resetEdits}
             >
               <RotateCcwSquare className="size-4" /> 重置全部
             </Button>
             <Button
-              variant="default" size="sm" className="w-full"
+              variant="default"
+              size="sm"
+              className="w-full"
               disabled={editBusy || !editDirty}
               onClick={saveParams}
               title="保存编辑参数（原图不动，可随时回到当前效果）"
@@ -1723,7 +2284,9 @@ export default function ImageViewer({
             </Button>
             <div className="editor-footer-row">
               <Button
-                variant="secondary" size="sm" className="w-full"
+                variant="secondary"
+                size="sm"
+                className="w-full"
                 disabled={editBusy}
                 onClick={openExportDialog}
                 title="按当前参数渲染新文件到所选目录，绝不覆盖原图"
@@ -1731,7 +2294,9 @@ export default function ImageViewer({
                 导出…
               </Button>
               <Button
-                variant="destructive" size="sm" className="w-full"
+                variant="destructive"
+                size="sm"
+                className="w-full"
                 disabled={editBusy}
                 onClick={() => setBakeConfirm(true)}
                 title="渲染当前效果并覆盖原图文件（不可逆，NEF 底片保留）"
@@ -1740,24 +2305,33 @@ export default function ImageViewer({
               </Button>
             </div>
             <p className="editor-hint">
-              保存只记录编辑参数，原图与 NEF 底片不受影响；「烘焙替代」才会把效果写入 <code>{image.filename?.replace(/\.\w+$/, '')}.jpg</code>（原文件被覆盖）。
+              保存只记录编辑参数，原图与 NEF 底片不受影响；「烘焙替代」才会把效果写入{' '}
+              <code>{image.filename?.replace(/\.\w+$/, '')}.jpg</code>（原文件被覆盖）。
             </p>
           </div>
         </div>
       )}
 
       {showExportDialog && (
-        <Dialog open onOpenChange={(o) => { if (!o) setShowExportDialog(false); }}>
+        <Dialog
+          open
+          onOpenChange={(o) => {
+            if (!o) setShowExportDialog(false);
+          }}
+        >
           <DialogContent className="sm:max-w-md">
             <DialogHeader>
               <DialogTitle>导出选项</DialogTitle>
             </DialogHeader>
-            <div className="dialog-body" style={{ padding: '8px 16px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <div
+              className="dialog-body"
+              style={{ padding: '8px 16px', display: 'flex', flexDirection: 'column', gap: 10 }}
+            >
               <label className="editor-slider-row">
                 <span>格式</span>
                 <select
                   value={exportOpts.format}
-                  onChange={(e) => setExportOpts(o => ({ ...o, format: e.target.value }))}
+                  onChange={(e) => setExportOpts((o) => ({ ...o, format: e.target.value }))}
                 >
                   <option value="auto">跟随原图</option>
                   <option value="jpeg">JPEG</option>
@@ -1770,21 +2344,26 @@ export default function ImageViewer({
                 <label className="editor-slider-row">
                   <span>质量</span>
                   <input
-                    type="range" min={60} max={100} step={1}
+                    type="range"
+                    min={60}
+                    max={100}
+                    step={1}
                     value={exportOpts.quality}
-                    onChange={(e) => setExportOpts(o => ({ ...o, quality: Number(e.target.value) }))}
+                    onChange={(e) =>
+                      setExportOpts((o) => ({ ...o, quality: Number(e.target.value) }))
+                    }
                   />
                   <em>{exportOpts.quality}</em>
                 </label>
               )}
-              {exportQualityHidden && (
-                <p className="editor-hint">PNG 为无损格式，无需设置质量。</p>
-              )}
+              {exportQualityHidden && <p className="editor-hint">PNG 为无损格式，无需设置质量。</p>}
               <label className="editor-slider-row">
                 <span>最长边</span>
                 <select
                   value={exportOpts.maxEdge}
-                  onChange={(e) => setExportOpts(o => ({ ...o, maxEdge: Number(e.target.value) }))}
+                  onChange={(e) =>
+                    setExportOpts((o) => ({ ...o, maxEdge: Number(e.target.value) }))
+                  }
                 >
                   <option value={0}>原始尺寸</option>
                   <option value={2560}>2560 px</option>
@@ -1799,7 +2378,9 @@ export default function ImageViewer({
               </p>
             </div>
             <DialogFooter>
-              <Button variant="secondary" size="sm" onClick={() => setShowExportDialog(false)}>取消</Button>
+              <Button variant="secondary" size="sm" onClick={() => setShowExportDialog(false)}>
+                取消
+              </Button>
               <Button size="sm" onClick={exportEdits} disabled={editBusy}>
                 {editBusy ? <Loader2 className="size-4 animate-spin" /> : null}
                 选择目录并导出
@@ -1823,13 +2404,19 @@ export default function ImageViewer({
       {/* 底部信息 */}
       {!editing && (
         <div className="viewer-info">
-          <span className="viewer-counter">{imageIndex + 1} / {totalCount}</span>
+          <span className="viewer-counter">
+            {imageIndex + 1} / {totalCount}
+          </span>
           <span className="viewer-info-sep" />
-          <span className="viewer-filename" title={image.filepath}>{image.filename?.replace(/\.\w+$/, '') || image.filename}</span>
+          <span className="viewer-filename" title={image.filepath}>
+            {image.filename?.replace(/\.\w+$/, '') || image.filename}
+          </span>
           {image.width > 0 && (
             <>
               <span className="viewer-info-sep" />
-              <span>{image.width}×{image.height}</span>
+              <span>
+                {image.width}×{image.height}
+              </span>
             </>
           )}
           {image.size > 0 && (
@@ -1841,21 +2428,27 @@ export default function ImageViewer({
           {image.taken_at && (
             <>
               <span className="viewer-info-sep" />
-              <span><Camera className="size-3.5" /> {image.taken_at}</span>
+              <span>
+                <Camera className="size-3.5" /> {image.taken_at}
+              </span>
             </>
           )}
           {image.import_date && (
             <>
               <span className="viewer-info-sep" />
-              <span><Calendar className="size-3.5" /> {image.import_date}</span>
+              <span>
+                <Calendar className="size-3.5" /> {image.import_date}
+              </span>
             </>
           )}
           {imgTags.length > 0 && (
             <>
               <span className="viewer-info-sep" />
               <span style={{ display: 'flex', gap: 3 }}>
-                {imgTags.map(t => (
-                  <span key={t.id} className="viewer-tag" style={{ background: t.color }}>{t.name}</span>
+                {imgTags.map((t) => (
+                  <span key={t.id} className="viewer-tag" style={{ background: t.color }}>
+                    {t.name}
+                  </span>
                 ))}
               </span>
             </>
@@ -1878,5 +2471,7 @@ export default function ImageViewer({
 }
 
 function cropRatioValueLabel(key) {
-  return CROP_RATIOS.find(r => r.key === key)?.label === '自由' ? '' : CROP_RATIOS.find(r => r.key === key)?.label;
+  return CROP_RATIOS.find((r) => r.key === key)?.label === '自由'
+    ? ''
+    : CROP_RATIOS.find((r) => r.key === key)?.label;
 }

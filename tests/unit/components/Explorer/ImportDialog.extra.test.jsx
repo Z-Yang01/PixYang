@@ -19,7 +19,10 @@ const manyFiles = Array.from({ length: 21 }, (_, i) => ({
 
 function deferred() {
   let resolve, reject;
-  const promise = new Promise((res, rej) => { resolve = res; reject = rej; });
+  const promise = new Promise((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
   return { promise, resolve, reject };
 }
 
@@ -60,7 +63,10 @@ describe('ImportDialog（补充分支）', () => {
   it('onImportProgress：订阅进度回调，导入中显示 EXIF 细分进度，卸载时退订', async () => {
     let progressCb = null;
     const unsubscribe = vi.fn();
-    window.pixyang.onImportProgress = vi.fn((cb) => { progressCb = cb; return unsubscribe; });
+    window.pixyang.onImportProgress = vi.fn((cb) => {
+      progressCb = cb;
+      return unsubscribe;
+    });
     const d = deferred();
     window.pixyang.importImages.mockImplementation(() => d.promise);
     const { unmount } = renderDialog({ initialFiles: filesFixture });
@@ -80,7 +86,10 @@ describe('ImportDialog（补充分支）', () => {
 
   it('onImportProgress 回调传 null 时清空细分进度（导入中回退到百分比文案）', async () => {
     let progressCb = null;
-    window.pixyang.onImportProgress = vi.fn((cb) => { progressCb = cb; return vi.fn(); });
+    window.pixyang.onImportProgress = vi.fn((cb) => {
+      progressCb = cb;
+      return vi.fn();
+    });
     const d = deferred();
     window.pixyang.importImages.mockImplementation(() => d.promise);
     renderDialog({ initialFiles: filesFixture });
@@ -181,13 +190,19 @@ describe('ImportDialog（补充分支）', () => {
     const d = deferred();
     window.pixyang.selectDirectory.mockResolvedValue('C:/import');
     window.pixyang.scanDirectory.mockImplementation(() => d.promise);
-    window.pixyang.toFileUrls.mockResolvedValue({ 'C:/import/a.jpg': 'blob:a', 'C:/import/b.png': '' });
+    window.pixyang.toFileUrls.mockResolvedValue({
+      'C:/import/a.jpg': 'blob:a',
+      'C:/import/b.png': '',
+    });
     renderDialog();
     fireEvent.click(screen.getByText('浏览'));
     expect(await screen.findByText('正在扫描文件夹...')).toBeInTheDocument();
     expect(screen.getByText('导入 0 张图片')).toBeDisabled();
 
-    d.resolve([...filesFixture, { filepath: 'C:/import/c.nef', filename: 'c.nef', size: 1024, format: '.nef' }]);
+    d.resolve([
+      ...filesFixture,
+      { filepath: 'C:/import/c.nef', filename: 'c.nef', size: 1024, format: '.nef' },
+    ]);
     await screen.findByText('c.nef');
     expect(screen.getByDisplayValue('C:/import')).toBeInTheDocument();
     // 仅可预览格式请求 URL；b.png 的 URL 为空被跳过，回退图标
@@ -249,7 +264,9 @@ describe('ImportDialog（补充分支）', () => {
     const extra = { filepath: 'C:/import/c.jpg', filename: 'c.jpg', size: 1024, format: '.jpg' };
     const { rerender } = renderDialog({ initialFiles: filesFixture });
     expect(document.querySelectorAll('.import-file-card').length).toBe(2);
-    rerender(<ImportDialog onClose={vi.fn()} onDone={vi.fn()} initialFiles={[...filesFixture, extra]} />);
+    rerender(
+      <ImportDialog onClose={vi.fn()} onDone={vi.fn()} initialFiles={[...filesFixture, extra]} />
+    );
     expect(document.querySelectorAll('.import-file-card').length).toBe(3);
     expect(screen.getByText('c.jpg')).toBeInTheDocument();
   });

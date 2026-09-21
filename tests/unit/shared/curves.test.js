@@ -6,17 +6,29 @@ const curves = require_('../../../shared/curves.cjs');
 
 describe('normalizePoints（点归一化）', () => {
   it('成对取数、排序、钳制到 0..1', () => {
-    expect(curves.normalizePoints([1, 0.5, 0, 0.2])).toEqual([[0, 0.2], [1, 0.5]]);
-    expect(curves.normalizePoints([-0.5, 2, 0.5, 0.5])).toEqual([[0, 1], [0.5, 0.5]]);
+    expect(curves.normalizePoints([1, 0.5, 0, 0.2])).toEqual([
+      [0, 0.2],
+      [1, 0.5],
+    ]);
+    expect(curves.normalizePoints([-0.5, 2, 0.5, 0.5])).toEqual([
+      [0, 1],
+      [0.5, 0.5],
+    ]);
   });
 
   it('奇数长度丢弃尾数，非有限值对跳过；剩余不足 2 点为空', () => {
-    expect(curves.normalizePoints([0, 0, 1, 1, 0.5])).toEqual([[0, 0], [1, 1]]);
+    expect(curves.normalizePoints([0, 0, 1, 1, 0.5])).toEqual([
+      [0, 0],
+      [1, 1],
+    ]);
     expect(curves.normalizePoints([0, NaN, 1, 1])).toEqual([]);
   });
 
   it('同 x 去重保留后值；少于 2 点为空（恒等）', () => {
-    expect(curves.normalizePoints([0.5, 0.2, 0.5, 0.8, 1, 1])).toEqual([[0.5, 0.8], [1, 1]]);
+    expect(curves.normalizePoints([0.5, 0.2, 0.5, 0.8, 1, 1])).toEqual([
+      [0.5, 0.8],
+      [1, 1],
+    ]);
     expect(curves.normalizePoints([0.5, 0.5])).toEqual([]);
     expect(curves.normalizePoints([])).toEqual([]);
     expect(curves.normalizePoints('bad')).toEqual([]);
@@ -29,15 +41,25 @@ describe('evalAt（分段线性求值）', () => {
   });
 
   it('端点外横向延伸', () => {
-    const pts = [[0.25, 0.1], [0.75, 0.9]];
+    const pts = [
+      [0.25, 0.1],
+      [0.75, 0.9],
+    ];
     expect(curves.evalAt(pts, 0)).toBe(0.1);
     expect(curves.evalAt(pts, 1)).toBe(0.9);
   });
 
   it('段内线性插值', () => {
-    const pts = [[0, 0], [1, 1]];
+    const pts = [
+      [0, 0],
+      [1, 1],
+    ];
     expect(curves.evalAt(pts, 0.25)).toBeCloseTo(0.25);
-    const s = [[0, 0], [0.5, 0.2], [1, 1]];
+    const s = [
+      [0, 0],
+      [0.5, 0.2],
+      [1, 1],
+    ];
     expect(curves.evalAt(s, 0.25)).toBeCloseTo(0.1);
     expect(curves.evalAt(s, 0.75)).toBeCloseTo(0.6);
   });
@@ -86,7 +108,11 @@ describe('buildCurveTables（预览端 SVG tableValues）', () => {
     const pts = [0, 0.02, 0.25, 0.18, 0.75, 0.82, 1, 0.98];
     const table = curves.buildCurveTables({ rgb: pts, b: [0, 0.06, 1, 0.94] });
     const luts = curves.buildCurveLuts({ rgb: pts, b: [0, 0.06, 1, 0.94] });
-    for (const [ch, lut] of [['r', luts.r], ['g', luts.g], ['b', luts.b]]) {
+    for (const [ch, lut] of [
+      ['r', luts.r],
+      ['g', luts.g],
+      ['b', luts.b],
+    ]) {
       const arr = table[ch];
       let maxDev = 0;
       for (let i = 0; i < 256; i++) {

@@ -20,7 +20,7 @@ const clamp = (v, min, max, fallback) => {
 };
 
 export default function SettingsPage({ onSettingsChanged, onImagesChanged }) {
-  const stats = useGalleryStore(st => st.stats);
+  const stats = useGalleryStore((st) => st.stats);
   const [draft, setDraft] = useState(readCurrentUiSettings);
   const savedRef = useRef(draft);
   const [storagePath, setStoragePath] = useState('');
@@ -65,7 +65,9 @@ export default function SettingsPage({ onSettingsChanged, onImagesChanged }) {
   };
 
   const applyPreview = (d) => {
-    useGalleryStore.getState().setGridSettings({ rows: d.rows, columns: d.columns, gap: d.gap, padding: d.padding });
+    useGalleryStore
+      .getState()
+      .setGridSettings({ rows: d.rows, columns: d.columns, gap: d.gap, padding: d.padding });
     document.documentElement.setAttribute('data-theme', d.theme);
   };
 
@@ -86,7 +88,7 @@ export default function SettingsPage({ onSettingsChanged, onImagesChanged }) {
   };
 
   const updateDraft = (patch) => {
-    setDraft(prev => ({ ...prev, ...patch }));
+    setDraft((prev) => ({ ...prev, ...patch }));
   };
 
   useEffect(() => {
@@ -142,7 +144,9 @@ export default function SettingsPage({ onSettingsChanged, onImagesChanged }) {
     const target = await api.selectDirectory();
     if (!target || target === storagePath) return;
 
-    const ok = window.confirm('修改图片保存路径会把当前图库里的所有图片整体移动到新路径下，确定继续吗？');
+    const ok = window.confirm(
+      '修改图片保存路径会把当前图库里的所有图片整体移动到新路径下，确定继续吗？'
+    );
     if (!ok) return;
 
     setMoving(true);
@@ -189,7 +193,10 @@ export default function SettingsPage({ onSettingsChanged, onImagesChanged }) {
     }
 
     const parts = [];
-    if (result.imported > 0) parts.push(`新导入 ${result.imported} 张（JPG ${result.jpgImported}、NEF ${result.nefImported}）`);
+    if (result.imported > 0)
+      parts.push(
+        `新导入 ${result.imported} 张（JPG ${result.jpgImported}、NEF ${result.nefImported}）`
+      );
     if (result.attached > 0) parts.push(`补充 NEF ${result.attached} 张`);
     if (result.skipped > 0) parts.push(`已存在跳过 ${result.skipped} 张`);
     onImagesChanged?.();
@@ -204,9 +211,14 @@ export default function SettingsPage({ onSettingsChanged, onImagesChanged }) {
     const result = await api.rebuildThumbnails();
     setRebuilding(false);
     setRebuildProgress(null);
-    if (result?.error) { showSaved(result.error); return; }
+    if (result?.error) {
+      showSaved(result.error);
+      return;
+    }
     onImagesChanged?.();
-    showSaved(`缩略图重建完成：${result.rebuilt} 成功，${result.failed} 失败（共 ${result.total} 张）`);
+    showSaved(
+      `缩略图重建完成：${result.rebuilt} 成功，${result.failed} 失败（共 ${result.total} 张）`
+    );
   };
 
   const handleScanBroken = async () => {
@@ -221,23 +233,31 @@ export default function SettingsPage({ onSettingsChanged, onImagesChanged }) {
       return;
     }
     setScanningBroken(false);
-    if (list?.error) { setMessage(list.error); return; }
+    if (list?.error) {
+      setMessage(list.error);
+      return;
+    }
     setBrokenRecords(list);
     if (list.length === 0) showSaved('未发现失效记录');
   };
 
   const handleCleanBroken = async () => {
     if (!api.isBridgeAvailable() || !brokenRecords) return;
-    const ids = brokenRecords.map(r => r.id);
+    const ids = brokenRecords.map((r) => r.id);
     setBrokenRecords(null);
     const result = await api.deleteBrokenRecords(ids);
     onImagesChanged?.();
-    if (result?.error) { setMessage(result.error); return; }
+    if (result?.error) {
+      setMessage(result.error);
+      return;
+    }
     const removed = result?.removed ?? 0;
     const unbound = result?.unbound ?? 0;
-    showSaved(unbound > 0
-      ? `已清理 ${removed} 条失效记录，另解绑 ${unbound} 条仅原图缺失的记录`
-      : `已清理 ${removed} 条失效记录`);
+    showSaved(
+      unbound > 0
+        ? `已清理 ${removed} 条失效记录，另解绑 ${unbound} 条仅原图缺失的记录`
+        : `已清理 ${removed} 条失效记录`
+    );
   };
 
   const handleFindDuplicates = async () => {
@@ -251,18 +271,25 @@ export default function SettingsPage({ onSettingsChanged, onImagesChanged }) {
       groups = { error: `检测失败: ${e.message}` };
     }
     setFindingDupes(false);
-    if (groups?.error) { setMessage(groups.error); return; }
+    if (groups?.error) {
+      setMessage(groups.error);
+      return;
+    }
     if (!groups || groups.length === 0) {
       showSaved('未发现重复图片');
       return;
     }
     // 每组默认保留第一张，其余预选删除
     const keep = {};
-    groups.forEach((g, gi) => { keep[gi] = g.items[0].id; });
+    groups.forEach((g, gi) => {
+      keep[gi] = g.items[0].id;
+    });
     setDupeKeep(keep);
     setDupGroups(groups);
     // 批量取缩略图 URL
-    const paths = [...new Set(groups.flatMap(g => g.items.map(i => i.thumbnail_path).filter(Boolean)))];
+    const paths = [
+      ...new Set(groups.flatMap((g) => g.items.map((i) => i.thumbnail_path).filter(Boolean))),
+    ];
     if (paths.length > 0) {
       const map = await api.toFileUrls(paths);
       if (map) setDupeUrls(map);
@@ -273,7 +300,7 @@ export default function SettingsPage({ onSettingsChanged, onImagesChanged }) {
     if (!dupGroups) return [];
     const ids = [];
     dupGroups.forEach((g, gi) => {
-      g.items.forEach(item => {
+      g.items.forEach((item) => {
         if (item.id !== dupeKeep[gi]) ids.push(item.id);
       });
     });
@@ -285,17 +312,25 @@ export default function SettingsPage({ onSettingsChanged, onImagesChanged }) {
     const ids = dupeDeleteIds();
     if (ids.length === 0) return;
     const wasted = dupGroups.reduce((sum, g, gi) => {
-      return sum + g.items.filter(item => item.id !== dupeKeep[gi]).reduce((s, i) => s + (i.size || 0), 0);
+      return (
+        sum +
+        g.items.filter((item) => item.id !== dupeKeep[gi]).reduce((s, i) => s + (i.size || 0), 0)
+      );
     }, 0);
     setDupGroups(null);
     const results = await api.batchDeleteImages(ids);
     onImagesChanged?.();
     const mb = (wasted / 1048576).toFixed(1);
-    if (!Array.isArray(results) && results?.error) { setMessage(results.error); return; }
-    const failed = Array.isArray(results) ? results.filter(r => r?.error).length : 0;
-    showSaved(failed > 0
-      ? `已删除 ${ids.length - failed} 张重复图片（${failed} 张失败），释放 ${mb} MB`
-      : `已删除 ${ids.length} 张重复图片，释放 ${mb} MB`);
+    if (!Array.isArray(results) && results?.error) {
+      setMessage(results.error);
+      return;
+    }
+    const failed = Array.isArray(results) ? results.filter((r) => r?.error).length : 0;
+    showSaved(
+      failed > 0
+        ? `已删除 ${ids.length - failed} 张重复图片（${failed} 张失败），释放 ${mb} MB`
+        : `已删除 ${ids.length} 张重复图片，释放 ${mb} MB`
+    );
   };
 
   const formatMb = (bytes) => `${(bytes / 1048576).toFixed(1)} MB`;
@@ -327,8 +362,12 @@ export default function SettingsPage({ onSettingsChanged, onImagesChanged }) {
         {hasChanges && (
           <div className="settings-actions">
             <span className="settings-actions-hint">有未保存的修改</span>
-            <Button size="sm" onClick={handleSave}>保存</Button>
-            <Button variant="secondary" size="sm" onClick={handleRevert}>撤回</Button>
+            <Button size="sm" onClick={handleSave}>
+              保存
+            </Button>
+            <Button variant="secondary" size="sm" onClick={handleRevert}>
+              撤回
+            </Button>
           </div>
         )}
 
@@ -337,7 +376,7 @@ export default function SettingsPage({ onSettingsChanged, onImagesChanged }) {
           <div className="info-row info-row-stack">
             <span className="info-label">主题模式</span>
             <div className="theme-grid">
-              {THEMES.map(t => (
+              {THEMES.map((t) => (
                 <button
                   key={t.id}
                   type="button"
@@ -409,7 +448,9 @@ export default function SettingsPage({ onSettingsChanged, onImagesChanged }) {
               恢复默认设置
             </Button>
           </div>
-          <p className="settings-help">界面设置（主题、网格、间距）修改后需点击「保存」生效；「撤回」可撤销未保存的修改。恢复默认不会改变保存图片地址。</p>
+          <p className="settings-help">
+            界面设置（主题、网格、间距）修改后需点击「保存」生效；「撤回」可撤销未保存的修改。恢复默认不会改变保存图片地址。
+          </p>
         </section>
 
         <section className="settings-section">
@@ -436,14 +477,21 @@ export default function SettingsPage({ onSettingsChanged, onImagesChanged }) {
           <h2>存储</h2>
           <div className="storage-path">{storagePath || '加载中...'}</div>
           <div className="button-row">
-            <Button variant="secondary" size="sm" onClick={handleOpenFolder} disabled={!storagePath}>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={handleOpenFolder}
+              disabled={!storagePath}
+            >
               打开目录
             </Button>
             <Button size="sm" onClick={handleChooseStorage} disabled={moving}>
               {moving ? '移动中...' : '选择保存路径'}
             </Button>
           </div>
-          <p className="settings-help">修改保存路径时，当前图库中的图片会整体移动到新路径，并同步更新数据库路径。</p>
+          <p className="settings-help">
+            修改保存路径时，当前图库中的图片会整体移动到新路径，并同步更新数据库路径。
+          </p>
         </section>
 
         <section className="settings-section">
@@ -457,18 +505,26 @@ export default function SettingsPage({ onSettingsChanged, onImagesChanged }) {
               {syncing ? '同步中...' : '立即同步'}
             </Button>
           </div>
-          <p className="settings-help">从相机文件夹同步导入图库中缺失的图片（JPG + NEF）。NEF 原图会一并存储管理但不显示；删除图片时会同步删除配对的 NEF。</p>
+          <p className="settings-help">
+            从相机文件夹同步导入图库中缺失的图片（JPG + NEF）。NEF
+            原图会一并存储管理但不显示；删除图片时会同步删除配对的 NEF。
+          </p>
         </section>
 
         <section className="settings-section">
           <h2>维护</h2>
           <div className="info-row">
             <span className="info-label">重建缩略图</span>
-            <Button variant="secondary" size="sm" onClick={handleRebuildThumbnails} disabled={rebuilding}>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={handleRebuildThumbnails}
+              disabled={rebuilding}
+            >
               {rebuilding
-                ? (rebuildProgress?.total > 0
-                    ? `重建中 ${Math.round((rebuildProgress.done / rebuildProgress.total) * 100)}%...`
-                    : '重建中...')
+                ? rebuildProgress?.total > 0
+                  ? `重建中 ${Math.round((rebuildProgress.done / rebuildProgress.total) * 100)}%...`
+                  : '重建中...'
                 : '重建缩略图'}
             </Button>
           </div>
@@ -476,26 +532,46 @@ export default function SettingsPage({ onSettingsChanged, onImagesChanged }) {
 
           <div className="info-row" style={{ marginTop: 12 }}>
             <span className="info-label">失效记录</span>
-            <Button variant="secondary" size="sm" onClick={handleScanBroken} disabled={scanningBroken}>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={handleScanBroken}
+              disabled={scanningBroken}
+            >
               {scanningBroken ? '扫描中...' : '扫描失效记录'}
             </Button>
           </div>
-          <p className="settings-help">扫描文件已不存在的图库条目（如图片在外部被移动或删除），扫描后可一键清理，磁盘上仍存在的文件不会被删除。</p>
+          <p className="settings-help">
+            扫描文件已不存在的图库条目（如图片在外部被移动或删除），扫描后可一键清理，磁盘上仍存在的文件不会被删除。
+          </p>
 
           <div className="info-row" style={{ marginTop: 12 }}>
             <span className="info-label">重复图片</span>
-            <Button variant="secondary" size="sm" onClick={handleFindDuplicates} disabled={findingDupes}>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={handleFindDuplicates}
+              disabled={findingDupes}
+            >
               {findingDupes ? '查找中...' : '查找重复图片'}
             </Button>
           </div>
-          <p className="settings-help">按文件特征查找内容相同的图片，确认后可删除多余副本释放空间。</p>
+          <p className="settings-help">
+            按文件特征查找内容相同的图片，确认后可删除多余副本释放空间。
+          </p>
 
           <div className="info-row" style={{ marginTop: 12 }}>
             <span className="info-label">数据库备份</span>
-            <Button variant="secondary" size="sm" onClick={handleBackup}>备份数据库</Button>
+            <Button variant="secondary" size="sm" onClick={handleBackup}>
+              备份数据库
+            </Button>
           </div>
-          <div className="storage-path" style={{ marginTop: 8 }} title={dbPath}>{dbPath || '加载中...'}</div>
-          <p className="settings-help">备份数据库（pixyang.db）到指定位置，含全部图片元数据与设置。图片文件需另行备份。</p>
+          <div className="storage-path" style={{ marginTop: 8 }} title={dbPath}>
+            {dbPath || '加载中...'}
+          </div>
+          <p className="settings-help">
+            备份数据库（pixyang.db）到指定位置，含全部图片元数据与设置。图片文件需另行备份。
+          </p>
         </section>
 
         <section className="settings-section">
@@ -547,23 +623,29 @@ export default function SettingsPage({ onSettingsChanged, onImagesChanged }) {
                     第 {gi + 1} 组 · {group.items.length} 张 · 可释放 {formatMb(group.wasted)}
                   </div>
                   <div className="dupe-group-grid">
-                    {group.items.map(item => {
+                    {group.items.map((item) => {
                       const keep = dupeKeep[gi] === item.id;
                       const url = item.thumbnail_path ? dupeUrls[item.thumbnail_path] : null;
                       return (
                         <button
                           key={item.id}
                           className={`dupe-item${keep ? ' keep' : ''}`}
-                          onClick={() => setDupeKeep(prev => ({ ...prev, [gi]: item.id }))}
+                          onClick={() => setDupeKeep((prev) => ({ ...prev, [gi]: item.id }))}
                           title={keep ? '保留这张' : '点击改为保留这张'}
                         >
                           {url ? (
                             <img src={url} alt={item.filename} loading="lazy" />
                           ) : (
-                            <span className="dupe-item-placeholder">{item.format?.toUpperCase() || 'IMG'}</span>
+                            <span className="dupe-item-placeholder">
+                              {item.format?.toUpperCase() || 'IMG'}
+                            </span>
                           )}
-                          <span className="dupe-item-name" title={item.filepath}>{item.filename}</span>
-                          <span className={`dupe-item-badge${keep ? ' keep' : ''}`}>{keep ? '保留' : '删除'}</span>
+                          <span className="dupe-item-name" title={item.filepath}>
+                            {item.filename}
+                          </span>
+                          <span className={`dupe-item-badge${keep ? ' keep' : ''}`}>
+                            {keep ? '保留' : '删除'}
+                          </span>
                         </button>
                       );
                     })}
@@ -572,7 +654,9 @@ export default function SettingsPage({ onSettingsChanged, onImagesChanged }) {
               ))}
             </div>
             <div className="dialog-footer">
-              <Button variant="ghost" onClick={() => setDupGroups(null)}>取消</Button>
+              <Button variant="ghost" onClick={() => setDupGroups(null)}>
+                取消
+              </Button>
               <Button
                 variant="destructive"
                 onClick={handleDeleteDuplicates}

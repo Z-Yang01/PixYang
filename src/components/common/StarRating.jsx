@@ -25,10 +25,7 @@ export default function StarRating({
     );
   }
   return (
-    <div
-      className="star-rating"
-      onClick={stopPropagation ? (e) => e.stopPropagation() : undefined}
-    >
+    <div className="star-rating" onClick={stopPropagation ? (e) => e.stopPropagation() : undefined}>
       {stars}
     </div>
   );

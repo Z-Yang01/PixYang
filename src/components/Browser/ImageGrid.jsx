@@ -2,7 +2,15 @@ import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { ImageOff } from 'lucide-react';
-import { groupImagesByDate, pageSizeOf, addRangeToSet, toggleIdInSet, removeIdsFromSet, createLoadSequencer, hasActiveFilters as computeHasActiveFilters } from '@/lib/gallery';
+import {
+  groupImagesByDate,
+  pageSizeOf,
+  addRangeToSet,
+  toggleIdInSet,
+  removeIdsFromSet,
+  createLoadSequencer,
+  hasActiveFilters as computeHasActiveFilters,
+} from '@/lib/gallery';
 import useGalleryStore, { anyModalOpen } from '@/store/galleryStore';
 import { matchGridShortcut, GRID_ACTIONS } from '@/lib/shortcuts';
 import api from '@/lib/api';
@@ -16,29 +24,41 @@ const EMPTY_TAGS = [];
 
 // 首选缩略图路径：编辑预览 > 小图 > 大图。thumbUrls 缓存以此路径为键，
 // 写回 thumbnail_edit_path 后旧键自然不命中触发重解析（按 id 键控需 purge 与 loadUrls 抢顺序）
-const preferredThumbOf = (img) => img.thumbnail_edit_path || img.thumbnail_small_path || img.thumbnail_path;
+const preferredThumbOf = (img) =>
+  img.thumbnail_edit_path || img.thumbnail_small_path || img.thumbnail_path;
 
 export default function ImageGrid({
-  onView, onInfo, onImageUpdated, onCountsChanged, onImport,
-  onClearFilters, onColumnsChange, viewerActive = false,
+  onView,
+  onInfo,
+  onImageUpdated,
+  onCountsChanged,
+  onImport,
+  onClearFilters,
+  onColumnsChange,
+  viewerActive = false,
 }) {
   // 数据与筛选/勾选/网格设置从 galleryStore 订阅，消除 App → ImageGrid 的逐层透传
-  const images = useGalleryStore(s => s.images);
-  const loading = useGalleryStore(s => s.loading);
-  const selectedIds = useGalleryStore(s => s.selectedIds);
-  const gridSettings = useGalleryStore(s => s.gridSettings);
-  const thumbVersion = useGalleryStore(s => s.thumbVersion);
-  const albums = useGalleryStore(s => s.albums);
-  const setSelectedIds = useGalleryStore(s => s.setSelectedIds);
-  const search = useGalleryStore(s => s.search);
-  const filterTag = useGalleryStore(s => s.filterTag);
-  const filterAlbum = useGalleryStore(s => s.filterAlbum);
-  const filterDate = useGalleryStore(s => s.filterDate);
-  const dateRange = useGalleryStore(s => s.dateRange);
-  const filterFavorites = useGalleryStore(s => s.filterFavorites);
+  const images = useGalleryStore((s) => s.images);
+  const loading = useGalleryStore((s) => s.loading);
+  const selectedIds = useGalleryStore((s) => s.selectedIds);
+  const gridSettings = useGalleryStore((s) => s.gridSettings);
+  const thumbVersion = useGalleryStore((s) => s.thumbVersion);
+  const albums = useGalleryStore((s) => s.albums);
+  const setSelectedIds = useGalleryStore((s) => s.setSelectedIds);
+  const search = useGalleryStore((s) => s.search);
+  const filterTag = useGalleryStore((s) => s.filterTag);
+  const filterAlbum = useGalleryStore((s) => s.filterAlbum);
+  const filterDate = useGalleryStore((s) => s.filterDate);
+  const dateRange = useGalleryStore((s) => s.dateRange);
+  const filterFavorites = useGalleryStore((s) => s.filterFavorites);
 
   const hasActiveFilters = computeHasActiveFilters({
-    search, filterTag, filterAlbum, filterDate, dateRange, filterFavorites,
+    search,
+    filterTag,
+    filterAlbum,
+    filterDate,
+    dateRange,
+    filterFavorites,
   });
   const [allTags, setAllTags] = useState([]);
   const [imageTags, setImageTags] = useState({});
@@ -57,13 +77,18 @@ export default function ImageGrid({
   const imageTagsRef = useRef(imageTags);
   imageTagsRef.current = imageTags;
 
-  const { handleGridMouseDown, selBoxElRef, lastSelectedRef } = useMarqueeSelection({ selectedIdsRef });
+  const { handleGridMouseDown, selBoxElRef, lastSelectedRef } = useMarqueeSelection({
+    selectedIdsRef,
+  });
 
   const pageSize = pageSizeOf(gridSettings);
-  const gridStyle = useMemo(() => ({
-    gridTemplateColumns: `repeat(${gridSettings.columns}, minmax(120px, 1fr))`,
-    gap: gridSettings.gap,
-  }), [gridSettings.columns, gridSettings.gap]);
+  const gridStyle = useMemo(
+    () => ({
+      gridTemplateColumns: `repeat(${gridSettings.columns}, minmax(120px, 1fr))`,
+      gap: gridSettings.gap,
+    }),
+    [gridSettings.columns, gridSettings.gap]
+  );
 
   // 时间线分组：排序键为 taken_at||import_date，同页内按日期插入吸顶表头
   const { groupedItems, dateCounts } = useMemo(() => {
@@ -71,10 +96,12 @@ export default function ImageGrid({
     return { groupedItems: items, dateCounts: counts };
   }, [images]);
 
-  useEffect(() => { loadAllTags(); }, []);
+  useEffect(() => {
+    loadAllTags();
+  }, []);
 
   // 页内图片 id 列表不变时不重复拉取标签
-  const pageIdsKey = useMemo(() => images.map(img => img.id).join(','), [images]);
+  const pageIdsKey = useMemo(() => images.map((img) => img.id).join(','), [images]);
 
   useEffect(() => {
     if (images.length === 0) {
@@ -95,26 +122,26 @@ export default function ImageGrid({
 
   // 翻页/路径变更后把 URL/状态缓存裁剪到当前页，避免长期浏览内存增长
   useEffect(() => {
-    const ids = new Set(images.map(img => img.id));
+    const ids = new Set(images.map((img) => img.id));
     const preferredPaths = new Set(images.map(preferredThumbOf).filter(Boolean));
-    setThumbUrls(prev => {
-      if (Object.keys(prev).every(k => preferredPaths.has(k))) return prev;
+    setThumbUrls((prev) => {
+      if (Object.keys(prev).every((k) => preferredPaths.has(k))) return prev;
       const next = {};
       for (const p of preferredPaths) {
         if (prev[p] !== undefined) next[p] = prev[p];
       }
       return next;
     });
-    setFileUrls(prev => {
-      if (Object.keys(prev).every(k => ids.has(Number(k)))) return prev;
+    setFileUrls((prev) => {
+      if (Object.keys(prev).every((k) => ids.has(Number(k)))) return prev;
       const next = {};
       for (const img of images) {
         if (prev[img.id] !== undefined) next[img.id] = prev[img.id];
       }
       return next;
     });
-    setBrokenThumbnails(prev => {
-      const next = new Set([...prev].filter(id => ids.has(id)));
+    setBrokenThumbnails((prev) => {
+      const next = new Set([...prev].filter((id) => ids.has(id)));
       return next.size === prev.size ? prev : next;
     });
     setActiveIndex(-1);
@@ -144,19 +171,19 @@ export default function ImageGrid({
     pathMapRef.current = nextMap;
     thumbMapRef.current = nextThumbMap;
     if (changed.length > 0) {
-      setFileUrls(prev => {
+      setFileUrls((prev) => {
         const next = { ...prev };
-        changed.forEach(id => delete next[id]);
+        changed.forEach((id) => delete next[id]);
         return next;
       });
     }
     if (thumbChanged.length > 0) {
-      setThumbUrls(prev => {
+      setThumbUrls((prev) => {
         const next = { ...prev };
-        thumbChanged.forEach(id => delete next[oldThumbMap[id]]);
+        thumbChanged.forEach((id) => delete next[oldThumbMap[id]]);
         return next;
       });
-      setBrokenThumbnails(prev => new Set([...prev].filter(id => !thumbChanged.includes(id))));
+      setBrokenThumbnails((prev) => new Set([...prev].filter((id) => !thumbChanged.includes(id))));
     }
   }, [images]);
 
@@ -179,7 +206,7 @@ export default function ImageGrid({
   const dialogsOpen = !!addToAlbumImage || !!renameImage || !!deleteTarget;
   // 网格弹窗注册进全局模态门禁；App 级弹层（导入/确认/帮助）开着也禁本网格键盘导航
   const globalModal = useGalleryStore(anyModalOpen);
-  const setModal = useGalleryStore(s => s.setModal);
+  const setModal = useGalleryStore((s) => s.setModal);
   useEffect(() => {
     setModal('gridDialogs', dialogsOpen);
     return () => setModal('gridDialogs', false);
@@ -187,10 +214,13 @@ export default function ImageGrid({
 
   // 键盘导航依赖本回调，必须先于下方 useEffect 定义（此前定义在其后，
   // useEffect 依赖数组引用未初始化的 const，每次渲染抛 TDZ ReferenceError，网格整体白屏）
-  const handleCheckboxClick = useCallback((image) => {
-    setSelectedIds(toggleIdInSet(selectedIdsRef.current, image.id));
-    lastSelectedRef.current = image.id;
-  }, [setSelectedIds, lastSelectedRef]);
+  const handleCheckboxClick = useCallback(
+    (image) => {
+      setSelectedIds(toggleIdInSet(selectedIdsRef.current, image.id));
+      lastSelectedRef.current = image.id;
+    },
+    [setSelectedIds, lastSelectedRef]
+  );
 
   useEffect(() => {
     if (viewerActive || dialogsOpen || globalModal) return;
@@ -206,27 +236,43 @@ export default function ImageGrid({
       const count = imagesRef.current.length;
       if (count === 0) return;
 
-      if (action === GRID_ACTIONS.MoveLeft || action === GRID_ACTIONS.MoveRight ||
-          action === GRID_ACTIONS.MoveUp || action === GRID_ACTIONS.MoveDown) {
+      if (
+        action === GRID_ACTIONS.MoveLeft ||
+        action === GRID_ACTIONS.MoveRight ||
+        action === GRID_ACTIONS.MoveUp ||
+        action === GRID_ACTIONS.MoveDown
+      ) {
         e.preventDefault();
         const delta =
-          action === GRID_ACTIONS.MoveLeft ? -1 :
-          action === GRID_ACTIONS.MoveRight ? 1 :
-          action === GRID_ACTIONS.MoveUp ? -columns : columns;
+          action === GRID_ACTIONS.MoveLeft
+            ? -1
+            : action === GRID_ACTIONS.MoveRight
+              ? 1
+              : action === GRID_ACTIONS.MoveUp
+                ? -columns
+                : columns;
         if (activeIndexRef.current < 0) {
           setActiveIndex(0);
           return;
         }
-        setActiveIndex(idx => Math.max(0, Math.min(count - 1, idx + delta)));
+        setActiveIndex((idx) => Math.max(0, Math.min(count - 1, idx + delta)));
         return;
       }
-      if (action === GRID_ACTIONS.Open && activeIndexRef.current >= 0 && activeIndexRef.current < count) {
+      if (
+        action === GRID_ACTIONS.Open &&
+        activeIndexRef.current >= 0 &&
+        activeIndexRef.current < count
+      ) {
         e.preventDefault();
         const idx = activeIndexRef.current;
         onView(imagesRef.current[idx], idx);
         return;
       }
-      if (action === GRID_ACTIONS.ToggleSelect && activeIndexRef.current >= 0 && activeIndexRef.current < count) {
+      if (
+        action === GRID_ACTIONS.ToggleSelect &&
+        activeIndexRef.current >= 0 &&
+        activeIndexRef.current < count
+      ) {
         e.preventDefault();
         const img = imagesRef.current[activeIndexRef.current];
         handleCheckboxClick(img);
@@ -288,8 +334,8 @@ export default function ImageGrid({
         origById[img.id] = urlMap[img.filepath];
       }
     }
-    if (Object.keys(thumbByPath).length > 0) setThumbUrls(prev => ({ ...prev, ...thumbByPath }));
-    if (Object.keys(origById).length > 0) setFileUrls(prev => ({ ...prev, ...origById }));
+    if (Object.keys(thumbByPath).length > 0) setThumbUrls((prev) => ({ ...prev, ...thumbByPath }));
+    if (Object.keys(origById).length > 0) setFileUrls((prev) => ({ ...prev, ...origById }));
   };
 
   const tagSeqRef = useRef(null);
@@ -298,32 +344,40 @@ export default function ImageGrid({
   const loadImageTags = async (imgs) => {
     if (!api.isBridgeAvailable()) return;
     const token = tagSeqRef.current.next();
-    const ids = imgs.map(img => img.id);
+    const ids = imgs.map((img) => img.id);
     const tagMap = await api.getBatchImageTags(ids);
     if (!tagSeqRef.current.isCurrent(token)) return;
     setImageTags(tagMap || {});
   };
 
-  const handleCardClick = useCallback((image, index, e) => {
-    if (e.shiftKey && lastSelectedRef.current !== null) {
-      setSelectedIds(addRangeToSet(selectedIdsRef.current, imagesRef.current, lastSelectedRef.current, index));
-      lastSelectedRef.current = image.id;
-      return;
-    }
-    if (e.ctrlKey || e.metaKey) {
-      setSelectedIds(toggleIdInSet(selectedIdsRef.current, image.id));
-      lastSelectedRef.current = image.id;
-    } else {
-      onView(image, index);
-      lastSelectedRef.current = image.id;
-    }
-  }, [setSelectedIds, onView, lastSelectedRef]);
+  const handleCardClick = useCallback(
+    (image, index, e) => {
+      if (e.shiftKey && lastSelectedRef.current !== null) {
+        setSelectedIds(
+          addRangeToSet(selectedIdsRef.current, imagesRef.current, lastSelectedRef.current, index)
+        );
+        lastSelectedRef.current = image.id;
+        return;
+      }
+      if (e.ctrlKey || e.metaKey) {
+        setSelectedIds(toggleIdInSet(selectedIdsRef.current, image.id));
+        lastSelectedRef.current = image.id;
+      } else {
+        onView(image, index);
+        lastSelectedRef.current = image.id;
+      }
+    },
+    [setSelectedIds, onView, lastSelectedRef]
+  );
 
-  const handleRatingChange = useCallback(async (image, rating) => {
-    if (!api.isBridgeAvailable()) return;
-    await api.updateImage(image.id, { rating });
-    onImageUpdated?.(image.id, { rating });
-  }, [onImageUpdated]);
+  const handleRatingChange = useCallback(
+    async (image, rating) => {
+      if (!api.isBridgeAvailable()) return;
+      await api.updateImage(image.id, { rating });
+      onImageUpdated?.(image.id, { rating });
+    },
+    [onImageUpdated]
+  );
 
   const handleDelete = useCallback((image) => {
     setDeleteTarget(image);
@@ -338,12 +392,15 @@ export default function ImageGrid({
     onImageUpdated?.();
   };
 
-  const handleToggleFavorite = useCallback(async (image) => {
-    if (!api.isBridgeAvailable()) return;
-    const favorite = image.favorite ? 0 : 1;
-    await api.updateImage(image.id, { favorite });
-    onImageUpdated?.(image.id, { favorite });
-  }, [onImageUpdated]);
+  const handleToggleFavorite = useCallback(
+    async (image) => {
+      if (!api.isBridgeAvailable()) return;
+      const favorite = image.favorite ? 0 : 1;
+      await api.updateImage(image.id, { favorite });
+      onImageUpdated?.(image.id, { favorite });
+    },
+    [onImageUpdated]
+  );
 
   const openRename = useCallback((image) => {
     setRenameImage(image);
@@ -354,7 +411,7 @@ export default function ImageGrid({
     const result = await api.renameImage(renameImage.id, name);
     if (result?.error) return result.error;
     setRenameImage(null);
-    setFileUrls(prev => {
+    setFileUrls((prev) => {
       const next = { ...prev };
       delete next[renameImage.id];
       return next;
@@ -362,39 +419,42 @@ export default function ImageGrid({
     onImageUpdated?.(renameImage.id, { filename: result.newFilename, filepath: result.newPath });
   };
 
-  const handleQuickTag = useCallback(async (imageId, tagId, e) => {
-    e.stopPropagation();
-    if (!api.isBridgeAvailable()) return;
-    const tags = imageTagsRef.current[imageId] || [];
-    const hasTag = tags.find(t => t.id === tagId);
-    if (hasTag) {
-      await api.removeTagFromImage(imageId, tagId);
-      setImageTags(prev => ({
-        ...prev,
-        [imageId]: prev[imageId]?.filter(t => t.id !== tagId) || [],
-      }));
-      // 图片正被该标签筛选：移除后行离开视图，勾选集同步剪枝，防批量操作打向不可见图片
-      if (filterTag === tagId) {
-        setSelectedIds(removeIdsFromSet(selectedIdsRef.current, [imageId]));
-      }
-    } else {
-      await api.addTagToImage(imageId, tagId);
-      const tag = allTags.find(t => t.id === tagId);
-      if (tag) {
-        setImageTags(prev => ({
+  const handleQuickTag = useCallback(
+    async (imageId, tagId, e) => {
+      e.stopPropagation();
+      if (!api.isBridgeAvailable()) return;
+      const tags = imageTagsRef.current[imageId] || [];
+      const hasTag = tags.find((t) => t.id === tagId);
+      if (hasTag) {
+        await api.removeTagFromImage(imageId, tagId);
+        setImageTags((prev) => ({
           ...prev,
-          [imageId]: [...(prev[imageId] || []), tag],
+          [imageId]: prev[imageId]?.filter((t) => t.id !== tagId) || [],
         }));
+        // 图片正被该标签筛选：移除后行离开视图，勾选集同步剪枝，防批量操作打向不可见图片
+        if (filterTag === tagId) {
+          setSelectedIds(removeIdsFromSet(selectedIdsRef.current, [imageId]));
+        }
+      } else {
+        await api.addTagToImage(imageId, tagId);
+        const tag = allTags.find((t) => t.id === tagId);
+        if (tag) {
+          setImageTags((prev) => ({
+            ...prev,
+            [imageId]: [...(prev[imageId] || []), tag],
+          }));
+        }
       }
-    }
-    // 仅当行的筛选归属可能改变（按该标签筛选中/搜索词命中标签名）才整页重查，
-    // 否则只刷侧栏计数：无参全量刷新每次 6 个 IPC + 整页缩略图重载（审查批 8 R-4）
-    const st = useGalleryStore.getState();
-    const q = (st.search || '').trim().toLowerCase();
-    const searchTagHit = hasTag && q && (hasTag.name || '').toLowerCase().includes(q);
-    if (filterTag === tagId || searchTagHit) onImageUpdated?.();
-    else onCountsChanged?.();
-  }, [allTags, onImageUpdated, onCountsChanged, filterTag, setSelectedIds]);
+      // 仅当行的筛选归属可能改变（按该标签筛选中/搜索词命中标签名）才整页重查，
+      // 否则只刷侧栏计数：无参全量刷新每次 6 个 IPC + 整页缩略图重载（审查批 8 R-4）
+      const st = useGalleryStore.getState();
+      const q = (st.search || '').trim().toLowerCase();
+      const searchTagHit = hasTag && q && (hasTag.name || '').toLowerCase().includes(q);
+      if (filterTag === tagId || searchTagHit) onImageUpdated?.();
+      else onCountsChanged?.();
+    },
+    [allTags, onImageUpdated, onCountsChanged, filterTag, setSelectedIds]
+  );
 
   const handleAddToAlbum = async (imageId, albumId) => {
     if (!api.isBridgeAvailable()) return;
@@ -418,11 +478,15 @@ export default function ImageGrid({
   };
 
   const handleThumbError = useCallback((id) => {
-    setBrokenThumbnails(prev => new Set([...prev, id]));
+    setBrokenThumbnails((prev) => new Set([...prev, id]));
   }, []);
 
   const handleOriginalError = useCallback((id) => {
-    setFileUrls(prev => { const n = { ...prev }; delete n[id]; return n; });
+    setFileUrls((prev) => {
+      const n = { ...prev };
+      delete n[id];
+      return n;
+    });
   }, []);
 
   if (loading && images.length === 0) {
@@ -442,16 +506,26 @@ export default function ImageGrid({
   if (!loading && images.length === 0) {
     return (
       <div className="content-area" style={{ padding: gridSettings.padding }}>
-          <div className="empty-state">
-          <div className="empty-state-icon"><ImageOff /></div>
-          <div className="empty-state-title">{hasActiveFilters ? '没有符合条件的图片' : '没有找到图片'}</div>
+        <div className="empty-state">
+          <div className="empty-state-icon">
+            <ImageOff />
+          </div>
+          <div className="empty-state-title">
+            {hasActiveFilters ? '没有符合条件的图片' : '没有找到图片'}
+          </div>
           <div className="empty-state-desc">
-            {hasActiveFilters ? '当前筛选条件下没有图片，试试调整或清除筛选。' : '导入图片后会按页显示在这里。'}
+            {hasActiveFilters
+              ? '当前筛选条件下没有图片，试试调整或清除筛选。'
+              : '导入图片后会按页显示在这里。'}
           </div>
           {hasActiveFilters ? (
-            <Button className="mt-2" onClick={onClearFilters}>清除筛选</Button>
+            <Button className="mt-2" onClick={onClearFilters}>
+              清除筛选
+            </Button>
           ) : (
-            <Button className="mt-2" onClick={onImport}>导入图片</Button>
+            <Button className="mt-2" onClick={onImport}>
+              导入图片
+            </Button>
           )}
         </div>
       </div>
@@ -466,10 +540,14 @@ export default function ImageGrid({
         style={gridStyle}
         onMouseDown={handleGridMouseDown}
       >
-        {groupedItems.map(item => {
+        {groupedItems.map((item) => {
           if (item.type === 'header') {
             return (
-              <div key={`h-${item.date}`} className="grid-date-header" style={{ gridColumn: '1 / -1' }}>
+              <div
+                key={`h-${item.date}`}
+                className="grid-date-header"
+                style={{ gridColumn: '1 / -1' }}
+              >
                 <span className="grid-date-text">{item.date}</span>
                 <span className="grid-date-count">{dateCounts[item.date] || 0} 张</span>
               </div>

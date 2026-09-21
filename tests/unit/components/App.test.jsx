@@ -36,12 +36,18 @@ const testImage = {
 function createPixyangMock(overrides = {}) {
   return {
     getImages: vi.fn().mockResolvedValue({ images: [testImage], total: 1 }),
-    getStats: vi.fn().mockResolvedValue({ totalImages: 1, totalTags: 2, totalAlbums: 1, favorites: 0 }),
+    getStats: vi
+      .fn()
+      .mockResolvedValue({ totalImages: 1, totalTags: 2, totalAlbums: 1, favorites: 0 }),
     getTags: vi.fn().mockResolvedValue([]),
     getAlbums: vi.fn().mockResolvedValue([]),
     getImportDates: vi.fn().mockResolvedValue([]),
     getSettings: vi.fn().mockResolvedValue({
-      theme: 'dark', grid_rows: 3, grid_columns: 5, grid_gap: 12, content_padding: 16,
+      theme: 'dark',
+      grid_rows: 3,
+      grid_columns: 5,
+      grid_gap: 12,
+      content_padding: 16,
     }),
     setSetting: vi.fn().mockResolvedValue(undefined),
     getBatchImageTags: vi.fn().mockResolvedValue({}),
@@ -122,7 +128,9 @@ describe('App 组合根冒烟', () => {
     fireEvent.change(screen.getByPlaceholderText(/搜索图片名称/), { target: { value: 'sun' } });
     await waitFor(
       () => {
-        expect(window.pixyang.getImages).toHaveBeenCalledWith(expect.objectContaining({ search: 'sun' }));
+        expect(window.pixyang.getImages).toHaveBeenCalledWith(
+          expect.objectContaining({ search: 'sun' })
+        );
       },
       { timeout: 2000 }
     );
@@ -138,7 +146,9 @@ describe('App 组合根冒烟', () => {
   });
 
   it('标签路由：渲染 TagManager 标签管理页', async () => {
-    window.pixyang.getTags.mockResolvedValue([{ id: 5, name: '风景', color: '#818cf8', image_count: 6 }]);
+    window.pixyang.getTags.mockResolvedValue([
+      { id: 5, name: '风景', color: '#818cf8', image_count: 6 },
+    ]);
     renderApp('/tags');
     // 「管理标签」同时出现在侧栏导航与页面标题，用标题语义查询
     expect(screen.getByRole('heading', { name: '管理标签' })).toBeInTheDocument();

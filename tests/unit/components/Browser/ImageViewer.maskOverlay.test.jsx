@@ -42,15 +42,27 @@ function baseProps(over = {}) {
 // 图像显示区域与编辑底图会话都固定 1000×1000 @ (0,0)，视图无旋转时 client 坐标 == 底图像素坐标
 function mockSquareViewport() {
   return vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({
-    left: 0, top: 0, right: 1000, bottom: 1000, width: 1000, height: 1000, x: 0, y: 0,
+    left: 0,
+    top: 0,
+    right: 1000,
+    bottom: 1000,
+    width: 1000,
+    height: 1000,
+    x: 0,
+    y: 0,
     toJSON: () => {},
   });
 }
 
 function mockEditBridge(over = {}) {
   window.pixyang.editOpen = vi.fn().mockResolvedValue({
-    id: 3, source: 'jpg', basePath: 'C:/cache/3-base.jpg',
-    width: 1000, height: 1000, hasNef: false, savedEdits: null,
+    id: 3,
+    source: 'jpg',
+    basePath: 'C:/cache/3-base.jpg',
+    width: 1000,
+    height: 1000,
+    hasNef: false,
+    savedEdits: null,
     ...over,
   });
   window.pixyang.toFileUrl.mockImplementation((p) => Promise.resolve(p ? `file:///${p}` : null));
@@ -90,7 +102,10 @@ describe('ImageViewer 蒙版 overlay（拖拽创建 + 手柄编辑）', () => {
     expect(container.querySelector('[data-mask-overlay]')).toBeNull();
     fireEvent.click(screen.getByText('拖拽径向'));
     expect(container.querySelector('[data-mask-create]')).not.toBeNull();
-    fireEvent.pointerDown(container.querySelector('[data-mask-create]'), { clientX: 200, clientY: 200 });
+    fireEvent.pointerDown(container.querySelector('[data-mask-create]'), {
+      clientX: 200,
+      clientY: 200,
+    });
     fireEvent.pointerMove(window, { clientX: 600, clientY: 500 });
     expect(container.querySelector('ellipse.editor-mask-shape.is-draft')).not.toBeNull(); // 拖动中实时草稿
     fireEvent.pointerUp(window);
@@ -117,7 +132,10 @@ describe('ImageViewer 蒙版 overlay（拖拽创建 + 手柄编辑）', () => {
     const { container } = render(<ImageViewer {...baseProps()} />);
     await enterEdit();
     fireEvent.click(screen.getByText('拖拽线性'));
-    fireEvent.pointerDown(container.querySelector('[data-mask-create]'), { clientX: 100, clientY: 200 });
+    fireEvent.pointerDown(container.querySelector('[data-mask-create]'), {
+      clientX: 100,
+      clientY: 200,
+    });
     fireEvent.pointerMove(window, { clientX: 400, clientY: 800 });
     fireEvent.pointerUp(window);
     const chips = container.querySelectorAll('.editor-mask-list button');
@@ -134,7 +152,10 @@ describe('ImageViewer 蒙版 overlay（拖拽创建 + 手柄编辑）', () => {
     const { container } = render(<ImageViewer {...baseProps()} />);
     await enterEdit();
     fireEvent.click(screen.getByText('拖拽径向'));
-    fireEvent.pointerDown(container.querySelector('[data-mask-create]'), { clientX: 200, clientY: 200 });
+    fireEvent.pointerDown(container.querySelector('[data-mask-create]'), {
+      clientX: 200,
+      clientY: 200,
+    });
     fireEvent.pointerUp(window);
     expect(container.querySelectorAll('.editor-mask-list button')).toHaveLength(0);
   });
@@ -155,7 +176,10 @@ describe('ImageViewer 蒙版 overlay（拖拽创建 + 手柄编辑）', () => {
     const ellipse = () => container.querySelector('ellipse.editor-mask-shape');
     expect(ellipse().getAttribute('rx')).toBe('250');
     // rx 手柄位于 (750,500)，拖到 (950,500) → rx=450
-    fireEvent.pointerDown(container.querySelector('[data-mask-handle="rx"]'), { clientX: 750, clientY: 500 });
+    fireEvent.pointerDown(container.querySelector('[data-mask-handle="rx"]'), {
+      clientX: 750,
+      clientY: 500,
+    });
     fireEvent.pointerMove(window, { clientX: 950, clientY: 500 });
     expect(ellipse().getAttribute('rx')).toBe('450'); // 拖动中实时反映
     // 拖动中不入历史（仍为 原始 + 添加径向蒙版 两条）

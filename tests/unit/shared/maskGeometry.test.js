@@ -10,33 +10,124 @@ const VIEW = { width: 800, height: 400 };
 // 图像四角 TL(0,0)/TR(1,0)/BR(1,1)/BL(0,1) → 显示坐标（手推正交变换，防实现自证的回归基线）
 const CORNER_TABLE = {
   0: {
-    'F-F': [[0, 0], [1, 0], [1, 1], [0, 1]],
-    'T-F': [[1, 0], [0, 0], [0, 1], [1, 1]],
-    'F-T': [[0, 1], [1, 1], [1, 0], [0, 0]],
-    'T-T': [[1, 1], [0, 1], [0, 0], [1, 0]],
+    'F-F': [
+      [0, 0],
+      [1, 0],
+      [1, 1],
+      [0, 1],
+    ],
+    'T-F': [
+      [1, 0],
+      [0, 0],
+      [0, 1],
+      [1, 1],
+    ],
+    'F-T': [
+      [0, 1],
+      [1, 1],
+      [1, 0],
+      [0, 0],
+    ],
+    'T-T': [
+      [1, 1],
+      [0, 1],
+      [0, 0],
+      [1, 0],
+    ],
   },
   90: {
-    'F-F': [[1, 0], [1, 1], [0, 1], [0, 0]],
-    'T-F': [[1, 1], [1, 0], [0, 0], [0, 1]],
-    'F-T': [[0, 0], [0, 1], [1, 1], [1, 0]],
-    'T-T': [[0, 1], [0, 0], [1, 0], [1, 1]],
+    'F-F': [
+      [1, 0],
+      [1, 1],
+      [0, 1],
+      [0, 0],
+    ],
+    'T-F': [
+      [1, 1],
+      [1, 0],
+      [0, 0],
+      [0, 1],
+    ],
+    'F-T': [
+      [0, 0],
+      [0, 1],
+      [1, 1],
+      [1, 0],
+    ],
+    'T-T': [
+      [0, 1],
+      [0, 0],
+      [1, 0],
+      [1, 1],
+    ],
   },
   180: {
-    'F-F': [[1, 1], [0, 1], [0, 0], [1, 0]],
-    'T-F': [[0, 1], [1, 1], [1, 0], [0, 0]],
-    'F-T': [[1, 0], [0, 0], [0, 1], [1, 1]],
-    'T-T': [[0, 0], [1, 0], [1, 1], [0, 1]],
+    'F-F': [
+      [1, 1],
+      [0, 1],
+      [0, 0],
+      [1, 0],
+    ],
+    'T-F': [
+      [0, 1],
+      [1, 1],
+      [1, 0],
+      [0, 0],
+    ],
+    'F-T': [
+      [1, 0],
+      [0, 0],
+      [0, 1],
+      [1, 1],
+    ],
+    'T-T': [
+      [0, 0],
+      [1, 0],
+      [1, 1],
+      [0, 1],
+    ],
   },
   270: {
-    'F-F': [[0, 1], [0, 0], [1, 0], [1, 1]],
-    'T-F': [[0, 0], [0, 1], [1, 1], [1, 0]],
-    'F-T': [[1, 1], [1, 0], [0, 0], [0, 1]],
-    'T-T': [[1, 0], [1, 1], [0, 1], [0, 0]],
+    'F-F': [
+      [0, 1],
+      [0, 0],
+      [1, 0],
+      [1, 1],
+    ],
+    'T-F': [
+      [0, 0],
+      [0, 1],
+      [1, 1],
+      [1, 0],
+    ],
+    'F-T': [
+      [1, 1],
+      [1, 0],
+      [0, 0],
+      [0, 1],
+    ],
+    'T-T': [
+      [1, 0],
+      [1, 1],
+      [0, 1],
+      [0, 0],
+    ],
   },
 };
 
-const CORNERS = [[0, 0], [800, 0], [800, 400], [0, 400]]; // TL/TR/BR/BL（image px）
-const comboView = ({ rotation, flipH, flipV }, crop = null) => ({ ...VIEW, rotation, flipH, flipV, crop });
+const CORNERS = [
+  [0, 0],
+  [800, 0],
+  [800, 400],
+  [0, 400],
+]; // TL/TR/BR/BL（image px）
+const comboView = ({ rotation, flipH, flipV }, crop = null) => ({
+  ...VIEW,
+  rotation,
+  flipH,
+  flipV,
+  crop,
+});
 
 describe('maskGeometry imageToDisplay（逐旋转/翻转组合）', () => {
   for (const rotation of [0, 90, 180, 270]) {
@@ -98,10 +189,17 @@ describe('maskGeometry displayToImage（imageToDisplay 的精确逆）', () => {
 
 describe('maskGeometry crop 生效时的显示区域映射', () => {
   // 1000×800，crop {100,100,200,200} → 可见区域为底图 [100..300]×[100..300]
-  const CROP_VIEW = { width: 1000, height: 800, crop: { left: 100, top: 100, width: 200, height: 200 } };
+  const CROP_VIEW = {
+    width: 1000,
+    height: 800,
+    crop: { left: 100, top: 100, width: 200, height: 200 },
+  };
 
   it('rot 0：可见矩形角/中心映射到显示 (0,0)/(1,1)/(0.5,0.5)，区域外外推', () => {
-    const expectPt = (p, x, y) => { expect(p.x).toBeCloseTo(x, 10); expect(p.y).toBeCloseTo(y, 10); };
+    const expectPt = (p, x, y) => {
+      expect(p.x).toBeCloseTo(x, 10);
+      expect(p.y).toBeCloseTo(y, 10);
+    };
     expectPt(geo.imageToDisplay(100, 100, CROP_VIEW), 0, 0);
     expectPt(geo.imageToDisplay(300, 300, CROP_VIEW), 1, 1);
     expectPt(geo.imageToDisplay(200, 200, CROP_VIEW), 0.5, 0.5);
@@ -113,7 +211,12 @@ describe('maskGeometry crop 生效时的显示区域映射', () => {
 
   it('rot 90 + crop：可见区随视图旋转（底图 (0,0) 出现在显示右上）', () => {
     // 1000×1000，crop 底图 {0,0,500,1000} → 显示帧上半 (y ∈ 0..0.5)
-    const view = { width: 1000, height: 1000, rotation: 90, crop: { left: 0, top: 0, width: 500, height: 1000 } };
+    const view = {
+      width: 1000,
+      height: 1000,
+      rotation: 90,
+      crop: { left: 0, top: 0, width: 500, height: 1000 },
+    };
     expect(geo.imageToDisplay(0, 0, view)).toEqual({ x: 1, y: 0 });
     expect(geo.imageToDisplay(500, 1000, view)).toEqual({ x: 0, y: 1 });
     const c = geo.imageToDisplay(250, 500, view); // 可见矩形中心
@@ -125,10 +228,19 @@ describe('maskGeometry crop 生效时的显示区域映射', () => {
 
   it('crop + 翻转 + 旋转组合 roundtrip：可见区域内点恒等', () => {
     const view = {
-      width: 1000, height: 1000, rotation: 180, flipH: true,
+      width: 1000,
+      height: 1000,
+      rotation: 180,
+      flipH: true,
       crop: { left: 200, top: 200, width: 600, height: 600 },
     };
-    for (const [x, y] of [[200, 200], [800, 800], [300, 400], [500, 500], [800, 200]]) {
+    for (const [x, y] of [
+      [200, 200],
+      [800, 800],
+      [300, 400],
+      [500, 500],
+      [800, 200],
+    ]) {
       const d = geo.imageToDisplay(x, y, view);
       const back = geo.displayToImage(d.x, d.y, view);
       expect(back.x).toBeCloseTo(x, 9);
@@ -141,7 +253,11 @@ describe('maskGeometry crop 生效时的显示区域映射', () => {
   });
 
   it('crop 越出图像边界时按 0..1 钳制', () => {
-    const view = { width: 1000, height: 1000, crop: { left: 500, top: 500, width: 2000, height: 2000 } };
+    const view = {
+      width: 1000,
+      height: 1000,
+      crop: { left: 500, top: 500, width: 2000, height: 2000 },
+    };
     expect(geo.imageToDisplay(1000, 1000, view)).toEqual({ x: 1, y: 1 });
     expect(geo.displayToImage(0, 0, view)).toEqual({ x: 500, y: 500 });
   });
@@ -168,14 +284,21 @@ describe('maskGeometry 非法输入防护', () => {
   });
 
   it('退化 crop（零宽/高）不参与映射', () => {
-    const view = { width: 1000, height: 1000, crop: { left: 100, top: 100, width: 0, height: 200 } };
+    const view = {
+      width: 1000,
+      height: 1000,
+      crop: { left: 100, top: 100, width: 0, height: 200 },
+    };
     expect(geo.imageToDisplay(0, 0, view)).toEqual({ x: 0, y: 0 });
     expect(geo.imageToDisplay(1000, 1000, view)).toEqual({ x: 1, y: 1 });
   });
 
   it('normalizeView 归一化 crop 与旋转', () => {
     const v = geo.normalizeView({
-      width: 1000, height: 500, rotation: -90, flipH: 1,
+      width: 1000,
+      height: 500,
+      rotation: -90,
+      flipH: 1,
       crop: { left: -50, top: 0, width: 600, height: 500 },
     });
     expect(v.rotation).toBe(270);
@@ -201,9 +324,13 @@ describe('maskGeometry 帧变换原语', () => {
 
   it('cropRectInDisplayFrame：无 crop 为 null，有 crop 时轴对齐包围盒（入参为归一化视口）', () => {
     expect(geo.cropRectInDisplayFrame(geo.normalizeView({ ...VIEW, crop: null }))).toBeNull();
-    const r = geo.cropRectInDisplayFrame(geo.normalizeView({
-      ...VIEW, rotation: 90, crop: { left: 0, top: 0, width: 400, height: 400 },
-    }));
+    const r = geo.cropRectInDisplayFrame(
+      geo.normalizeView({
+        ...VIEW,
+        rotation: 90,
+        crop: { left: 0, top: 0, width: 400, height: 400 },
+      })
+    );
     expect(r.x0).toBeCloseTo(0, 10);
     expect(r.y0).toBeCloseTo(0, 10);
     expect(r.x1).toBeCloseTo(1, 10);

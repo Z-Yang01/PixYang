@@ -111,7 +111,9 @@ describe('useGalleryData wiring', () => {
     useGalleryStore.setState(initialSnapshot, true);
     window.pixyang = {
       getImages: vi.fn().mockResolvedValue({ images: [], total: 0 }),
-      getStats: vi.fn().mockResolvedValue({ totalImages: 0, totalTags: 0, totalAlbums: 0, favorites: 0 }),
+      getStats: vi
+        .fn()
+        .mockResolvedValue({ totalImages: 0, totalTags: 0, totalAlbums: 0, favorites: 0 }),
       getTags: vi.fn().mockResolvedValue([]),
       getAlbums: vi.fn().mockResolvedValue([]),
       getImportDates: vi.fn().mockResolvedValue([]),
@@ -141,7 +143,9 @@ describe('useGalleryData wiring', () => {
       expect(window.pixyang.getImages.mock.calls.length).toBe(callsAfterMount);
       await vi.advanceTimersByTimeAsync(300);
       expect(window.pixyang.getImages.mock.calls.length).toBeGreaterThan(callsAfterMount);
-      expect(window.pixyang.getImages).toHaveBeenCalledWith(expect.objectContaining({ search: 'sun' }));
+      expect(window.pixyang.getImages).toHaveBeenCalledWith(
+        expect.objectContaining({ search: 'sun' })
+      );
     } finally {
       vi.useRealTimers();
     }
@@ -149,45 +153,68 @@ describe('useGalleryData wiring', () => {
 
   it('onThumbnailsReady 回调 bump thumbVersion 并刷新列表', async () => {
     let readyCb;
-    window.pixyang.onThumbnailsReady = vi.fn((cb) => { readyCb = cb; return () => {}; });
+    window.pixyang.onThumbnailsReady = vi.fn((cb) => {
+      readyCb = cb;
+      return () => {};
+    });
     render(<HookHarness hook={useGalleryData} hookProps={{}} />);
     await waitFor(() => expect(readyCb).toBeDefined());
     const before = useGalleryStore.getState().thumbVersion;
-    await act(async () => { readyCb(); });
+    await act(async () => {
+      readyCb();
+    });
     expect(useGalleryStore.getState().thumbVersion).toBe(before + 1);
   });
 
   it('onEditPreviewReady 携带 {id,path} 时把新缩略图路径就地写回当前页记录', async () => {
     let previewCb;
     window.pixyang.getImages = vi.fn().mockResolvedValue({
-      images: [{ id: 1, filename: 'a.jpg', thumbnail_path: 'C:/t/a_old.jpg' }], total: 1,
+      images: [{ id: 1, filename: 'a.jpg', thumbnail_path: 'C:/t/a_old.jpg' }],
+      total: 1,
     });
-    window.pixyang.onEditPreviewReady = vi.fn((cb) => { previewCb = cb; return () => {}; });
+    window.pixyang.onEditPreviewReady = vi.fn((cb) => {
+      previewCb = cb;
+      return () => {};
+    });
     render(<HookHarness hook={useGalleryData} hookProps={{}} />);
     await waitFor(() => expect(previewCb).toBeDefined());
     const before = useGalleryStore.getState().thumbVersion;
-    await act(async () => { previewCb({ id: 1, path: 'C:/edit/a.png' }); });
+    await act(async () => {
+      previewCb({ id: 1, path: 'C:/edit/a.png' });
+    });
     const st = useGalleryStore.getState();
     expect(st.thumbVersion).toBe(before + 1);
     expect(st.images[0].thumbnail_edit_path).toBe('C:/edit/a.png');
     // 无载荷（批 8 R-6 起）既不 bump 也不动列表：无法判定页内归属的事件一律忽略
-    await act(async () => { previewCb(undefined); });
+    await act(async () => {
+      previewCb(undefined);
+    });
     expect(useGalleryStore.getState().images[0].thumbnail_edit_path).toBe('C:/edit/a.png');
   });
 
   it('onEditPreviewReady 非页内图片事件不 bump thumbVersion（批 8 R-6）', async () => {
     let previewCb;
     window.pixyang.getImages = vi.fn().mockResolvedValue({
-      images: [{ id: 1, filename: 'a.jpg' }], total: 1,
+      images: [{ id: 1, filename: 'a.jpg' }],
+      total: 1,
     });
-    window.pixyang.onEditPreviewReady = vi.fn((cb) => { previewCb = cb; return () => {}; });
+    window.pixyang.onEditPreviewReady = vi.fn((cb) => {
+      previewCb = cb;
+      return () => {};
+    });
     render(<HookHarness hook={useGalleryData} hookProps={{}} />);
     await waitFor(() => expect(previewCb).toBeDefined());
     const before = useGalleryStore.getState().thumbVersion;
-    await act(async () => { previewCb({ id: 99, path: 'C:/edit/z.png' }); });
-    await act(async () => { previewCb({ id: 1 }); });
+    await act(async () => {
+      previewCb({ id: 99, path: 'C:/edit/z.png' });
+    });
+    await act(async () => {
+      previewCb({ id: 1 });
+    });
     expect(useGalleryStore.getState().thumbVersion).toBe(before);
-    await act(async () => { previewCb({ id: 1, path: 'C:/edit/a.png' }); });
+    await act(async () => {
+      previewCb({ id: 1, path: 'C:/edit/a.png' });
+    });
     expect(useGalleryStore.getState().thumbVersion).toBe(before + 1);
   });
 
@@ -201,11 +228,19 @@ describe('useGalleryData wiring', () => {
     render(<CountingHarness />);
     await waitFor(() => expect(renders).toBeGreaterThan(0));
     const before = renders;
-    act(() => { useGalleryStore.setState({ thumbVersion: 99 }); });
-    act(() => { useGalleryStore.setState({ selectedIds: new Set([1, 2]) }); });
-    act(() => { useGalleryStore.setState({ loading: true }); });
+    act(() => {
+      useGalleryStore.setState({ thumbVersion: 99 });
+    });
+    act(() => {
+      useGalleryStore.setState({ selectedIds: new Set([1, 2]) });
+    });
+    act(() => {
+      useGalleryStore.setState({ loading: true });
+    });
     expect(renders).toBe(before);
-    act(() => { useGalleryStore.setState({ page: 3 }); });
+    act(() => {
+      useGalleryStore.setState({ page: 3 });
+    });
     expect(renders).toBeGreaterThan(before);
   });
 });
@@ -231,7 +266,9 @@ describe('useBatchActions 全选全部', () => {
     window.pixyang.getAllImageIds = vi.fn().mockResolvedValue([1, 2]);
     useGalleryStore.setState({ selectedIds: new Set([999]) });
     render(<BatchHarness />);
-    await act(async () => { out.current.handleSelectAllAll(); });
+    await act(async () => {
+      out.current.handleSelectAllAll();
+    });
     expect([...useGalleryStore.getState().selectedIds].sort()).toEqual([1, 2]);
   });
 
@@ -239,7 +276,9 @@ describe('useBatchActions 全选全部', () => {
     window.pixyang.getAllImageIds = vi.fn().mockResolvedValue([1, 2]);
     useGalleryStore.setState({ selectedIds: new Set([1, 2, 3]) });
     render(<BatchHarness />);
-    await act(async () => { out.current.handleSelectAllAll(); });
+    await act(async () => {
+      out.current.handleSelectAllAll();
+    });
     expect([...useGalleryStore.getState().selectedIds]).toEqual([3]);
   });
 });
@@ -265,14 +304,20 @@ describe('useBatchActions 异步收尾守卫', () => {
 
   it('全选全部：等待期间筛选变化，晚到的旧 id 集被丢弃（不污染勾选集）', async () => {
     let resolveIds;
-    const p = new Promise((r) => { resolveIds = r; });
+    const p = new Promise((r) => {
+      resolveIds = r;
+    });
     window.pixyang.getAllImageIds = vi.fn(() => p);
     render(<GuardHarness />);
     let task;
-    act(() => { task = out.current.handleSelectAllAll(); });
+    act(() => {
+      task = out.current.handleSelectAllAll();
+    });
     useGalleryStore.setState({ search: '等待期间改了筛选' });
     resolveIds([1, 2]);
-    await act(async () => { await task; });
+    await act(async () => {
+      await task;
+    });
     expect(useGalleryStore.getState().selectedIds.size).toBe(0);
     expect(showToast).not.toHaveBeenCalled();
   });
@@ -280,7 +325,9 @@ describe('useBatchActions 异步收尾守卫', () => {
   it('全选全部：筛选未变时正常灌入（对照组，守卫不过宽）', async () => {
     window.pixyang.getAllImageIds = vi.fn().mockResolvedValue([1, 2]);
     render(<GuardHarness />);
-    await act(async () => { await out.current.handleSelectAllAll(); });
+    await act(async () => {
+      await out.current.handleSelectAllAll();
+    });
     expect([...useGalleryStore.getState().selectedIds].sort()).toEqual([1, 2]);
   });
 
@@ -293,7 +340,9 @@ describe('useBatchActions 异步收尾守卫', () => {
     });
     window.pixyang.batchDeleteImages = vi.fn().mockRejectedValue(new Error('disk yanked'));
     render(<GuardHarness />);
-    await act(async () => { await out.current.executeBatchDelete(); });
+    await act(async () => {
+      await out.current.executeBatchDelete();
+    });
     expect(showToast).toHaveBeenCalledWith('批量删除失败: disk yanked', 'error');
     expect(useGalleryStore.getState().selectedIds.size).toBe(0);
   });
@@ -301,7 +350,9 @@ describe('useBatchActions 异步收尾守卫', () => {
   it('批量删除：勾选集已空时早退，不发 IPC', async () => {
     window.pixyang.batchDeleteImages = vi.fn();
     render(<GuardHarness />);
-    await act(async () => { await out.current.executeBatchDelete(); });
+    await act(async () => {
+      await out.current.executeBatchDelete();
+    });
     expect(window.pixyang.batchDeleteImages).not.toHaveBeenCalled();
   });
 
@@ -310,7 +361,9 @@ describe('useBatchActions 异步收尾守卫', () => {
     useGalleryStore.setState({ selectedIds: new Set([1]), images: [], loadStats });
     window.pixyang.updateImages = vi.fn().mockRejectedValue(new Error('db busy'));
     render(<GuardHarness />);
-    await act(async () => { await out.current.handleBatchUpdate({ favorite: 1 }); });
+    await act(async () => {
+      await out.current.handleBatchUpdate({ favorite: 1 });
+    });
     expect(showToast).toHaveBeenCalledWith('批量更新失败: db busy', 'error');
     expect(useGalleryStore.getState().images).toEqual([]);
     expect(loadStats).not.toHaveBeenCalled();
@@ -320,11 +373,17 @@ describe('useBatchActions 异步收尾守卫', () => {
     const loadImages = vi.fn(async () => {});
     const loadStats = vi.fn(async () => {});
     useGalleryStore.setState({
-      selectedIds: new Set([1, 2]), filterFavorites: true, images: [], loadImages, loadStats,
+      selectedIds: new Set([1, 2]),
+      filterFavorites: true,
+      images: [],
+      loadImages,
+      loadStats,
     });
     window.pixyang.updateImages = vi.fn().mockResolvedValue(undefined);
     render(<GuardHarness />);
-    await act(async () => { await out.current.handleBatchUpdate({ favorite: 0 }); });
+    await act(async () => {
+      await out.current.handleBatchUpdate({ favorite: 0 });
+    });
     expect(useGalleryStore.getState().selectedIds.size).toBe(0);
     expect(loadImages).toHaveBeenCalled();
     expect(loadStats).toHaveBeenCalled();
@@ -343,7 +402,9 @@ describe('useBatchActions 异步收尾守卫', () => {
     });
     window.pixyang.batchDeleteImages = vi.fn().mockResolvedValue([{ id: 1 }]);
     render(<GuardHarness />);
-    await act(async () => { await out.current.executeBatchDelete(); });
+    await act(async () => {
+      await out.current.executeBatchDelete();
+    });
     expect(showToast).toHaveBeenCalledWith('已删除 1 张，2 张失败（文件可能被占用）', 'error');
     // 无参 loadImages：offset 由 store 按页算，越界钳制路径不被 override 旁路（批 8 R-9）
     expect(loadImages).toHaveBeenCalledWith();
@@ -360,14 +421,22 @@ describe('useBatchActions 异步收尾守卫', () => {
     });
     window.pixyang.batchDeleteImages = vi.fn().mockResolvedValue([{ id: 1 }, { id: 2 }]);
     render(<GuardHarness />);
-    await act(async () => { await out.current.executeBatchDelete(); });
+    await act(async () => {
+      await out.current.executeBatchDelete();
+    });
     expect(showToast).toHaveBeenCalledWith('已删除 2 张图片', 'success');
   });
 
   it('删除在途再次触发被互斥吞掉：IPC 只发一次（批 8 Q-03）', async () => {
     let resolveDel;
-    window.pixyang.batchDeleteImages = vi.fn()
-      .mockImplementationOnce(() => new Promise((r) => { resolveDel = r; }))
+    window.pixyang.batchDeleteImages = vi
+      .fn()
+      .mockImplementationOnce(
+        () =>
+          new Promise((r) => {
+            resolveDel = r;
+          })
+      )
       .mockResolvedValueOnce([{ id: 7 }]);
     useGalleryStore.setState({
       selectedIds: new Set([1]),
@@ -384,31 +453,43 @@ describe('useBatchActions 异步收尾守卫', () => {
       t2 = out.current.executeBatchDelete();
     });
     resolveDel([{ id: 1 }]);
-    await act(async () => { await Promise.all([t1, t2]); });
+    await act(async () => {
+      await Promise.all([t1, t2]);
+    });
     expect(window.pixyang.batchDeleteImages).toHaveBeenCalledTimes(1);
     // 第一轮收尾完成后互斥释放：确认框卸载重开场景可再次发起
     useGalleryStore.setState({ selectedIds: new Set([7]) });
-    await act(async () => { await out.current.executeBatchDelete(); });
+    await act(async () => {
+      await out.current.executeBatchDelete();
+    });
     expect(window.pixyang.batchDeleteImages).toHaveBeenCalledTimes(2);
   });
 
   it('批量打标：{error}/reject 可见且不动 appData；计数 0 不误判失败（批 8 Q-08）', async () => {
     const loadAppData = vi.fn(async () => {});
     useGalleryStore.setState({ selectedIds: new Set([1, 2]), loadAppData });
-    window.pixyang.addTagToImages = vi.fn().mockResolvedValue({ error: '批量添加标签失败: db busy' });
+    window.pixyang.addTagToImages = vi
+      .fn()
+      .mockResolvedValue({ error: '批量添加标签失败: db busy' });
     render(<GuardHarness />);
-    await act(async () => { await out.current.handleBatchTag(5); });
+    await act(async () => {
+      await out.current.handleBatchTag(5);
+    });
     expect(showToast).toHaveBeenCalledWith('批量添加标签失败: db busy', 'error');
     expect(loadAppData).not.toHaveBeenCalled();
 
     showToast.mockClear();
     window.pixyang.addTagToImages = vi.fn().mockRejectedValue(new Error('ipc down'));
-    await act(async () => { await out.current.handleBatchTag(5); });
+    await act(async () => {
+      await out.current.handleBatchTag(5);
+    });
     expect(showToast).toHaveBeenCalledWith('批量添加标签失败: ipc down', 'error');
 
     showToast.mockClear();
     window.pixyang.addTagToImages = vi.fn().mockResolvedValue(0);
-    await act(async () => { await out.current.handleBatchTag(5); });
+    await act(async () => {
+      await out.current.handleBatchTag(5);
+    });
     expect(showToast).toHaveBeenCalledWith('已为 2 张图片添加标签', 'success');
     expect(loadAppData).toHaveBeenCalledTimes(1);
   });
@@ -437,15 +518,31 @@ describe('useBatchActions 批量导出（批 7 N3：在途互斥 + failed 计数
   it('exportImages 在途时再次触发被拒绝，不发第二批（同目录重复导出）', async () => {
     let resolveDir;
     let resolveExp;
-    window.pixyang.selectExportDirectory = vi.fn(() => new Promise((r) => { resolveDir = r; }));
-    window.pixyang.exportImages = vi.fn(() => new Promise((r) => { resolveExp = r; }));
+    window.pixyang.selectExportDirectory = vi.fn(
+      () =>
+        new Promise((r) => {
+          resolveDir = r;
+        })
+    );
+    window.pixyang.exportImages = vi.fn(
+      () =>
+        new Promise((r) => {
+          resolveExp = r;
+        })
+    );
     render(<ExportHarness />);
     let t1;
-    act(() => { t1 = out.current.handleExportSelected(); });
-    await act(async () => { resolveDir('C:/out'); });
+    act(() => {
+      t1 = out.current.handleExportSelected();
+    });
+    await act(async () => {
+      resolveDir('C:/out');
+    });
     expect(window.pixyang.exportImages).toHaveBeenCalledTimes(1);
     let t2;
-    act(() => { t2 = out.current.handleExportSelected(); });
+    act(() => {
+      t2 = out.current.handleExportSelected();
+    });
     expect(window.pixyang.exportImages).toHaveBeenCalledTimes(1);
     await act(async () => {
       resolveExp({ total: 2, copied: 2, nefCopied: 0, failed: [] });
@@ -457,21 +554,30 @@ describe('useBatchActions 批量导出（批 7 N3：在途互斥 + failed 计数
 
   it('部分文件失败：toast 带失败数且类型为 error', async () => {
     window.pixyang.selectExportDirectory = vi.fn().mockResolvedValue('C:/out');
-    window.pixyang.exportImages = vi.fn().mockResolvedValue({ total: 2, copied: 1, nefCopied: 0, failed: ['a.jpg: EPERM'] });
+    window.pixyang.exportImages = vi
+      .fn()
+      .mockResolvedValue({ total: 2, copied: 1, nefCopied: 0, failed: ['a.jpg: EPERM'] });
     render(<ExportHarness />);
-    await act(async () => { await out.current.handleExportSelected(); });
+    await act(async () => {
+      await out.current.handleExportSelected();
+    });
     expect(showToast).toHaveBeenCalledWith('已导出 1 / 2 张图片，1 个文件失败', 'error');
   });
 
   it('IPC reject：兜成 error toast 且释放互斥，下一次导出可正常发起', async () => {
     window.pixyang.selectExportDirectory = vi.fn().mockResolvedValue('C:/out');
-    window.pixyang.exportImages = vi.fn()
+    window.pixyang.exportImages = vi
+      .fn()
       .mockRejectedValueOnce(new Error('disk yanked'))
       .mockResolvedValueOnce({ total: 2, copied: 2, nefCopied: 1, failed: [] });
     render(<ExportHarness />);
-    await act(async () => { await out.current.handleExportSelected(); });
+    await act(async () => {
+      await out.current.handleExportSelected();
+    });
     expect(showToast).toHaveBeenCalledWith('导出失败: disk yanked', 'error');
-    await act(async () => { await out.current.handleExportSelected(); });
+    await act(async () => {
+      await out.current.handleExportSelected();
+    });
     expect(window.pixyang.exportImages).toHaveBeenCalledTimes(2);
     expect(showToast).toHaveBeenCalledWith('已导出 2 / 2 张图片，含配对 NEF 1 个', 'success');
   });

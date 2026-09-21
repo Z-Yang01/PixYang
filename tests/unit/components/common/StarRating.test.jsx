@@ -67,7 +67,9 @@ describe('StarRating', () => {
   });
 
   it('自定义 max 与 size：只渲染 max 颗指定尺寸的星', () => {
-    const { container } = render(<StarRating rating={1} max={3} size="size-6" interactive onChange={vi.fn()} />);
+    const { container } = render(
+      <StarRating rating={1} max={3} size="size-6" interactive onChange={vi.fn()} />
+    );
     const stars = container.querySelectorAll('.star-rating > span');
     expect(stars.length).toBe(3);
     expect(container.querySelector('svg.size-6')).not.toBeNull();

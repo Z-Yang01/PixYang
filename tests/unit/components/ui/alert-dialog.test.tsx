@@ -136,6 +136,8 @@ describe('ui/AlertDialog', () => {
     );
     expect(screen.getByRole('alertdialog')).toHaveAttribute('data-size', 'default');
     // Content 内部自带一个 Overlay，手动又加了一个，因此至少 1 个
-    expect(document.querySelectorAll('[data-slot="alert-dialog-overlay"]').length).toBeGreaterThanOrEqual(1);
+    expect(
+      document.querySelectorAll('[data-slot="alert-dialog-overlay"]').length
+    ).toBeGreaterThanOrEqual(1);
   });
 });

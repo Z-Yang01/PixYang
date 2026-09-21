@@ -16,63 +16,82 @@ const CREATE_MIN_PX = 3; // 拖拽创建的最小位移（底图像素），低�
 //   拖动手柄经 onChangeMask 实时写 editOps.masks，pointerup 由 onCommit 收敛为一条历史（「蒙版调整」）。
 // - 点击轮廓选中蒙版（与面板 chip 双向联动）。epoch 变化（撤销/历史跳转）时中断进行中的手势。
 export default function MaskOverlay({
-  masks = [], selectedMaskId = null, width = 0, height = 0,
-  rotation = 0, flipH = false, flipV = false,
-  imgRef = null, tool = null, epoch = 0,
-  onSelect, onCreate, onChangeMask, onCommit,
+  masks = [],
+  selectedMaskId = null,
+  width = 0,
+  height = 0,
+  rotation = 0,
+  flipH = false,
+  flipV = false,
+  imgRef = null,
+  tool = null,
+  epoch = 0,
+  onSelect,
+  onCreate,
+  onChangeMask,
+  onCommit,
 }) {
   const [draft, setDraft] = useState(null); // 创建中的几何（底图像素坐标）
   const gestureRef = useRef(null);
 
   // client 坐标 → 底图像素坐标：显示盒归一化 → 退旋转/翻转（maskGeometry 纯函数）
-  const toImagePoint = useCallback((clientX, clientY) => {
-    const el = imgRef?.current;
-    if (!el || !width || !height) return null;
-    const r = el.getBoundingClientRect();
-    if (!r.width || !r.height) return null;
-    const nx = clamp((clientX - r.left) / r.width, 0, 1);
-    const ny = clamp((clientY - r.top) / r.height, 0, 1);
-    return displayToImage(nx, ny, { width, height, rotation, flipH, flipV, crop: null });
-  }, [imgRef, width, height, rotation, flipH, flipV]);
+  const toImagePoint = useCallback(
+    (clientX, clientY) => {
+      const el = imgRef?.current;
+      if (!el || !width || !height) return null;
+      const r = el.getBoundingClientRect();
+      if (!r.width || !r.height) return null;
+      const nx = clamp((clientX - r.left) / r.width, 0, 1);
+      const ny = clamp((clientY - r.top) / r.height, 0, 1);
+      return displayToImage(nx, ny, { width, height, rotation, flipH, flipV, crop: null });
+    },
+    [imgRef, width, height, rotation, flipH, flipV]
+  );
 
   // 手柄拖动：中心/端点取指针绝对位置（钳制在图内）；半径取指针在椭圆轴上的投影长度；
   // 旋转取指针方位角（+90° 使手柄方向对应椭圆系上方）；羽化取 −x 轴投影与实边界的相对超出
-  const applyHandle = useCallback((g, p) => {
-    if (g.kind === 'center') {
-      onChangeMask?.(g.id, { cx: clamp(p.x, 0, width), cy: clamp(p.y, 0, height) });
-      return;
-    }
-    if (g.kind === 'p0' || g.kind === 'p1') {
-      const key = g.kind === 'p0' ? '0' : '1';
-      onChangeMask?.(g.id, { [`x${key}`]: clamp(p.x, 0, width), [`y${key}`]: clamp(p.y, 0, height) });
-      return;
-    }
-    if (g.kind === 'rot') {
-      let deg = (Math.atan2(p.y - g.cy, p.x - g.cx) * 180) / Math.PI + 90;
-      deg = ((deg % 360) + 360) % 360;
-      if (deg > 180) deg -= 360;
-      onChangeMask?.(g.id, { rotation: Math.round(deg) });
-      return;
-    }
-    if (g.kind === 'feather') {
+  const applyHandle = useCallback(
+    (g, p) => {
+      if (g.kind === 'center') {
+        onChangeMask?.(g.id, { cx: clamp(p.x, 0, width), cy: clamp(p.y, 0, height) });
+        return;
+      }
+      if (g.kind === 'p0' || g.kind === 'p1') {
+        const key = g.kind === 'p0' ? '0' : '1';
+        onChangeMask?.(g.id, {
+          [`x${key}`]: clamp(p.x, 0, width),
+          [`y${key}`]: clamp(p.y, 0, height),
+        });
+        return;
+      }
+      if (g.kind === 'rot') {
+        let deg = (Math.atan2(p.y - g.cy, p.x - g.cx) * 180) / Math.PI + 90;
+        deg = ((deg % 360) + 360) % 360;
+        if (deg > 180) deg -= 360;
+        onChangeMask?.(g.id, { rotation: Math.round(deg) });
+        return;
+      }
+      if (g.kind === 'feather') {
+        const a = ((g.rotation || 0) * Math.PI) / 180;
+        const dx = p.x - g.cx;
+        const dy = p.y - g.cy;
+        const proj = -(dx * Math.cos(a) + dy * Math.sin(a));
+        // 羽化带宽按 rx 归一（feather=1 时实芯缩到 0）；rx 极小时按 16px 屏幕位移映射满量程，避免手柄 1px 跳变不可用
+        const base = Math.max(g.rx, 16);
+        onChangeMask?.(g.id, { feather: clamp(1 - proj / base, 0, 1) });
+        return;
+      }
       const a = ((g.rotation || 0) * Math.PI) / 180;
       const dx = p.x - g.cx;
       const dy = p.y - g.cy;
-      const proj = -(dx * Math.cos(a) + dy * Math.sin(a));
-      // 羽化带宽按 rx 归一（feather=1 时实芯缩到 0）；rx 极小时按 16px 屏幕位移映射满量程，避免手柄 1px 跳变不可用
-      const base = Math.max(g.rx, 16);
-      onChangeMask?.(g.id, { feather: clamp(1 - proj / base, 0, 1) });
-      return;
-    }
-    const a = ((g.rotation || 0) * Math.PI) / 180;
-    const dx = p.x - g.cx;
-    const dy = p.y - g.cy;
-    if (g.kind === 'rx') {
-      onChangeMask?.(g.id, { rx: Math.max(1, Math.abs(dx * Math.cos(a) + dy * Math.sin(a))) });
-    } else if (g.kind === 'ry') {
-      onChangeMask?.(g.id, { ry: Math.max(1, Math.abs(-dx * Math.sin(a) + dy * Math.cos(a))) });
-    }
-  }, [onChangeMask, width, height]);
+      if (g.kind === 'rx') {
+        onChangeMask?.(g.id, { rx: Math.max(1, Math.abs(dx * Math.cos(a) + dy * Math.sin(a))) });
+      } else if (g.kind === 'ry') {
+        onChangeMask?.(g.id, { ry: Math.max(1, Math.abs(-dx * Math.sin(a) + dy * Math.cos(a))) });
+      }
+    },
+    [onChangeMask, width, height]
+  );
 
   // 手势全程监听 window（pointerdown 只在元素上，move/up 跟随到层外）
   useEffect(() => {
@@ -83,9 +102,18 @@ export default function MaskOverlay({
       if (!p) return;
       g.last = p;
       if (g.kind === 'create') {
-        setDraft(g.type === 'radial'
-          ? { type: 'radial', cx: g.start.x, cy: g.start.y, rx: Math.abs(p.x - g.start.x), ry: Math.abs(p.y - g.start.y), rotation: 0 }
-          : { type: 'linear', x0: g.start.x, y0: g.start.y, x1: p.x, y1: p.y });
+        setDraft(
+          g.type === 'radial'
+            ? {
+                type: 'radial',
+                cx: g.start.x,
+                cy: g.start.y,
+                rx: Math.abs(p.x - g.start.x),
+                ry: Math.abs(p.y - g.start.y),
+                rotation: 0,
+              }
+            : { type: 'linear', x0: g.start.x, y0: g.start.y, x1: p.x, y1: p.y }
+        );
       } else {
         applyHandle(g, p);
       }
@@ -104,10 +132,21 @@ export default function MaskOverlay({
         const rx = Math.abs(p.x - g.start.x);
         const ry = Math.abs(p.y - g.start.y);
         if (Math.max(rx, ry) >= CREATE_MIN_PX) {
-          onCreate?.('radial', { cx: Math.round(g.start.x), cy: Math.round(g.start.y), rx: Math.max(1, Math.round(rx)), ry: Math.max(1, Math.round(ry)), rotation: 0 });
+          onCreate?.('radial', {
+            cx: Math.round(g.start.x),
+            cy: Math.round(g.start.y),
+            rx: Math.max(1, Math.round(rx)),
+            ry: Math.max(1, Math.round(ry)),
+            rotation: 0,
+          });
         }
       } else if (Math.hypot(p.x - g.start.x, p.y - g.start.y) >= CREATE_MIN_PX) {
-        onCreate?.('linear', { x0: Math.round(g.start.x), y0: Math.round(g.start.y), x1: Math.round(p.x), y1: Math.round(p.y) });
+        onCreate?.('linear', {
+          x0: Math.round(g.start.x),
+          y0: Math.round(g.start.y),
+          x1: Math.round(p.x),
+          y1: Math.round(p.y),
+        });
       }
     };
     window.addEventListener('pointermove', onMove);
@@ -134,7 +173,10 @@ export default function MaskOverlay({
   if (!masks.length && !draft && !tool) return null;
 
   const stop = (e) => e.stopPropagation();
-  const selectMask = (e, id) => { e.stopPropagation(); onSelect?.(id); };
+  const selectMask = (e, id) => {
+    e.stopPropagation();
+    onSelect?.(id);
+  };
 
   const startCreate = (e) => {
     if (!tool) return;
@@ -142,9 +184,11 @@ export default function MaskOverlay({
     const p = toImagePoint(e.clientX, e.clientY);
     if (!p) return;
     gestureRef.current = { kind: 'create', type: tool, start: p, last: p };
-    setDraft(tool === 'radial'
-      ? { type: 'radial', cx: p.x, cy: p.y, rx: 0, ry: 0, rotation: 0 }
-      : { type: 'linear', x0: p.x, y0: p.y, x1: p.x, y1: p.y });
+    setDraft(
+      tool === 'radial'
+        ? { type: 'radial', cx: p.x, cy: p.y, rx: 0, ry: 0, rotation: 0 }
+        : { type: 'linear', x0: p.x, y0: p.y, x1: p.x, y1: p.y }
+    );
   };
 
   const startHandle = (kind) => (e) => {
@@ -154,7 +198,15 @@ export default function MaskOverlay({
     const p = toImagePoint(e.clientX, e.clientY);
     if (!p) return;
     // cx/cy/rotation/rx 为拖动期间的几何基准（拖 rx/ry 时中心不动）
-    gestureRef.current = { kind, id: m.id, last: p, cx: m.cx, cy: m.cy, rotation: m.rotation, rx: m.rx };
+    gestureRef.current = {
+      kind,
+      id: m.id,
+      last: p,
+      cx: m.cx,
+      cy: m.cy,
+      rotation: m.rotation,
+      rx: m.rx,
+    };
   };
 
   const shapeEl = (g, isDraft) => {
@@ -169,8 +221,12 @@ export default function MaskOverlay({
     if (g.type === 'radial') {
       return (
         <ellipse
-          cx={g.cx} cy={g.cy} rx={Math.max(0, g.rx)} ry={Math.max(0, g.ry)}
-          transform={`rotate(${g.rotation || 0} ${g.cx} ${g.cy})`} {...common}
+          cx={g.cx}
+          cy={g.cy}
+          rx={Math.max(0, g.rx)}
+          ry={Math.max(0, g.ry)}
+          transform={`rotate(${g.rotation || 0} ${g.cx} ${g.cy})`}
+          {...common}
         />
       );
     }
@@ -183,8 +239,12 @@ export default function MaskOverlay({
     if (g.type === 'radial') {
       return (
         <ellipse
-          cx={g.cx} cy={g.cy} rx={Math.max(0, g.rx)} ry={Math.max(0, g.ry)}
-          transform={`rotate(${g.rotation || 0} ${g.cx} ${g.cy})`} {...common}
+          cx={g.cx}
+          cy={g.cy}
+          rx={Math.max(0, g.rx)}
+          ry={Math.max(0, g.ry)}
+          transform={`rotate(${g.rotation || 0} ${g.cx} ${g.cy})`}
+          {...common}
         />
       );
     }
@@ -200,10 +260,30 @@ export default function MaskOverlay({
     const rotR = Math.max(selected.rx, selected.ry) * 1.15;
     const featherR = selected.rx * (1 - (selected.feather || 0));
     handles.push({ kind: 'center', x: selected.cx, y: selected.cy, title: '中心（拖动移动）' });
-    handles.push({ kind: 'rx', x: selected.cx + selected.rx * Math.cos(a), y: selected.cy + selected.rx * Math.sin(a), title: '半径 X' });
-    handles.push({ kind: 'ry', x: selected.cx - selected.ry * Math.sin(a), y: selected.cy + selected.ry * Math.cos(a), title: '半径 Y' });
-    handles.push({ kind: 'rot', x: selected.cx + Math.sin(a) * rotR, y: selected.cy - Math.cos(a) * rotR, title: '旋转（拖动）' });
-    handles.push({ kind: 'feather', x: selected.cx - featherR * Math.cos(a), y: selected.cy - featherR * Math.sin(a), title: '羽化范围（拖动）' });
+    handles.push({
+      kind: 'rx',
+      x: selected.cx + selected.rx * Math.cos(a),
+      y: selected.cy + selected.rx * Math.sin(a),
+      title: '半径 X',
+    });
+    handles.push({
+      kind: 'ry',
+      x: selected.cx - selected.ry * Math.sin(a),
+      y: selected.cy + selected.ry * Math.cos(a),
+      title: '半径 Y',
+    });
+    handles.push({
+      kind: 'rot',
+      x: selected.cx + Math.sin(a) * rotR,
+      y: selected.cy - Math.cos(a) * rotR,
+      title: '旋转（拖动）',
+    });
+    handles.push({
+      kind: 'feather',
+      x: selected.cx - featherR * Math.cos(a),
+      y: selected.cy - featherR * Math.sin(a),
+      title: '羽化范围（拖动）',
+    });
   } else if (selected?.type === 'linear') {
     handles.push({ kind: 'p0', x: selected.x0, y: selected.y0, title: '起点' });
     handles.push({ kind: 'p1', x: selected.x1, y: selected.y1, title: '终点' });
@@ -212,7 +292,12 @@ export default function MaskOverlay({
 
   return (
     <div className="editor-mask-overlay" data-mask-overlay="1" onDoubleClick={stop}>
-      <svg className="editor-mask-svg" viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" aria-hidden="true">
+      <svg
+        className="editor-mask-svg"
+        viewBox={`0 0 ${width} ${height}`}
+        preserveAspectRatio="none"
+        aria-hidden="true"
+      >
         {positional.map((m) => (
           <g key={m.id}>
             {shapeEl(m, false)}
@@ -223,7 +308,8 @@ export default function MaskOverlay({
         {selected?.type === 'radial' && (
           <ellipse
             className="editor-mask-feather-ring"
-            cx={selected.cx} cy={selected.cy}
+            cx={selected.cx}
+            cy={selected.cy}
             rx={Math.max(0, selected.rx * (1 - (selected.feather || 0)))}
             ry={Math.max(0, selected.ry * (1 - (selected.feather || 0)))}
             transform={`rotate(${selected.rotation || 0} ${selected.cx} ${selected.cy})`}

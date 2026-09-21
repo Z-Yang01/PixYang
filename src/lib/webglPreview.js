@@ -223,12 +223,41 @@ const stateByCanvas = new WeakMap();
 
 function getUniformLocations(gl, program) {
   const names = [
-    'uImage', 'uCurveLut', 'uCurveLutOn', 'uAffineSlope', 'uAffineOffset', 'uShadows',
-    'uHighlightsSlope', 'uHslOn', 'uHslHue', 'uHslSat', 'uHslLum', 'uHslCenters',
-    'uBandRadius', 'uHueMaxDeg', 'uLumMax', 'uGradingOn', 'uGradingScale',
-    'uGradingDelta0', 'uGradingDelta1', 'uGradingDelta2', 'uSaturation', 'uMono', 'uVignette',
-    'uMaskOn', 'uImageSize', 'uMaskType', 'uMaskGeo', 'uMaskRotation', 'uMaskFeather',
-    'uMaskInvert', 'uMaskAdjExposure', 'uMaskAdjContrast', 'uMaskAdjSat', 'uMaskAdjTemp', 'uMaskAdjTint',
+    'uImage',
+    'uCurveLut',
+    'uCurveLutOn',
+    'uAffineSlope',
+    'uAffineOffset',
+    'uShadows',
+    'uHighlightsSlope',
+    'uHslOn',
+    'uHslHue',
+    'uHslSat',
+    'uHslLum',
+    'uHslCenters',
+    'uBandRadius',
+    'uHueMaxDeg',
+    'uLumMax',
+    'uGradingOn',
+    'uGradingScale',
+    'uGradingDelta0',
+    'uGradingDelta1',
+    'uGradingDelta2',
+    'uSaturation',
+    'uMono',
+    'uVignette',
+    'uMaskOn',
+    'uImageSize',
+    'uMaskType',
+    'uMaskGeo',
+    'uMaskRotation',
+    'uMaskFeather',
+    'uMaskInvert',
+    'uMaskAdjExposure',
+    'uMaskAdjContrast',
+    'uMaskAdjSat',
+    'uMaskAdjTemp',
+    'uMaskAdjTint',
   ];
   const locs = {};
   for (const n of names) locs[n] = gl.getUniformLocation(program, n);
@@ -236,7 +265,10 @@ function getUniformLocations(gl, program) {
 }
 
 function initCanvas(canvas) {
-  const gl = canvas.getContext('webgl2', { premultipliedAlpha: false, preserveDrawingBuffer: true });
+  const gl = canvas.getContext('webgl2', {
+    premultipliedAlpha: false,
+    preserveDrawingBuffer: true,
+  });
   if (!gl) return null;
   const compile = (type, src) => {
     const sh = gl.createShader(type);
@@ -268,7 +300,15 @@ function initCanvas(canvas) {
   gl.vertexAttribPointer(aPos, 2, gl.FLOAT, false, 0, 0);
   const texture = gl.createTexture();
   const lutTexture = gl.createTexture();
-  return { gl, program, locs: getUniformLocations(gl, program), texture, lutTexture, lastSrc: null, lastTexEdge: 0 };
+  return {
+    gl,
+    program,
+    locs: getUniformLocations(gl, program),
+    texture,
+    lutTexture,
+    lastSrc: null,
+    lastTexEdge: 0,
+  };
 }
 
 // 主入口：canvas 上绘制 uniforms 驱动的预览。image 须已加载（complete && naturalWidth>0）。
@@ -290,7 +330,11 @@ export async function renderWebGLPreview(canvas, image, uniforms, opts = {}) {
   const { gl, locs } = st;
   const seq = (st.drawSeq = (st.drawSeq || 0) + 1); // 异步上传的过期绘制丢弃
   try {
-    const { w, h } = previewDrawSize(image.naturalWidth, image.naturalHeight, draft ? DRAFT_EDGE : FULL_EDGE);
+    const { w, h } = previewDrawSize(
+      image.naturalWidth,
+      image.naturalHeight,
+      draft ? DRAFT_EDGE : FULL_EDGE
+    );
     if (canvas.width !== w || canvas.height !== h) {
       canvas.width = w;
       canvas.height = h;
@@ -324,7 +368,9 @@ export async function renderWebGLPreview(canvas, image, uniforms, opts = {}) {
             return true;
           }
           source = bitmap;
-        } catch { /* 构造失败回退直接上传（可能经浏览器色彩转换） */ }
+        } catch {
+          /* 构造失败回退直接上传（可能经浏览器色彩转换） */
+        }
       }
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, source);
       if (source !== image) source.close();
@@ -343,14 +389,28 @@ export async function renderWebGLPreview(canvas, image, uniforms, opts = {}) {
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
     if (uniforms.curveLut) {
-      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 256, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, uniforms.curveLut);
+      gl.texImage2D(
+        gl.TEXTURE_2D,
+        0,
+        gl.RGBA,
+        256,
+        1,
+        0,
+        gl.RGBA,
+        gl.UNSIGNED_BYTE,
+        uniforms.curveLut
+      );
     }
     gl.uniform1i(locs.uCurveLut, 1);
     gl.uniform1f(locs.uCurveLutOn, uniforms.curveLut ? 1 : 0);
 
     gl.uniform3fv(locs.uAffineSlope, uniforms.affineSlope);
     gl.uniform1f(locs.uAffineOffset, uniforms.affineOffset255 / 255);
-    gl.uniform2f(locs.uShadows, uniforms.shadows ? uniforms.shadows.exponent : 0, uniforms.shadows ? uniforms.shadows.invert : 0);
+    gl.uniform2f(
+      locs.uShadows,
+      uniforms.shadows ? uniforms.shadows.exponent : 0,
+      uniforms.shadows ? uniforms.shadows.invert : 0
+    );
     gl.uniform1f(locs.uHighlightsSlope, uniforms.highlightsSlope);
     gl.uniform1f(locs.uHslOn, uniforms.hslOn);
     gl.uniform1fv(locs.uHslHue, uniforms.hslHue);

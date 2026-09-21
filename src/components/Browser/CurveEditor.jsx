@@ -33,12 +33,20 @@ export default function CurveEditor({ curves, onCommit, onChange, epoch = 0 }) {
 
   const displayPoints = useCallback(() => {
     const pts = normalizePoints(curves?.[channel]);
-    return pts.length >= 2 ? pts : [[0, 0], [1, 1]];
+    return pts.length >= 2
+      ? pts
+      : [
+          [0, 0],
+          [1, 1],
+        ];
   }, [curves, channel]);
 
-  const writePoints = useCallback((pts) => {
-    onChange({ ...curves, [channel]: pts.flat() });
-  }, [curves, channel, onChange]);
+  const writePoints = useCallback(
+    (pts) => {
+      onChange({ ...curves, [channel]: pts.flat() });
+    },
+    [curves, channel, onChange]
+  );
 
   const onMouseDown = (e) => {
     const rect = svgRef.current.getBoundingClientRect();
@@ -49,7 +57,10 @@ export default function CurveEditor({ curves, onCommit, onChange, epoch = 0 }) {
     for (let i = 0; i < pts.length; i++) {
       const dx = pts[i][0] * rect.width - (e.clientX - rect.left);
       const dy = (1 - pts[i][1]) * rect.height - (e.clientY - rect.top);
-      if (Math.hypot(dx, dy) <= HIT_PX) { hit = i; break; }
+      if (Math.hypot(dx, dy) <= HIT_PX) {
+        hit = i;
+        break;
+      }
     }
     if (hit >= 0) {
       dragRef.current = { points: pts, index: hit };
@@ -133,7 +144,11 @@ export default function CurveEditor({ curves, onCommit, onChange, epoch = 0 }) {
   }, [writePoints, onCommit]);
 
   const pts = displayPoints();
-  const pathD = pts.map((p, i) => `${i === 0 ? 'M' : 'L'} ${(p[0] * 100).toFixed(2)} ${((1 - p[1]) * 100).toFixed(2)}`).join(' ');
+  const pathD = pts
+    .map(
+      (p, i) => `${i === 0 ? 'M' : 'L'} ${(p[0] * 100).toFixed(2)} ${((1 - p[1]) * 100).toFixed(2)}`
+    )
+    .join(' ');
 
   return (
     <div>
@@ -144,7 +159,9 @@ export default function CurveEditor({ curves, onCommit, onChange, epoch = 0 }) {
             role="tab"
             aria-selected={channel === c.key}
             className={`editor-ratio-btn ${channel === c.key ? 'active' : ''}`}
-            style={channel === c.key ? { background: c.color, borderColor: c.color } : { color: c.color }}
+            style={
+              channel === c.key ? { background: c.color, borderColor: c.color } : { color: c.color }
+            }
             onClick={() => setChannel(c.key)}
           >
             {c.label}
@@ -167,7 +184,13 @@ export default function CurveEditor({ curves, onCommit, onChange, epoch = 0 }) {
           <line key={`v${v}`} x1={v} y1="0" x2={v} y2="100" className="editor-curve-grid" />
         ))}
         <line x1="0" y1="100" x2="100" y2="0" className="editor-curve-diagonal" />
-        <path d={pathD} fill="none" stroke={channelColor} strokeWidth="1.4" vectorEffect="non-scaling-stroke" />
+        <path
+          d={pathD}
+          fill="none"
+          stroke={channelColor}
+          strokeWidth="1.4"
+          vectorEffect="non-scaling-stroke"
+        />
         {pts.map((p, i) => (
           <circle
             key={i}

@@ -43,7 +43,9 @@ const EXIF_FULL = {
 };
 
 function renderPanel(props = {}) {
-  return render(<InfoPanel image={testImage} onClose={vi.fn()} onImageUpdated={vi.fn()} {...props} />);
+  return render(
+    <InfoPanel image={testImage} onClose={vi.fn()} onImageUpdated={vi.fn()} {...props} />
+  );
 }
 
 function deleteDialog() {
@@ -77,7 +79,19 @@ describe('InfoPanel（补充：EXIF 全分支/标签操作/删除/评分收藏�
   it('EXIF 完整字段逐行渲染；focal35mm 与焦距相同时不加等效后缀', async () => {
     const { container } = renderPanel();
     expect(await screen.findByText('Canon EOS R6')).toBeInTheDocument();
-    for (const text of ['RF 50mm F1.2L', '光圈优先', '+0.3', '评价测光', '未闪光', '自动', '标准', 'sRGB', 'Lightroom', 'PixYang', '© 2026']) {
+    for (const text of [
+      'RF 50mm F1.2L',
+      '光圈优先',
+      '+0.3',
+      '评价测光',
+      '未闪光',
+      '自动',
+      '标准',
+      'sRGB',
+      'Lightroom',
+      'PixYang',
+      '© 2026',
+    ]) {
       expect(screen.getByText(text)).toBeInTheDocument();
     }
     // 原始时间（EXIF）+ 拍摄时间（基本信息）同值 → 2 处；chip 与信息行同值 → 各 2 处
@@ -93,7 +107,11 @@ describe('InfoPanel（补充：EXIF 全分支/标签操作/删除/评分收藏�
   });
 
   it('EXIF focal35mm 与焦距不同时 chip 追加等效后缀', async () => {
-    window.pixyang.getExif.mockResolvedValue({ ...EXIF_FULL, focalLength: '18mm', focal35mm: '27mm' });
+    window.pixyang.getExif.mockResolvedValue({
+      ...EXIF_FULL,
+      focalLength: '18mm',
+      focal35mm: '27mm',
+    });
     renderPanel();
     expect(await screen.findByText('Canon EOS R6')).toBeInTheDocument();
     // 后缀是 chip 内与 <strong> 平级的文本节点
@@ -117,7 +135,15 @@ describe('InfoPanel（补充：EXIF 全分支/标签操作/删除/评分收藏�
 
   it('缺失字段：无尺寸/拍摄时间行，格式显示未知，路径显示 -；无 filepath 时不请求 EXIF', () => {
     renderPanel({
-      image: { ...testImage, width: 0, height: 0, taken_at: null, format: '', filepath: '', thumbnail_path: null },
+      image: {
+        ...testImage,
+        width: 0,
+        height: 0,
+        taken_at: null,
+        format: '',
+        filepath: '',
+        thumbnail_path: null,
+      },
     });
     expect(screen.queryByText('尺寸')).toBeNull();
     expect(screen.queryByText('拍摄时间')).toBeNull();
@@ -152,7 +178,13 @@ describe('InfoPanel（补充：EXIF 全分支/标签操作/删除/评分收藏�
       expect(window.pixyang.updateImage).toHaveBeenCalledWith(9, { favorite: 1 });
     });
     // 已收藏态
-    rerender(<InfoPanel image={{ ...testImage, favorite: 1 }} onClose={vi.fn()} onImageUpdated={onImageUpdated} />);
+    rerender(
+      <InfoPanel
+        image={{ ...testImage, favorite: 1 }}
+        onClose={vi.fn()}
+        onImageUpdated={onImageUpdated}
+      />
+    );
     fireEvent.click(screen.getByRole('button', { name: '已收藏' }));
     await vi.waitFor(() => {
       expect(window.pixyang.updateImage).toHaveBeenLastCalledWith(9, { favorite: 0 });
@@ -374,7 +406,9 @@ describe('InfoPanel（补充：EXIF 全分支/标签操作/删除/评分收藏�
 
   it('loadTags：切换图片后晚到的旧响应被丢弃（旧图标签不串台）', async () => {
     let resolveOld;
-    const oldPromise = new Promise((r) => { resolveOld = r; });
+    const oldPromise = new Promise((r) => {
+      resolveOld = r;
+    });
     window.pixyang.getImageTags.mockImplementation((id) =>
       id === 9 ? oldPromise : Promise.resolve([{ id: 7, name: '新页标签', color: '#22c55e' }])
     );

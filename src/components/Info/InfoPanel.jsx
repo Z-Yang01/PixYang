@@ -39,7 +39,14 @@ export default function InfoPanel({ image, onClose, onImageUpdated, onCountsChan
     setImportDate(image.import_date || '');
     setEditName(image.filename || '');
     setRenameErr('');
-  }, [image?.id, image?._refresh, image?.filename, image?.filepath, image?.import_date, image?.notes]);
+  }, [
+    image?.id,
+    image?._refresh,
+    image?.filename,
+    image?.filepath,
+    image?.import_date,
+    image?.notes,
+  ]);
 
   useEffect(() => {
     let alive = true;
@@ -47,10 +54,12 @@ export default function InfoPanel({ image, onClose, onImageUpdated, onCountsChan
       setThumbUrl(null);
       return;
     }
-    api.toFileUrl(image.thumbnail_path).then(url => {
+    api.toFileUrl(image.thumbnail_path).then((url) => {
       if (alive) setThumbUrl(url);
     });
-    return () => { alive = false; };
+    return () => {
+      alive = false;
+    };
   }, [image?.id, image?.thumbnail_path]);
 
   // 按需读取完整 EXIF（不存库，打开面板时解析一次）
@@ -58,19 +67,18 @@ export default function InfoPanel({ image, onClose, onImageUpdated, onCountsChan
     let alive = true;
     setExif(null);
     if (!api.isBridgeAvailable() || !image?.filepath) return;
-    api.getExif(image.filepath).then(data => {
+    api.getExif(image.filepath).then((data) => {
       if (alive) setExif(data || {});
     });
-    return () => { alive = false; };
+    return () => {
+      alive = false;
+    };
   }, [image?.id, image?.filepath]);
 
   const loadTags = async () => {
     if (!api.isBridgeAvailable() || !image) return;
     const id = image.id;
-    const [imgT, allT] = await Promise.all([
-      api.getImageTags(id),
-      api.getTags(),
-    ]);
+    const [imgT, allT] = await Promise.all([api.getImageTags(id), api.getTags()]);
     if (liveImageIdRef.current !== id) return;
     setImgTags(imgT);
     setAllTags(allT);
@@ -96,7 +104,7 @@ export default function InfoPanel({ image, onClose, onImageUpdated, onCountsChan
     }
     // 仅当行的筛选归属可能改变才整页重查，否则只刷计数（审查批 8 R-4）
     const q = (st.search || '').trim().toLowerCase();
-    const removed = imgTags.find(t => t.id === tagId);
+    const removed = imgTags.find((t) => t.id === tagId);
     const searchTagHit = q && removed && (removed.name || '').toLowerCase().includes(q);
     if (st.filterTag === tagId || searchTagHit) onImageUpdated?.();
     else onCountsChanged?.();
@@ -123,9 +131,15 @@ export default function InfoPanel({ image, onClose, onImageUpdated, onCountsChan
     setDateErr('');
     // 改日期会移动文件：DB 返回移动后的新行，携带 filename/filepath 做轻量更新，
     // 否则面板继续展示旧路径（重进前永远是陈旧数据）
-    const moved = result && typeof result === 'object'
-      ? { import_date: importDate, filename: result.filename, filepath: result.filepath, raw_path: result.raw_path }
-      : { import_date: importDate };
+    const moved =
+      result && typeof result === 'object'
+        ? {
+            import_date: importDate,
+            filename: result.filename,
+            filepath: result.filepath,
+            raw_path: result.raw_path,
+          }
+        : { import_date: importDate };
     onImageUpdated?.(image.id, moved);
   };
 
@@ -148,7 +162,10 @@ export default function InfoPanel({ image, onClose, onImageUpdated, onCountsChan
 
   const handleRenameKeyDown = (e) => {
     if (isEnterSubmit(e)) handleRename();
-    if (e.key === 'Escape') { setEditName(image.filename); setRenameErr(''); }
+    if (e.key === 'Escape') {
+      setEditName(image.filename);
+      setRenameErr('');
+    }
   };
 
   const handleOpenFolder = async () => {
@@ -176,7 +193,7 @@ export default function InfoPanel({ image, onClose, onImageUpdated, onCountsChan
     onImageUpdated?.();
   };
 
-  const unusedTags = allTags.filter(t => !imgTags.find(it => it.id === t.id));
+  const unusedTags = allTags.filter((t) => !imgTags.find((it) => it.id === t.id));
 
   if (!image) return null;
 
@@ -188,17 +205,23 @@ export default function InfoPanel({ image, onClose, onImageUpdated, onCountsChan
           <Button variant="ghost" size="icon-xs" onClick={handleOpenFolder} title="打开所在目录">
             <FolderOpen className="size-4" />
           </Button>
-          <Button variant="ghost" size="icon-xs" className="text-destructive hover:text-destructive" onClick={() => setDeleteConfirm(true)} title="删除图片">
+          <Button
+            variant="ghost"
+            size="icon-xs"
+            className="text-destructive hover:text-destructive"
+            onClick={() => setDeleteConfirm(true)}
+            title="删除图片"
+          >
             <Trash2 className="size-4" />
           </Button>
-          <Button variant="ghost" size="icon-xs" onClick={onClose} title="关闭"><X className="size-4" /></Button>
+          <Button variant="ghost" size="icon-xs" onClick={onClose} title="关闭">
+            <X className="size-4" />
+          </Button>
         </div>
       </div>
 
       <div className="info-panel-body">
-        {thumbUrl && (
-          <img src={thumbUrl} alt={image.filename} className="info-thumb" />
-        )}
+        {thumbUrl && <img src={thumbUrl} alt={image.filename} className="info-thumb" />}
 
         {/* 基本信息 */}
         <details open className="info-section">
@@ -212,12 +235,19 @@ export default function InfoPanel({ image, onClose, onImageUpdated, onCountsChan
                   ref={renameRef}
                   className="flex-1"
                   value={editName}
-                  onChange={(e) => { setEditName(e.target.value); setRenameErr(''); }}
+                  onChange={(e) => {
+                    setEditName(e.target.value);
+                    setRenameErr('');
+                  }}
                   onKeyDown={handleRenameKeyDown}
-                  onBlur={() => { if (editName !== image.filename) handleRename(); }}
+                  onBlur={() => {
+                    if (editName !== image.filename) handleRename();
+                  }}
                 />
               </div>
-              {renameErr && <span style={{ fontSize: 11, color: 'var(--danger)' }}>{renameErr}</span>}
+              {renameErr && (
+                <span style={{ fontSize: 11, color: 'var(--danger)' }}>{renameErr}</span>
+              )}
             </div>
 
             {/* 导入日期（可编辑） */}
@@ -228,7 +258,10 @@ export default function InfoPanel({ image, onClose, onImageUpdated, onCountsChan
                 className="form-input"
                 style={{ width: 140, padding: '2px 6px', fontSize: 12 }}
                 value={importDate}
-                onChange={(e) => { setImportDate(e.target.value); setDateErr(''); }}
+                onChange={(e) => {
+                  setImportDate(e.target.value);
+                  setDateErr('');
+                }}
                 onBlur={handleDateSave}
               />
             </div>
@@ -245,7 +278,9 @@ export default function InfoPanel({ image, onClose, onImageUpdated, onCountsChan
             {image.width > 0 && (
               <div className="info-row">
                 <span className="info-label">尺寸</span>
-                <span className="info-value">{image.width} × {image.height}</span>
+                <span className="info-value">
+                  {image.width} × {image.height}
+                </span>
               </div>
             )}
             {image.taken_at && (
@@ -256,7 +291,11 @@ export default function InfoPanel({ image, onClose, onImageUpdated, onCountsChan
             )}
             <div className="info-row">
               <span className="info-label">存储路径</span>
-              <span className="info-value" title={image.filepath} style={{ fontSize: 11, wordBreak: 'break-all' }}>
+              <span
+                className="info-value"
+                title={image.filepath}
+                style={{ fontSize: 11, wordBreak: 'break-all' }}
+              >
                 {image.filepath || '-'}
               </span>
             </div>
@@ -268,18 +307,34 @@ export default function InfoPanel({ image, onClose, onImageUpdated, onCountsChan
           <summary className="info-section-title">EXIF / 相机</summary>
           <div className="info-group">
             {exif === null ? (
-              <div className="info-row"><span className="info-value">加载中...</span></div>
+              <div className="info-row">
+                <span className="info-value">加载中...</span>
+              </div>
             ) : (
               <>
                 {(exif.fNumber || exif.exposure || exif.iso || exif.focalLength) && (
                   <div className="exif-summary">
-                    {exif.fNumber && <span className="exif-chip"><strong>{exif.fNumber}</strong></span>}
-                    {exif.exposure && <span className="exif-chip"><strong>{exif.exposure}</strong></span>}
-                    {exif.iso && <span className="exif-chip">ISO <strong>{exif.iso}</strong></span>}
+                    {exif.fNumber && (
+                      <span className="exif-chip">
+                        <strong>{exif.fNumber}</strong>
+                      </span>
+                    )}
+                    {exif.exposure && (
+                      <span className="exif-chip">
+                        <strong>{exif.exposure}</strong>
+                      </span>
+                    )}
+                    {exif.iso && (
+                      <span className="exif-chip">
+                        ISO <strong>{exif.iso}</strong>
+                      </span>
+                    )}
                     {exif.focalLength && (
                       <span className="exif-chip">
                         <strong>{exif.focalLength}</strong>
-                        {exif.focal35mm && exif.focal35mm !== exif.focalLength ? ` (${exif.focal35mm})` : ''}
+                        {exif.focal35mm && exif.focal35mm !== exif.focalLength
+                          ? ` (${exif.focal35mm})`
+                          : ''}
                       </span>
                     )}
                   </div>
@@ -392,7 +447,9 @@ export default function InfoPanel({ image, onClose, onImageUpdated, onCountsChan
                   </div>
                 )}
                 {!exif.camera && !exif.iso && !exif.fNumber && !exif.exposure && (
-                  <div className="info-row"><span className="info-value">无 EXIF 信息</span></div>
+                  <div className="info-row">
+                    <span className="info-value">无 EXIF 信息</span>
+                  </div>
                 )}
               </>
             )}
@@ -406,17 +463,24 @@ export default function InfoPanel({ image, onClose, onImageUpdated, onCountsChan
             <div className="info-row">
               <span className="info-label">评分</span>
               <span className="info-value">
-                {[1,2,3,4,5].map(n => (
+                {[1, 2, 3, 4, 5].map((n) => (
                   <span
                     key={n}
-                    style={{ color: n <= (image.rating || 0) ? 'var(--star)' : 'var(--text-muted)', cursor: 'pointer', display: 'inline-flex' }}
+                    style={{
+                      color: n <= (image.rating || 0) ? 'var(--star)' : 'var(--text-muted)',
+                      cursor: 'pointer',
+                      display: 'inline-flex',
+                    }}
                     onClick={async () => {
                       const rating = n === image.rating ? 0 : n;
                       await api.updateImage(image.id, { rating });
                       onImageUpdated?.(image.id, { rating });
                     }}
                   >
-                    <Star className="size-4" fill={n <= (image.rating || 0) ? 'currentColor' : 'none'} />
+                    <Star
+                      className="size-4"
+                      fill={n <= (image.rating || 0) ? 'currentColor' : 'none'}
+                    />
                   </span>
                 ))}
               </span>
@@ -432,7 +496,11 @@ export default function InfoPanel({ image, onClose, onImageUpdated, onCountsChan
                   onImageUpdated?.(image.id, { favorite });
                 }}
               >
-                {image.favorite ? <Heart className="size-4" fill="currentColor" /> : <HeartOff className="size-4" />}
+                {image.favorite ? (
+                  <Heart className="size-4" fill="currentColor" />
+                ) : (
+                  <HeartOff className="size-4" />
+                )}
                 {image.favorite ? ' 已收藏' : ' 收藏'}
               </Button>
             </div>
@@ -443,8 +511,17 @@ export default function InfoPanel({ image, onClose, onImageUpdated, onCountsChan
         <details className="info-section">
           <summary className="info-section-title">标签</summary>
           <div className="info-group">
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-              <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{imgTags.length} 个标签</span>
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                marginBottom: 8,
+              }}
+            >
+              <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                {imgTags.length} 个标签
+              </span>
               <Button variant="ghost" size="xs" onClick={() => setShowAddTag(!showAddTag)}>
                 + 添加标签
               </Button>
@@ -452,7 +529,7 @@ export default function InfoPanel({ image, onClose, onImageUpdated, onCountsChan
 
             {showAddTag && unusedTags.length > 0 && (
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginBottom: 8 }}>
-                {unusedTags.map(tag => (
+                {unusedTags.map((tag) => (
                   <span
                     key={tag.id}
                     className="tag"
@@ -471,10 +548,12 @@ export default function InfoPanel({ image, onClose, onImageUpdated, onCountsChan
             )}
 
             <div className="info-tags">
-              {imgTags.map(tag => (
+              {imgTags.map((tag) => (
                 <span key={tag.id} className="tag" style={{ background: tag.color }}>
                   {tag.name}
-                  <span className="tag-remove" onClick={() => handleRemoveTag(tag.id)}><X className="size-3" /></span>
+                  <span className="tag-remove" onClick={() => handleRemoveTag(tag.id)}>
+                    <X className="size-3" />
+                  </span>
                 </span>
               ))}
               {imgTags.length === 0 && (

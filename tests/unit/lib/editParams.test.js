@@ -20,8 +20,14 @@ describe('sanitizeEditOps', () => {
   });
 
   it('crop 取整并过滤无效框', () => {
-    expect(sanitizeEditOps({ crop: { left: 1.6, top: 2.2, width: 10.4, height: 20.5 } }).crop).toEqual({
-      left: 2, top: 2, width: 10, height: 21, ratio: 'free',
+    expect(
+      sanitizeEditOps({ crop: { left: 1.6, top: 2.2, width: 10.4, height: 20.5 } }).crop
+    ).toEqual({
+      left: 2,
+      top: 2,
+      width: 10,
+      height: 21,
+      ratio: 'free',
     });
     expect(sanitizeEditOps({ crop: { left: 0, top: 0, width: 0, height: 5 } }).crop).toBeNull();
     expect(sanitizeEditOps({ crop: null }).crop).toBeNull();
@@ -32,7 +38,9 @@ describe('hasEdits', () => {
   it('仅默认参数视为未编辑；任意项变化即已编辑', () => {
     expect(hasEdits(EDIT_DEFAULTS)).toBe(false);
     expect(hasEdits({ ...EDIT_DEFAULTS, rotation: 90 })).toBe(true);
-    expect(hasEdits({ ...EDIT_DEFAULTS, crop: { left: 1, top: 1, width: 10, height: 10 } })).toBe(true);
+    expect(hasEdits({ ...EDIT_DEFAULTS, crop: { left: 1, top: 1, width: 10, height: 10 } })).toBe(
+      true
+    );
   });
 });
 
@@ -61,7 +69,7 @@ describe('cssFilter / tintMatrixValues', () => {
 describe('CROP_RATIOS', () => {
   it('包含自由与常用比例', () => {
     expect(CROP_RATIOS[0].key).toBe('free');
-    expect(CROP_RATIOS.find(r => r.key === '16:9').value).toBeCloseTo(16 / 9);
+    expect(CROP_RATIOS.find((r) => r.key === '16:9').value).toBeCloseTo(16 / 9);
   });
 });
 
@@ -147,7 +155,9 @@ describe('curves（平铺模型 + 预览链）', () => {
 describe('colorGrading（平铺模型 + 预览链）', () => {
   it('sanitize 归一化 [hue,sat]（hue 折叠/sat 钳制），默认空', () => {
     expect(sanitizeEditOps({}).colorGrading).toEqual({ shadows: [], midtones: [], highlights: [] });
-    const s = sanitizeEditOps({ colorGrading: { shadows: [370, 150], midtones: [10], highlights: [] } });
+    const s = sanitizeEditOps({
+      colorGrading: { shadows: [370, 150], midtones: [10], highlights: [] },
+    });
     expect(s.colorGrading.shadows).toEqual([10, 100]);
     expect(s.colorGrading.midtones).toEqual([]);
   });
@@ -159,7 +169,10 @@ describe('colorGrading（平铺模型 + 预览链）', () => {
 
   it('toEditParams / fromEditParams 分级往返不丢', async () => {
     const { toEditParams, fromEditParams } = await import('@/lib/editParams');
-    const ops = { ...EDIT_DEFAULTS, colorGrading: { shadows: [210, 45], midtones: [], highlights: [45, 30] } };
+    const ops = {
+      ...EDIT_DEFAULTS,
+      colorGrading: { shadows: [210, 45], midtones: [], highlights: [45, 30] },
+    };
     const params = toEditParams(ops);
     expect(params.colorGrading.shadows).toEqual([210, 45]);
     const back = fromEditParams(params);
@@ -194,17 +207,47 @@ describe('vignette（平铺模型）', () => {
 describe('masks（平铺模型）', () => {
   it('sanitize 归一化蒙版（未知类型丢弃/几何钳制），默认空数组', () => {
     expect(sanitizeEditOps({}).masks).toEqual([]);
-    const s = sanitizeEditOps({ masks: [{ type: 'brush' }, { type: 'radial', cx: 5, cy: 5, rx: -1, ry: 1, adjustments: { exposure: 9 } }] });
+    const s = sanitizeEditOps({
+      masks: [
+        { type: 'brush' },
+        { type: 'radial', cx: 5, cy: 5, rx: -1, ry: 1, adjustments: { exposure: 9 } },
+      ],
+    });
     expect(s.masks).toHaveLength(1);
     expect(s.masks[0].rx).toBe(1);
     expect(s.masks[0].adjustments.exposure).toBe(2);
   });
 
   it('蒙版含非零调整即已编辑；往返经 zod 不丢', async () => {
-    expect(hasEdits({ ...EDIT_DEFAULTS, masks: [{ type: 'radial', cx: 1, cy: 1, rx: 5, ry: 5, adjustments: {} }] })).toBe(false);
-    expect(hasEdits({ ...EDIT_DEFAULTS, masks: [{ type: 'linear', x0: 0, y0: 0, x1: 10, y1: 0, adjustments: { exposure: 0.5 } }] })).toBe(true);
+    expect(
+      hasEdits({
+        ...EDIT_DEFAULTS,
+        masks: [{ type: 'radial', cx: 1, cy: 1, rx: 5, ry: 5, adjustments: {} }],
+      })
+    ).toBe(false);
+    expect(
+      hasEdits({
+        ...EDIT_DEFAULTS,
+        masks: [{ type: 'linear', x0: 0, y0: 0, x1: 10, y1: 0, adjustments: { exposure: 0.5 } }],
+      })
+    ).toBe(true);
     const { toEditParams, fromEditParams } = await import('@/lib/editParams');
-    const ops = { ...EDIT_DEFAULTS, masks: [{ type: 'radial', id: 'a', cx: 10, cy: 20, rx: 30, ry: 40, feather: 0.5, invert: true, adjustments: { exposure: -0.5 } }] };
+    const ops = {
+      ...EDIT_DEFAULTS,
+      masks: [
+        {
+          type: 'radial',
+          id: 'a',
+          cx: 10,
+          cy: 20,
+          rx: 30,
+          ry: 40,
+          feather: 0.5,
+          invert: true,
+          adjustments: { exposure: -0.5 },
+        },
+      ],
+    };
     const params = toEditParams(ops);
     expect(params.masks[0].adjustments.exposure).toBe(-0.5);
     expect(fromEditParams(params).masks[0].invert).toBe(true);

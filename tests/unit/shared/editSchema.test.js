@@ -1,7 +1,15 @@
 import { describe, it, expect } from 'vitest';
 import editSchema from '../../../shared/editSchema.cjs';
 
-const { DEFAULT_EDITS, normalizeEdits, upgradeEdits, fromLegacyImage, isDefaultEdits, stripOutput, SCHEMA_VERSION } = editSchema;
+const {
+  DEFAULT_EDITS,
+  normalizeEdits,
+  upgradeEdits,
+  fromLegacyImage,
+  isDefaultEdits,
+  stripOutput,
+  SCHEMA_VERSION,
+} = editSchema;
 
 describe('editSchema（EditParams v1）', () => {
   it('默认值归一化后等于默认且判定为未编辑', () => {
@@ -21,35 +29,58 @@ describe('editSchema（EditParams v1）', () => {
   });
 
   it('非法值宽容回退，crop 对象保留、null 保留', () => {
-    const n = normalizeEdits({ basic: { exposure: 99, contrast: 'x' }, orientation: { rotate: 45 } });
+    const n = normalizeEdits({
+      basic: { exposure: 99, contrast: 'x' },
+      orientation: { rotate: 45 },
+    });
     expect(n.basic.exposure).toBe(0);
     expect(n.basic.contrast).toBe(0);
     expect(n.orientation.rotate).toBe(0);
-    expect(normalizeEdits({ crop: { x: 1, y: 2, w: 10, h: 8 } }).crop).toEqual({ x: 1, y: 2, w: 10, h: 8, ratio: 'free' });
+    expect(normalizeEdits({ crop: { x: 1, y: 2, w: 10, h: 8 } }).crop).toEqual({
+      x: 1,
+      y: 2,
+      w: 10,
+      h: 8,
+      ratio: 'free',
+    });
     expect(normalizeEdits({ crop: null }).crop).toBeNull();
     expect(normalizeEdits(null)).toEqual(DEFAULT_EDITS());
   });
 
   it('蒙版 adjustments 缺失/非法只回退默认值，不连坐丢弃整个蒙版（审查批 4）', () => {
-    const n = normalizeEdits({ masks: [
-      { type: 'radial', cx: 10, cy: 10, rx: 5, ry: 5, rotation: 0, feather: 0.5, invert: false },
-      { type: 'linear', x0: 0, y0: 0, x1: 10, y1: 10, adjustments: null },
-      { type: 'range', center: 0.4, range: 0.2, adjustments: { exposure: 99, contrast: 'x' } },
-    ] });
+    const n = normalizeEdits({
+      masks: [
+        { type: 'radial', cx: 10, cy: 10, rx: 5, ry: 5, rotation: 0, feather: 0.5, invert: false },
+        { type: 'linear', x0: 0, y0: 0, x1: 10, y1: 10, adjustments: null },
+        { type: 'range', center: 0.4, range: 0.2, adjustments: { exposure: 99, contrast: 'x' } },
+      ],
+    });
     expect(n.masks).toHaveLength(3);
-    expect(n.masks[0].adjustments).toEqual({ exposure: 0, contrast: 0, saturation: 0, temperature: 0, tint: 0 });
+    expect(n.masks[0].adjustments).toEqual({
+      exposure: 0,
+      contrast: 0,
+      saturation: 0,
+      temperature: 0,
+      tint: 0,
+    });
     expect(n.masks[1].adjustments.exposure).toBe(0);
     expect(n.masks[2].adjustments.exposure).toBe(0);
     expect(n.masks[2].adjustments.contrast).toBe(0);
     // 合法 adjustments 原样保留
-    const keep = normalizeEdits({ masks: [{ type: 'radial', cx: 1, cy: 1, rx: 2, ry: 2, adjustments: { exposure: 0.5 } }] });
+    const keep = normalizeEdits({
+      masks: [{ type: 'radial', cx: 1, cy: 1, rx: 2, ry: 2, adjustments: { exposure: 0.5 } }],
+    });
     expect(keep.masks[0].adjustments.exposure).toBe(0.5);
   });
 
   it('非默认编辑检测与 output 剥离', () => {
     expect(isDefaultEdits({ basic: { exposure: 0.5 } })).toBe(false);
     expect(isDefaultEdits({ output: { quality: 60 } })).toBe(true); // output 不算编辑
-    const stripped = stripOutput({ ...DEFAULT_EDITS(), basic: { exposure: 1 }, output: { format: 'png', quality: 80 } });
+    const stripped = stripOutput({
+      ...DEFAULT_EDITS(),
+      basic: { exposure: 1 },
+      output: { format: 'png', quality: 80 },
+    });
     expect(stripped.output).toBeUndefined();
     expect(stripped.basic.exposure).toBe(1);
   });

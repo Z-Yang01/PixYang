@@ -30,10 +30,18 @@ export default class ErrorBoundary extends Component {
     const { children } = this.props;
     if (!error) return children;
     return (
-      <div style={{
-        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-        minHeight: '100vh', gap: 12, padding: 24, textAlign: 'center',
-      }}>
+      <div
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          minHeight: '100vh',
+          gap: 12,
+          padding: 24,
+          textAlign: 'center',
+        }}
+      >
         <h2 style={{ fontSize: 18 }}>界面出现问题</h2>
         <p style={{ maxWidth: 480, opacity: 0.7 }}>{String(error?.message || error)}</p>
         <div style={{ display: 'flex', gap: 8 }}>

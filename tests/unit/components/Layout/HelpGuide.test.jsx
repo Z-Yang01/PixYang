@@ -13,7 +13,14 @@ describe('HelpGuide（使用说明）', () => {
 
   it('打开后渲染六大功能分区', () => {
     render(<HelpGuide open onClose={() => {}} />);
-    for (const title of ['图库浏览', '导入图片', '编辑图片', '标签与相册', '数据与维护', '快捷键']) {
+    for (const title of [
+      '图库浏览',
+      '导入图片',
+      '编辑图片',
+      '标签与相册',
+      '数据与维护',
+      '快捷键',
+    ]) {
       expect(screen.getByText(title)).toBeTruthy();
     }
   });

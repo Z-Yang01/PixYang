@@ -107,7 +107,10 @@ describe('ImageGrid', () => {
 
   it('有图时渲染卡片、时间线表头与分页条', async () => {
     seedStore({
-      images: [makeImage({ id: 1, filename: 'sunset.jpg' }), makeImage({ id: 2, filename: 'sunrise.png', format: 'png' })],
+      images: [
+        makeImage({ id: 1, filename: 'sunset.jpg' }),
+        makeImage({ id: 2, filename: 'sunrise.png', format: 'png' }),
+      ],
       totalImages: 2,
     });
     const { container } = render(<ImageGrid />);
@@ -193,7 +196,8 @@ describe('ImageGrid', () => {
 
   it('回归：thumbnail_edit_path 写回后清该图缩略图缓存并重新解析 URL', async () => {
     window.pixyang.toFileUrls = vi.fn(async (paths) =>
-      Object.fromEntries(paths.map((p) => [p, `file:///${encodeURIComponent(p)}`])));
+      Object.fromEntries(paths.map((p) => [p, `file:///${encodeURIComponent(p)}`]))
+    );
     seedStore({ images: [makeImage()], totalImages: 1 });
     const { rerender } = render(<ImageGrid />);
     await screen.findByText('sunset');
@@ -317,7 +321,9 @@ describe('ImageGrid', () => {
     const onImageUpdated = vi.fn();
     const onCountsChanged = vi.fn();
     seedStore({ images: [makeImage({ id: 1 })], totalImages: 1 });
-    const { container } = render(<ImageGrid onImageUpdated={onImageUpdated} onCountsChanged={onCountsChanged} />);
+    const { container } = render(
+      <ImageGrid onImageUpdated={onImageUpdated} onCountsChanged={onCountsChanged} />
+    );
     await screen.findByText('sunset');
     const item = await openQuickTagMenu(container);
     fireEvent.click(item);
@@ -335,7 +341,9 @@ describe('ImageGrid', () => {
     const onImageUpdated = vi.fn();
     const onCountsChanged = vi.fn();
     seedStore({ images: [makeImage({ id: 1 })], totalImages: 1, filterTag: 5 });
-    const { container } = render(<ImageGrid onImageUpdated={onImageUpdated} onCountsChanged={onCountsChanged} />);
+    const { container } = render(
+      <ImageGrid onImageUpdated={onImageUpdated} onCountsChanged={onCountsChanged} />
+    );
     await screen.findByText('sunset');
     const item = await openQuickTagMenu(container);
     fireEvent.click(item);

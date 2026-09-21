@@ -18,7 +18,15 @@ describe('BatchBar', () => {
 
   it('未选中任何图片时渲染 null', () => {
     useGalleryStore.setState({ selectedIds: new Set() });
-    const { container } = render(<BatchBar onClear={vi.fn()} onBatchDelete={vi.fn()} onSelectAllPage={vi.fn()} onSelectAllAll={vi.fn()} onExport={vi.fn()} />);
+    const { container } = render(
+      <BatchBar
+        onClear={vi.fn()}
+        onBatchDelete={vi.fn()}
+        onSelectAllPage={vi.fn()}
+        onSelectAllAll={vi.fn()}
+        onExport={vi.fn()}
+      />
+    );
     expect(container).toBeEmptyDOMElement();
   });
 
@@ -28,7 +36,17 @@ describe('BatchBar', () => {
       totalImages: 10,
       tags: [{ id: 5, name: '风景', color: '#818cf8', image_count: 6 }],
     });
-    render(<BatchBar onClear={vi.fn()} onBatchDelete={vi.fn()} onSelectAllPage={vi.fn()} onSelectAllAll={vi.fn()} onExport={vi.fn()} onBatchTag={vi.fn()} onBatchUpdate={vi.fn()} />);
+    render(
+      <BatchBar
+        onClear={vi.fn()}
+        onBatchDelete={vi.fn()}
+        onSelectAllPage={vi.fn()}
+        onSelectAllAll={vi.fn()}
+        onExport={vi.fn()}
+        onBatchTag={vi.fn()}
+        onBatchUpdate={vi.fn()}
+      />
+    );
     expect(screen.getByText('已选 2 张')).toBeInTheDocument();
     expect(screen.getByText('全选本页')).toBeInTheDocument();
     expect(screen.getByText('全选全部（10）')).toBeInTheDocument();
@@ -67,15 +85,41 @@ describe('BatchBar', () => {
       selectedIds: new Set([1]),
       totalImages: 5,
       tags: [],
-      copiedEdits: { basic: { exposure: 0.5 }, orientation: { rotate: 0, flipH: false, flipV: false } },
+      copiedEdits: {
+        basic: { exposure: 0.5 },
+        orientation: { rotate: 0, flipH: false, flipV: false },
+      },
     });
-    render(<BatchBar onClear={vi.fn()} onBatchDelete={vi.fn()} onSelectAllPage={vi.fn()} onSelectAllAll={vi.fn()} onExport={vi.fn()} onSyncEdits={vi.fn()} />);
+    render(
+      <BatchBar
+        onClear={vi.fn()}
+        onBatchDelete={vi.fn()}
+        onSelectAllPage={vi.fn()}
+        onSelectAllAll={vi.fn()}
+        onExport={vi.fn()}
+        onSyncEdits={vi.fn()}
+      />
+    );
     expect(screen.getByText('同步参数到所选')).toBeInTheDocument();
   });
 
   it('无复制参数时不渲染同步入口', () => {
-    useGalleryStore.setState({ selectedIds: new Set([1]), totalImages: 5, tags: [], copiedEdits: null });
-    render(<BatchBar onClear={vi.fn()} onBatchDelete={vi.fn()} onSelectAllPage={vi.fn()} onSelectAllAll={vi.fn()} onExport={vi.fn()} onSyncEdits={vi.fn()} />);
+    useGalleryStore.setState({
+      selectedIds: new Set([1]),
+      totalImages: 5,
+      tags: [],
+      copiedEdits: null,
+    });
+    render(
+      <BatchBar
+        onClear={vi.fn()}
+        onBatchDelete={vi.fn()}
+        onSelectAllPage={vi.fn()}
+        onSelectAllAll={vi.fn()}
+        onExport={vi.fn()}
+        onSyncEdits={vi.fn()}
+      />
+    );
     expect(screen.queryByText('同步参数到所选')).toBeNull();
   });
 });

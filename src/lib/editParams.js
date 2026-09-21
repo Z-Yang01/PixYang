@@ -12,23 +12,23 @@ const { normalizeGrading, hasColorGradingData, buildGradingTables } = gradingLib
 const { normalizeMasks, hasMaskData } = masksLib;
 
 export const EDIT_DEFAULTS = {
-  rotation: 0,        // 90 的倍数
+  rotation: 0, // 90 的倍数
   flipH: false,
   flipV: false,
-  crop: null,         // { left, top, width, height, ratio? }，基于规范化底图像素坐标
-  exposure: 0,        // -2..2 EV
-  contrast: 0,        // -50..50
-  saturation: 0,      // -100..100（0 为原色，-100 黑白）
-  temperature: 0,     // -100..100（暖+ 冷-，预览为叠加近似）
-  highlights: 0,      // -100..100
-  shadows: 0,         // -100..100
-  whites: 0,          // -100..100
-  blacks: 0,          // -100..100
-  tint: 0,            // -100..100（绿- 品红+）
-  curves: { rgb: [], r: [], g: [], b: [] },  // 点对平铺数组 [x0,y0,...]，0..1，见 shared/curves.cjs
-  colorGrading: { shadows: [], midtones: [], highlights: [] },  // 每区间 [hue 0..360, sat 0..100]
-  vignette: 0,        // -100..100（负压暗/正提亮），pre-crop 语义，见 shared/lens.cjs
-  masks: [],          // 局部蒙版（radial/linear），pre-crop 像素坐标，见 shared/masks.cjs
+  crop: null, // { left, top, width, height, ratio? }，基于规范化底图像素坐标
+  exposure: 0, // -2..2 EV
+  contrast: 0, // -50..50
+  saturation: 0, // -100..100（0 为原色，-100 黑白）
+  temperature: 0, // -100..100（暖+ 冷-，预览为叠加近似）
+  highlights: 0, // -100..100
+  shadows: 0, // -100..100
+  whites: 0, // -100..100
+  blacks: 0, // -100..100
+  tint: 0, // -100..100（绿- 品红+）
+  curves: { rgb: [], r: [], g: [], b: [] }, // 点对平铺数组 [x0,y0,...]，0..1，见 shared/curves.cjs
+  colorGrading: { shadows: [], midtones: [], highlights: [] }, // 每区间 [hue 0..360, sat 0..100]
+  vignette: 0, // -100..100（负压暗/正提亮），pre-crop 语义，见 shared/lens.cjs
+  masks: [], // 局部蒙版（radial/linear），pre-crop 像素坐标，见 shared/masks.cjs
 };
 
 export const CROP_RATIOS = [
@@ -50,15 +50,16 @@ export function sanitizeEditOps(input = {}) {
     rotation: [0, 90, 180, 270].includes(ops.rotation) ? ops.rotation : 0,
     flipH: !!ops.flipH,
     flipV: !!ops.flipV,
-    crop: (ops.crop && ops.crop.width > 0 && ops.crop.height > 0)
-      ? {
-          left: Math.max(0, Math.round(ops.crop.left)),
-          top: Math.max(0, Math.round(ops.crop.top)),
-          width: Math.round(ops.crop.width),
-          height: Math.round(ops.crop.height),
-          ratio: ops.crop.ratio || 'free',
-        }
-      : null,
+    crop:
+      ops.crop && ops.crop.width > 0 && ops.crop.height > 0
+        ? {
+            left: Math.max(0, Math.round(ops.crop.left)),
+            top: Math.max(0, Math.round(ops.crop.top)),
+            width: Math.round(ops.crop.width),
+            height: Math.round(ops.crop.height),
+            ratio: ops.crop.ratio || 'free',
+          }
+        : null,
     exposure: clamp(Number(ops.exposure) || 0, -2, 2),
     contrast: clamp(Number(ops.contrast) || 0, -50, 50),
     highlights: clamp(Number(ops.highlights) || 0, -100, 100),
@@ -82,18 +83,32 @@ export function sanitizeEditOps(input = {}) {
 
 export function hasEdits(ops) {
   const s = sanitizeEditOps(ops);
-  return !!(s.rotation !== 0 || s.flipH || s.flipV || s.crop
-    || s.exposure !== 0 || s.contrast !== 0 || s.saturation !== 0 || s.temperature !== 0
-    || s.highlights !== 0 || s.shadows !== 0 || s.whites !== 0 || s.blacks !== 0 || s.tint !== 0
-    || hasCurveData(s.curves) || hasColorGradingData(s.colorGrading) || s.vignette !== 0
-    || hasMaskData(s.masks));
+  return !!(
+    s.rotation !== 0 ||
+    s.flipH ||
+    s.flipV ||
+    s.crop ||
+    s.exposure !== 0 ||
+    s.contrast !== 0 ||
+    s.saturation !== 0 ||
+    s.temperature !== 0 ||
+    s.highlights !== 0 ||
+    s.shadows !== 0 ||
+    s.whites !== 0 ||
+    s.blacks !== 0 ||
+    s.tint !== 0 ||
+    hasCurveData(s.curves) ||
+    hasColorGradingData(s.colorGrading) ||
+    s.vignette !== 0 ||
+    hasMaskData(s.masks)
+  );
 }
 
 // 色温预览：SVG feColorMatrix 逐通道增益，与 sharp 管线的 RGB 增益同数学语义
 // （sharp linearA = [g*(1+tk*0.1), g, g*(1-tk*0.1)]，预览端只取色温比例因子）
 export function tintMatrixValues(ops) {
   const s = sanitizeEditOps(ops);
-  const k = s.temperature / 100 * 0.1;
+  const k = (s.temperature / 100) * 0.1;
   const r = (1 + k).toFixed(4);
   const b = (1 - k).toFixed(4);
   return `${r} 0 0 0 0  0 1 0 0 0  0 0 ${b} 0 0  0 0 0 1 0`;
@@ -117,7 +132,13 @@ export function toEditParams(ops) {
   return editSchema.normalizeEdits({
     orientation: { rotate: s.rotation, flipH: s.flipH, flipV: s.flipV },
     crop: s.crop
-      ? { x: s.crop.left, y: s.crop.top, w: s.crop.width, h: s.crop.height, ratio: s.crop.ratio || 'free' }
+      ? {
+          x: s.crop.left,
+          y: s.crop.top,
+          w: s.crop.width,
+          h: s.crop.height,
+          ratio: s.crop.ratio || 'free',
+        }
       : null,
     basic: {
       exposure: s.exposure,
@@ -145,7 +166,13 @@ export function fromEditParams(params) {
     flipH: p.orientation.flipH,
     flipV: p.orientation.flipV,
     crop: p.crop
-      ? { left: p.crop.x, top: p.crop.y, width: p.crop.w, height: p.crop.h, ratio: p.crop.ratio || 'free' }
+      ? {
+          left: p.crop.x,
+          top: p.crop.y,
+          width: p.crop.w,
+          height: p.crop.h,
+          ratio: p.crop.ratio || 'free',
+        }
       : null,
     exposure: p.basic.exposure,
     contrast: p.basic.contrast,
@@ -191,14 +218,30 @@ export function previewFilterChain(ops) {
   const blacksOff = -s.blacks * 0.35;
   const cf = 1 + s.contrast / 50;
   const offset255 = cf * blacksOff + 127.5 * (1 - cf);
-  const slope = wb.map(w => w * gain * whitesF * cf);
+  const slope = wb.map((w) => w * gain * whitesF * cf);
   const n = (v) => Number(v.toFixed(5));
   // feColorMatrix 工作在 0..1 空间：slope 为无量纲增益原值，仅 offset 需 /255
   const matrix = [
-    n(slope[0]), 0, 0, 0, n(offset255 / 255),
-    0, n(slope[1]), 0, 0, n(offset255 / 255),
-    0, 0, n(slope[2]), 0, n(offset255 / 255),
-    0, 0, 0, 1, 0,
+    n(slope[0]),
+    0,
+    0,
+    0,
+    n(offset255 / 255),
+    0,
+    n(slope[1]),
+    0,
+    0,
+    n(offset255 / 255),
+    0,
+    0,
+    n(slope[2]),
+    0,
+    n(offset255 / 255),
+    0,
+    0,
+    0,
+    1,
+    0,
   ];
 
   // 阴影 gamma：+用正域指数 e<1；-用镜像域（negate 矩阵 → gamma(e) → negate 矩阵）
@@ -206,7 +249,7 @@ export function previewFilterChain(ops) {
   if (s.shadows > 0) {
     shadows = { exponent: clamp(1 - s.shadows / 220, 0.55, 1), invert: false };
   } else if (s.shadows < 0) {
-    shadows = { exponent: clamp(1 + (-s.shadows) / 220, 1, 1.45), invert: true };
+    shadows = { exponent: clamp(1 + -s.shadows / 220, 1, 1.45), invert: true };
   }
 
   // 高光线性回收（sharp 端在阴影之后，单独原语保持顺序）

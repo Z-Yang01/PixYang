@@ -40,8 +40,11 @@ export default function useDragImport({ enabled, onCollect }) {
       }
     };
 
-    const hasFiles = (e) => e.dataTransfer && Array.from(e.dataTransfer.types || []).includes('Files');
-    const onDragOver = (e) => { e.preventDefault(); };
+    const hasFiles = (e) =>
+      e.dataTransfer && Array.from(e.dataTransfer.types || []).includes('Files');
+    const onDragOver = (e) => {
+      e.preventDefault();
+    };
     const onDragEnter = (e) => {
       e.preventDefault();
       if (!hasFiles(e) || !enabledRef.current) return;
@@ -62,7 +65,9 @@ export default function useDragImport({ enabled, onCollect }) {
         try {
           const p = api.getPathForFile(file);
           if (p) paths.push(p);
-        } catch { /* 忽略无法取路径的项 */ }
+        } catch {
+          /* 忽略无法取路径的项 */
+        }
       }
       await importPaths(paths);
     };

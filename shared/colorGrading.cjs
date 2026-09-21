@@ -35,7 +35,12 @@ function tintRgb(hue) {
   const i = Math.floor(h);
   const f = h - i;
   const seg = [
-    [1, f, 0], [1 - f, 1, 0], [0, 1, f], [0, 1 - f, 1], [f, 0, 1], [1, 0, 1 - f],
+    [1, f, 0],
+    [1 - f, 1, 0],
+    [0, 1, f],
+    [0, 1 - f, 1],
+    [f, 0, 1],
+    [1, 0, 1 - f],
   ][i % 6];
   return seg;
 }

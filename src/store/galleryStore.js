@@ -55,12 +55,13 @@ const useGalleryStore = create((set, get) => ({
   // 模态注册表：网格键盘导航/全局快捷键的统一门禁，多方（App 弹层、网格弹窗…）各自注册互不覆盖，
   // 任一键为开即视为有模态；订阅方用 anyModalOpen 选择器拿布尔值
   modals: {},
-  setModal: (key, open) => set((state) => {
-    const next = { ...state.modals };
-    if (open) next[key] = true;
-    else delete next[key];
-    return { modals: next };
-  }),
+  setModal: (key, open) =>
+    set((state) => {
+      const next = { ...state.modals };
+      if (open) next[key] = true;
+      else delete next[key];
+      return { modals: next };
+    }),
 
   // 当前页图片数据
   images: [],
@@ -89,19 +90,26 @@ const useGalleryStore = create((set, get) => ({
     api.setSetting('sort_order', nextOrder);
   },
 
-  setSortFromSettings: (by, order) => set({
-    sortBy: SORT_KEYS.includes(by) ? by : 'import_date',
-    sortOrder: order === 'ASC' ? 'ASC' : 'DESC',
-  }),
+  setSortFromSettings: (by, order) =>
+    set({
+      sortBy: SORT_KEYS.includes(by) ? by : 'import_date',
+      sortOrder: order === 'ASC' ? 'ASC' : 'DESC',
+    }),
 
   setFilterTag: (id) => set({ filterTag: id, page: 1 }),
   // 相册与日期（单日/区间）筛选互斥：设置任一方时清掉另一方，避免交集为空
-  setFilterAlbum: (id) => set(id !== null
-    ? { filterAlbum: id, filterDate: '', dateRange: { from: '', to: '' }, page: 1 }
-    : { filterAlbum: null, page: 1 }),
-  setFilterDate: (date) => set(date
-    ? { filterDate: date, dateRange: { from: '', to: '' }, filterAlbum: null, page: 1 }
-    : { filterDate: '', page: 1 }),
+  setFilterAlbum: (id) =>
+    set(
+      id !== null
+        ? { filterAlbum: id, filterDate: '', dateRange: { from: '', to: '' }, page: 1 }
+        : { filterAlbum: null, page: 1 }
+    ),
+  setFilterDate: (date) =>
+    set(
+      date
+        ? { filterDate: date, dateRange: { from: '', to: '' }, filterAlbum: null, page: 1 }
+        : { filterDate: '', page: 1 }
+    ),
   // 区间倒挂自动交换：先选结束日再选开始日跨过它时，交集恒空且无任何提示
   setDateRange: (range) => {
     if (!range || (!range.from && !range.to)) {
@@ -116,24 +124,36 @@ const useGalleryStore = create((set, get) => ({
   setFilterFavorites: (v) => set({ filterFavorites: v, page: 1 }),
   setPage: (page) => set({ page }),
 
-  clearFilters: () => set({
-    filterTag: null,
-    filterAlbum: null,
-    filterFavorites: false,
-    filterDate: '',
-    dateRange: { from: '', to: '' },
-    search: '',
-    page: 1,
-  }),
+  clearFilters: () =>
+    set({
+      filterTag: null,
+      filterAlbum: null,
+      filterFavorites: false,
+      filterDate: '',
+      dateRange: { from: '', to: '' },
+      search: '',
+      page: 1,
+    }),
 
   clearSingleFilter: (type) => {
     switch (type) {
-      case 'tag': set({ filterTag: null, page: 1 }); break;
-      case 'album': set({ filterAlbum: null, page: 1 }); break;
-      case 'date': set({ filterDate: '', page: 1 }); break;
-      case 'dateRange': set({ dateRange: { from: '', to: '' }, page: 1 }); break;
-      case 'favorites': set({ filterFavorites: false, page: 1 }); break;
-      default: break;
+      case 'tag':
+        set({ filterTag: null, page: 1 });
+        break;
+      case 'album':
+        set({ filterAlbum: null, page: 1 });
+        break;
+      case 'date':
+        set({ filterDate: '', page: 1 });
+        break;
+      case 'dateRange':
+        set({ dateRange: { from: '', to: '' }, page: 1 });
+        break;
+      case 'favorites':
+        set({ filterFavorites: false, page: 1 });
+        break;
+      default:
+        break;
     }
   },
 
@@ -142,23 +162,25 @@ const useGalleryStore = create((set, get) => ({
 
   // 归一化后逐项比较：值全等时返回原引用，否则每次按键都换对象引用，
   // wiring 按引用依赖会对着 gap/padding 触发整页重查（审查批 8 R-1）
-  setGridSettings: (settings) => set((state) => {
-    const next = { ...state.gridSettings };
-    for (const [k, v] of Object.entries(settings || {})) {
-      if (GRID_LIMITS[k]) next[k] = normalizeGridValue(k, v, next[k]);
-    }
-    const unchanged = Object.keys(GRID_LIMITS).every((k) => next[k] === state.gridSettings[k]);
-    return unchanged ? {} : { gridSettings: next };
-  }),
+  setGridSettings: (settings) =>
+    set((state) => {
+      const next = { ...state.gridSettings };
+      for (const [k, v] of Object.entries(settings || {})) {
+        if (GRID_LIMITS[k]) next[k] = normalizeGridValue(k, v, next[k]);
+      }
+      const unchanged = Object.keys(GRID_LIMITS).every((k) => next[k] === state.gridSettings[k]);
+      return unchanged ? {} : { gridSettings: next };
+    }),
 
-  patchGridSettings: (patch) => set((state) => {
-    const next = { ...state.gridSettings };
-    for (const [k, v] of Object.entries(patch)) {
-      if (GRID_LIMITS[k]) next[k] = normalizeGridValue(k, v, next[k]);
-    }
-    const unchanged = Object.keys(GRID_LIMITS).every((k) => next[k] === state.gridSettings[k]);
-    return unchanged ? {} : { gridSettings: next };
-  }),
+  patchGridSettings: (patch) =>
+    set((state) => {
+      const next = { ...state.gridSettings };
+      for (const [k, v] of Object.entries(patch)) {
+        if (GRID_LIMITS[k]) next[k] = normalizeGridValue(k, v, next[k]);
+      }
+      const unchanged = Object.keys(GRID_LIMITS).every((k) => next[k] === state.gridSettings[k]);
+      return unchanged ? {} : { gridSettings: next };
+    }),
 
   loadStats: async () => {
     if (!api.isBridgeAvailable()) return;
@@ -227,7 +249,8 @@ const useGalleryStore = create((set, get) => ({
     }
   },
 
-  setImages: (updater) => set(state => ({ images: typeof updater === 'function' ? updater(state.images) : updater })),
+  setImages: (updater) =>
+    set((state) => ({ images: typeof updater === 'function' ? updater(state.images) : updater })),
   setTotalImages: (total) => set({ totalImages: total }),
   setCopiedEdits: (edits) => set({ copiedEdits: edits }),
 
@@ -239,7 +262,12 @@ const useGalleryStore = create((set, get) => ({
         api.getAlbums(),
         api.getImportDates(),
       ]);
-      set({ tags: tags || [], albums: albums || [], importDates: importDates || [], appDataLoaded: true });
+      set({
+        tags: tags || [],
+        albums: albums || [],
+        importDates: importDates || [],
+        appDataLoaded: true,
+      });
     } catch (e) {
       console.error('[galleryStore] loadAppData 失败:', e.message);
     }

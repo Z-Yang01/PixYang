@@ -5,7 +5,13 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, cleanup, act } from '@testing-library/react';
 import useDragImport from '@/hooks/useDragImport';
 
-function Harness({ enabled = true, onCollect }: { enabled?: boolean; onCollect?: (files: string[]) => void }) {
+function Harness({
+  enabled = true,
+  onCollect,
+}: {
+  enabled?: boolean;
+  onCollect?: (files: string[]) => void;
+}) {
   const dragging = useDragImport({ enabled, onCollect: onCollect ?? (() => {}) });
   return <div>{dragging ? 'mask' : 'idle'}</div>;
 }
@@ -212,14 +218,20 @@ describe('hooks/useDragImport', () => {
   it('在途拖拽排队：第二次 drop 等第一次收集完成后再收集，回调按序不互相覆盖', async () => {
     const onCollect = vi.fn();
     let resolveFirst: ((v: string[]) => void) | undefined;
-    const first = new Promise<string[]>((r) => { resolveFirst = r; });
+    const first = new Promise<string[]>((r) => {
+      resolveFirst = r;
+    });
     collectImportFiles.mockReturnValueOnce(first).mockResolvedValueOnce(['/b.png']);
     render(<Harness onCollect={onCollect} />);
     fireDrag('drop', filesData([{ path: '/a.png' }]));
     fireDrag('drop', filesData([{ path: '/b.png' }]));
-    await act(async () => { await Promise.resolve(); });
+    await act(async () => {
+      await Promise.resolve();
+    });
     expect(collectImportFiles).toHaveBeenCalledTimes(1);
-    act(() => { resolveFirst?.(['/a.png']); });
+    act(() => {
+      resolveFirst?.(['/a.png']);
+    });
     await vi.waitFor(() => {
       expect(collectImportFiles).toHaveBeenCalledTimes(2);
       expect(collectImportFiles).toHaveBeenLastCalledWith(['/b.png']);

@@ -60,9 +60,7 @@ describe('ImportDialog', () => {
 
   it('点击导入：分批调用 importImages 并显示结果页', async () => {
     const onDone = vi.fn();
-    window.pixyang.importImages.mockResolvedValue([
-      { id: 1 }, { id: 2 },
-    ]);
+    window.pixyang.importImages.mockResolvedValue([{ id: 1 }, { id: 2 }]);
     renderDialog({ initialFiles: filesFixture, onDone });
     fireEvent.click(screen.getByText('导入 2 张图片'));
     expect(await screen.findByText('导入完成')).toBeInTheDocument();

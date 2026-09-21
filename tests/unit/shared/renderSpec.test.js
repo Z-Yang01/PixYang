@@ -19,7 +19,8 @@ describe('pipelineOrder（渲染阶段顺序铁律）', () => {
 });
 
 describe('editParamsToRenderSpec（纯函数转换）', () => {
-  const build = (params, opts) => renderSpec.editParamsToRenderSpec(params, { sourceHash: 'golden', ...opts });
+  const build = (params, opts) =>
+    renderSpec.editParamsToRenderSpec(params, { sourceHash: 'golden', ...opts });
 
   it('1. identity：默认参数产出完整 14 阶段 spec', () => {
     const spec = build({});
@@ -39,13 +40,21 @@ describe('editParamsToRenderSpec（纯函数转换）', () => {
 
   it('4. 色温 ±100 UI 值进入 whiteBalance stage', () => {
     const by = (spec, k) => spec.stages.find((s) => s.kind === k).params;
-    expect(by(build({ basic: { temperature: 50 } }), 'whiteBalance')).toEqual({ temp: 50, tint: 0, mode: 'custom' });
+    expect(by(build({ basic: { temperature: 50 } }), 'whiteBalance')).toEqual({
+      temp: 50,
+      tint: 0,
+      mode: 'custom',
+    });
   });
 
   it('5. 饱和度 -100 显式 mono:true（不靠下游猜）', () => {
-    const sat = build({ basic: { saturation: -100 } }).stages.find((s) => s.kind === 'saturation').params;
+    const sat = build({ basic: { saturation: -100 } }).stages.find(
+      (s) => s.kind === 'saturation'
+    ).params;
     expect(sat).toEqual({ value: -100, mono: true });
-    expect(build({ basic: { saturation: 0 } }).stages.find((s) => s.kind === 'saturation').params.mono).toBe(false);
+    expect(
+      build({ basic: { saturation: 0 } }).stages.find((s) => s.kind === 'saturation').params.mono
+    ).toBe(false);
   });
 
   it('6. 锁定 rotate→crop 顺序，crop 坐标为旋转后坐标系', () => {
@@ -53,7 +62,12 @@ describe('editParamsToRenderSpec（纯函数转换）', () => {
     const kinds = spec.stages.map((s) => s.kind);
     expect(kinds.indexOf('geometry')).toBeLessThan(kinds.indexOf('crop'));
     expect(spec.stages.find((s) => s.kind === 'crop').params).toEqual({
-      x: 100, y: 200, w: 400, h: 600, ratio: 'free', angle: 0,
+      x: 100,
+      y: 200,
+      w: 400,
+      h: 600,
+      ratio: 'free',
+      angle: 0,
     });
   });
 
@@ -106,12 +120,15 @@ describe('editSchema 深合并行为锁死', () => {
   });
 });
 
-
 describe('buildProxySpec（代理分辨率）', () => {
   const build = (params) => renderSpec.editParamsToRenderSpec(params, { sourceHash: 'x' });
 
   it('大图：decode 标记 proxyLongEdge，crop 坐标等比缩放', () => {
-    const spec = build({ orientation: { rotate: 90 }, crop: { x: 1000, y: 800, w: 2000, h: 1600 }, basic: { exposure: 0.5 } });
+    const spec = build({
+      orientation: { rotate: 90 },
+      crop: { x: 1000, y: 800, w: 2000, h: 1600 },
+      basic: { exposure: 0.5 },
+    });
     const { spec: proxy, scale } = renderSpec.buildProxySpec(spec, 6000, 4000, 400);
     expect(scale).toBeCloseTo(400 / 6000, 4);
     const decode = proxy.stages.find((s) => s.kind === 'decode');
@@ -171,8 +188,14 @@ describe('buildProxySpec（代理分辨率）', () => {
   it('几何/影调 stage 原样保留，仅 decode 与 crop 被改写', () => {
     const spec = build({ orientation: { rotate: 90, flipH: true }, basic: { exposure: 0.5 } });
     const { spec: proxy } = renderSpec.buildProxySpec(spec, 6000, 4000, 400);
-    expect(proxy.stages.find((s) => s.kind === 'geometry').params).toEqual({ rotate: 90, flipH: true, flipV: false });
+    expect(proxy.stages.find((s) => s.kind === 'geometry').params).toEqual({
+      rotate: 90,
+      flipH: true,
+      flipV: false,
+    });
     expect(proxy.stages.find((s) => s.kind === 'exposure').params.ev).toBe(0.5);
-    expect(proxy.stages.find((s) => s.kind === 'encode')).toBe(spec.stages.find((s) => s.kind === 'encode'));
+    expect(proxy.stages.find((s) => s.kind === 'encode')).toBe(
+      spec.stages.find((s) => s.kind === 'encode')
+    );
   });
 });

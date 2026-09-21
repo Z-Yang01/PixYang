@@ -46,21 +46,21 @@ export default function ImportDialog({ onClose, onDone, initialFiles = null }) {
 
   useEffect(() => {
     if (foundFiles.length > 0) {
-      setCheckedIds(new Set(foundFiles.map(f => f.filepath)));
+      setCheckedIds(new Set(foundFiles.map((f) => f.filepath)));
       loadPreviews(foundFiles);
     }
   }, [foundFiles]);
 
   const loadPreviews = async (files) => {
     if (!api.isBridgeAvailable()) return;
-    const paths = files.filter(f => PREVIEWABLE.includes(f.format)).map(f => f.filepath);
+    const paths = files.filter((f) => PREVIEWABLE.includes(f.format)).map((f) => f.filepath);
     if (paths.length === 0) return;
     const urlMap = (await api.toFileUrls(paths)) || {};
     const next = {};
     for (const [p, url] of Object.entries(urlMap)) {
       if (url) next[p] = url;
     }
-    if (Object.keys(next).length > 0) setFileUrls(prev => ({ ...prev, ...next }));
+    if (Object.keys(next).length > 0) setFileUrls((prev) => ({ ...prev, ...next }));
   };
 
   const handleSelectDir = async () => {
@@ -78,7 +78,7 @@ export default function ImportDialog({ onClose, onDone, initialFiles = null }) {
   };
 
   const toggleFile = (fp) => {
-    setCheckedIds(prev => {
+    setCheckedIds((prev) => {
       const next = new Set(prev);
       next.has(fp) ? next.delete(fp) : next.add(fp);
       return next;
@@ -89,7 +89,7 @@ export default function ImportDialog({ onClose, onDone, initialFiles = null }) {
 
   const handleImport = async () => {
     if (!api.isBridgeAvailable() || importing) return;
-    const files = foundFiles.filter(f => checkedIds.has(f.filepath));
+    const files = foundFiles.filter((f) => checkedIds.has(f.filepath));
     if (files.length === 0) return;
     setImporting(true);
     setProgress(0);
@@ -99,7 +99,7 @@ export default function ImportDialog({ onClose, onDone, initialFiles = null }) {
     importedAnyRef.current = false;
     setExifProgress(null);
 
-    const override = dateMode === 'today' ? todayStr() : (dateMode === 'custom' ? customDate : null);
+    const override = dateMode === 'today' ? todayStr() : dateMode === 'custom' ? customDate : null;
     const allImported = [];
     const batchSize = 20;
     let canceled = false;
@@ -160,7 +160,8 @@ export default function ImportDialog({ onClose, onDone, initialFiles = null }) {
           <div className="form-group">
             <label className="form-label">选择包含图片的文件夹</label>
             <p className="import-hint">
-              导入的图片会复制到 PixYang 管理目录，按日期自动整理（如：2026/06/15/图片.jpg）。原始文件不受影响。
+              导入的图片会复制到 PixYang
+              管理目录，按日期自动整理（如：2026/06/15/图片.jpg）。原始文件不受影响。
             </p>
             <div style={{ display: 'flex', gap: 8 }}>
               <Input value={selectedDir || ''} readOnly placeholder="未选择文件夹..." />
@@ -182,11 +183,34 @@ export default function ImportDialog({ onClose, onDone, initialFiles = null }) {
               <div className="form-group">
                 <label className="form-label">导入日期</label>
                 <div className="import-date-row">
-                  <Button size="xs" variant={dateMode === 'today' ? 'default' : 'secondary'} onClick={() => setDateMode('today')}>今天</Button>
-                  <Button size="xs" variant={dateMode === 'exif' ? 'default' : 'secondary'} onClick={() => setDateMode('exif')}>使用拍摄日期</Button>
-                  <Button size="xs" variant={dateMode === 'custom' ? 'default' : 'secondary'} onClick={() => setDateMode('custom')}>自定义</Button>
+                  <Button
+                    size="xs"
+                    variant={dateMode === 'today' ? 'default' : 'secondary'}
+                    onClick={() => setDateMode('today')}
+                  >
+                    今天
+                  </Button>
+                  <Button
+                    size="xs"
+                    variant={dateMode === 'exif' ? 'default' : 'secondary'}
+                    onClick={() => setDateMode('exif')}
+                  >
+                    使用拍摄日期
+                  </Button>
+                  <Button
+                    size="xs"
+                    variant={dateMode === 'custom' ? 'default' : 'secondary'}
+                    onClick={() => setDateMode('custom')}
+                  >
+                    自定义
+                  </Button>
                   {dateMode === 'custom' && (
-                    <Input type="date" className="h-7 w-40 text-xs" value={customDate} onChange={(e) => setCustomDate(e.target.value)} />
+                    <Input
+                      type="date"
+                      className="h-7 w-40 text-xs"
+                      value={customDate}
+                      onChange={(e) => setCustomDate(e.target.value)}
+                    />
                   )}
                 </div>
               </div>
@@ -194,14 +218,25 @@ export default function ImportDialog({ onClose, onDone, initialFiles = null }) {
               {/* 文件选择 */}
               <div className="form-group">
                 <div className="import-file-toolbar">
-                  <span>找到 <strong>{formatCount(foundFiles.length)}</strong> 个图片文件，已选 <strong>{checkedCount}</strong> 个</span>
+                  <span>
+                    找到 <strong>{formatCount(foundFiles.length)}</strong> 个图片文件，已选{' '}
+                    <strong>{checkedCount}</strong> 个
+                  </span>
                   <div style={{ display: 'flex', gap: 6 }}>
-                    <Button size="xs" variant="secondary" onClick={() => setCheckedIds(new Set(foundFiles.map(f => f.filepath)))}>全选</Button>
-                    <Button size="xs" variant="ghost" onClick={() => setCheckedIds(new Set())}>取消全选</Button>
+                    <Button
+                      size="xs"
+                      variant="secondary"
+                      onClick={() => setCheckedIds(new Set(foundFiles.map((f) => f.filepath)))}
+                    >
+                      全选
+                    </Button>
+                    <Button size="xs" variant="ghost" onClick={() => setCheckedIds(new Set())}>
+                      取消全选
+                    </Button>
                   </div>
                 </div>
                 <div className="import-file-grid">
-                  {foundFiles.map(f => {
+                  {foundFiles.map((f) => {
                     const checked = checkedIds.has(f.filepath);
                     const url = fileUrls[f.filepath];
                     return (
@@ -217,7 +252,9 @@ export default function ImportDialog({ onClose, onDone, initialFiles = null }) {
                             <FileImage className="size-6" />
                           )}
                         </div>
-                        <div className="import-file-name" title={f.filename}>{f.filename}</div>
+                        <div className="import-file-name" title={f.filename}>
+                          {f.filename}
+                        </div>
                         <div className="import-file-meta">{formatFileSize(f.size)}</div>
                         <span className={`import-check ${checked ? 'checked' : ''}`}>
                           {checked && <Check className="size-3" />}
@@ -235,7 +272,9 @@ export default function ImportDialog({ onClose, onDone, initialFiles = null }) {
               <div className="import-scanning">
                 <Loader2 className="size-4 animate-spin" />
                 {currentFile ? `正在导入 ${currentFile}...` : `正在导入图片... ${progress}%`}
-                {exifProgress && exifProgress.total > 0 && `（读取信息 ${exifProgress.done}/${exifProgress.total}）`}
+                {exifProgress &&
+                  exifProgress.total > 0 &&
+                  `（读取信息 ${exifProgress.done}/${exifProgress.total}）`}
               </div>
               <div className="progress-bar" style={{ marginTop: 8 }}>
                 <div className="progress-bar-fill" style={{ width: `${progress}%` }} />
@@ -248,7 +287,9 @@ export default function ImportDialog({ onClose, onDone, initialFiles = null }) {
           {result && (
             <div className="import-result">
               <CheckCircle2 className="size-8" style={{ color: 'var(--success)' }} />
-              <div className="import-result-title">{result.canceled ? '已停止导入' : '导入完成'}</div>
+              <div className="import-result-title">
+                {result.canceled ? '已停止导入' : '导入完成'}
+              </div>
               <div className="import-result-desc">
                 成功导入 {formatCount(result.imported)} 张
                 {result.skipped > 0 && `，跳过 ${formatCount(result.skipped)} 张（已存在或失败）`}
@@ -265,14 +306,15 @@ export default function ImportDialog({ onClose, onDone, initialFiles = null }) {
             <>
               {/* 取消也走 handleOpenChange：直连 onClose 会绕过 importedAnyRef 的 onDone 收尾，
                   部分导入后点取消图库停在旧数据（审查批 8 Q-04） */}
-              <Button variant="ghost" onClick={() => handleOpenChange(false)} disabled={importing}>取消</Button>
+              <Button variant="ghost" onClick={() => handleOpenChange(false)} disabled={importing}>
+                取消
+              </Button>
               {importing ? (
-                <Button variant="secondary" onClick={handleCancelImport}>停止导入</Button>
+                <Button variant="secondary" onClick={handleCancelImport}>
+                  停止导入
+                </Button>
               ) : (
-                <Button
-                  disabled={checkedCount === 0 || scanning}
-                  onClick={handleImport}
-                >
+                <Button disabled={checkedCount === 0 || scanning} onClick={handleImport}>
                   导入 {formatCount(checkedCount)} 张图片
                 </Button>
               )}

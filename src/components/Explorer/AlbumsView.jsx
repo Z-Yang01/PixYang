@@ -24,22 +24,26 @@ export default function AlbumsView({ onSelectAlbum, onRefresh }) {
   const [renameTarget, setRenameTarget] = useState(null);
   const [renameVal, setRenameVal] = useState('');
 
-  useEffect(() => { loadAlbums(); }, []);
+  useEffect(() => {
+    loadAlbums();
+  }, []);
 
   // 批量解析相册封面 URL
   useEffect(() => {
-    const paths = [...new Set(albums.map(a => a.cover_path).filter(Boolean))];
+    const paths = [...new Set(albums.map((a) => a.cover_path).filter(Boolean))];
     if (paths.length === 0 || !api.isBridgeAvailable()) return;
     let alive = true;
-    api.toFileUrls(paths).then(map => {
+    api.toFileUrls(paths).then((map) => {
       if (!alive || !map) return;
       const next = {};
       for (const a of albums) {
         if (a.cover_path && map[a.cover_path]) next[a.id] = map[a.cover_path];
       }
-      setCoverUrls(prev => ({ ...prev, ...next }));
+      setCoverUrls((prev) => ({ ...prev, ...next }));
     });
-    return () => { alive = false; };
+    return () => {
+      alive = false;
+    };
   }, [albums]);
 
   const loadAlbums = async () => {
@@ -122,7 +126,14 @@ export default function AlbumsView({ onSelectAlbum, onRefresh }) {
   return (
     <div className="content-area">
       <div style={{ maxWidth: 900, margin: '0 auto', padding: 20, flexShrink: 0 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            marginBottom: 20,
+          }}
+        >
           <div>
             <h1 style={{ fontSize: 22, fontWeight: 700 }}>相册</h1>
             <p style={{ fontSize: 13, color: 'var(--text-muted)', marginTop: 4 }}>
@@ -135,17 +146,24 @@ export default function AlbumsView({ onSelectAlbum, onRefresh }) {
         </div>
 
         {showCreate && (
-          <div style={{
-            background: 'var(--bg-card)', border: '1px solid var(--border)',
-            borderRadius: 'var(--radius-lg)', padding: 16, marginBottom: 20,
-          }}>
+          <div
+            style={{
+              background: 'var(--bg-card)',
+              border: '1px solid var(--border)',
+              borderRadius: 'var(--radius-lg)',
+              padding: 16,
+              marginBottom: 20,
+            }}
+          >
             <div className="form-group">
               <label className="form-label">相册名称</label>
               <Input
                 value={newName}
                 onChange={(e) => setNewName(e.target.value)}
                 placeholder="例如：旅行照片、项目截图..."
-                onKeyDown={(e) => { if (isEnterSubmit(e)) handleCreate(); }}
+                onKeyDown={(e) => {
+                  if (isEnterSubmit(e)) handleCreate();
+                }}
                 autoFocus
               />
             </div>
@@ -158,7 +176,9 @@ export default function AlbumsView({ onSelectAlbum, onRefresh }) {
               />
             </div>
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-              <Button variant="ghost" onClick={() => setShowCreate(false)}>取消</Button>
+              <Button variant="ghost" onClick={() => setShowCreate(false)}>
+                取消
+              </Button>
               <Button onClick={handleCreate} disabled={!newName.trim()}>
                 创建相册
               </Button>
@@ -168,19 +188,18 @@ export default function AlbumsView({ onSelectAlbum, onRefresh }) {
 
         {albums.length === 0 && !showCreate ? (
           <div className="empty-state" style={{ height: 300 }}>
-            <div className="empty-state-icon"><FolderOpen /></div>
+            <div className="empty-state-icon">
+              <FolderOpen />
+            </div>
             <div className="empty-state-title">还没有相册</div>
             <div className="empty-state-desc">创建相册来分类整理你的图片集合。</div>
           </div>
         ) : (
           <div className="album-grid">
-            {albums.map(album => (
+            {albums.map((album) => (
               <ContextMenu key={album.id}>
                 <ContextMenuTrigger asChild>
-                  <div
-                    className="album-card"
-                    onClick={() => onSelectAlbum?.(album.id)}
-                  >
+                  <div className="album-card" onClick={() => onSelectAlbum?.(album.id)}>
                     {coverUrls[album.id] ? (
                       <img
                         className="album-card-cover"
@@ -220,17 +239,26 @@ export default function AlbumsView({ onSelectAlbum, onRefresh }) {
                     </div>
                   </div>
                 </ContextMenuTrigger>
-                <ContextMenuContent onCloseAutoFocus={(e) => {
-                  // radix 菜单关闭时把焦点强行还给 trigger，会抢走改名框的 autoFocus
-                  // 并触发 onBlur 提交未编辑/半截名称：改名期间禁止焦点归还
-                  if (renameTarget) e.preventDefault();
-                }}>
-                  <ContextMenuItem onClick={() => onSelectAlbum?.(album.id)}>查看图片</ContextMenuItem>
+                <ContextMenuContent
+                  onCloseAutoFocus={(e) => {
+                    // radix 菜单关闭时把焦点强行还给 trigger，会抢走改名框的 autoFocus
+                    // 并触发 onBlur 提交未编辑/半截名称：改名期间禁止焦点归还
+                    if (renameTarget) e.preventDefault();
+                  }}
+                >
+                  <ContextMenuItem onClick={() => onSelectAlbum?.(album.id)}>
+                    查看图片
+                  </ContextMenuItem>
                   <ContextMenuSeparator />
                   <ContextMenuItem onClick={() => handleRenameStart(album)}>重命名</ContextMenuItem>
                   <ContextMenuItem onClick={() => handleExport(album)}>导出图片</ContextMenuItem>
                   <ContextMenuSeparator />
-                  <ContextMenuItem className="text-destructive" onClick={() => setDeleteTarget(album)}>删除</ContextMenuItem>
+                  <ContextMenuItem
+                    className="text-destructive"
+                    onClick={() => setDeleteTarget(album)}
+                  >
+                    删除
+                  </ContextMenuItem>
                 </ContextMenuContent>
               </ContextMenu>
             ))}

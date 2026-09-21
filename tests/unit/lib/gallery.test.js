@@ -22,7 +22,9 @@ const grid = { rows: 3, columns: 5, gap: 12, padding: 16 };
 
 describe('dateKeyOf / groupImagesByDate', () => {
   it('优先 taken_at，其次 import_date，截取前 10 位', () => {
-    expect(dateKeyOf({ taken_at: '2024-05-01 12:00', import_date: '2023-01-02' })).toBe('2024-05-01');
+    expect(dateKeyOf({ taken_at: '2024-05-01 12:00', import_date: '2023-01-02' })).toBe(
+      '2024-05-01'
+    );
     expect(dateKeyOf({ import_date: '2023-01-02' })).toBe('2023-01-02');
     expect(dateKeyOf({})).toBe('');
   });
@@ -210,7 +212,9 @@ describe('matchesListFilters 轻量写回后成员回归校验（审查批 8 R-3
   it('单日筛选下改日期掉出视图', () => {
     const row = { import_date: '2026-05-05', filename: 'a.jpg' };
     expect(matchesListFilters(row, { filterDate: '2026-05-05' })).toBe(true);
-    expect(matchesListFilters({ ...row, import_date: '2026-06-06' }, { filterDate: '2026-05-05' })).toBe(false);
+    expect(
+      matchesListFilters({ ...row, import_date: '2026-06-06' }, { filterDate: '2026-05-05' })
+    ).toBe(false);
   });
 
   it('区间筛选按字符串日期比较两端', () => {

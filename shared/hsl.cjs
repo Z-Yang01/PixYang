@@ -18,9 +18,9 @@ const HSL_BANDS = [
   { name: 'purple', center: 280 },
   { name: 'magenta', center: 320 },
 ];
-const BAND_RADIUS = 60;   // 度，权重衰减半径
-const HUE_MAX_DEG = 30;   // hue ±100 → ±30°
-const LUM_MAX = 0.3;      // lum ±100 → ±0.3
+const BAND_RADIUS = 60; // 度，权重衰减半径
+const HUE_MAX_DEG = 30; // hue ±100 → ±30°
+const LUM_MAX = 0.3; // lum ±100 → ±0.3
 
 const clamp01 = (v) => Math.min(1, Math.max(0, v));
 const wrapDeg = (v) => ((v % 360) + 360) % 360;
@@ -110,9 +110,9 @@ function hslToRgb(h, s, l) {
 function hslPixel(rgb, hsl) {
   const [r, g, b] = [rgb[0] / 255, rgb[1] / 255, rgb[2] / 255];
   const [h, s, l] = rgbToHsl(r, g, b);
-  const hueAdj = weightedAdjust(hsl.hue, h) / 100 * HUE_MAX_DEG;
+  const hueAdj = (weightedAdjust(hsl.hue, h) / 100) * HUE_MAX_DEG;
   const satAdj = weightedAdjust(hsl.sat, h) / 100;
-  const lumAdj = weightedAdjust(hsl.lum, h) / 100 * LUM_MAX;
+  const lumAdj = (weightedAdjust(hsl.lum, h) / 100) * LUM_MAX;
   const h2 = wrapDeg(h + hueAdj);
   const s2 = clamp01(s * (1 + satAdj));
   const l2 = clamp01(l + lumAdj);

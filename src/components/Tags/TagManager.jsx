@@ -7,7 +7,16 @@ import ConfirmDialog from '../Layout/ConfirmDialog';
 import { isEnterSubmit } from '@/lib/shortcuts';
 import api from '@/lib/api';
 
-const TAG_COLORS = ['#818cf8', '#f472b6', '#fbbf24', '#4ade80', '#f87171', '#22d3ee', '#c084fc', '#fb923c'];
+const TAG_COLORS = [
+  '#818cf8',
+  '#f472b6',
+  '#fbbf24',
+  '#4ade80',
+  '#f87171',
+  '#22d3ee',
+  '#c084fc',
+  '#fb923c',
+];
 
 export default function TagManager({ onSelectTag, onRefresh }) {
   const [tags, setTags] = useState([]);
@@ -15,7 +24,9 @@ export default function TagManager({ onSelectTag, onRefresh }) {
   const [newColor, setNewColor] = useState(TAG_COLORS[0]);
   const [deleteTarget, setDeleteTarget] = useState(null);
 
-  useEffect(() => { loadTags(); }, []);
+  useEffect(() => {
+    loadTags();
+  }, []);
 
   const loadTags = async () => {
     if (!api.isBridgeAvailable()) return;
@@ -67,7 +78,15 @@ export default function TagManager({ onSelectTag, onRefresh }) {
           </span>
         </div>
 
-        <div style={{ display: 'flex', gap: 8, marginBottom: 24, alignItems: 'center', flexWrap: 'wrap' }}>
+        <div
+          style={{
+            display: 'flex',
+            gap: 8,
+            marginBottom: 24,
+            alignItems: 'center',
+            flexWrap: 'wrap',
+          }}
+        >
           <Input
             className="max-w-xs"
             value={newName}
@@ -76,16 +95,17 @@ export default function TagManager({ onSelectTag, onRefresh }) {
             placeholder="输入新标签名称..."
           />
           <div style={{ display: 'flex', gap: 4 }}>
-            {TAG_COLORS.map(c => (
+            {TAG_COLORS.map((c) => (
               <button
                 key={c}
                 onClick={() => setNewColor(c)}
                 style={{
-                  width: 28, height: 28, borderRadius: '50%',
+                  width: 28,
+                  height: 28,
+                  borderRadius: '50%',
                   background: c,
-                  border: newColor === c
-                    ? '3px solid var(--text-primary)'
-                    : '3px solid transparent',
+                  border:
+                    newColor === c ? '3px solid var(--text-primary)' : '3px solid transparent',
                   boxShadow: newColor === c ? '0 0 0 2px var(--accent-color-glow)' : 'none',
                   cursor: 'pointer',
                   transition: 'box-shadow 100ms ease, border-color 100ms ease',
@@ -100,11 +120,13 @@ export default function TagManager({ onSelectTag, onRefresh }) {
         </div>
 
         <div className="tag-list">
-          {tags.map(tag => (
+          {tags.map((tag) => (
             <div key={tag.id} className="tag-list-item">
               <span className="tag-dot" style={{ background: tag.color }} />
               <span style={{ flex: 1 }}>{tag.name}</span>
-              <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{tag.image_count} 张图片</span>
+              <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                {tag.image_count} 张图片
+              </span>
               <Button
                 variant="ghost"
                 size="xs"
@@ -126,9 +148,13 @@ export default function TagManager({ onSelectTag, onRefresh }) {
           ))}
           {tags.length === 0 && (
             <div className="empty-state" style={{ width: '100%' }}>
-              <div className="empty-state-icon"><Tag /></div>
+              <div className="empty-state-icon">
+                <Tag />
+              </div>
               <div className="empty-state-title">还没有标签</div>
-              <div className="empty-state-desc">在上方创建一个吧，例如：风景、人像、截图、工作、旅行...</div>
+              <div className="empty-state-desc">
+                在上方创建一个吧，例如：风景、人像、截图、工作、旅行...
+              </div>
             </div>
           )}
         </div>

@@ -12,8 +12,15 @@ describe('galleryStore 网格设置归一化', () => {
   });
 
   it('setGridSettings 数字化并夹到合法区间（设置页输入框给出字符串）', () => {
-    useGalleryStore.getState().setGridSettings({ rows: '3', columns: '5', gap: '12', padding: '16' });
-    expect(useGalleryStore.getState().gridSettings).toEqual({ rows: 3, columns: 5, gap: 12, padding: 16 });
+    useGalleryStore
+      .getState()
+      .setGridSettings({ rows: '3', columns: '5', gap: '12', padding: '16' });
+    expect(useGalleryStore.getState().gridSettings).toEqual({
+      rows: 3,
+      columns: 5,
+      gap: 12,
+      padding: 16,
+    });
     // 字符串数值参与加减不再产生 '5'+1='51' / '10'-1→NaN 连锁
     const columns = useGalleryStore.getState().gridSettings.columns;
     expect(columns + 1).toBe(6);
@@ -64,7 +71,14 @@ describe('galleryStore 筛选互斥与重置', () => {
   });
 
   it('clearSingleFilter 清任意筛选时重置页码', () => {
-    useGalleryStore.setState({ page: 7, filterTag: 1, filterAlbum: 1, filterDate: '2026-01-01', dateRange: { from: 'a', to: 'b' }, filterFavorites: true });
+    useGalleryStore.setState({
+      page: 7,
+      filterTag: 1,
+      filterAlbum: 1,
+      filterDate: '2026-01-01',
+      dateRange: { from: 'a', to: 'b' },
+      filterFavorites: true,
+    });
     for (const type of ['tag', 'album', 'date', 'dateRange', 'favorites']) {
       useGalleryStore.setState({ page: 7 });
       useGalleryStore.getState().clearSingleFilter(type);
@@ -81,9 +95,14 @@ describe('galleryStore loadImages 页码越界钳制', () => {
   it('返回空页但总数>0 且 page>1：回钳到最后一页（wiring 自动重查）', async () => {
     window.pixyang = { getImages: vi.fn().mockResolvedValue({ images: [], total: 7 }) };
     useGalleryStore.setState(initialSnapshot, true);
-    useGalleryStore.setState({ page: 5, gridSettings: { rows: 1, columns: 2, gap: 12, padding: 16 } });
+    useGalleryStore.setState({
+      page: 5,
+      gridSettings: { rows: 1, columns: 2, gap: 12, padding: 16 },
+    });
     await useGalleryStore.getState().loadImages();
-    expect(window.pixyang.getImages).toHaveBeenCalledWith(expect.objectContaining({ offset: 8, limit: 2 }));
+    expect(window.pixyang.getImages).toHaveBeenCalledWith(
+      expect.objectContaining({ offset: 8, limit: 2 })
+    );
     expect(useGalleryStore.getState().page).toBe(4);
     expect(useGalleryStore.getState().totalImages).toBe(7);
   });
@@ -191,7 +210,14 @@ describe('galleryStore loadImages 本地写世代（审查批 8 R-2）', () => {
 
   it('在途期间发生本地写：陈旧快照落地被丢弃，本地改动不回滚，loading 不卡死', async () => {
     let resolveFirst;
-    window.pixyang = { getImages: vi.fn().mockImplementation(() => new Promise((r) => { resolveFirst = r; })) };
+    window.pixyang = {
+      getImages: vi.fn().mockImplementation(
+        () =>
+          new Promise((r) => {
+            resolveFirst = r;
+          })
+      ),
+    };
     useGalleryStore.setState(initialSnapshot, true);
     const p = useGalleryStore.getState().loadImages();
     useGalleryStore.getState().setImages([{ id: 1, filename: 'a.jpg', rating: 5 }]);
@@ -205,7 +231,14 @@ describe('galleryStore loadImages 本地写世代（审查批 8 R-2）', () => {
 
   it('在途无本地写：正常落地整页快照（对照组）', async () => {
     let resolveFirst;
-    window.pixyang = { getImages: vi.fn().mockImplementation(() => new Promise((r) => { resolveFirst = r; })) };
+    window.pixyang = {
+      getImages: vi.fn().mockImplementation(
+        () =>
+          new Promise((r) => {
+            resolveFirst = r;
+          })
+      ),
+    };
     useGalleryStore.setState(initialSnapshot, true);
     const p = useGalleryStore.getState().loadImages();
     resolveFirst({ images: [{ id: 2, filename: 'b.jpg' }], total: 1 });
@@ -217,7 +250,14 @@ describe('galleryStore loadImages 本地写世代（审查批 8 R-2）', () => {
 
   it('thumbVersion 等其他字段的变化不拦响应（仅 images 引用敏感）', async () => {
     let resolveFirst;
-    window.pixyang = { getImages: vi.fn().mockImplementation(() => new Promise((r) => { resolveFirst = r; })) };
+    window.pixyang = {
+      getImages: vi.fn().mockImplementation(
+        () =>
+          new Promise((r) => {
+            resolveFirst = r;
+          })
+      ),
+    };
     useGalleryStore.setState(initialSnapshot, true);
     const p = useGalleryStore.getState().loadImages();
     useGalleryStore.setState((s) => ({ thumbVersion: s.thumbVersion + 1 }));

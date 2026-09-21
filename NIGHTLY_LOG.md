@@ -449,3 +449,11 @@
   配置）与纯 LF 工作副本产生转换歧义，长期呈现空 diff 假脏）。实证：cargo check 重写后
   git status 全绿、autocrlf 警告从 8 条归零。配置类改动不触碰 JS/Rust 源码，R38 门禁结果
   与安装包继续有效；后续轮次不再手工绕开这三个文件。
+- 2026-09-21 23:10 R40 Prettier 基线一次落库（优化建议 4）：format:check 此前 1235 文件不达标
+  形同虚设。本轮以 npx prettier --write . 一次性落基线（178 文件，+5752/-2460，纯格式零语义），
+  转真实门禁。.prettierrc.json 加 endOfLine:auto（保留各文件原换行，不引发全仓换行重写）；
+  .prettierignore 增补 src-tauri/gen/、src-tauri/target/、*.md（工具重写文件与历史文档不入
+  基线，防「工具改回→检查又红」的摇摆）。ImageViewer.test.jsx 一处手工链式写法收敛为
+  prettier 稳定形。全部门禁复跑：vitest 766/766、lint 0 error、typecheck ✅、vite build ✅、
+  cargo 全量 144+golden_audit ✅（cases/render_vectors JSON 经 serde 语义解析，空白重排安全）；
+  NSIS 安装包重打。此后新改动的格式合规由 format:check 强制。

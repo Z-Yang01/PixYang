@@ -9,10 +9,16 @@ if (typeof globalThis.ResizeObserver === 'undefined') {
     disconnect() {}
   };
 }
-if (typeof globalThis.Element !== 'undefined' && typeof globalThis.Element.prototype.scrollIntoView !== 'function') {
+if (
+  typeof globalThis.Element !== 'undefined' &&
+  typeof globalThis.Element.prototype.scrollIntoView !== 'function'
+) {
   globalThis.Element.prototype.scrollIntoView = function scrollIntoView() {};
 }
-if (typeof globalThis.window !== 'undefined' && typeof globalThis.window.matchMedia !== 'function') {
+if (
+  typeof globalThis.window !== 'undefined' &&
+  typeof globalThis.window.matchMedia !== 'function'
+) {
   globalThis.window.matchMedia = (query) => ({
     matches: false,
     media: query,
@@ -21,6 +27,8 @@ if (typeof globalThis.window !== 'undefined' && typeof globalThis.window.matchMe
     removeListener() {},
     addEventListener() {},
     removeEventListener() {},
-    dispatchEvent() { return false; },
+    dispatchEvent() {
+      return false;
+    },
   });
 }

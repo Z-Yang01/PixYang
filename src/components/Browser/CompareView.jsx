@@ -18,7 +18,9 @@ export default function CompareView({ mode = 'split', beforeSrc, afterNode, init
       if (!r.width) return;
       setSplitPos(Math.min(98, Math.max(2, ((e.clientX - r.left) / r.width) * 100)));
     };
-    const onUp = () => { draggingRef.current = false; };
+    const onUp = () => {
+      draggingRef.current = false;
+    };
     window.addEventListener('mousemove', onMove);
     window.addEventListener('mouseup', onUp);
     window.addEventListener('blur', onUp);

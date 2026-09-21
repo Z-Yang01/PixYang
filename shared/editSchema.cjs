@@ -23,15 +23,15 @@ const CropSchema = z.object({
 });
 
 const BasicSchema = z.object({
-  exposure: z.number().min(-2).max(2).catch(0),        // ±2EV
-  contrast: z.number().min(-50).max(50).catch(0),      // ±50
-  highlights: z.number().min(-100).max(100).catch(0),  // 高光回收
-  shadows: z.number().min(-100).max(100).catch(0),     // 阴影
-  whites: z.number().min(-100).max(100).catch(0),      // 白色色阶
-  blacks: z.number().min(-100).max(100).catch(0),      // 黑色色阶
-  saturation: z.number().min(-100).max(100).catch(0),  // -100 黑白
+  exposure: z.number().min(-2).max(2).catch(0), // ±2EV
+  contrast: z.number().min(-50).max(50).catch(0), // ±50
+  highlights: z.number().min(-100).max(100).catch(0), // 高光回收
+  shadows: z.number().min(-100).max(100).catch(0), // 阴影
+  whites: z.number().min(-100).max(100).catch(0), // 白色色阶
+  blacks: z.number().min(-100).max(100).catch(0), // 黑色色阶
+  saturation: z.number().min(-100).max(100).catch(0), // -100 黑白
   temperature: z.number().min(-100).max(100).catch(0), // 暖+ 冷-
-  tint: z.number().min(-100).max(100).catch(0),        // 绿- 品红+
+  tint: z.number().min(-100).max(100).catch(0), // 绿- 品红+
 });
 
 // 曲线：每通道为点对平铺数组 [x0,y0, x1,y1, ...]，取值 0..1，x 升序，≥2 点有效；
@@ -84,7 +84,11 @@ const MaskAdjustmentsSchema = z.object({
 });
 // adjustments 整体缺失/非法只回退默认值，不连坐丢弃整个蒙版
 const MaskAdjustmentsFieldSchema = MaskAdjustmentsSchema.catch({
-  exposure: 0, contrast: 0, saturation: 0, temperature: 0, tint: 0,
+  exposure: 0,
+  contrast: 0,
+  saturation: 0,
+  temperature: 0,
+  tint: 0,
 });
 
 const RadialMaskSchema = z.object({
@@ -122,16 +126,22 @@ const RangeMaskSchema = z.object({
   adjustments: MaskAdjustmentsFieldSchema,
 });
 
-const MaskSchema = z.union([RadialMaskSchema, LinearMaskSchema, RangeMaskSchema]).nullable().catch(null);
+const MaskSchema = z
+  .union([RadialMaskSchema, LinearMaskSchema, RangeMaskSchema])
+  .nullable()
+  .catch(null);
 
 const OutputSchema = z.object({
   format: z.enum(['jpeg', 'tiff', 'png', 'webp']).catch('jpeg'),
   quality: z.number().min(1).max(100).catch(92),
   icc: z.string().catch(''),
-  resize: z.object({
-    width: z.number().min(1).optional(),
-    height: z.number().min(1).optional(),
-  }).nullable().catch(null),
+  resize: z
+    .object({
+      width: z.number().min(1).optional(),
+      height: z.number().min(1).optional(),
+    })
+    .nullable()
+    .catch(null),
 });
 
 const EditParamsSchema = z.object({
@@ -144,7 +154,10 @@ const EditParamsSchema = z.object({
   colorGrading: ColorGradingSchema,
   detail: DetailSchema,
   lens: LensSchema,
-  masks: z.array(MaskSchema).transform((a) => a.filter(Boolean)).catch([]),
+  masks: z
+    .array(MaskSchema)
+    .transform((a) => a.filter(Boolean))
+    .catch([]),
   output: OutputSchema,
 });
 
@@ -156,8 +169,15 @@ function DEFAULT_EDITS() {
     orientation: { rotate: 0, flipH: false, flipV: false },
     crop: null,
     basic: {
-      exposure: 0, contrast: 0, highlights: 0, shadows: 0, whites: 0, blacks: 0,
-      saturation: 0, temperature: 0, tint: 0,
+      exposure: 0,
+      contrast: 0,
+      highlights: 0,
+      shadows: 0,
+      whites: 0,
+      blacks: 0,
+      saturation: 0,
+      temperature: 0,
+      tint: 0,
     },
     curves: { rgb: [], r: [], g: [], b: [] },
     hsl: { hue: [], sat: [], lum: [] },
@@ -201,7 +221,13 @@ function upgradeEdits(raw) {
 // 深合并：input 优先，缺失子对象/字段回退默认（zod4 的 catch 不处理缺失字段，结构完整性在此保证）
 function deepMerge(defaults, input) {
   if (input === null || input === undefined) return defaults;
-  if (!defaults || typeof defaults !== 'object' || Array.isArray(defaults) || typeof input !== 'object' || Array.isArray(input)) {
+  if (
+    !defaults ||
+    typeof defaults !== 'object' ||
+    Array.isArray(defaults) ||
+    typeof input !== 'object' ||
+    Array.isArray(input)
+  ) {
     return input;
   }
   const out = { ...defaults };
@@ -213,9 +239,8 @@ function deepMerge(defaults, input) {
 
 // 宽容归一化：先深合并默认结构，再由 zod 校验值域；非法值经 catch 回退，永不抛错
 function normalizeEdits(input) {
-  const base = (input && typeof input === 'object')
-    ? deepMerge(DEFAULT_EDITS(), input)
-    : DEFAULT_EDITS();
+  const base =
+    input && typeof input === 'object' ? deepMerge(DEFAULT_EDITS(), input) : DEFAULT_EDITS();
   const parsed = EditParamsSchema.safeParse({ ...base, schemaVersion: SCHEMA_VERSION });
   return parsed.success ? parsed.data : DEFAULT_EDITS();
 }

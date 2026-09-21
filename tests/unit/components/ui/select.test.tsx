@@ -149,7 +149,13 @@ describe('ui/Select', () => {
     function Controlled() {
       const [open, setOpen] = React.useState(true);
       return (
-        <Select open={open} onOpenChange={(o) => { onOpenChange(o); setOpen(o); }}>
+        <Select
+          open={open}
+          onOpenChange={(o) => {
+            onOpenChange(o);
+            setOpen(o);
+          }}
+        >
           <SelectTrigger aria-label="选择尺寸">
             <SelectValue placeholder="请选择" />
           </SelectTrigger>

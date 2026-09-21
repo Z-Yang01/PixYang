@@ -4,10 +4,29 @@ import { render, screen, fireEvent, cleanup } from '@testing-library/react';
 import MaskPanel from '@/components/Browser/MaskPanel';
 
 const radial = (over = {}) => ({
-  type: 'radial', id: 'm1', cx: 200, cy: 150, rx: 80, ry: 60, rotation: 0, feather: 0.5, invert: false,
-  adjustments: { exposure: -0.5, contrast: 0, saturation: 0, temperature: 0, tint: 0 }, ...over,
+  type: 'radial',
+  id: 'm1',
+  cx: 200,
+  cy: 150,
+  rx: 80,
+  ry: 60,
+  rotation: 0,
+  feather: 0.5,
+  invert: false,
+  adjustments: { exposure: -0.5, contrast: 0, saturation: 0, temperature: 0, tint: 0 },
+  ...over,
 });
-const linear = { type: 'linear', id: 'm2', x0: 0, y0: 90, x1: 0, y1: 210, feather: 0.5, invert: false, adjustments: { exposure: 0.3, contrast: 0, saturation: 0, temperature: 0, tint: 0 } };
+const linear = {
+  type: 'linear',
+  id: 'm2',
+  x0: 0,
+  y0: 90,
+  x1: 0,
+  y1: 210,
+  feather: 0.5,
+  invert: false,
+  adjustments: { exposure: 0.3, contrast: 0, saturation: 0, temperature: 0, tint: 0 },
+};
 const SESSION = { width: 400, height: 300 };
 
 const setup = (masks = [], selectedId = null) => {
@@ -15,7 +34,14 @@ const setup = (masks = [], selectedId = null) => {
   const onChange = vi.fn();
   const onSelect = vi.fn();
   const { container } = render(
-    <MaskPanel masks={masks} session={SESSION} selectedId={selectedId} onSelect={onSelect} onCommit={onCommit} onChange={onChange} />
+    <MaskPanel
+      masks={masks}
+      session={SESSION}
+      selectedId={selectedId}
+      onSelect={onSelect}
+      onCommit={onCommit}
+      onChange={onChange}
+    />
   );
   return { onCommit, onChange, onSelect, container };
 };
@@ -38,8 +64,24 @@ describe('MaskPanel（蒙版面板）', () => {
 
   it('选中径向蒙版：几何滑杆（cx/cy/rx/ry/rotation）+ 羽化 + 5 项调整', () => {
     const { container } = setup([radial()], 'm1');
-    const labels = [...container.querySelectorAll('.editor-slider-row > span')].map((s) => s.textContent);
-    expect(labels).toEqual(expect.arrayContaining(['中心 X', '中心 Y', '半径 X', '半径 Y', '旋转', '羽化', '曝光', '对比度', '饱和度', '色温', '色调']));
+    const labels = [...container.querySelectorAll('.editor-slider-row > span')].map(
+      (s) => s.textContent
+    );
+    expect(labels).toEqual(
+      expect.arrayContaining([
+        '中心 X',
+        '中心 Y',
+        '半径 X',
+        '半径 Y',
+        '旋转',
+        '羽化',
+        '曝光',
+        '对比度',
+        '饱和度',
+        '色温',
+        '色调',
+      ])
+    );
   });
 
   it('几何滑杆拖动实时更新，pointerup 提交一次', () => {
@@ -71,7 +113,9 @@ describe('MaskPanel（蒙版面板）', () => {
     expect(onCommit).toHaveBeenCalledTimes(1);
     const linearPanel = setup([linear], 'm2');
     // 线性几何 4 + 羽化 + 5 调整 = 10 个滑杆；羽化（第 5 个）对线性蒙版禁用
-    const feather = linearPanel.container.querySelectorAll('.editor-slider-row input[type="range"]');
+    const feather = linearPanel.container.querySelectorAll(
+      '.editor-slider-row input[type="range"]'
+    );
     expect(feather).toHaveLength(10);
     expect(feather[4].disabled).toBe(true);
   });
@@ -92,7 +136,15 @@ describe('MaskPanel（蒙版面板）', () => {
   });
 
   it('range 蒙版：chip 显示「亮度」；几何滑杆为中心亮度/范围，羽化可用，调整滑杆生效', () => {
-    const range = { type: 'range', id: 'm3', center: 0.35, range: 0.25, feather: 0.25, invert: false, adjustments: { exposure: 0, contrast: 0, saturation: 0, temperature: 0, tint: 0 } };
+    const range = {
+      type: 'range',
+      id: 'm3',
+      center: 0.35,
+      range: 0.25,
+      feather: 0.25,
+      invert: false,
+      adjustments: { exposure: 0, contrast: 0, saturation: 0, temperature: 0, tint: 0 },
+    };
     const { container, onChange } = setup([radial(), range], 'm3');
     const chips = container.querySelectorAll('.editor-mask-list button');
     expect(chips[1].textContent).toContain('亮度');
@@ -101,7 +153,9 @@ describe('MaskPanel（蒙版面板）', () => {
     expect(sliders).toHaveLength(8);
     expect(sliders[2].disabled).toBe(false);
     expect(sliders[2].value).toBe('0.25');
-    const labels = [...container.querySelectorAll('.editor-slider-row span')].map((el) => el.textContent);
+    const labels = [...container.querySelectorAll('.editor-slider-row span')].map(
+      (el) => el.textContent
+    );
     expect(labels).toEqual(expect.arrayContaining(['中心亮度', '范围', '羽化']));
     fireEvent.change(sliders[0], { target: { value: '0.6' } });
     expect(onChange).toHaveBeenCalledTimes(1);

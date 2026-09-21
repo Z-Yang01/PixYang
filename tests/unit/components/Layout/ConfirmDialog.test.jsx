@@ -5,7 +5,9 @@ import ConfirmDialog from '@/components/Layout/ConfirmDialog';
 
 describe('ConfirmDialog', () => {
   it('渲染标题、消息与默认确认按钮', () => {
-    render(<ConfirmDialog title="删除图片" message="确定吗？" onConfirm={vi.fn()} onCancel={vi.fn()} />);
+    render(
+      <ConfirmDialog title="删除图片" message="确定吗？" onConfirm={vi.fn()} onCancel={vi.fn()} />
+    );
     expect(screen.getByText('删除图片')).toBeInTheDocument();
     expect(screen.getByText('确定吗？')).toBeInTheDocument();
     expect(screen.getByText('确认')).toBeInTheDocument();
@@ -14,7 +16,14 @@ describe('ConfirmDialog', () => {
 
   it('自定义 confirmLabel 生效', () => {
     render(
-      <ConfirmDialog title="T" message="M" confirmLabel="删除 3 张" danger onConfirm={vi.fn()} onCancel={vi.fn()} />
+      <ConfirmDialog
+        title="T"
+        message="M"
+        confirmLabel="删除 3 张"
+        danger
+        onConfirm={vi.fn()}
+        onCancel={vi.fn()}
+      />
     );
     expect(screen.getByText('删除 3 张')).toBeInTheDocument();
   });

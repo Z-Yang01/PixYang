@@ -20,14 +20,18 @@ const testImage = {
 };
 
 function renderPanel(props = {}) {
-  return render(<InfoPanel image={testImage} onClose={vi.fn()} onImageUpdated={vi.fn()} {...props} />);
+  return render(
+    <InfoPanel image={testImage} onClose={vi.fn()} onImageUpdated={vi.fn()} {...props} />
+  );
 }
 
 describe('InfoPanel', () => {
   beforeEach(() => {
     window.pixyang = {
       getImageTags: vi.fn().mockResolvedValue([]),
-      getTags: vi.fn().mockResolvedValue([{ id: 5, name: '风景', color: '#818cf8', image_count: 1 }]),
+      getTags: vi
+        .fn()
+        .mockResolvedValue([{ id: 5, name: '风景', color: '#818cf8', image_count: 1 }]),
       toFileUrl: vi.fn().mockResolvedValue('blob:thumb'),
       getExif: vi.fn().mockResolvedValue({ camera: 'Canon EOS R6', iso: '100', fNumber: 'f/1.8' }),
       addTagToImage: vi.fn().mockResolvedValue(undefined),

@@ -39,7 +39,14 @@ describe('bandWeight / weightedAdjust', () => {
 
 describe('rgbToHsl / hslToRgb 往返', () => {
   it('主色与随机色往返误差 < 1e-6', () => {
-    const cases = [[1, 0, 0], [0, 1, 0], [0, 0, 1], [1, 1, 0], [0.5, 0.25, 0.75], [0.2, 0.8, 0.4]];
+    const cases = [
+      [1, 0, 0],
+      [0, 1, 0],
+      [0, 0, 1],
+      [1, 1, 0],
+      [0.5, 0.25, 0.75],
+      [0.2, 0.8, 0.4],
+    ];
     for (const [r, g, b] of cases) {
       const [h, s, l] = hsl.rgbToHsl(r, g, b);
       const [r2, g2, b2] = hsl.hslToRgb(h, s, l);

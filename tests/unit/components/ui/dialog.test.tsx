@@ -140,6 +140,8 @@ describe('ui/Dialog', () => {
     );
     expect(screen.getByText('组合标题')).toBeInTheDocument();
     // Content 内部自带一个 Overlay，手动又加了一个，因此至少 1 个
-    expect(document.querySelectorAll('[data-slot="dialog-overlay"]').length).toBeGreaterThanOrEqual(1);
+    expect(document.querySelectorAll('[data-slot="dialog-overlay"]').length).toBeGreaterThanOrEqual(
+      1
+    );
   });
 });

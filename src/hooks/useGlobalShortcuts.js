@@ -53,4 +53,3 @@ export default function useGlobalShortcuts(handlers) {
     return () => window.removeEventListener('keydown', handleKey);
   }, []);
 }
-

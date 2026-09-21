@@ -57,15 +57,9 @@
     {
       "kind": "colorGrading",
       "params": {
-        "shadows": [
-          210,
-          45
-        ],
+        "shadows": [210, 45],
         "midtones": [],
-        "highlights": [
-          45,
-          30
-        ]
+        "highlights": [45, 30]
       }
     },
     {

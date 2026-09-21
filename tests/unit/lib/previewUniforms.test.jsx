@@ -13,15 +13,30 @@ const lens = require_('../../../shared/lens.cjs');
 const hsl = require_('../../../shared/hsl.cjs');
 const editSchema = require_('../../../shared/editSchema.cjs');
 
-const buildUniforms = (params, imageSize) => specToShaderUniforms(
-  renderSpec.editParamsToRenderSpec(editSchema.normalizeEdits(params), { sourceHash: 'preview' }),
-  imageSize
-);
+const buildUniforms = (params, imageSize) =>
+  specToShaderUniforms(
+    renderSpec.editParamsToRenderSpec(editSchema.normalizeEdits(params), { sourceHash: 'preview' }),
+    imageSize
+  );
 
 const FULL_PARAMS = {
-  basic: { exposure: 0.5, contrast: 15, highlights: -20, shadows: 30, whites: 10, blacks: -10, saturation: 20, temperature: 15, tint: -5 },
+  basic: {
+    exposure: 0.5,
+    contrast: 15,
+    highlights: -20,
+    shadows: 30,
+    whites: 10,
+    blacks: -10,
+    saturation: 20,
+    temperature: 15,
+    tint: -5,
+  },
   curves: { rgb: [0, 0.03, 0.3, 0.22, 0.7, 0.8, 1, 0.97], b: [0, 0.06, 1, 0.94] },
-  hsl: { hue: [0, 0, 0, -60, 0, 0, 0, 0], sat: [0, 0, 0, 40, 0, 0, 0, 0], lum: [0, 0, 0, 10, 0, 0, 0, 0] },
+  hsl: {
+    hue: [0, 0, 0, -60, 0, 0, 0, 0],
+    sat: [0, 0, 0, 40, 0, 0, 0, 0],
+    lum: [0, 0, 0, 10, 0, 0, 0, 0],
+  },
   colorGrading: { shadows: [215, 35], midtones: [], highlights: [40, 25] },
   lens: { vignette: -35 },
 };
@@ -85,19 +100,30 @@ describe('simulateShaderPixel（shader 公式 JS 模拟）与 shared 数学连�
     c = c.map((x) => x * u.highlightsSlope);
     c = c.map((x, i) => u.curveLut[Math.round(clamp01(x) * 255) * 4 + i] / 255);
     const [h, s, l] = hsl.rgbToHsl(c[0], c[1], c[2]);
-    const h2 = (h + hsl.weightedAdjust(u.hslHue, h) / 100 * 30 + 360) % 360;
+    const h2 = (h + (hsl.weightedAdjust(u.hslHue, h) / 100) * 30 + 360) % 360;
     const s2 = clamp01(s * (1 + hsl.weightedAdjust(u.hslSat, h) / 100));
-    const l2 = clamp01(l + hsl.weightedAdjust(u.hslLum, h) / 100 * 0.3);
+    const l2 = clamp01(l + (hsl.weightedAdjust(u.hslLum, h) / 100) * 0.3);
     c = hsl.hslToRgb(h2, s2, l2);
     const L = 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
-    for (const [slot, key] of [[0, 'shadows'], [1, 'midtones'], [2, 'highlights']]) {
+    for (const [slot, key] of [
+      [0, 'shadows'],
+      [1, 'midtones'],
+      [2, 'highlights'],
+    ]) {
       if (u.gradingScale[slot] <= 0) continue;
-      let w = key === 'shadows' ? clamp01(1 - L / 0.5)
-        : key === 'midtones' ? clamp01(1 - Math.abs(L - 0.5) / 0.35)
-          : clamp01((L - 0.5) / 0.5);
+      let w =
+        key === 'shadows'
+          ? clamp01(1 - L / 0.5)
+          : key === 'midtones'
+            ? clamp01(1 - Math.abs(L - 0.5) / 0.35)
+            : clamp01((L - 0.5) / 0.5);
       w *= w;
       const contrib = (w * u.gradingScale[slot]) / 255;
-      c = [c[0] + contrib * u.gradingDelta[slot][0], c[1] + contrib * u.gradingDelta[slot][1], c[2] + contrib * u.gradingDelta[slot][2]];
+      c = [
+        c[0] + contrib * u.gradingDelta[slot][0],
+        c[1] + contrib * u.gradingDelta[slot][1],
+        c[2] + contrib * u.gradingDelta[slot][2],
+      ];
     }
     c = c.map(clamp01);
     const y = 0.213 * c[0] + 0.715 * c[1] + 0.072 * c[2];
@@ -127,9 +153,36 @@ describe('simulateShaderPixel（shader 公式 JS 模拟）与 shared 数学连�
 describe('masks uniforms（蒙版打包 + shader 模拟）', () => {
   const MASK_PARAMS = {
     masks: [
-      { type: 'radial', id: 'm1', cx: 200, cy: 150, rx: 80, ry: 60, rotation: 30, feather: 0.4, invert: false, adjustments: { exposure: -0.8, saturation: -30 } },
-      { type: 'linear', id: 'm2', x0: 0, y0: 0, x1: 400, y1: 0, invert: true, adjustments: { exposure: 0.5 } },
-      { type: 'range', id: 'm3', center: 0.45, range: 0.2, feather: 0.15, adjustments: { contrast: 20, temperature: -15 } },
+      {
+        type: 'radial',
+        id: 'm1',
+        cx: 200,
+        cy: 150,
+        rx: 80,
+        ry: 60,
+        rotation: 30,
+        feather: 0.4,
+        invert: false,
+        adjustments: { exposure: -0.8, saturation: -30 },
+      },
+      {
+        type: 'linear',
+        id: 'm2',
+        x0: 0,
+        y0: 0,
+        x1: 400,
+        y1: 0,
+        invert: true,
+        adjustments: { exposure: 0.5 },
+      },
+      {
+        type: 'range',
+        id: 'm3',
+        center: 0.45,
+        range: 0.2,
+        feather: 0.15,
+        adjustments: { contrast: 20, temperature: -15 },
+      },
       { type: 'brush', adjustments: {} },
     ],
   };
@@ -154,12 +207,20 @@ describe('masks uniforms（蒙版打包 + shader 模拟）', () => {
   it('simulateShaderPixel 蒙版段与 shared maskWeight/applyMaskedAdjustment 一致', () => {
     const u = buildUniforms(MASK_PARAMS, [400, 300]);
     const norm = masksLib.normalizeMasks(MASK_PARAMS.masks);
-    for (const uv of [[0.5, 0.5], [0.1, 0.9], [0.9, 0.1]]) {
+    for (const uv of [
+      [0.5, 0.5],
+      [0.1, 0.9],
+      [0.9, 0.1],
+    ]) {
       const px = [uv[0] * 400, uv[1] * 300];
       let expected = [0.5, 0.5, 0.5];
       for (const nm of norm) {
         const L = 0.2126 * expected[0] + 0.7152 * expected[1] + 0.0722 * expected[2];
-        expected = masksLib.applyMaskedAdjustment(expected, nm.adjustments, masksLib.maskWeight(nm, px[0], px[1], L));
+        expected = masksLib.applyMaskedAdjustment(
+          expected,
+          nm.adjustments,
+          masksLib.maskWeight(nm, px[0], px[1], L)
+        );
       }
       expected = expected.map((v) => Math.round(clamp01(v) * 255));
       const got = simulateShaderPixel([128, 128, 128], u, uv);
@@ -168,18 +229,44 @@ describe('masks uniforms（蒙版打包 + shader 模拟）', () => {
   });
 
   it('range 蒙版（type 3）模拟与非灰底色下 shared 序贯权重一致（亮度感知）', () => {
-    const u = buildUniforms({ masks: [{ type: 'range', id: 'r', center: 0.45, range: 0.2, feather: 0.15, adjustments: { exposure: 0.6, saturation: -30 } }] }, [400, 300]);
-    const nm = masksLib.normalizeMasks([{ type: 'range', center: 0.45, range: 0.2, feather: 0.15, adjustments: { exposure: 0.6, saturation: -30 } }])[0];
-    for (const rgb255 of [[200, 100, 50], [30, 200, 90], [220, 220, 30]]) {
+    const u = buildUniforms(
+      {
+        masks: [
+          {
+            type: 'range',
+            id: 'r',
+            center: 0.45,
+            range: 0.2,
+            feather: 0.15,
+            adjustments: { exposure: 0.6, saturation: -30 },
+          },
+        ],
+      },
+      [400, 300]
+    );
+    const nm = masksLib.normalizeMasks([
+      {
+        type: 'range',
+        center: 0.45,
+        range: 0.2,
+        feather: 0.15,
+        adjustments: { exposure: 0.6, saturation: -30 },
+      },
+    ])[0];
+    for (const rgb255 of [
+      [200, 100, 50],
+      [30, 200, 90],
+      [220, 220, 30],
+    ]) {
       const c01 = rgb255.map((v) => v / 255);
       const L = 0.2126 * c01[0] + 0.7152 * c01[1] + 0.0722 * c01[2];
-      const expected = masksLib.applyMaskedAdjustment(c01, nm.adjustments, masksLib.maskWeight(nm, 120, 80, L))
+      const expected = masksLib
+        .applyMaskedAdjustment(c01, nm.adjustments, masksLib.maskWeight(nm, 120, 80, L))
         .map((v) => Math.round(clamp01(v) * 255));
       const got = simulateShaderPixel(rgb255, u, [0.3, 0.2]);
       expect(got.every((v, i) => Math.abs(v - expected[i]) <= 1)).toBe(true);
     }
   });
-
 
   it('防再犯：GLSL 源串分支序与 type 编码一致（radial→linear→range）', () => {
     // simulateShaderPixel 是 shader 的平行重实现，测不出真 GLSL 的分支错位
@@ -187,7 +274,10 @@ describe('masks uniforms（蒙版打包 + shader 模拟）', () => {
     // webglPreview.js 源码中分支体的出现次序：linear 投影标记必须先于 range 亮度标记。
     const fs = require_('fs');
     const path_ = require_('path');
-    const src = fs.readFileSync(path_.resolve(__dirname, '../../../src/lib/webglPreview.js'), 'utf8');
+    const src = fs.readFileSync(
+      path_.resolve(__dirname, '../../../src/lib/webglPreview.js'),
+      'utf8'
+    );
     const linearMark = src.indexOf('vec2 dir = g.zw - g.xy;');
     const rangeMark = src.indexOf('float dd = abs(L - g.x);');
     expect(linearMark).toBeGreaterThan(-1);
@@ -201,7 +291,9 @@ describe('masks uniforms（蒙版打包 + shader 模拟）', () => {
   it('无蒙版时 maskOn=0 且模拟不受 imageSize 影响', () => {
     const u = buildUniforms({ basic: { exposure: 0.5 } }, [400, 300]);
     expect(u.maskOn).toBe(0);
-    expect(simulateShaderPixel([120, 120, 120], u, [0.9, 0.9])).toEqual(simulateShaderPixel([120, 120, 120], u, [0.1, 0.1]));
+    expect(simulateShaderPixel([120, 120, 120], u, [0.9, 0.9])).toEqual(
+      simulateShaderPixel([120, 120, 120], u, [0.1, 0.1])
+    );
   });
 
   it('饱和度：simulateShaderPixel 与 shared/saturation.cjs（执行器 raw pass）同语义（审查批 4 契约）', () => {
@@ -221,7 +313,10 @@ describe('masks uniforms（蒙版打包 + shader 模拟）', () => {
   it('GLSL applyMaskedAdjust 每个蒙版独立钳制（与 applyMaskedAdjustment 一致，审查批 4）', () => {
     const fs = require_('fs');
     const path_ = require_('path');
-    const glsl = fs.readFileSync(path_.resolve(__dirname, '../../../src/lib/webglPreview.js'), 'utf8');
+    const glsl = fs.readFileSync(
+      path_.resolve(__dirname, '../../../src/lib/webglPreview.js'),
+      'utf8'
+    );
     const start = glsl.indexOf('void applyMaskedAdjust');
     const end = glsl.indexOf('vec3 rgb2hsl', start);
     const body = glsl.slice(start, end);
@@ -229,4 +324,6 @@ describe('masks uniforms（蒙版打包 + shader 模拟）', () => {
   });
 });
 
-function clamp01(v) { return Math.min(1, Math.max(0, v)); }
+function clamp01(v) {
+  return Math.min(1, Math.max(0, v));
+}

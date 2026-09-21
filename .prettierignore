@@ -4,3 +4,6 @@ release/
 coverage/
 build/
 package-lock.json
+src-tauri/gen/
+src-tauri/target/
+*.md

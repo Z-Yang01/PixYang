@@ -44,14 +44,13 @@ export function specToShaderUniforms(spec, imageSize = [0, 0]) {
 
   // 阴影 gamma（±镜像域）与高光线性（与 SVG 链同公式）
   const shadowsVal = tone.shadows || 0;
-  const shadows = shadowsVal > 0
-    ? { exponent: clamp(1 - shadowsVal / 220, 0.55, 1), invert: 0 }
-    : shadowsVal < 0
-      ? { exponent: clamp(1 + (-shadowsVal) / 220, 1, 1.45), invert: 1 }
-      : null;
-  const highlightsSlope = tone.highlights !== 0
-    ? clamp(1 - tone.highlights / 400, 0.75, 1.15)
-    : 1;
+  const shadows =
+    shadowsVal > 0
+      ? { exponent: clamp(1 - shadowsVal / 220, 0.55, 1), invert: 0 }
+      : shadowsVal < 0
+        ? { exponent: clamp(1 + -shadowsVal / 220, 1, 1.45), invert: 1 }
+        : null;
+  const highlightsSlope = tone.highlights !== 0 ? clamp(1 - tone.highlights / 400, 0.75, 1.15) : 1;
 
   // 曲线：复合 rgb+通道 → 256 级 RGBA LUT 纹理数据（A 通道占位 255）
   const luts = buildCurveLuts(by.curves?.params || {});
@@ -68,12 +67,20 @@ export function specToShaderUniforms(spec, imageSize = [0, 0]) {
 
   // HSL：8 带数组（shader 内做带权重，公式与 shared/hsl.cjs 一致）
   const hsl = normalizeHsl(by.hsl?.params || {});
-  const hslOn = by.hsl?.params ? (hsl.hue.some((v) => v !== 0) || hsl.sat.some((v) => v !== 0) || hsl.lum.some((v) => v !== 0) ? 1 : 0) : 0;
+  const hslOn = by.hsl?.params
+    ? hsl.hue.some((v) => v !== 0) || hsl.sat.some((v) => v !== 0) || hsl.lum.some((v) => v !== 0)
+      ? 1
+      : 0
+    : 0;
 
   // 分级：预计算 tint 偏移与标度（shader 端做真亮度权重，公式与 shared/colorGrading.cjs 一致）
   const gradeLuts = buildGradeLuts(by.colorGrading?.params || {});
   const gradingScale = [0, 0, 0];
-  const gradingDelta = [[0, 0, 0], [0, 0, 0], [0, 0, 0]];
+  const gradingDelta = [
+    [0, 0, 0],
+    [0, 0, 0],
+    [0, 0, 0],
+  ];
   const gradingKind = [0, 1, 2];
   const keyToSlot = { shadows: 0, midtones: 1, highlights: 2 };
   for (const r of gradeLuts.ranges) {
@@ -106,9 +113,12 @@ export function specToShaderUniforms(spec, imageSize = [0, 0]) {
   const maskAdjTint = new Array(MASK_COUNT).fill(0);
   maskList.forEach((m, i) => {
     maskType[i] = m.type === 'radial' ? 1 : m.type === 'linear' ? 2 : 3;
-    maskGeo[i] = m.type === 'radial' ? [m.cx, m.cy, m.rx, m.ry]
-      : m.type === 'linear' ? [m.x0, m.y0, m.x1, m.y1]
-        : [m.center, m.range, 0, 0];
+    maskGeo[i] =
+      m.type === 'radial'
+        ? [m.cx, m.cy, m.rx, m.ry]
+        : m.type === 'linear'
+          ? [m.x0, m.y0, m.x1, m.y1]
+          : [m.center, m.range, 0, 0];
     maskRotation[i] = m.rotation || 0;
     maskFeather[i] = m.feather || 0;
     maskInvert[i] = m.invert ? 1 : 0;
@@ -171,10 +181,14 @@ export function simulateShaderPixel(rgb255, uniforms, uv = [0.5, 0.5]) {
   }
   if (uniforms.hslOn) {
     const [h, s, l] = hslLib.rgbToHsl(c[0], c[1], c[2]);
-    const hueAdj = hslLib.weightedAdjust(uniforms.hslHue, h) / 100 * hslLib.HUE_MAX_DEG;
+    const hueAdj = (hslLib.weightedAdjust(uniforms.hslHue, h) / 100) * hslLib.HUE_MAX_DEG;
     const satAdj = hslLib.weightedAdjust(uniforms.hslSat, h) / 100;
-    const lumAdj = hslLib.weightedAdjust(uniforms.hslLum, h) / 100 * hslLib.LUM_MAX;
-    const [r, g, b] = hslLib.hslToRgb(h + hueAdj, clamp(s * (1 + satAdj), 0, 1), clamp(l + lumAdj, 0, 1));
+    const lumAdj = (hslLib.weightedAdjust(uniforms.hslLum, h) / 100) * hslLib.LUM_MAX;
+    const [r, g, b] = hslLib.hslToRgb(
+      h + hueAdj,
+      clamp(s * (1 + satAdj), 0, 1),
+      clamp(l + lumAdj, 0, 1)
+    );
     c = [r, g, b];
   }
   if (uniforms.gradingOn) {
@@ -183,12 +197,19 @@ export function simulateShaderPixel(rgb255, uniforms, uv = [0.5, 0.5]) {
       const scale = uniforms.gradingScale[i];
       if (scale <= 0) continue;
       const kind = uniforms.gradingKind[i];
-      let w = kind === 0 ? clamp(1 - L / 0.5, 0, 1)
-        : kind === 1 ? clamp(1 - Math.abs(L - 0.5) / 0.35, 0, 1)
-          : clamp((L - 0.5) / 0.5, 0, 1);
+      let w =
+        kind === 0
+          ? clamp(1 - L / 0.5, 0, 1)
+          : kind === 1
+            ? clamp(1 - Math.abs(L - 0.5) / 0.35, 0, 1)
+            : clamp((L - 0.5) / 0.5, 0, 1);
       w *= w;
       const contrib = (w * scale) / 255;
-      c = [c[0] + contrib * uniforms.gradingDelta[i][0], c[1] + contrib * uniforms.gradingDelta[i][1], c[2] + contrib * uniforms.gradingDelta[i][2]];
+      c = [
+        c[0] + contrib * uniforms.gradingDelta[i][0],
+        c[1] + contrib * uniforms.gradingDelta[i][1],
+        c[2] + contrib * uniforms.gradingDelta[i][2],
+      ];
     }
     c = c.map((x) => clamp(x, 0, 1));
   }
@@ -201,18 +222,39 @@ export function simulateShaderPixel(rgb255, uniforms, uv = [0.5, 0.5]) {
       const mt = uniforms.maskType[i];
       if (mt === 0) continue;
       const L = 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
-      const w = masksLib.maskWeight({
-        type: mt === 1 ? 'radial' : mt === 2 ? 'linear' : 'range',
-        cx: uniforms.maskGeo[i][0], cy: uniforms.maskGeo[i][1], rx: uniforms.maskGeo[i][2], ry: uniforms.maskGeo[i][3],
-        x0: uniforms.maskGeo[i][0], y0: uniforms.maskGeo[i][1], x1: uniforms.maskGeo[i][2], y1: uniforms.maskGeo[i][3],
-        center: uniforms.maskGeo[i][0], range: uniforms.maskGeo[i][1],
-        rotation: uniforms.maskRotation[i], feather: uniforms.maskFeather[i], invert: uniforms.maskInvert[i] === 1,
-      }, px[0], px[1], L);
+      const w = masksLib.maskWeight(
+        {
+          type: mt === 1 ? 'radial' : mt === 2 ? 'linear' : 'range',
+          cx: uniforms.maskGeo[i][0],
+          cy: uniforms.maskGeo[i][1],
+          rx: uniforms.maskGeo[i][2],
+          ry: uniforms.maskGeo[i][3],
+          x0: uniforms.maskGeo[i][0],
+          y0: uniforms.maskGeo[i][1],
+          x1: uniforms.maskGeo[i][2],
+          y1: uniforms.maskGeo[i][3],
+          center: uniforms.maskGeo[i][0],
+          range: uniforms.maskGeo[i][1],
+          rotation: uniforms.maskRotation[i],
+          feather: uniforms.maskFeather[i],
+          invert: uniforms.maskInvert[i] === 1,
+        },
+        px[0],
+        px[1],
+        L
+      );
       if (w <= 0) continue;
-      c = masksLib.applyMaskedAdjustment(c, {
-        exposure: uniforms.maskAdjExposure[i], contrast: uniforms.maskAdjContrast[i],
-        saturation: uniforms.maskAdjSat[i], temperature: uniforms.maskAdjTemp[i], tint: uniforms.maskAdjTint[i],
-      }, w);
+      c = masksLib.applyMaskedAdjustment(
+        c,
+        {
+          exposure: uniforms.maskAdjExposure[i],
+          contrast: uniforms.maskAdjContrast[i],
+          saturation: uniforms.maskAdjSat[i],
+          temperature: uniforms.maskAdjTemp[i],
+          tint: uniforms.maskAdjTint[i],
+        },
+        w
+      );
     }
   }
   if (uniforms.vignette) {

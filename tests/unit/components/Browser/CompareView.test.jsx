@@ -23,12 +23,17 @@ describe('CompareView（Before/After 分屏）', () => {
 
   it('拖动分割线更新位置（限制在 2%~98%）', () => {
     const rectSpy = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({
-      left: 0, top: 0, width: 1000, height: 500, right: 1000, bottom: 500, x: 0, y: 0,
+      left: 0,
+      top: 0,
+      width: 1000,
+      height: 500,
+      right: 1000,
+      bottom: 500,
+      x: 0,
+      y: 0,
       toJSON: () => {},
     });
-    const { container } = render(
-      <CompareView beforeSrc="b.jpg" afterNode={<div />} />
-    );
+    const { container } = render(<CompareView beforeSrc="b.jpg" afterNode={<div />} />);
     const divider = container.querySelector('.editor-split-divider');
     expect(divider).toBeInTheDocument();
     fireEvent.mouseDown(divider);
@@ -50,7 +55,14 @@ describe('CompareView（Before/After 分屏）', () => {
 
   it('Before 层与 After 层同位对齐：clipPath 裁切而非压缩宽度（修复分割时 Before 错位）', () => {
     const rectSpy = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({
-      left: 0, top: 0, width: 1000, height: 500, right: 1000, bottom: 500, x: 0, y: 0,
+      left: 0,
+      top: 0,
+      width: 1000,
+      height: 500,
+      right: 1000,
+      bottom: 500,
+      x: 0,
+      y: 0,
       toJSON: () => {},
     });
     const { container } = render(
@@ -73,7 +85,11 @@ describe('CompareView 并排模式', () => {
 
   it('side 模式渲染左右两画布，After 节点在右', () => {
     const { container } = render(
-      <CompareView mode="side" beforeSrc="file:///before.jpg" afterNode={<div data-testid="after-layer">after</div>} />
+      <CompareView
+        mode="side"
+        beforeSrc="file:///before.jpg"
+        afterNode={<div data-testid="after-layer">after</div>}
+      />
     );
     expect(container.querySelector('.editor-side-wrap')).toBeInTheDocument();
     const panes = container.querySelectorAll('.editor-side-pane');
@@ -87,12 +103,10 @@ describe('CompareView 并排模式', () => {
   });
 
   it('side 模式 After 标签定位在右侧（不与 Before 标签重叠）', () => {
-    const { container } = render(
-      <CompareView mode="side" beforeSrc="b.jpg" afterNode={<div />} />
-    );
+    const { container } = render(<CompareView mode="side" beforeSrc="b.jpg" afterNode={<div />} />);
     const labels = [...container.querySelectorAll('.editor-split-label')];
-    const afterLabel = labels.find(el => el.textContent === 'After');
-    const beforeLabel = labels.find(el => el.textContent === 'Before');
+    const afterLabel = labels.find((el) => el.textContent === 'After');
+    const beforeLabel = labels.find((el) => el.textContent === 'Before');
     expect(afterLabel).toBeInTheDocument();
     expect(afterLabel.className).toContain('right');
     expect(afterLabel.style.left).toBe('');

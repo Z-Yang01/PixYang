@@ -9,7 +9,7 @@ describe('内置风格预设', () => {
   it('至少 8 个，名称唯一，结构合法', () => {
     expect(validateBuiltinPresets()).toBe(true);
     expect(BUILTIN_PRESETS.length).toBeGreaterThanOrEqual(8);
-    const names = BUILTIN_PRESETS.map(p => p.name);
+    const names = BUILTIN_PRESETS.map((p) => p.name);
     expect(new Set(names).size).toBe(names.length);
     for (const p of BUILTIN_PRESETS) {
       expect(p.desc).toBeTruthy();
@@ -28,14 +28,14 @@ describe('内置风格预设', () => {
   });
 
   it('覆盖核心风格：黑白 / 电影 / 唯美', () => {
-    const names = BUILTIN_PRESETS.map(p => p.name);
-    expect(names.some(n => n.includes('黑白'))).toBe(true);
-    expect(names.some(n => n.includes('电影'))).toBe(true);
-    expect(names.some(n => n.includes('唯美'))).toBe(true);
+    const names = BUILTIN_PRESETS.map((p) => p.name);
+    expect(names.some((n) => n.includes('黑白'))).toBe(true);
+    expect(names.some((n) => n.includes('电影'))).toBe(true);
+    expect(names.some((n) => n.includes('唯美'))).toBe(true);
   });
 
   it('黑白预设饱和度为 -100（mono 路径）', () => {
-    const bw = BUILTIN_PRESETS.find(p => p.name === '经典黑白');
+    const bw = BUILTIN_PRESETS.find((p) => p.name === '经典黑白');
     expect(bw.basic.saturation).toBe(-100);
   });
 });
@@ -44,8 +44,8 @@ describe('内置预设曲线（curves）', () => {
   const curvesLib = require_('../../../shared/curves.cjs');
 
   it('含曲线预设可生成有效 LUT 与预览表（黑白胶片/电影青橙）', () => {
-    const withCurves = BUILTIN_PRESETS.filter(p => p.curves);
-    expect(withCurves.map(p => p.name)).toEqual(expect.arrayContaining(['黑白胶片', '电影青橙']));
+    const withCurves = BUILTIN_PRESETS.filter((p) => p.curves);
+    expect(withCurves.map((p) => p.name)).toEqual(expect.arrayContaining(['黑白胶片', '电影青橙']));
     for (const p of withCurves) {
       expect(curvesLib.buildCurveLuts(p.curves)).not.toBeNull();
       expect(curvesLib.buildCurveTables(p.curves)).not.toBeNull();

@@ -21,27 +21,34 @@ export default function ShortcutsHelp({ open, onClose }) {
           </Button>
         </div>
         <div className="dialog-body" style={{ maxHeight: '65vh' }}>
-          {SHORTCUT_GROUPS.map(group => (
+          {SHORTCUT_GROUPS.map((group) => (
             <div key={group.title} style={{ marginBottom: 18 }}>
-              <div style={{
-                fontSize: 12,
-                fontWeight: 600,
-                color: 'var(--text-muted)',
-                textTransform: 'uppercase',
-                letterSpacing: '0.4px',
-                marginBottom: 8,
-              }}>
+              <div
+                style={{
+                  fontSize: 12,
+                  fontWeight: 600,
+                  color: 'var(--text-muted)',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.4px',
+                  marginBottom: 8,
+                }}
+              >
                 {group.title}
               </div>
               <div className="info-group" style={{ padding: '6px 12px' }}>
-                {group.items.map(item => (
+                {group.items.map((item) => (
                   <div key={item.desc} className="info-row" style={{ gap: 12 }}>
                     <span style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-                      {item.keys.map(k => (
-                        <kbd key={k} className="kbd">{k}</kbd>
+                      {item.keys.map((k) => (
+                        <kbd key={k} className="kbd">
+                          {k}
+                        </kbd>
                       ))}
                     </span>
-                    <span className="info-value" style={{ color: 'var(--text-secondary)', fontSize: 12 }}>
+                    <span
+                      className="info-value"
+                      style={{ color: 'var(--text-secondary)', fontSize: 12 }}
+                    >
                       {item.desc}
                     </span>
                   </div>

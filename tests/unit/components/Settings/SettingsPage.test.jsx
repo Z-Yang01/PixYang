@@ -10,13 +10,7 @@ const initialSnapshot = useGalleryStore.getState();
 function renderPage(props = {}) {
   useGalleryStore.setState({ stats: props.stats || statsFixture });
   const { stats: _stats, ...rest } = props;
-  return render(
-    <SettingsPage
-      onSettingsChanged={vi.fn()}
-      onImagesChanged={vi.fn()}
-      {...rest}
-    />
-  );
+  return render(<SettingsPage onSettingsChanged={vi.fn()} onImagesChanged={vi.fn()} {...rest} />);
 }
 
 describe('SettingsPage', () => {
@@ -24,7 +18,11 @@ describe('SettingsPage', () => {
     useGalleryStore.setState(initialSnapshot, true);
     window.pixyang = {
       getSettings: vi.fn().mockResolvedValue({
-        theme: 'dark', grid_rows: 3, grid_columns: 5, grid_gap: 12, content_padding: 16,
+        theme: 'dark',
+        grid_rows: 3,
+        grid_columns: 5,
+        grid_gap: 12,
+        content_padding: 16,
         camera_folder: '',
       }),
       getImagesRoot: vi.fn().mockResolvedValue('C:/PixData'),
@@ -32,7 +30,9 @@ describe('SettingsPage', () => {
       setSetting: vi.fn().mockResolvedValue(undefined),
       selectDirectory: vi.fn().mockResolvedValue(null),
       setImagesRoot: vi.fn().mockResolvedValue({ path: 'C:/PixData', moved: 0 }),
-      syncCameraFolder: vi.fn().mockResolvedValue({ scanned: 0, imported: 0, attached: 0, skipped: 0 }),
+      syncCameraFolder: vi
+        .fn()
+        .mockResolvedValue({ scanned: 0, imported: 0, attached: 0, skipped: 0 }),
       rebuildThumbnails: vi.fn().mockResolvedValue({ rebuilt: 3, failed: 0, total: 3 }),
       scanBrokenRecords: vi.fn().mockResolvedValue([]),
       deleteBrokenRecords: vi.fn().mockResolvedValue(0),
@@ -113,7 +113,9 @@ describe('SettingsPage', () => {
     await screen.findByText('C:/PixData');
     fireEvent.click(screen.getByText('恢复默认设置'));
     // ConfirmDialog（radix AlertDialog 传送门）消息
-    expect(await screen.findByText(/将把界面设置（主题、网格、间距）恢复为默认值/)).toBeInTheDocument();
+    expect(
+      await screen.findByText(/将把界面设置（主题、网格、间距）恢复为默认值/)
+    ).toBeInTheDocument();
     fireEvent.click(screen.getByText('恢复默认'));
     expect(screen.getByText(/已恢复默认值/)).toBeInTheDocument();
   });
@@ -126,19 +128,35 @@ describe('SettingsPage', () => {
   it('草稿以当前生效网格初始化：getSettings 晚到不把已存配置瞬覆成默认（审查批 8 R-1）', async () => {
     useGalleryStore.setState({ gridSettings: { rows: 2, columns: 4, gap: 8, padding: 4 } });
     let resolveSettings;
-    window.pixyang.getSettings = vi.fn(() => new Promise((r) => { resolveSettings = r; }));
+    window.pixyang.getSettings = vi.fn(
+      () =>
+        new Promise((r) => {
+          resolveSettings = r;
+        })
+    );
     renderPage();
     // getSettings 未返回前，挂载的 applyPreview(draft) 不得把 store 覆盖回 3x5 默认
-    expect(useGalleryStore.getState().gridSettings).toEqual({ rows: 2, columns: 4, gap: 8, padding: 4 });
+    expect(useGalleryStore.getState().gridSettings).toEqual({
+      rows: 2,
+      columns: 4,
+      gap: 8,
+      padding: 4,
+    });
     resolveSettings({
-      theme: 'dark', grid_rows: 2, grid_columns: 4, grid_gap: 8, content_padding: 4, camera_folder: '',
+      theme: 'dark',
+      grid_rows: 2,
+      grid_columns: 4,
+      grid_gap: 8,
+      content_padding: 4,
+      camera_folder: '',
     });
     await screen.findByText('C:/PixData');
     expect(screen.queryByText('有未保存的修改')).not.toBeInTheDocument();
   });
 
   it('setSetting 半途 reject：保存失败可见且未保存态保持（审查批 8 R-8）', async () => {
-    window.pixyang.setSetting = vi.fn()
+    window.pixyang.setSetting = vi
+      .fn()
       .mockResolvedValueOnce(undefined) // theme 成功
       .mockRejectedValueOnce(new Error('db locked'));
     renderPage();

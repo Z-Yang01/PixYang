@@ -18,9 +18,8 @@ function vignetteFalloff(d) {
 function vignettePixel(value, vignette, falloff) {
   const v = clamp(vignette, -100, 100);
   if (v === 0 || falloff <= 0) return value;
-  const out = v < 0
-    ? value * (1 + (v / 100) * falloff)
-    : value + (v / 100) * falloff * (255 - value);
+  const out =
+    v < 0 ? value * (1 + (v / 100) * falloff) : value + (v / 100) * falloff * (255 - value);
   return Math.round(clamp(out, 0, 255));
 }
 

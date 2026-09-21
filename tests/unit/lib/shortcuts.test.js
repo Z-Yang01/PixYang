@@ -70,7 +70,9 @@ describe('matchGlobalShortcut', () => {
 
   it('Ctrl+A / Ctrl+E / Delete / Esc', () => {
     expect(matchGlobalShortcut(keyEvent('a', { ctrlKey: true }))).toBe(GLOBAL_ACTIONS.SelectAll);
-    expect(matchGlobalShortcut(keyEvent('e', { metaKey: true }))).toBe(GLOBAL_ACTIONS.ExportSelected);
+    expect(matchGlobalShortcut(keyEvent('e', { metaKey: true }))).toBe(
+      GLOBAL_ACTIONS.ExportSelected
+    );
     expect(matchGlobalShortcut(keyEvent('Delete'))).toBe(GLOBAL_ACTIONS.DeleteSelected);
     expect(matchGlobalShortcut(keyEvent('Backspace'))).toBeNull();
     expect(matchGlobalShortcut(keyEvent('Escape'))).toBe(GLOBAL_ACTIONS.ClearSelection);
@@ -145,12 +147,12 @@ describe('matchViewerShortcut', () => {
 
 describe('SHORTCUT_GROUPS', () => {
   it('包含图库 / 查看器分组且条目非空', () => {
-    const titles = SHORTCUT_GROUPS.map(g => g.title);
+    const titles = SHORTCUT_GROUPS.map((g) => g.title);
     expect(titles).toContain('图库');
     expect(titles).toContain('查看器');
-    SHORTCUT_GROUPS.forEach(g => {
+    SHORTCUT_GROUPS.forEach((g) => {
       expect(g.items.length).toBeGreaterThan(0);
-      g.items.forEach(item => {
+      g.items.forEach((item) => {
         expect(item.keys.length).toBeGreaterThan(0);
         expect(typeof item.desc).toBe('string');
       });

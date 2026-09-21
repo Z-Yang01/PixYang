@@ -1,33 +1,31 @@
-import * as React from "react"
+import * as React from 'react';
 import {
   CircleCheckIcon,
   InfoIcon,
   Loader2Icon,
   OctagonXIcon,
   TriangleAlertIcon,
-} from "lucide-react"
-import { Toaster as Sonner, type ToasterProps } from "sonner"
-import { isLightTheme } from "@/lib/themes"
+} from 'lucide-react';
+import { Toaster as Sonner, type ToasterProps } from 'sonner';
+import { isLightTheme } from '@/lib/themes';
 
 const Toaster = ({ ...props }: ToasterProps) => {
-  const [theme, setTheme] = React.useState<"dark" | "light">("dark")
+  const [theme, setTheme] = React.useState<'dark' | 'light'>('dark');
 
   React.useEffect(() => {
     const update = () => {
       setTheme(
-        isLightTheme(document.documentElement.getAttribute("data-theme"))
-          ? "light"
-          : "dark"
-      )
-    }
-    update()
-    const observer = new MutationObserver(update)
+        isLightTheme(document.documentElement.getAttribute('data-theme')) ? 'light' : 'dark'
+      );
+    };
+    update();
+    const observer = new MutationObserver(update);
     observer.observe(document.documentElement, {
       attributes: true,
-      attributeFilter: ["data-theme"],
-    })
-    return () => observer.disconnect()
-  }, [])
+      attributeFilter: ['data-theme'],
+    });
+    return () => observer.disconnect();
+  }, []);
 
   return (
     <Sonner
@@ -42,15 +40,15 @@ const Toaster = ({ ...props }: ToasterProps) => {
       }}
       style={
         {
-          "--normal-bg": "var(--popover)",
-          "--normal-text": "var(--popover-foreground)",
-          "--normal-border": "var(--border)",
-          "--border-radius": "var(--radius)",
+          '--normal-bg': 'var(--popover)',
+          '--normal-text': 'var(--popover-foreground)',
+          '--normal-border': 'var(--border)',
+          '--border-radius': 'var(--radius)',
         } as React.CSSProperties
       }
       {...props}
     />
-  )
-}
+  );
+};
 
-export { Toaster }
+export { Toaster };

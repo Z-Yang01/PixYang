@@ -40,7 +40,8 @@ function normalizeMasks(masks) {
         id: typeof m.id === 'string' ? m.id : '',
         cx: Number(m.cx),
         cy: Number(m.cy),
-        rx, ry,
+        rx,
+        ry,
         rotation: Number(m.rotation) || 0,
         feather: Math.min(1, Math.max(0, Number(m.feather) || 0)),
         invert: !!m.invert,
@@ -91,9 +92,7 @@ function radialWeight(mask, x, y) {
   const ux = dx * Math.cos(a) + dy * Math.sin(a);
   const uy = -dx * Math.sin(a) + dy * Math.cos(a);
   const d = Math.sqrt((ux / mask.rx) ** 2 + (uy / mask.ry) ** 2);
-  let w = mask.feather > 0
-    ? clamp01((1 - d) / mask.feather)
-    : (d < 1 ? 1 : 0);
+  let w = mask.feather > 0 ? clamp01((1 - d) / mask.feather) : d < 1 ? 1 : 0;
   if (mask.invert) w = 1 - w;
   return w;
 }
@@ -115,9 +114,8 @@ function linearWeight(mask, x, y) {
 function rangeWeight(mask, L) {
   const dd = Math.abs(L - mask.center);
   const half = mask.range;
-  let w = mask.feather > 0
-    ? clamp01((half + mask.feather - dd) / mask.feather)
-    : (dd <= half ? 1 : 0);
+  let w =
+    mask.feather > 0 ? clamp01((half + mask.feather - dd) / mask.feather) : dd <= half ? 1 : 0;
   if (mask.invert) w = 1 - w;
   return w;
 }
@@ -133,7 +131,9 @@ function applyMaskedAdjustment(rgb01, adjustments, w) {
   let [r, g, b] = rgb01;
   // 曝光
   const gain = Math.pow(2, adjustments.exposure * w);
-  r *= gain; g *= gain; b *= gain;
+  r *= gain;
+  g *= gain;
+  b *= gain;
   // 色温/色调（通道增益，同 whiteBalance 系数）
   const tk = (adjustments.temperature / 100) * w;
   const gk = (adjustments.tint / 100) * w;
@@ -141,7 +141,9 @@ function applyMaskedAdjustment(rgb01, adjustments, w) {
     const nr = r * (1 + tk * 0.1);
     const ng = g * (1 - gk * 0.06);
     const nb = b * (1 - tk * 0.1);
-    r = nr; g = ng; b = nb;
+    r = nr;
+    g = ng;
+    b = nb;
   }
   // 对比度
   if (adjustments.contrast) {
@@ -173,9 +175,10 @@ function applyMasksInPlace(data, width, height, masks, channels) {
       let b = data[i + 2] / 255;
       let touched = false;
       for (const m of list) {
-        const w = m.type === 'range'
-          ? maskWeight(m, x, y, HSL_LUMA[0] * r + HSL_LUMA[1] * g + HSL_LUMA[2] * b)
-          : maskWeight(m, x, y);
+        const w =
+          m.type === 'range'
+            ? maskWeight(m, x, y, HSL_LUMA[0] * r + HSL_LUMA[1] * g + HSL_LUMA[2] * b)
+            : maskWeight(m, x, y);
         if (w <= 0) continue;
         [r, g, b] = applyMaskedAdjustment([r, g, b], m.adjustments, w);
         touched = true;

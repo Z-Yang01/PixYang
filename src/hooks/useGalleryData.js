@@ -6,18 +6,18 @@ import useGalleryStore from '../store/galleryStore';
 // 图库数据 wiring：筛选/分页变化时触发 store.loadImages（搜索 200ms 防抖），
 // 订阅主进程回填/缩略图事件。数据本身（images/stats/tags...）都在 galleryStore。
 export default function useGalleryData({ onThumbnailsReady } = {}) {
-  const search = useGalleryStore(s => s.search);
-  const sortBy = useGalleryStore(s => s.sortBy);
-  const sortOrder = useGalleryStore(s => s.sortOrder);
-  const filterTag = useGalleryStore(s => s.filterTag);
-  const filterAlbum = useGalleryStore(s => s.filterAlbum);
-  const filterFavorites = useGalleryStore(s => s.filterFavorites);
-  const filterDate = useGalleryStore(s => s.filterDate);
-  const dateRange = useGalleryStore(s => s.dateRange);
-  const page = useGalleryStore(s => s.page);
-  const gridSettings = useGalleryStore(s => s.gridSettings);
-  const loadImages = useGalleryStore(s => s.loadImages);
-  const loadStats = useGalleryStore(s => s.loadStats);
+  const search = useGalleryStore((s) => s.search);
+  const sortBy = useGalleryStore((s) => s.sortBy);
+  const sortOrder = useGalleryStore((s) => s.sortOrder);
+  const filterTag = useGalleryStore((s) => s.filterTag);
+  const filterAlbum = useGalleryStore((s) => s.filterAlbum);
+  const filterFavorites = useGalleryStore((s) => s.filterFavorites);
+  const filterDate = useGalleryStore((s) => s.filterDate);
+  const dateRange = useGalleryStore((s) => s.dateRange);
+  const page = useGalleryStore((s) => s.page);
+  const gridSettings = useGalleryStore((s) => s.gridSettings);
+  const loadImages = useGalleryStore((s) => s.loadImages);
+  const loadStats = useGalleryStore((s) => s.loadStats);
 
   const lastSearchRef = useRef(search);
 
@@ -36,7 +36,20 @@ export default function useGalleryData({ onThumbnailsReady } = {}) {
       loadImages();
     }, 200);
     return () => clearTimeout(t);
-  }, [filterTag, filterAlbum, filterFavorites, filterDate, dateRange.from, dateRange.to, page, pageSize, sortBy, sortOrder, search, loadImages]);
+  }, [
+    filterTag,
+    filterAlbum,
+    filterFavorites,
+    filterDate,
+    dateRange.from,
+    dateRange.to,
+    page,
+    pageSize,
+    sortBy,
+    sortOrder,
+    search,
+    loadImages,
+  ]);
 
   // 启动时方向回填完成后刷新列表
   useEffect(() => {
@@ -52,7 +65,7 @@ export default function useGalleryData({ onThumbnailsReady } = {}) {
   useEffect(() => {
     if (!api.isBridgeAvailable()) return;
     const off = api.onThumbnailsReady(() => {
-      useGalleryStore.setState(s => ({ thumbVersion: s.thumbVersion + 1 }));
+      useGalleryStore.setState((s) => ({ thumbVersion: s.thumbVersion + 1 }));
       loadImages();
       onThumbnailsReady?.();
     });
@@ -69,7 +82,7 @@ export default function useGalleryData({ onThumbnailsReady } = {}) {
       if (!id || !path) return;
       const st = useGalleryStore.getState();
       if (!st.images.some((img) => img.id === id)) return;
-      useGalleryStore.setState(s => ({
+      useGalleryStore.setState((s) => ({
         thumbVersion: s.thumbVersion + 1,
         images: applyLightLocalUpdate(s.images, id, { thumbnail_edit_path: path }),
       }));
@@ -77,4 +90,3 @@ export default function useGalleryData({ onThumbnailsReady } = {}) {
     return off;
   }, []);
 }
-

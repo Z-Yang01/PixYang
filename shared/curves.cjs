@@ -92,7 +92,11 @@ function buildCurveLuts(curves = {}) {
 function buildCurveTables(curves = {}, samples = 33) {
   const rgb = normalizePoints(curves.rgb);
   const rgbIdentity = isIdentityPoints(rgb);
-  const chanIdentity = { r: isIdentityPoints(normalizePoints(curves.r)), g: isIdentityPoints(normalizePoints(curves.g)), b: isIdentityPoints(normalizePoints(curves.b)) };
+  const chanIdentity = {
+    r: isIdentityPoints(normalizePoints(curves.r)),
+    g: isIdentityPoints(normalizePoints(curves.g)),
+    b: isIdentityPoints(normalizePoints(curves.b)),
+  };
   if (rgbIdentity && chanIdentity.r && chanIdentity.g && chanIdentity.b) return null;
   const tables = {};
   for (const c of ['r', 'g', 'b']) {

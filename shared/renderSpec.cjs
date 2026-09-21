@@ -69,10 +69,15 @@ function buildStages(p) {
       },
     },
     stageDeclared('curves', {
-      rgb: p.curves?.rgb ?? [], r: p.curves?.r ?? [], g: p.curves?.g ?? [], b: p.curves?.b ?? [],
+      rgb: p.curves?.rgb ?? [],
+      r: p.curves?.r ?? [],
+      g: p.curves?.g ?? [],
+      b: p.curves?.b ?? [],
     }),
     stageDeclared('hsl', {
-      hue: p.hsl?.hue ?? [], sat: p.hsl?.sat ?? [], lum: p.hsl?.lum ?? [],
+      hue: p.hsl?.hue ?? [],
+      sat: p.hsl?.sat ?? [],
+      lum: p.hsl?.lum ?? [],
     }),
     stageDeclared('colorGrading', {
       shadows: p.colorGrading?.shadows ?? [],
@@ -114,8 +119,8 @@ function buildStages(p) {
   ];
 
   // 顺序校验：stages 必须严格等于 PIPELINE_ORDER 中登记的阶段顺序
-  const kinds = stages.map(s => s.kind);
-  const expected = PIPELINE_ORDER.filter(k => kinds.includes(k));
+  const kinds = stages.map((s) => s.kind);
+  const expected = PIPELINE_ORDER.filter((k) => kinds.includes(k));
   if (JSON.stringify(kinds) !== JSON.stringify(expected)) {
     throw new Error(`[renderSpec] stage 顺序偏离 pipelineOrder: ${kinds.join('>')}`);
   }
@@ -185,7 +190,16 @@ function buildProxySpec(spec, srcWidth, srcHeight, targetLongEdge) {
       // 极大图 + 极小裁剪框时 w/h 舍入可能归零，渲染器对 w/h<=0 会静默跳过 crop，
       // 预览与导出构图不一致——保底 1px
       const n = (v, floor) => Math.max(floor, Math.round((v || 0) * scale));
-      return { ...s, params: { ...s.params, x: n(s.params.x, 0), y: n(s.params.y, 0), w: n(s.params.w, 1), h: n(s.params.h, 1) } };
+      return {
+        ...s,
+        params: {
+          ...s.params,
+          x: n(s.params.x, 0),
+          y: n(s.params.y, 0),
+          w: n(s.params.w, 1),
+          h: n(s.params.h, 1),
+        },
+      };
     }
     if (s.kind === 'masks' && Array.isArray(s.params?.list) && s.params.list.length > 0) {
       // 蒙版坐标为 decode 后全尺寸像素，decode 已按 scale 缩放——radial/linear 等比跟随
@@ -198,7 +212,13 @@ function buildProxySpec(spec, srcWidth, srcHeight, targetLongEdge) {
           list: s.params.list.map((m) => {
             if (!m || m.type === 'range') return m;
             if (m.type === 'radial') {
-              return { ...m, cx: n(m.cx), cy: n(m.cy), rx: Math.max(1, n(m.rx)), ry: Math.max(1, n(m.ry)) };
+              return {
+                ...m,
+                cx: n(m.cx),
+                cy: n(m.cy),
+                rx: Math.max(1, n(m.rx)),
+                ry: Math.max(1, n(m.ry)),
+              };
             }
             return { ...m, x0: n(m.x0), y0: n(m.y0), x1: n(m.x1), y1: n(m.y1) };
           }),
@@ -212,7 +232,7 @@ function buildProxySpec(spec, srcWidth, srcHeight, targetLongEdge) {
 
 // 列出 spec 中被跳过的未实现 stage（渲染日志与 M4~M8 进度盘点用）
 function listUnsupported(spec) {
-  return spec.stages.filter(s => s.unsupported).map(s => s.kind);
+  return spec.stages.filter((s) => s.unsupported).map((s) => s.kind);
 }
 
 module.exports = {

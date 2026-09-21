@@ -93,7 +93,9 @@ describe('ImageViewer', () => {
   });
 
   it('hasNext/hasPrev 为假时不渲染导航按钮', () => {
-    const { container } = render(<ImageViewer {...baseProps({ hasPrev: false, hasNext: false })} />);
+    const { container } = render(
+      <ImageViewer {...baseProps({ hasPrev: false, hasNext: false })} />
+    );
     expect(container.querySelectorAll('.viewer-nav').length).toBe(0);
   });
 
@@ -131,7 +133,9 @@ describe('ImageViewer', () => {
     fireEvent.click(save);
     await vi.waitFor(() => {
       expect(window.pixyang.updateImage).toHaveBeenCalledWith(3, {
-        rotation: 90, flipH: 0, flipV: 0,
+        rotation: 90,
+        flipH: 0,
+        flipV: 0,
       });
       expect(onImageUpdated).toHaveBeenCalledWith(3, { rotation: 90, flip_h: 0, flip_v: 0 });
     });
@@ -161,20 +165,31 @@ describe('ImageViewer', () => {
 
   function mockEditBridge(over = {}) {
     window.pixyang.editOpen = vi.fn().mockResolvedValue({
-      id: 3, source: 'jpg', basePath: 'C:/cache/3-base.jpg',
-      width: 1920, height: 1080, hasNef: false, savedEdits: null,
+      id: 3,
+      source: 'jpg',
+      basePath: 'C:/cache/3-base.jpg',
+      width: 1920,
+      height: 1080,
+      hasNef: false,
+      savedEdits: null,
       ...over,
     });
     window.pixyang.toFileUrl.mockImplementation((p) => Promise.resolve(p ? `file:///${p}` : null));
     window.pixyang.editCancel = vi.fn().mockResolvedValue({ ok: true });
     window.pixyang.saveEdits = vi.fn().mockResolvedValue({ version: 1, params: {} });
     window.pixyang.editBake = vi.fn().mockResolvedValue({ ok: true, image: { id: 3 } });
-    window.pixyang.editExport = vi.fn().mockResolvedValue({ ok: true, path: 'C:/out/x-edited.jpg' });
+    window.pixyang.editExport = vi
+      .fn()
+      .mockResolvedValue({ ok: true, path: 'C:/out/x-edited.jpg' });
     window.pixyang.selectExportDirectory = vi.fn().mockResolvedValue('C:/out');
   }
 
   it('编辑模式：进入后渲染参数面板与编辑源标记，编辑态隐藏翻页按钮', async () => {
-    mockEditBridge({ source: 'nef', hasNef: true, savedEdits: { version: 1, params: { basic: { exposure: 0.5 } } } });
+    mockEditBridge({
+      source: 'nef',
+      hasNef: true,
+      savedEdits: { version: 1, params: { basic: { exposure: 0.5 } } },
+    });
     const { container } = render(<ImageViewer {...baseProps()} />);
     fireEvent.click(screen.getByTitle(/编辑模式/));
     expect(await screen.findByText('编辑')).toBeInTheDocument();
@@ -215,7 +230,9 @@ describe('ImageViewer', () => {
     render(<ImageViewer {...baseProps({ onImageUpdated })} />);
     fireEvent.click(screen.getByTitle(/编辑模式/));
     await screen.findByText('参数已保存');
-    fireEvent.change(document.querySelectorAll('.editor-slider-row input[type="range"]')[0], { target: { value: '0.5' } });
+    fireEvent.change(document.querySelectorAll('.editor-slider-row input[type="range"]')[0], {
+      target: { value: '0.5' },
+    });
     fireEvent.click(screen.getByText('烘焙替代…'));
     expect(await screen.findByText('烘焙并替代原图？')).toBeInTheDocument();
     fireEvent.click(screen.getByText('烘焙替代'));
@@ -233,7 +250,9 @@ describe('ImageViewer', () => {
     render(<ImageViewer {...baseProps({ onImageUpdated })} />);
     fireEvent.click(screen.getByTitle(/编辑模式/));
     await screen.findByText('参数已保存');
-    fireEvent.change(document.querySelectorAll('.editor-slider-row input[type="range"]')[0], { target: { value: '0.5' } });
+    fireEvent.change(document.querySelectorAll('.editor-slider-row input[type="range"]')[0], {
+      target: { value: '0.5' },
+    });
     fireEvent.click(screen.getByText('导出…'));
     // 选项对话框出现 → 确认导出
     fireEvent.click(await screen.findByText('选择目录并导出'));
@@ -249,7 +268,9 @@ describe('ImageViewer', () => {
   });
 
   it('编辑模式：已保存参数在重进编辑时恢复（edits 表回读）', async () => {
-    mockEditBridge({ savedEdits: { version: 1, params: { basic: { exposure: 0.5 }, orientation: { rotate: 90 } } } });
+    mockEditBridge({
+      savedEdits: { version: 1, params: { basic: { exposure: 0.5 }, orientation: { rotate: 90 } } },
+    });
     render(<ImageViewer {...baseProps()} />);
     fireEvent.click(screen.getByTitle(/编辑模式/));
     await screen.findByText('参数已保存'); // 与已存参数一致 → 无变更
@@ -317,7 +338,9 @@ describe('ImageViewer', () => {
     fireEvent.click(screen.getByTitle(/编辑模式/));
     await screen.findByText('编辑');
     const header = () =>
-      Array.from(document.querySelectorAll('.editor-crop-header span')).find((el) => el.textContent.startsWith('蒙版'));
+      Array.from(document.querySelectorAll('.editor-crop-header span')).find((el) =>
+        el.textContent.startsWith('蒙版')
+      );
     expect(header().textContent).toBe('蒙版（0/8）');
     const addBtn = screen.getByText('+ 径向');
     for (let i = 0; i < 8; i++) fireEvent.click(addBtn);
@@ -341,7 +364,14 @@ describe('ImageViewer', () => {
     mockEditBridge();
     // Element.prototype 覆盖 SVG（曲线面板固定 100x100 @ (0,0)）
     const rectSpy = vi.spyOn(Element.prototype, 'getBoundingClientRect').mockReturnValue({
-      left: 0, top: 0, right: 100, bottom: 100, width: 100, height: 100, x: 0, y: 0,
+      left: 0,
+      top: 0,
+      right: 100,
+      bottom: 100,
+      width: 100,
+      height: 100,
+      x: 0,
+      y: 0,
       toJSON: () => {},
     });
     const { container } = render(<ImageViewer {...baseProps()} />);
@@ -356,9 +386,13 @@ describe('ImageViewer', () => {
     // 全量套件（尤其 coverage 插桩）负载下 1s 默认超时偶发不足——显式放宽
     fireEvent.mouseDown(svg, { clientX: 50, clientY: 50 });
     fireEvent.mouseMove(window, { clientX: 60, clientY: 30 });
-    await vi.waitFor(() => expect(curveHeader.querySelector('button')).toBeTruthy(), { timeout: 5000 });
+    await vi.waitFor(() => expect(curveHeader.querySelector('button')).toBeTruthy(), {
+      timeout: 5000,
+    });
     fireEvent.click(curveHeader.querySelector('button'));
-    await vi.waitFor(() => expect(curveHeader.querySelector('button')).toBeNull(), { timeout: 5000 });
+    await vi.waitFor(() => expect(curveHeader.querySelector('button')).toBeNull(), {
+      timeout: 5000,
+    });
     rectSpy.mockRestore();
   });
 
@@ -402,7 +436,7 @@ describe('ImageViewer', () => {
       expect(section.querySelector('.editor-crop-header button')).toBeTruthy();
     });
     // 双击标签清除该区间（"阴影"与基础滑杆同名，取分级区间的那个）
-    const gradeLabel = [...screen.getAllByText('阴影')].find(el => el.title === '双击清除该区间');
+    const gradeLabel = [...screen.getAllByText('阴影')].find((el) => el.title === '双击清除该区间');
     fireEvent.doubleClick(gradeLabel);
     await vi.waitFor(() => {
       const section = hue.closest('.editor-crop-section');
@@ -431,7 +465,14 @@ describe('ImageViewer', () => {
     mockEditBridge();
     // 图像显示区域固定为 1000x1000 @ (0,0)，便于坐标换算
     const rectSpy = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({
-      left: 0, top: 0, right: 1000, bottom: 1000, width: 1000, height: 1000, x: 0, y: 0,
+      left: 0,
+      top: 0,
+      right: 1000,
+      bottom: 1000,
+      width: 1000,
+      height: 1000,
+      x: 0,
+      y: 0,
       toJSON: () => {},
     });
     const { container } = render(<ImageViewer {...baseProps()} />);
@@ -457,7 +498,14 @@ describe('ImageViewer', () => {
 
   function mockSquareViewport() {
     return vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({
-      left: 0, top: 0, right: 1000, bottom: 1000, width: 1000, height: 1000, x: 0, y: 0,
+      left: 0,
+      top: 0,
+      right: 1000,
+      bottom: 1000,
+      width: 1000,
+      height: 1000,
+      x: 0,
+      y: 0,
       toJSON: () => {},
     });
   }
@@ -545,15 +593,29 @@ describe('ImageViewer', () => {
   });
 
   it('查看态：点击缩放标签按原图宽切换实际像素（此前引用编辑层元素导致失效）', () => {
-    const rectSpy = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function () {
-      let w = 1000;
-      if (this.tagName === 'IMG') {
-        const m = /scale\((-?[\d.]+)/.exec(this.style?.transform || '');
-        if (m) w = 1000 * Math.abs(parseFloat(m[1]));
-      }
-      return { left: 0, top: 0, right: w, bottom: 1000, width: w, height: 1000, x: 0, y: 0, toJSON: () => {} };
-    });
-    const natSpy = vi.spyOn(HTMLImageElement.prototype, 'naturalWidth', 'get').mockReturnValue(1920);
+    const rectSpy = vi
+      .spyOn(HTMLElement.prototype, 'getBoundingClientRect')
+      .mockImplementation(function () {
+        let w = 1000;
+        if (this.tagName === 'IMG') {
+          const m = /scale\((-?[\d.]+)/.exec(this.style?.transform || '');
+          if (m) w = 1000 * Math.abs(parseFloat(m[1]));
+        }
+        return {
+          left: 0,
+          top: 0,
+          right: w,
+          bottom: 1000,
+          width: w,
+          height: 1000,
+          x: 0,
+          y: 0,
+          toJSON: () => {},
+        };
+      });
+    const natSpy = vi
+      .spyOn(HTMLImageElement.prototype, 'naturalWidth', 'get')
+      .mockReturnValue(1920);
     try {
       render(<ImageViewer {...baseProps()} />);
       const label = document.querySelector('.viewer-zoom-label');
@@ -571,7 +633,9 @@ describe('ImageViewer', () => {
     mockEditBridge();
     render(<ImageViewer {...baseProps()} />);
     await enterEdit();
-    fireEvent.change(document.querySelectorAll('.editor-slider-row input[type="range"]')[0], { target: { value: '0.5' } });
+    fireEvent.change(document.querySelectorAll('.editor-slider-row input[type="range"]')[0], {
+      target: { value: '0.5' },
+    });
     fireEvent.click(screen.getByText('导出…'));
     expect(await screen.findByText('质量')).toBeInTheDocument();
     fireEvent.change(screen.getByDisplayValue('跟随原图'), { target: { value: 'png' } });
@@ -583,7 +647,9 @@ describe('ImageViewer', () => {
     mockEditBridge();
     render(<ImageViewer {...baseProps({ image: { ...testImage, format: 'png' } })} />);
     await enterEdit();
-    fireEvent.change(document.querySelectorAll('.editor-slider-row input[type="range"]')[0], { target: { value: '0.5' } });
+    fireEvent.change(document.querySelectorAll('.editor-slider-row input[type="range"]')[0], {
+      target: { value: '0.5' },
+    });
     fireEvent.click(screen.getByText('导出…'));
     expect(await screen.findByText(/无损格式/)).toBeInTheDocument();
     expect(screen.queryByText('质量')).toBeNull();
@@ -594,7 +660,9 @@ describe('ImageViewer', () => {
     const onImageUpdated = vi.fn();
     const { container } = render(<ImageViewer {...baseProps({ onImageUpdated })} />);
     fireEvent.click(screen.getByTitle('收藏 (F)'));
-    await vi.waitFor(() => expect(window.pixyang.updateImage).toHaveBeenCalledWith(3, { favorite: 1 }));
+    await vi.waitFor(() =>
+      expect(window.pixyang.updateImage).toHaveBeenCalledWith(3, { favorite: 1 })
+    );
     // 乐观置 1 后失败必须退回 0：实心 Heart 消失、回到 HeartOff
     await vi.waitFor(() => {
       expect(container.querySelector('.lucide-heart')).toBeNull();
@@ -607,11 +675,15 @@ describe('ImageViewer', () => {
     window.pixyang.updateImage = vi.fn().mockRejectedValue(new Error('ipc down'));
     const onImageUpdated = vi.fn();
     render(<ImageViewer {...baseProps({ onImageUpdated })} />);
-    const filled = () => document.querySelectorAll('.viewer-actions button[title$=" 星"] svg[fill="currentColor"]').length;
+    const filled = () =>
+      document.querySelectorAll('.viewer-actions button[title$=" 星"] svg[fill="currentColor"]')
+        .length;
     expect(filled()).toBe(3); // testImage.rating=3
     fireEvent.keyDown(window, { key: '5' });
     expect(filled()).toBe(5); // 乐观更新即时生效
-    await vi.waitFor(() => expect(window.pixyang.updateImage).toHaveBeenCalledWith(3, { rating: 5 }));
+    await vi.waitFor(() =>
+      expect(window.pixyang.updateImage).toHaveBeenCalledWith(3, { rating: 5 })
+    );
     await vi.waitFor(() => expect(filled()).toBe(3));
     expect(onImageUpdated).not.toHaveBeenCalled();
   });
@@ -619,13 +691,22 @@ describe('ImageViewer', () => {
   it('enterEdit 在途时卸载：editCancel 作废会话，不留幽灵绑定（审查批 6 J6）', async () => {
     mockEditBridge();
     let resolveOpen;
-    window.pixyang.editOpen = vi.fn().mockReturnValue(new Promise((r) => { resolveOpen = r; }));
+    window.pixyang.editOpen = vi.fn().mockReturnValue(
+      new Promise((r) => {
+        resolveOpen = r;
+      })
+    );
     const { unmount } = render(<ImageViewer {...baseProps()} />);
     fireEvent.click(screen.getByTitle(/编辑模式/));
     unmount();
     resolveOpen({
-      id: 3, source: 'jpg', basePath: 'C:/cache/3-base.jpg',
-      width: 1920, height: 1080, hasNef: false, savedEdits: null,
+      id: 3,
+      source: 'jpg',
+      basePath: 'C:/cache/3-base.jpg',
+      width: 1920,
+      height: 1080,
+      hasNef: false,
+      savedEdits: null,
     });
     await vi.waitFor(() => expect(window.pixyang.editCancel).toHaveBeenCalledWith(3));
     // 迟到的会话不得复活：不再有第二次 editOpen 或渲染编辑面板
@@ -651,14 +732,20 @@ describe('ImageViewer', () => {
     const box = () => container.querySelector('.editor-crop-box');
     expect(box().textContent).toContain('768×324');
     // w 边手柄水平内拖：left/width 变，top/height 不动
-    fireEvent.mouseDown(document.querySelector('[data-crop-handle="w"]'), { clientX: 190, clientY: 250 });
+    fireEvent.mouseDown(document.querySelector('[data-crop-handle="w"]'), {
+      clientX: 190,
+      clientY: 250,
+    });
     fireEvent.mouseMove(window, { clientX: 300, clientY: 250 });
     fireEvent.mouseUp(window);
     await vi.waitFor(() => expect(box().textContent).toContain('384×324'));
     expect(box().style.top).toBe('10%');
     expect(box().style.height).toBe('30%');
     // n 边手柄竖直上拖：仅上边移动，左/宽不受牵连（clientY 200 → 底图 y=216）
-    fireEvent.mouseDown(document.querySelector('[data-crop-handle="n"]'), { clientX: 200, clientY: 150 });
+    fireEvent.mouseDown(document.querySelector('[data-crop-handle="n"]'), {
+      clientX: 200,
+      clientY: 150,
+    });
     fireEvent.mouseMove(window, { clientX: 200, clientY: 200 });
     fireEvent.mouseUp(window);
     await vi.waitFor(() => expect(box().textContent).toContain('384×216'));
@@ -678,8 +765,13 @@ describe('内置风格预设', () => {
       getImageTags: vi.fn().mockResolvedValue([]),
       toFileUrl: vi.fn().mockImplementation((p) => Promise.resolve(p ? `file:///${p}` : null)),
       editOpen: vi.fn().mockResolvedValue({
-        id: 3, source: 'jpg', basePath: 'C:/cache/3-base.jpg',
-        width: 1920, height: 1080, hasNef: false, savedEdits: null,
+        id: 3,
+        source: 'jpg',
+        basePath: 'C:/cache/3-base.jpg',
+        width: 1920,
+        height: 1080,
+        hasNef: false,
+        savedEdits: null,
       }),
       getPresets: vi.fn().mockResolvedValue([]),
       createPreset: vi.fn().mockResolvedValue({ id: 1, name: 'x' }),
@@ -729,12 +821,23 @@ describe('预设应用范围（Phase 16）', () => {
       getImageTags: vi.fn().mockResolvedValue([]),
       toFileUrl: vi.fn().mockImplementation((p) => Promise.resolve(p ? `file:///${p}` : null)),
       editOpen: vi.fn().mockResolvedValue({
-        id: 3, source: 'jpg', basePath: 'C:/cache/3-base.jpg',
-        width: 1920, height: 1080, hasNef: false,
-        savedEdits: { version: 1, params: { orientation: { rotate: 90 }, basic: { exposure: 0.5 } } },
+        id: 3,
+        source: 'jpg',
+        basePath: 'C:/cache/3-base.jpg',
+        width: 1920,
+        height: 1080,
+        hasNef: false,
+        savedEdits: {
+          version: 1,
+          params: { orientation: { rotate: 90 }, basic: { exposure: 0.5 } },
+        },
       }),
       getPresets: vi.fn().mockResolvedValue([
-        { id: 9, name: '我的风格', params: { orientation: { rotate: 270, flipH: true }, basic: { exposure: 1 } } },
+        {
+          id: 9,
+          name: '我的风格',
+          params: { orientation: { rotate: 270, flipH: true }, basic: { exposure: 1 } },
+        },
       ]),
       createPreset: vi.fn().mockResolvedValue({ id: 1, name: 'x' }),
       deletePreset: vi.fn().mockResolvedValue(undefined),
@@ -783,8 +886,13 @@ describe('历史面板（本轮新功能验证）', () => {
       getImageTags: vi.fn().mockResolvedValue([]),
       toFileUrl: vi.fn().mockImplementation((p) => Promise.resolve(p ? `file:///${p}` : null)),
       editOpen: vi.fn().mockResolvedValue({
-        id: 3, source: 'jpg', basePath: 'C:/cache/3-base.jpg',
-        width: 1920, height: 1080, hasNef: false, savedEdits: null,
+        id: 3,
+        source: 'jpg',
+        basePath: 'C:/cache/3-base.jpg',
+        width: 1920,
+        height: 1080,
+        hasNef: false,
+        savedEdits: null,
       }),
       getPresets: vi.fn().mockResolvedValue([]),
       editCancel: vi.fn().mockResolvedValue({ ok: true }),
@@ -844,12 +952,24 @@ describe('历史面板（本轮新功能验证）', () => {
 
   it('裁剪拖动入历史：拖动后撤销可回到拖前状态', async () => {
     window.pixyang.editOpen = vi.fn().mockResolvedValue({
-      id: 3, source: 'jpg', basePath: 'C:/cache/3-base.jpg',
-      width: 1920, height: 1080, hasNef: false, savedEdits: null,
+      id: 3,
+      source: 'jpg',
+      basePath: 'C:/cache/3-base.jpg',
+      width: 1920,
+      height: 1080,
+      hasNef: false,
+      savedEdits: null,
     });
     window.pixyang.toFileUrl.mockImplementation((p) => Promise.resolve(p ? `file:///${p}` : null));
     const rectSpy = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({
-      left: 0, top: 0, right: 1000, bottom: 1000, width: 1000, height: 1000, x: 0, y: 0,
+      left: 0,
+      top: 0,
+      right: 1000,
+      bottom: 1000,
+      width: 1000,
+      height: 1000,
+      x: 0,
+      y: 0,
       toJSON: () => {},
     });
     const { container } = render(<ImageViewer {...baseProps()} />);
@@ -871,12 +991,19 @@ describe('历史面板（本轮新功能验证）', () => {
   it('原图预解码：解码完成后显示源从缩略图切到原图（审查批 4）', async () => {
     const preloads = [];
     class FakeImage {
-      set src(v) { this._src = v; preloads.push(this); }
-      get src() { return this._src; }
+      set src(v) {
+        this._src = v;
+        preloads.push(this);
+      }
+      get src() {
+        return this._src;
+      }
     }
     const RealImage = window.Image;
     window.Image = FakeImage;
-    window.pixyang.toFileUrl.mockImplementation((p) => Promise.resolve(p ? `file:///${p.replace(/\\/g, '/')}` : null));
+    window.pixyang.toFileUrl.mockImplementation((p) =>
+      Promise.resolve(p ? `file:///${p.replace(/\\/g, '/')}` : null)
+    );
     const { container } = render(<ImageViewer {...baseProps()} />);
     try {
       const img = () => container.querySelector('.viewer-image');
@@ -894,12 +1021,19 @@ describe('历史面板（本轮新功能验证）', () => {
   it('原图解码失败也切换到原图露出错误态，不卡在缩略图（审查批 4）', async () => {
     const preloads = [];
     class FakeImage {
-      set src(v) { this._src = v; preloads.push(this); }
-      get src() { return this._src; }
+      set src(v) {
+        this._src = v;
+        preloads.push(this);
+      }
+      get src() {
+        return this._src;
+      }
     }
     const RealImage = window.Image;
     window.Image = FakeImage;
-    window.pixyang.toFileUrl.mockImplementation((p) => Promise.resolve(p ? `file:///${p.replace(/\\/g, '/')}` : null));
+    window.pixyang.toFileUrl.mockImplementation((p) =>
+      Promise.resolve(p ? `file:///${p.replace(/\\/g, '/')}` : null)
+    );
     const { container } = render(<ImageViewer {...baseProps()} />);
     try {
       const img = () => container.querySelector('.viewer-image');

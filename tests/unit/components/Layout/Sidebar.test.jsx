@@ -29,7 +29,13 @@ function seedStore(over = {}) {
 function renderSidebar(over = {}) {
   return render(
     <MemoryRouter>
-      <Sidebar collapsed={false} onToggleCollapse={vi.fn()} onImport={vi.fn()} onShowShortcuts={vi.fn()} {...over} />
+      <Sidebar
+        collapsed={false}
+        onToggleCollapse={vi.fn()}
+        onImport={vi.fn()}
+        onShowShortcuts={vi.fn()}
+        {...over}
+      />
     </MemoryRouter>
   );
 }
@@ -105,8 +111,13 @@ describe('Sidebar', () => {
 
   it('点「全部图片」清空全部筛选维度而非仅收藏（审查批 8 Q-06）', () => {
     seedStore({
-      filterTag: 5, filterAlbum: 2, filterDate: '2026-01-02',
-      dateRange: { from: '', to: '' }, filterFavorites: true, search: 'sun', page: 3,
+      filterTag: 5,
+      filterAlbum: 2,
+      filterDate: '2026-01-02',
+      dateRange: { from: '', to: '' },
+      filterFavorites: true,
+      search: 'sun',
+      page: 3,
     });
     renderSidebar();
     fireEvent.click(screen.getByText('全部图片'));

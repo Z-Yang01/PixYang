@@ -11,12 +11,22 @@ describe('CurveEditor（曲线编辑器）', () => {
   beforeEach(() => {
     // SVG 原型链是 SVGElement→Element（不经过 HTMLElement），须 spy Element.prototype
     rectSpy = vi.spyOn(Element.prototype, 'getBoundingClientRect').mockReturnValue({
-      left: 0, top: 0, right: 100, bottom: 100, width: 100, height: 100, x: 0, y: 0,
+      left: 0,
+      top: 0,
+      right: 100,
+      bottom: 100,
+      width: 100,
+      height: 100,
+      x: 0,
+      y: 0,
       toJSON: () => {},
     });
     // 手动 rAF 队列：拖拽移动按帧合并，测试里显式 flush
     rafQueue = [];
-    vi.stubGlobal('requestAnimationFrame', (cb) => { rafQueue.push(cb); return rafQueue.length; });
+    vi.stubGlobal('requestAnimationFrame', (cb) => {
+      rafQueue.push(cb);
+      return rafQueue.length;
+    });
     vi.stubGlobal('cancelAnimationFrame', vi.fn());
   });
   afterEach(() => {
@@ -34,7 +44,9 @@ describe('CurveEditor（曲线编辑器）', () => {
   const setup = (curves = EMPTY) => {
     const onCommit = vi.fn();
     const onChange = vi.fn();
-    const { container } = render(<CurveEditor curves={curves} onCommit={onCommit} onChange={onChange} />);
+    const { container } = render(
+      <CurveEditor curves={curves} onCommit={onCommit} onChange={onChange} />
+    );
     const svg = container.querySelector('[data-curve-editor]');
     return { onCommit, onChange, svg, container };
   };
@@ -42,7 +54,7 @@ describe('CurveEditor（曲线编辑器）', () => {
   it('渲染 4 个通道页签，默认 RGB 激活，点击切换', () => {
     const { container } = setup();
     const tabs = screen.getAllByRole('tab');
-    expect(tabs.map(t => t.textContent)).toEqual(['RGB', 'R', 'G', 'B']);
+    expect(tabs.map((t) => t.textContent)).toEqual(['RGB', 'R', 'G', 'B']);
     expect(tabs[0].getAttribute('aria-selected')).toBe('true');
     fireEvent.click(tabs[2]);
     expect(tabs[2].getAttribute('aria-selected')).toBe('true');
@@ -96,7 +108,12 @@ describe('CurveEditor（曲线编辑器）', () => {
   });
 
   it('端点 x 锁定，y 可调', () => {
-    const { onChange, svg } = setup({ rgb: [0, 0.02, 0.25, 0.18, 0.75, 0.82, 1, 0.98], r: [], g: [], b: [] });
+    const { onChange, svg } = setup({
+      rgb: [0, 0.02, 0.25, 0.18, 0.75, 0.82, 1, 0.98],
+      r: [],
+      g: [],
+      b: [],
+    });
     // 拖左端点 (0,0.02) → 屏幕 (0, 98)，水平拖到 x=30 也不动 x
     fireEvent.mouseDown(svg, { clientX: 0, clientY: 98 });
     fireEvent.mouseMove(window, { clientX: 30, clientY: 95 });
