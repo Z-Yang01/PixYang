@@ -348,3 +348,6 @@
   → 双 agent 实施全部 P0/P1 缺口 + P2 插件（单实例/窗口状态）。合并验证：
   cargo 138/138 + golden 门禁；clippy 0 error；vitest 971/971；build 干净。
   对等功能可用率 96.9%→100%（P0-4 渲染取消与 P2-21 崩溃自愈评估后置，见 TAURI_PARITY.md 修复轮状态）。
+- 2026-09-21 04:55 Tauri release 构建完成：独立 exe 14.3MB（内嵌前端）+ NSIS 安装包
+  PixYang_0.1.0_x64-setup.exe（经 npx @tauri-apps/cli 打包）。对比 Electron 安装包 98MB。
+  启动冒烟：release exe 拉起正常。
