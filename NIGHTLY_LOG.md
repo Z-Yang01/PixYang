@@ -373,3 +373,7 @@
   确认框、导出对话框、面板下拉全部被盖住不可见（点 X 表现为无反应），.info-panel z-900
   同理被盖。修复：index.css 按 data-slot 统一提 Radix 弹层层级至 2000；.info-panel 提至
   1600。cargo 143/143 + golden；vitest 971/971；新安装包已重打。
+- 2026-09-21 06:20 详情面板崩溃修复（用户视觉冒烟反馈 toFileUrl.then is not a function）：
+  tauriBridgeMedia.toFileUrl/toFileUrls 返回同步值，组件按 Electron IPC 契约 .then 消费即崩。
+  改为返回 Promise（缺失时 resolve 空串/空映射，await/.then 均兼容）。vitest 971/971；
+  新安装包已重打。
