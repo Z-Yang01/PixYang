@@ -84,6 +84,9 @@ export const tauriApi = {
     tauriInvoke('create_preset', { name, params: upgradeEdits(params) }),
   deletePreset: (id) => tauriInvoke('delete_preset', { id }),
   getImagesRoot: () => tauriInvoke('get_images_root'),
+  // 与 Rust set_images_root(dir_path) 对齐；sync_camera_folder 无用户参数（相机根取自 settings）
+  setImagesRoot: (dirPath) => tauriInvoke('set_images_root', { dirPath }),
+  syncCameraFolder: () => tauriInvoke('sync_camera_folder', {}),
   getDatabasePath: () => tauriInvoke('get_database_path'),
   getAllImageIds: (options) => tauriInvoke('get_all_image_ids', { query: options ?? {} }),
   fileExists: (filepath) => tauriInvoke('file_exists', { filepath }),

@@ -429,3 +429,10 @@
   四节改为 Tauri-only（测试基线 55 文件/698 例）。window.pixyang 透传面保留为单测注入。
   vitest 698/698；覆盖率 92.6%（阈值过）；typecheck ✅；lint 0 error；vite build ✅；
   NSIS 安装包重打（4.1MB）。遗留：release/ 旧 electron-builder 产物（98MB）未删，待定。
+- 2026-09-21 21:55 R37 生产路径契约测试（优化建议 1）：新 tests/unit/lib/apiTauriContract.test.js
+  以路由表锁定 api.js→tauriBridge→invoke 全 65 通道的命令名/参数序列化形状（含 dialog/event/
+  url/local/pixyang 特例），并完备性断言「api 方法集 == 契约表」防新增通道漏登记；另锁无桥回落
+  pixyang 与无桥无注入面返回 undefined 两道守卫。首跑即抓到实机 bug：syncCameraFolder/
+  setImagesRoot 在 TAURI_SEAMS 有接缝但 tauriApi 无包装，Tauri 运行时设置页两操作会
+  TypeError——补桥（sync_camera_folder 无参 / set_images_root {dirPath}，对齐 camera.rs）。
+  vitest 766/766（+68）；typecheck ✅；lint 0 error；vite build ✅；NSIS 安装包重打（含修复）。
