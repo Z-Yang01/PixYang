@@ -440,23 +440,30 @@ pub fn image_meta(filepath: String) -> Result<(u32, u32, u32, bool), String> {
 // ── 导入/改名编排（迁移接缝 4c） ──
 
 #[tauri::command]
-pub fn import_images(
+pub async fn import_images(
     db: State<'_, Db>,
     paths: State<'_, AppPaths>,
     app: AppHandle,
     files: serde_json::Value,
     date_override: Option<String>,
 ) -> Result<Vec<images_query::ImageRow>, String> {
-    let conn = db.0.lock().unwrap();
-    file_ops::import_images(
-        &conn,
-        &files,
-        date_override.as_deref(),
-        &file_ops::today_ymd(),
-        &paths.thumbs_dir,
-        Some(&app),
-    )
-    .map_err(|e| e.to_string())
+    let db = db.inner().clone();
+    let paths = paths.inner().clone();
+    let app = app.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let conn = db.0.lock().unwrap();
+        file_ops::import_images(
+            &conn,
+            &files,
+            date_override.as_deref(),
+            &file_ops::today_ymd(),
+            &paths.thumbs_dir,
+            Some(&app),
+        )
+        .map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| format!("后台任务失败: {e}"))?
 }
 
 #[tauri::command]
@@ -548,32 +555,46 @@ pub fn get_exif(db: State<'_, Db>, paths: State<'_, AppPaths>, filepath: String)
 }
 
 #[tauri::command]
-pub fn scan_directory(dir: String) -> Result<Vec<scan::CollectedFile>, String> {
-    scan::scan_directory(Path::new(&dir)).map_err(|e| e.to_string())
+pub async fn scan_directory(dir: String) -> Result<Vec<scan::CollectedFile>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        scan::scan_directory(Path::new(&dir)).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| format!("后台任务失败: {e}"))?
 }
 
 #[tauri::command]
-pub fn collect_import_files(paths: Vec<String>) -> Result<Vec<scan::CollectedFile>, String> {
-    let as_pathbuf: Vec<std::path::PathBuf> = paths.iter().map(PathBuf::from).collect();
-    scan::collect_import_files(&as_pathbuf).map_err(|e| e.to_string())
+pub async fn collect_import_files(paths: Vec<String>) -> Result<Vec<scan::CollectedFile>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let as_pathbuf: Vec<std::path::PathBuf> = paths.iter().map(PathBuf::from).collect();
+        scan::collect_import_files(&as_pathbuf).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| format!("后台任务失败: {e}"))?
 }
 
 #[tauri::command]
-pub fn update_image(
+pub async fn update_image(
     db: State<'_, Db>,
     paths: State<'_, AppPaths>,
     id: i64,
     updates: Value,
 ) -> Result<Value, String> {
-    let conn = db.0.lock().unwrap();
-    update_image::update_image(
-        &conn,
-        id,
-        &updates,
-        &paths.default_images_dir,
-        &paths.thumbs_dir,
-    )
-    .map_err(|e| e.to_string())
+    let db = db.inner().clone();
+    let paths = paths.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let conn = db.0.lock().unwrap();
+        update_image::update_image(
+            &conn,
+            id,
+            &updates,
+            &paths.default_images_dir,
+            &paths.thumbs_dir,
+        )
+        .map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| format!("后台任务失败: {e}"))?
 }
 
 #[tauri::command]
@@ -587,48 +608,92 @@ pub fn update_images(
 }
 
 #[tauri::command]
-pub fn rebuild_thumbnails(
+pub async fn rebuild_thumbnails(
     db: State<'_, Db>,
     paths: State<'_, AppPaths>,
     all: bool,
 ) -> Result<Value, String> {
-    let conn = db.0.lock().unwrap();
-    update_image::rebuild_thumbnails(&conn, &paths.thumbs_dir, all, None).map_err(|e| e.to_string())
+    let db = db.inner().clone();
+    let paths = paths.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let conn = db.0.lock().unwrap();
+        update_image::rebuild_thumbnails(&conn, &paths.thumbs_dir, all, None)
+            .map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| format!("后台任务失败: {e}"))?
 }
 
 #[tauri::command]
-pub fn rebuild_thumbnails_with_events(
+pub async fn rebuild_thumbnails_with_events(
     app: AppHandle,
     db: State<'_, Db>,
     paths: State<'_, AppPaths>,
     all: bool,
 ) -> Result<Value, String> {
-    let conn = db.0.lock().unwrap();
-    update_image::rebuild_thumbnails(&conn, &paths.thumbs_dir, all, Some(&app))
-        .map_err(|e| e.to_string())
+    let db = db.inner().clone();
+    let paths = paths.inner().clone();
+    let app = app.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let conn = db.0.lock().unwrap();
+        update_image::rebuild_thumbnails(&conn, &paths.thumbs_dir, all, Some(&app))
+            .map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| format!("后台任务失败: {e}"))?
 }
 
 #[tauri::command]
-pub fn scan_broken_records(db: State<'_, Db>, paths: State<'_, AppPaths>) -> Result<Value, String> {
-    let conn = db.0.lock().unwrap();
-    update_image::scan_broken_records(&conn, &paths.default_images_dir).map_err(|e| e.to_string())
+pub async fn scan_broken_records(
+    db: State<'_, Db>,
+    paths: State<'_, AppPaths>,
+) -> Result<Value, String> {
+    let db = db.inner().clone();
+    let paths = paths.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let conn = db.0.lock().unwrap();
+        update_image::scan_broken_records(&conn, &paths.default_images_dir)
+            .map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| format!("后台任务失败: {e}"))?
 }
 
 #[tauri::command]
-pub fn delete_broken_records(
+pub async fn delete_broken_records(
     db: State<'_, Db>,
     paths: State<'_, AppPaths>,
     ids: Vec<i64>,
 ) -> Result<Value, String> {
-    let conn = db.0.lock().unwrap();
-    update_image::delete_broken_records(&conn, &ids, &paths.default_images_dir, &paths.thumbs_dir)
+    let db = db.inner().clone();
+    let paths = paths.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let conn = db.0.lock().unwrap();
+        update_image::delete_broken_records(
+            &conn,
+            &ids,
+            &paths.default_images_dir,
+            &paths.thumbs_dir,
+        )
         .map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| format!("后台任务失败: {e}"))?
 }
 
 #[tauri::command]
-pub fn find_duplicates(db: State<'_, Db>, paths: State<'_, AppPaths>) -> Result<Value, String> {
-    let conn = db.0.lock().unwrap();
-    update_image::find_duplicates(&conn, &paths.default_images_dir).map_err(|e| e.to_string())
+pub async fn find_duplicates(
+    db: State<'_, Db>,
+    paths: State<'_, AppPaths>,
+) -> Result<Value, String> {
+    let db = db.inner().clone();
+    let paths = paths.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let conn = db.0.lock().unwrap();
+        update_image::find_duplicates(&conn, &paths.default_images_dir).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| format!("后台任务失败: {e}"))?
 }
 
 #[tauri::command]
@@ -840,9 +905,19 @@ pub(crate) fn edit_session_snapshot(
 }
 
 #[tauri::command]
-pub fn edit_open(db: State<'_, Db>, paths: State<'_, AppPaths>, id: i64) -> Result<Value, String> {
-    let conn = db.0.lock().unwrap();
-    edit_session_snapshot(&conn, &paths.thumbs_dir, id)
+pub async fn edit_open(
+    db: State<'_, Db>,
+    paths: State<'_, AppPaths>,
+    id: i64,
+) -> Result<Value, String> {
+    let db = db.inner().clone();
+    let paths = paths.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let conn = db.0.lock().unwrap();
+        edit_session_snapshot(&conn, &paths.thumbs_dir, id)
+    })
+    .await
+    .map_err(|e| format!("后台任务失败: {e}"))?
 }
 
 // 编辑预览缩略图（镜像 Electron edit-preview-ready 链路）：spec 已由桥内按 400 长边构建代理，
@@ -911,7 +986,7 @@ pub(crate) fn render_edit_preview_kernel(
 }
 
 #[tauri::command]
-pub fn edit_render_preview(
+pub async fn edit_render_preview(
     db: State<'_, Db>,
     paths: State<'_, AppPaths>,
     app: AppHandle,
@@ -919,26 +994,33 @@ pub fn edit_render_preview(
     spec: Value,
     input_path: String,
 ) -> Result<Value, String> {
-    let conn = db.0.lock().unwrap();
-    let result =
-        render_edit_preview_kernel(&conn, &paths.thumbs_dir, id, &spec, Path::new(&input_path));
-    if let Some(path) = result
-        .as_ref()
-        .ok()
-        .and_then(|v| v.get("path"))
-        .and_then(|p| p.as_str())
-    {
-        progress::emit_progress(
-            &app,
-            progress::EDIT_PREVIEW_READY,
-            serde_json::json!({ "id": id, "path": path }),
-        );
-    }
-    result
+    let db = db.inner().clone();
+    let paths = paths.inner().clone();
+    let app = app.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let conn = db.0.lock().unwrap();
+        let result =
+            render_edit_preview_kernel(&conn, &paths.thumbs_dir, id, &spec, Path::new(&input_path));
+        if let Some(path) = result
+            .as_ref()
+            .ok()
+            .and_then(|v| v.get("path"))
+            .and_then(|p| p.as_str())
+        {
+            progress::emit_progress(
+                &app,
+                progress::EDIT_PREVIEW_READY,
+                serde_json::json!({ "id": id, "path": path }),
+            );
+        }
+        result
+    })
+    .await
+    .map_err(|e| format!("后台任务失败: {e}"))?
 }
 
 #[tauri::command]
-pub fn edit_bake(
+pub async fn edit_bake(
     db: State<'_, Db>,
     paths: State<'_, AppPaths>,
     app: AppHandle,
@@ -947,28 +1029,36 @@ pub fn edit_bake(
     spec: Value,
     input_path: String,
 ) -> Result<Value, String> {
-    let conn = db.0.lock().unwrap();
-    let (base, _, _, _) = ensure_edit_base(&conn, &paths.thumbs_dir, id, Path::new(&input_path))?;
-    let result = edit_session::edit_bake(&conn, id, &edits, &spec, &base, &paths.thumbs_dir)
-        .map_err(|e| e.to_string());
-    drop(conn);
-    // 镜像 Electron：烘焙后缩略图由 rebuild 重生成（仅缺失者，后台跑，完成发 thumbnails-ready）
-    if let Ok(v) = &result {
-        if v.get("error").is_none() {
-            let app = app.clone();
-            let thumbs_dir = paths.thumbs_dir.clone();
-            std::thread::spawn(move || {
-                let db = app.state::<Db>();
-                let conn = db.0.lock().unwrap();
-                let _ = update_image::rebuild_thumbnails(&conn, &thumbs_dir, false, Some(&app));
-            });
+    let db = db.inner().clone();
+    let paths = paths.inner().clone();
+    let app = app.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let conn = db.0.lock().unwrap();
+        let (base, _, _, _) =
+            ensure_edit_base(&conn, &paths.thumbs_dir, id, Path::new(&input_path))?;
+        let result = edit_session::edit_bake(&conn, id, &edits, &spec, &base, &paths.thumbs_dir)
+            .map_err(|e| e.to_string());
+        drop(conn);
+        // 镜像 Electron：烘焙后缩略图由 rebuild 重生成（仅缺失者，后台跑，完成发 thumbnails-ready）
+        if let Ok(v) = &result {
+            if v.get("error").is_none() {
+                let app = app.clone();
+                let thumbs_dir = paths.thumbs_dir.clone();
+                std::thread::spawn(move || {
+                    let db = app.state::<Db>();
+                    let conn = db.0.lock().unwrap();
+                    let _ = update_image::rebuild_thumbnails(&conn, &thumbs_dir, false, Some(&app));
+                });
+            }
         }
-    }
-    result
+        result
+    })
+    .await
+    .map_err(|e| format!("后台任务失败: {e}"))?
 }
 
 #[tauri::command]
-pub fn edit_export(
+pub async fn edit_export(
     db: State<'_, Db>,
     paths: State<'_, AppPaths>,
     id: i64,
@@ -978,105 +1068,114 @@ pub fn edit_export(
     dest_dir: String,
     output: Value,
 ) -> Result<Value, String> {
-    let conn = db.0.lock().unwrap();
-    let (base, _, _, _) = ensure_edit_base(&conn, &paths.thumbs_dir, id, Path::new(&input_path))?;
-    if !Path::new(&dest_dir).exists() {
-        return Ok(serde_json::json!({ "error": "导出目录不存在" }));
-    }
-    let src_ext = Path::new(&input_path)
-        .extension()
-        .and_then(|e| e.to_str())
-        .map(|e| format!(".{}", e.to_ascii_lowercase()))
-        .unwrap_or_else(|| ".jpg".into());
-    let supported = ["jpeg", "png", "webp"];
-    let out_format = output
-        .get("format")
-        .and_then(|f| f.as_str())
-        .filter(|f| supported.contains(f))
-        .map(String::from)
-        .unwrap_or_else(|| match src_ext.as_str() {
-            ".png" => "png".into(),
-            ".webp" => "webp".into(),
-            _ => "jpeg".into(),
-        });
-    let ext = match out_format.as_str() {
-        "png" => ".png",
-        "webp" => ".webp",
-        _ => ".jpg",
-    };
-    let max_edge = output
-        .get("maxEdge")
-        .and_then(|v| v.as_f64())
-        .filter(|v| *v > 0.0)
-        .map(|v| v as u32);
-    let dims = image::ImageReader::open(&base)
-        .map_err(|e| e.to_string())?
-        .with_guessed_format()
-        .map_err(|e| e.to_string())?
-        .into_dimensions()
-        .map_err(|e| e.to_string())?;
-    let resize = max_edge
-        .filter(|m| dims.0.max(dims.1) > *m)
-        .map(|m| serde_json::json!({ "width": m, "height": m }));
-    let stem = Path::new(&input_path)
-        .file_stem()
-        .map(|s| s.to_string_lossy().into_owned())
-        .unwrap_or_else(|| "image".into());
-    let size_tag = if resize.is_some() {
-        format!("-{}px", max_edge.unwrap())
-    } else {
-        String::new()
-    };
-    let mut dest = Path::new(&dest_dir).join(format!("{stem}-edited{size_tag}{ext}"));
-    let mut n = 1u32;
-    while dest.exists() {
-        dest = Path::new(&dest_dir).join(format!("{stem}-edited{size_tag}_{n}{ext}"));
-        n += 1;
-    }
-    let mut spec = spec.clone();
-    let quality = output
-        .get("quality")
-        .and_then(|v| v.as_f64())
-        .filter(|q| *q > 0.0)
-        .map(|q| q.round().clamp(1.0, 100.0) as i64);
-    let encode = spec
-        .as_object_mut()
-        .ok_or_else(|| "spec 非对象".to_string())?
-        .entry("encode")
-        .or_insert_with(|| serde_json::json!({}));
-    let encode_obj = encode
-        .as_object_mut()
-        .ok_or_else(|| "spec.encode 非对象".to_string())?;
-    let mut encode_params = encode_obj
-        .get("params")
-        .cloned()
-        .unwrap_or_else(|| serde_json::json!({}));
-    encode_params["format"] = Value::String(out_format.clone());
-    if let Some(q) = quality {
-        encode_params["quality"] = Value::from(q);
-    }
-    if let Some(r) = resize {
-        encode_params["resize"] = r;
-    }
-    encode_obj["params"] = encode_params;
-
-    match executor::render_spec_to_file(&spec, Path::new(&base), &dest) {
-        Ok(out) => {
-            // EXIF 回接来源改原图：base 为再编码副本/NEF 预览时无原图 EXIF（零拷贝时执行器已回接）
-            if base != Path::new(&input_path) {
-                if let Err(e) = crate::exif_relay::relay_exif_files(Path::new(&input_path), &dest) {
-                    eprintln!("[编辑导出] EXIF 回接失败: {e}");
-                }
-            }
-            Ok(serde_json::json!({
-                "ok": true,
-                "path": dest.to_string_lossy(),
-                "width": out.width,
-                "height": out.height,
-            }))
+    let db = db.inner().clone();
+    let paths = paths.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let conn = db.0.lock().unwrap();
+        let (base, _, _, _) =
+            ensure_edit_base(&conn, &paths.thumbs_dir, id, Path::new(&input_path))?;
+        if !Path::new(&dest_dir).exists() {
+            return Ok(serde_json::json!({ "error": "导出目录不存在" }));
         }
-        Err(e) => Ok(serde_json::json!({ "error": format!("导出失败：{}", e) })),
-    }
+        let src_ext = Path::new(&input_path)
+            .extension()
+            .and_then(|e| e.to_str())
+            .map(|e| format!(".{}", e.to_ascii_lowercase()))
+            .unwrap_or_else(|| ".jpg".into());
+        let supported = ["jpeg", "png", "webp"];
+        let out_format = output
+            .get("format")
+            .and_then(|f| f.as_str())
+            .filter(|f| supported.contains(f))
+            .map(String::from)
+            .unwrap_or_else(|| match src_ext.as_str() {
+                ".png" => "png".into(),
+                ".webp" => "webp".into(),
+                _ => "jpeg".into(),
+            });
+        let ext = match out_format.as_str() {
+            "png" => ".png",
+            "webp" => ".webp",
+            _ => ".jpg",
+        };
+        let max_edge = output
+            .get("maxEdge")
+            .and_then(|v| v.as_f64())
+            .filter(|v| *v > 0.0)
+            .map(|v| v as u32);
+        let dims = image::ImageReader::open(&base)
+            .map_err(|e| e.to_string())?
+            .with_guessed_format()
+            .map_err(|e| e.to_string())?
+            .into_dimensions()
+            .map_err(|e| e.to_string())?;
+        let resize = max_edge
+            .filter(|m| dims.0.max(dims.1) > *m)
+            .map(|m| serde_json::json!({ "width": m, "height": m }));
+        let stem = Path::new(&input_path)
+            .file_stem()
+            .map(|s| s.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "image".into());
+        let size_tag = if resize.is_some() {
+            format!("-{}px", max_edge.unwrap())
+        } else {
+            String::new()
+        };
+        let mut dest = Path::new(&dest_dir).join(format!("{stem}-edited{size_tag}{ext}"));
+        let mut n = 1u32;
+        while dest.exists() {
+            dest = Path::new(&dest_dir).join(format!("{stem}-edited{size_tag}_{n}{ext}"));
+            n += 1;
+        }
+        let mut spec = spec.clone();
+        let quality = output
+            .get("quality")
+            .and_then(|v| v.as_f64())
+            .filter(|q| *q > 0.0)
+            .map(|q| q.round().clamp(1.0, 100.0) as i64);
+        let encode = spec
+            .as_object_mut()
+            .ok_or_else(|| "spec 非对象".to_string())?
+            .entry("encode")
+            .or_insert_with(|| serde_json::json!({}));
+        let encode_obj = encode
+            .as_object_mut()
+            .ok_or_else(|| "spec.encode 非对象".to_string())?;
+        let mut encode_params = encode_obj
+            .get("params")
+            .cloned()
+            .unwrap_or_else(|| serde_json::json!({}));
+        encode_params["format"] = Value::String(out_format.clone());
+        if let Some(q) = quality {
+            encode_params["quality"] = Value::from(q);
+        }
+        if let Some(r) = resize {
+            encode_params["resize"] = r;
+        }
+        encode_obj["params"] = encode_params;
+
+        match executor::render_spec_to_file(&spec, Path::new(&base), &dest) {
+            Ok(out) => {
+                // EXIF 回接来源改原图：base 为再编码副本/NEF 预览时无原图 EXIF（零拷贝时执行器已回接）
+                if base != Path::new(&input_path) {
+                    if let Err(e) =
+                        crate::exif_relay::relay_exif_files(Path::new(&input_path), &dest)
+                    {
+                        eprintln!("[编辑导出] EXIF 回接失败: {e}");
+                    }
+                }
+                Ok(serde_json::json!({
+                    "ok": true,
+                    "path": dest.to_string_lossy(),
+                    "width": out.width,
+                    "height": out.height,
+                }))
+            }
+            Err(e) => Ok(serde_json::json!({ "error": format!("导出失败：{}", e) })),
+        }
+    })
+    .await
+    .map_err(|e| format!("后台任务失败: {e}"))?
 }
 
 #[tauri::command]

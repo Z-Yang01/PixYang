@@ -735,62 +735,76 @@ pub fn migrate_images_root(
 // ── 命令封装 ──
 
 #[tauri::command]
-pub fn sync_camera_folder(
+pub async fn sync_camera_folder(
     db: State<'_, Db>,
     paths: State<'_, AppPaths>,
     app: tauri::AppHandle,
 ) -> Result<Value, String> {
-    let conn = db.0.lock().unwrap();
-    let camera_dir: String = conn
-        .query_row(
-            "SELECT value FROM settings WHERE key = 'camera_folder'",
-            [],
-            |r| r.get(0),
-        )
-        .optional()
-        .map_err(|e| e.to_string())?
-        .unwrap_or_default();
-    if camera_dir.is_empty() {
-        return Ok(json!({ "error": "未设置相机文件夹" }));
-    }
-    if !Path::new(&camera_dir).exists() {
-        return Ok(json!({ "error": "相机文件夹不存在" }));
-    }
-    match camera_sync(
-        &conn,
-        Path::new(&camera_dir),
-        &paths.default_images_dir,
-        &paths.thumbs_dir,
-        Some(&app),
-    ) {
-        Ok(v) => Ok(v),
-        Err(e) => {
-            eprintln!("[ipc] 相机同步失败: {e}");
-            Ok(json!({ "error": format!("相机同步失败: {e}") }))
+    let db = db.inner().clone();
+    let paths = paths.inner().clone();
+    let app = app.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let conn = db.0.lock().unwrap();
+        let camera_dir: String = conn
+            .query_row(
+                "SELECT value FROM settings WHERE key = 'camera_folder'",
+                [],
+                |r| r.get(0),
+            )
+            .optional()
+            .map_err(|e| e.to_string())?
+            .unwrap_or_default();
+        if camera_dir.is_empty() {
+            return Ok(json!({ "error": "未设置相机文件夹" }));
         }
-    }
+        if !Path::new(&camera_dir).exists() {
+            return Ok(json!({ "error": "相机文件夹不存在" }));
+        }
+        match camera_sync(
+            &conn,
+            Path::new(&camera_dir),
+            &paths.default_images_dir,
+            &paths.thumbs_dir,
+            Some(&app),
+        ) {
+            Ok(v) => Ok(v),
+            Err(e) => {
+                eprintln!("[ipc] 相机同步失败: {e}");
+                Ok(json!({ "error": format!("相机同步失败: {e}") }))
+            }
+        }
+    })
+    .await
+    .map_err(|e| format!("后台任务失败: {e}"))?
 }
 
 #[tauri::command]
-pub fn set_images_root(
+pub async fn set_images_root(
     db: State<'_, Db>,
     paths: State<'_, AppPaths>,
     app: tauri::AppHandle,
     dir_path: String,
 ) -> Result<Value, String> {
-    let conn = db.0.lock().unwrap();
-    match migrate_images_root(
-        &conn,
-        &dir_path,
-        &paths.default_images_dir,
-        &paths.thumbs_dir,
-    ) {
-        Ok(v) => Ok(v),
-        Err(e) => {
-            eprintln!("[ipc] 迁移图片目录失败: {e}");
-            Ok(json!({ "error": format!("迁移失败: {e}") }))
+    let db = db.inner().clone();
+    let paths = paths.inner().clone();
+    let app = app.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let conn = db.0.lock().unwrap();
+        match migrate_images_root(
+            &conn,
+            &dir_path,
+            &paths.default_images_dir,
+            &paths.thumbs_dir,
+        ) {
+            Ok(v) => Ok(v),
+            Err(e) => {
+                eprintln!("[ipc] 迁移图片目录失败: {e}");
+                Ok(json!({ "error": format!("迁移失败: {e}") }))
+            }
         }
-    }
+    })
+    .await
+    .map_err(|e| format!("后台任务失败: {e}"))?
 }
 
 #[cfg(test)]

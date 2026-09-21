@@ -351,3 +351,8 @@
 - 2026-09-21 04:55 Tauri release 构建完成：独立 exe 14.3MB（内嵌前端）+ NSIS 安装包
   PixYang_0.1.0_x64-setup.exe（经 npx @tauri-apps/cli 打包）。对比 Electron 安装包 98MB。
   启动冒烟：release exe 拉起正常。
+- 2026-09-21 05:30 闪退根治（架构级）：15 个重型命令（编辑全链/导入/重建/相机/维护/备份）
+  转 async + spawn_blocking——主线程不再执行渲染/解码；命令内 panic 被运行时隔离为 invoke
+  拒绝（不再中止进程），UI 不再被长任务阻塞。配套：Db 改 Arc 可克隆、AppPaths Clone、
+  执行器 from_raw expect 全部转错误返回、panic 钩子落盘 %APPDATA%/pixyang/panic.log。
+  另修复互斥锁中毒连锁（poison-recovering lock）。cargo 138/138 + golden；vitest 961/961。

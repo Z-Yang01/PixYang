@@ -140,8 +140,15 @@ fn has_hsl_data(v: &Value) -> bool {
 
 /// 近似 USM：out = clamp(x + (x − blur) × k)，blur 为 sigma 缩放的高斯。
 /// 与 libvips sharpen 算法不同源（SEAM5_DECISION.md 分歧项），golden 若含 detail 需重锁。
-fn apply_unsharp_approx(data: &mut [u8], width: u32, height: u32, sigma: f64, channels: usize) {
-    let img = RgbaImage::from_raw(width, height, data.to_vec()).expect("buffer 尺寸匹配");
+fn apply_unsharp_approx(
+    data: &mut [u8],
+    width: u32,
+    height: u32,
+    sigma: f64,
+    channels: usize,
+) -> Result<(), PixError> {
+    let img = RgbaImage::from_raw(width, height, data.to_vec())
+        .ok_or_else(|| PixError::Io("buffer 尺寸不匹配".into()))?;
     let blurred = DynamicImage::from(img.clone()).blur(sigma.max(0.1) as f32);
     let blur_rgba = blurred.to_rgba8();
     let k = 1.0;
@@ -152,12 +159,19 @@ fn apply_unsharp_approx(data: &mut [u8], width: u32, height: u32, sigma: f64, ch
             px[c] = (x + (x - b) * k).clamp(0.0, 255.0).round() as u8;
         }
     }
+    Ok(())
 }
 
-fn apply_geometry(p: &mut BufferImage, rotate: f64, flip_h: bool, flip_v: bool) {
+fn apply_geometry(
+    p: &mut BufferImage,
+    rotate: f64,
+    flip_h: bool,
+    flip_v: bool,
+) -> Result<(), PixError> {
     // 镜像 sharp rotate(θ).flip().flop() 的实测语义：先翻转后旋转（T = R∘F）
     use image::imageops;
-    let img = RgbaImage::from_raw(p.width, p.height, p.data.clone()).expect("buffer 尺寸匹配");
+    let img = RgbaImage::from_raw(p.width, p.height, p.data.clone())
+        .ok_or_else(|| PixError::Io("buffer 尺寸不匹配".into()))?;
     let mut out: DynamicImage = DynamicImage::from(img);
     if flip_v {
         out = DynamicImage::from(imageops::flip_vertical(&out));
@@ -182,14 +196,17 @@ fn apply_geometry(p: &mut BufferImage, rotate: f64, flip_h: bool, flip_v: bool) 
     p.width = out.dimensions().0;
     p.height = out.dimensions().1;
     p.data = out.to_rgba8().into_raw();
+    Ok(())
 }
 
-fn crop_in_place(p: &mut BufferImage, left: u32, top: u32, w: u32, h: u32) {
-    let img = RgbaImage::from_raw(p.width, p.height, p.data.clone()).expect("buffer 尺寸匹配");
+fn crop_in_place(p: &mut BufferImage, left: u32, top: u32, w: u32, h: u32) -> Result<(), PixError> {
+    let img = RgbaImage::from_raw(p.width, p.height, p.data.clone())
+        .ok_or_else(|| PixError::Io("buffer 尺寸不匹配".into()))?;
     let cropped = image::imageops::crop_imm(&img, left, top, w, h).to_image();
     p.width = w;
     p.height = h;
     p.data = cropped.into_raw();
+    Ok(())
 }
 
 fn resize_inside_no_enlarge(p: &BufferImage, max_side: u32) -> BufferImage {
@@ -628,7 +645,7 @@ pub fn render_spec_to_file(
                 if rotate % 360.0 != 0.0 || flip_h || flip_v {
                     base_geom = Some((width, height, rotate, flip_h, flip_v));
                     let p = pixels.as_mut().unwrap();
-                    apply_geometry(p, rotate, flip_h, flip_v);
+                    apply_geometry(p, rotate, flip_h, flip_v)?;
                     width = p.width;
                     height = p.height;
                 }
@@ -649,7 +666,7 @@ pub fn render_spec_to_file(
                     {
                         effective_crop = Some((left, top, c_width, c_height));
                         let p = pixels.as_mut().unwrap();
-                        crop_in_place(p, left, top, c_width, c_height);
+                        crop_in_place(p, left, top, c_width, c_height)?;
                         width = c_width;
                         height = c_height;
                     }

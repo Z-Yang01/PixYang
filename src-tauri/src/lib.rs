@@ -37,6 +37,40 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
+            // panic 落盘：同步命令 panic 会中止进程（闪退），此钩子保住现场供诊断
+            {
+                let log_dir = db::default_db_path()
+                    .parent()
+                    .unwrap_or(std::path::Path::new("."))
+                    .to_path_buf();
+                let _ = std::fs::create_dir_all(&log_dir);
+                std::panic::set_hook(Box::new(move |info| {
+                    use std::io::Write;
+                    let ts = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .map(|d| d.as_secs())
+                        .unwrap_or(0);
+                    let msg = if let Some(s) = info.payload().downcast_ref::<&str>() {
+                        s.to_string()
+                    } else if let Some(s) = info.payload().downcast_ref::<String>() {
+                        s.clone()
+                    } else {
+                        "unknown panic".into()
+                    };
+                    let loc = info
+                        .location()
+                        .map(|l| format!("{}:{}:{}", l.file(), l.line(), l.column()))
+                        .unwrap_or_default();
+                    if let Ok(mut f) = std::fs::OpenOptions::new()
+                        .create(true)
+                        .append(true)
+                        .open(log_dir.join("panic.log"))
+                    {
+                        let _ = writeln!(f, "[{ts}] panic at {loc}: {msg}");
+                    }
+                    eprintln!("[panic] {loc}: {msg}");
+                }));
+            }
             let database =
                 db::Db::open(&db::default_db_path()).map_err(|e| format!("数据库打开失败: {e}"))?;
             let default_images_dir = db::default_db_path()

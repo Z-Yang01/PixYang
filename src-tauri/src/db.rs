@@ -6,7 +6,15 @@ use rusqlite::{Connection, OptionalExtension};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
-pub struct Db(pub Mutex<Connection>);
+#[derive(Clone)]
+pub struct Db(pub std::sync::Arc<Mutex<Connection>>);
+
+impl Db {
+    /// 中毒恢复锁：任一命令 panic 不应让后续所有命令连锁闪退
+    pub fn lock(&self) -> std::sync::MutexGuard<'_, Connection> {
+        self.0.lock().unwrap_or_else(|p| p.into_inner())
+    }
+}
 
 impl Db {
     pub fn open(path: &Path) -> Result<Self, rusqlite::Error> {
@@ -18,12 +26,12 @@ impl Db {
             conn.pragma_update(None, "journal_mode", "WAL")?;
         }
         ensure_settings_table(&conn)?;
-        Ok(Self(Mutex::new(conn)))
+        Ok(Self(std::sync::Arc::new(Mutex::new(conn))))
     }
 
     pub fn from_connection(conn: Connection) -> Self {
         ensure_settings_table(&conn).expect("settings 表创建失败");
-        Self(Mutex::new(conn))
+        Self(std::sync::Arc::new(Mutex::new(conn)))
     }
 
     pub fn get_setting(&self, key: &str) -> Result<Option<String>, rusqlite::Error> {
@@ -103,6 +111,7 @@ pub fn default_thumbnails_dir() -> PathBuf {
 }
 
 /// 托管状态：连接 + 宿主派生路径（缩略图目录、默认图片根）
+#[derive(Clone)]
 pub struct AppPaths {
     pub thumbs_dir: PathBuf,
     pub default_images_dir: PathBuf,
