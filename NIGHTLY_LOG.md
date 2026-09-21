@@ -383,3 +383,8 @@
 - 2026-09-21 06:55 R30 补：App 接线重新落位（前次误 checkout 丢弃），HelpGuide 弹窗 +
   侧边栏"使用说明"入口 + Escape/门禁接线完整。NSIS 安装包重打（4.1MB）。
   vitest 974/974。
+- 2026-09-21 07:10 R31 UI 美化（方向：现代精致/全站，纯样式零逻辑）：中文字体栈优先
+  （YaHei UI/PingFang/Noto）+ 数字等宽；Firefox 滚动条适配 + thumb 过渡；全局 focus-visible
+  accent 光圈；prefers-reduced-motion 关停动画；对话框模糊背景 + 入场上浮动效；侧边栏活动项
+  accent 指示条；卡片 hover 上浮；查看器信息条玻璃化。安装包已重打（4.1MB）。
+  vitest 974/974；lint 0 error。
