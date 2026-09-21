@@ -39,11 +39,8 @@ export default [
     },
   },
   {
-    // Electron 端、共享渲染模块与构建辅助脚本均为 CommonJS（含 .cjs）
+    // 共享渲染模块与测试辅助脚本为 CommonJS（含 .cjs）
     files: [
-      'electron/**/*.js',
-      'electron/**/*.cjs',
-      'scripts/**/*.js',
       'shared/**/*.cjs',
       'tests/**/*.cjs',
       '*.cjs',

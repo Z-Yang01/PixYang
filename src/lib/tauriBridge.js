@@ -1,5 +1,5 @@
-// Tauri 后端探测与调用封装。Electron 运行时 window.__TAURI__ 不存在，
-// isTauriAvailable() 为 false，api.js 维持原 IPC 路径；桥仅供逐步迁移的调用方使用。
+// Tauri 后端探测与调用封装。window.__TAURI__ 不存在（纯浏览器/单测）时
+// isTauriAvailable() 为 false，api.js 回落 window.pixyang 注入面。
 // 依赖 tauri.conf.json 的 app.withGlobalTauri 注入的全局，不新增 npm 依赖。
 import editSchema from '../../shared/editSchema.cjs';
 import renderSpecModule from '../../shared/renderSpec.cjs';
@@ -64,7 +64,7 @@ export const tauriApi = {
   removeFromAlbum: (albumId, imageId) => tauriInvoke('remove_from_album', { albumId, imageId }),
   deleteImage: (id) => tauriInvoke('delete_image', { id }),
   batchDeleteImages: (ids) => tauriInvoke('batch_delete_images', { ids }),
-  // presets：upgradeEdits 规整在桥接层（与 Electron 主进程同用 shared/editSchema.cjs）
+  // presets：upgradeEdits 规整在桥接层（前端与桥同用 shared/editSchema.cjs）
   getPresets: async () => {
     const rows = await tauriInvoke('get_presets');
     return rows.map((r) => ({
@@ -131,7 +131,7 @@ export const tauriApi = {
   saveEdits: (id, params, command) =>
     tauriInvoke('save_edit_params', { id, params: upgradeEdits(params), command }).then(
       (result) => {
-        // 镜像 Electron edits:save：保存成功后异步刷新编辑预览缩略图（不阻塞保存；失败仅告警）
+        // 保存成功后异步刷新编辑预览缩略图（不阻塞保存；失败仅告警）
         if (result && !result.error) {
           renderEditPreviewAfterSave(id, params).catch((e) =>
             console.error('[tauriBridge] 编辑预览渲染失败:', e.message)

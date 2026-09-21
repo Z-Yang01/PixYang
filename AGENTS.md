@@ -6,28 +6,17 @@
 
 PixYang 是一个本地桌面图片管理应用，技术栈：
 
-- 桌面框架：Electron 32（主进程在 `electron/main.js`，无 TypeScript）
+- 桌面框架：Tauri 2（Rust 后端在 `src-tauri/`，命令在 `src/lib.rs` 的 generate_handler! 注册，NSIS 打包）
 - 前端：React 18 + React Router v6 + zustand（`src/store/galleryStore.js` 集中筛选/勾选/网格/共享数据）（源码在 `src/`）
 - 构建：Vite 5（`vite.config.js`）
-- 数据库：better-sqlite3（WAL 模式，写操作即时持久化），所有数据库操作在 `electron/database.js`，仅通过 IPC 调用
-- 图片处理：缩略图用 sharp 在 worker_threads 生成（`electron/imageWorker.js`/`thumbWorker.js`），EXIF 用 exifr 解析
-- 桥接：contextBridge + ipcRenderer/ipcMain，渲染进程不能直接访问文件系统；前端统一经 `src/lib/api.js` 访问 `window.pixyang`
+- 数据库：rusqlite（WAL 模式，写操作即时持久化），连接/schema/迁移在 `src-tauri/src/db.rs` 与 `tags_albums.rs`，库文件与旧版共用 pixyang.db
+- 图片处理：Rust 侧完成——缩略图 `src-tauri/src/thumbs.rs`、渲染执行器 `executor.rs`、EXIF `exif_read.rs`（image-rs + kamadak-exif）
+- 桥接：WebView 不能直接访问文件系统；前端统一经 `src/lib/api.js` → `src/lib/tauriBridge.js`（invoke）；`window.pixyang` 透传面仅保留给单测注入与无桥降级
 
 ## 目录结构
 
 ```
-electron/
-  main.js         主进程：窗口、IPC 处理器、扫描、进度事件、编辑会话
-  render/
-    renderSpecToSharp.cjs  RenderSpec → sharp 执行器（逐算子检查点，golden 测试共用）
-    index.cjs     渲染入口封装（renderFromEditParams，worker 内执行）
-  database.js     数据库：schema、图片/标签/相册/设置操作、导入/删除/移动/重命名
-  imageWorker.js  缩略图 worker 调度（worker_threads）
-  thumbWorker.js  worker 内 sharp 缩略图生成（竖图按 EXIF 转正）
-  preload.js      contextBridge 暴露 window.pixyang API
-scripts/
-  native.js       better-sqlite3 的 node/electron 双 ABI 切换（dev/build/test 前自动执行）
-src-tauri/        Rust/Tauri 结构（渐进迁移层，45+ 通道已接，与 Electron 并存，见下「Rust/Tauri 约定」）
+src-tauri/        Rust/Tauri 后端（唯一运行时桌面端）
   src/lib.rs      模块声明 + run()（Builder + dialog/opener 插件，generate_handler! 注册 45+ 命令）
   src/main.rs     桌面入口（release 隐控制台）
   src/naming.rs   唯一命名/配对主名（移植 electron/database.js 语义）
@@ -37,7 +26,7 @@ src-tauri/        Rust/Tauri 结构（渐进迁移层，45+ 通道已接，与 E
   src/executor.rs 渲染执行器（管线调度/仿射累积/几何裁剪/编码；gamma 与 libvips 实测表逐值一致）
   src/thumbs.rs   双档缩略图/EXIF 转正/NEF 预览段提取（image-rs+kamadak-exif）
   src/exif_relay.rs EXIF 回接（JPEG APP1/PNG eXIf 字节级注放）
-  src/db.rs       rusqlite 连接/settings/删除通道（与 Electron 共用 pixyang.db）
+  src/db.rs       rusqlite 连接/settings/删除通道（与旧版共用 pixyang.db，schema 自举+快照迁移）
   src/file_ops.rs 导入编排/改名（NEF 避让收养、双回滚）
   src/camera.rs   相机同步/图片根迁移
   src/update_image.rs 日期移动白名单更新/rebuild 缩略图/损坏记录/重复查找
@@ -59,7 +48,7 @@ src/
   App.jsx         组合根：路由、弹层状态、快捷键接线（批量操作在 useBatchActions）
   store/          zustand store（galleryStore：筛选/勾选/网格设置/图片页数据/共享数据）
   hooks/          useGalleryData（加载 wiring）/ useGlobalShortcuts / useDragImport / useBatchActions（批量操作）/ useMarqueeSelection（网格框选）
-  lib/            api.js（IPC 封装，组件统一经此访问 window.pixyang）/ gallery.js / shortcuts.js / format.js / utils.ts
+  lib/            api.js（通道封装与守卫）/ tauriBridge.js、tauriBridgeMedia.js（invoke/事件/URL）/ gallery.js / shortcuts.js / format.js / utils.ts
   components/
     Browser/      图片网格（ImageCard/PaginationBar/GridDialogs 拆分组件）、全屏查看器（含非破坏编辑面板）、批量操作栏、CompareView 对比视图
     Explorer/     导入对话框、相册视图
@@ -76,20 +65,20 @@ tests/            vitest（node 环境 + per-file happy-dom pragma）
 ## 编码约定
 
 - 不要添加代码注释，除非用户明确要求。
-- Electron 端使用 CommonJS（`require`/`module.exports`）；前端使用 ESM + JSX。
+- shared/ 与测试辅助脚本使用 CommonJS（`.cjs`）；前端使用 ESM + JSX。
 - JSX 为 automatic runtime（生产走 @vitejs/plugin-react；vitest 在 `vitest.config.js` 显式 `esbuild: { jsx: 'automatic' }`）：**不要**为 JSX 写 `import React`，需要 React API 时用命名导入（如 `import { useState } from 'react'`）；仅 main.jsx 与个别测试因使用 `React.StrictMode`/`React.useState` 保留默认导入。
-- 前端组件/store **不得直调 `window.pixyang`**，一律经 `src/lib/api.js`（守卫集中在该层，桥缺失时方法返回 undefined）。
+- 前端组件/store **不得直调 `window.__TAURI__` 或 `window.pixyang`**，一律经 `src/lib/api.js`（守卫集中在该层，无桥时方法返回 undefined）。
 - 错误处理保持现有风格：`try/catch` + `console.error('[xxx] ...', e.message)`。
-- IPC 通道命名遵循现有约定：`db:*`（数据库）、`fs:*`（文件系统）、`dialog:*`、`settings:*`、`shell:*`。
-- 新功能需在 `preload.js` 暴露同名 `window.pixyang` 方法。
-- 数据库列/表的修改放在 `migrateSchema()` 中做兼容迁移。
+- 通道命名遵循现有约定：`src/lib/api.js` 方法名 ↔ Rust 命令 snake_case，映射集中在 `tauriBridge.js`。
+- 新功能需在 `src-tauri/src/` 实现并注册 tauri 命令，再在 `tauriBridge.js` 与 `api.js` 的 `TAURI_SEAMS` 接缝。
+- 数据库列/表的修改放在 Rust 侧兼容迁移中完成（缺表按同式补齐，参考 `db.rs`/`tags_albums.rs`）。
 - 中文 UI 文案，保持现有术语（图库、导入、相册、标签、收藏等）。
 
 ## UI 与样式（shadcn/ui + Tailwind v4）
 
 - 通用组件优先使用 `src/components/ui/*`（shadcn/ui 生成的 `.tsx` 组件，如 `Button`/`Input`/`Dialog`/`DropdownMenu`/`ContextMenu`/`Sonner`/`Select`/`Tooltip`），不要手写重复的按钮/表单/弹层。
 - 样式使用 Tailwind utilities；自定义视觉走 `src/styles/index.css` 的 CSS 变量（现有 `--bg-*`、`--accent-color` 等）或 `.tsx` 内的 tailwind class。
-- 主题变量两套并存且映射一致：`--bg-*`（现有组件）与 shadcn token（`--background`/`--foreground`/`--primary`/`--border`/`--radius` 等），深色在 `:root`，浅色在 `[data-theme="light"]`。新增 token 需同时补 `@theme inline` 映射。
+- 主题变量两套并存且映射一致：`--bg-*`（现有组件）与 shadcn token（`--background`/`--foreground`/`--primary`/`--border`/`--radius` 等）。全局主题 5 套（深色/午夜蓝/森林夜/浅色/羊皮纸），单一事实源 `src/lib/themes.ts`，每套一个 `[data-theme=id]` 变量块；新增 token 需同时补 `@theme inline` 映射。
 - 应用特有 UI（图片网格、全屏查看器、星级、缩略图、侧边栏）保持手写 CSS，不要用 UI 库强行替换。
 - `vite.config.js` 使用 async 配置 + 动态 `import('@tailwindcss/vite')`（ESM-only 插件）；`@` alias 指向 `src`。
 - 修改 shadcn 组件（`src/components/ui/*`）需谨慎：它们由 `npx shadcn@latest add` 生成，保持结构稳定。
@@ -110,27 +99,26 @@ tests/            vitest（node 环境 + per-file happy-dom pragma）
 
 ## Rust/Tauri 约定
 
-- 渐进迁移原则：纯算法先移植进 `src-tauri/src/` 内核（零/低依赖、测试向量对齐 JS 行为），
-  tauri 命令层只做薄封装（磁盘 I/O、DTO 编排）；不做大爆炸式迁移，Electron 主流程不动。
+- Tauri/Rust 为唯一桌面后端（Electron 层已于 2026-09-21 R36 删除）。内核分层保持：
+  纯算法在 `src-tauri/src/`（测试向量锁定行为），tauri 命令层只做薄封装（磁盘 I/O、DTO 编排）。
 - Rust 测试：`cd src-tauri && CARGO_BUILD_JOBS=1 cargo test --jobs 1`。编译期 `generate_context!`
   读取 `../dist`，fresh 环境先 `npx vite build`；Windows 资源图标在 `src-tauri/icons/icon.ico`。
 - 前端经 `src/lib/tauriBridge.js` 探测 `window.__TAURI__`（withGlobalTauri 注入）调用命令；
-  Electron 运行时不可用即显式报错，不得影响现有 `api.js` IPC 路径。不引入 `@tauri-apps/api` npm 依赖。
+  非 Tauri 环境（浏览器/单测）由 `api.js` 回落 `window.pixyang` 注入面。不引入 `@tauri-apps/api` npm 依赖。
 - CI：`.github/workflows/ci.yml` 的 `rust` job（windows）先 `vite build` 再 `cargo test`。
 - 像素 golden 门禁：`cargo test --test golden_audit`（基线 2026-09-20 重锁为 Rust 执行器产物，
   Δ 审计归档 tests/golden/rust-relock-audit.md；重锁用 GOLDEN_RELOCK=1）。
-  node tests/golden/runner.cjs 为 sharp 执行器对照工具（将随 Electron 删除）。
 
 ## 验证
 
-- 测试：`npm test`（vitest，61 个文件 / 938 例，含 golden 像素锁定 23 例 `node tests/golden/runner.cjs`，`--update` 刷新基线）；覆盖率：`npm run test:coverage`，门槛配置在 `vitest.config.js`（statements/lines 75、branches 70、functions 50）。
+- 测试：`npm test`（vitest，55 个文件 / 698 例；像素 golden 门禁在 cargo 侧 `golden_audit`）；覆盖率：`npm run test:coverage`，门槛配置在 `vitest.config.js`（statements/lines 75、branches 70、functions 50）。
 - Lint：`npm run lint`（ESLint flat config，`eslint.config.mjs`）；0 error 为准，warning 不阻塞。
 - 类型检查：`npm run typecheck`（tsc --noEmit，覆盖 src 下 TS/TSX）。
 - 格式检查：`npm run format:check`（Prettier 仅检查，禁止全量重排产生巨 diff）。
 - CI：GitHub Actions（`.github/workflows/ci.yml`），push/PR 时在 Windows + Ubuntu 跑 lint/typecheck/test。
-- better-sqlite3 原生二进制双 ABI：`npm run dev`/`npm run build` 前自动执行 `rebuild:electron`，`npm test` 前自动执行 `rebuild:node`（脚本 `scripts/native.js`，electron 预编译缓存在 `scripts/.prebuilds/`，gitignore）。打包必须走 `npm run build`（`build.npmRebuild=false`，ABI 由 native.js 唯一切换；直接调 electron-builder 会把 node ABI 二进制带进安装包，见 `error/packaged-app-node-abi-better-sqlite3.md`）。
+- better-sqlite3 原生二进制双 ABI 与 electron-builder 打包已随 Electron 层删除；安装包走 `npm run tauri:build`（vite build + `@tauri-apps/cli build --bundles nsis`，产物 `src-tauri/target/release/bundle/nsis/`）。
 - 前端编译验证：`npx vite build`。
-- 修改 Electron 端代码后，运行 `npm run dev` 手动验证（Vite + Electron 并行）。
+- 修改 Rust/前端后跑 `npm run tauri:dev` 手动验证实机窗口（release 验证走 NSIS 安装包）。
 - 修改 opencode 配置后需重启 opencode 生效。
 
 ## 通用要求

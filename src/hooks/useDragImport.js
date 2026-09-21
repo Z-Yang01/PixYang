@@ -68,7 +68,7 @@ export default function useDragImport({ enabled, onCollect }) {
     };
 
     // Tauri 原生拖拽（fileDropEnabled 下 DOM drop 不触发，绝对路径由原生事件给出）；
-    // Electron 运行时该注册为 no-op，两套事件源并存互不干扰
+    // 非 Tauri 环境（浏览器/单测）该注册为 no-op，两套事件源并存互不干扰
     const removeNative = onNativeDragDrop({
       onEnter: (paths) => {
         if (!enabledRef.current || !paths.length) return;

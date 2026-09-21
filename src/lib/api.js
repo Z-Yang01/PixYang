@@ -1,5 +1,6 @@
 // 统一 window.pixyang 访问层：集中守卫，组件不再散布 if (!window.pixyang) 判断。
-// Tauri 运行时下已接缝的通道走 Rust 命令（tauriBridge），其余仍透传 Electron IPC。
+// 生产运行时（Tauri）通道走 Rust 命令（tauriBridge）；window.pixyang 透传面保留给
+// 单测注入与无桥环境的空数据降级。
 import { isTauriAvailable, tauriApi } from './tauriBridge';
 import * as tauriMedia from './tauriBridgeMedia';
 
@@ -14,7 +15,7 @@ const passthrough =
     return bridge[name](...args);
   };
 
-// 已迁移到 Tauri 后端的通道（Electron 运行时自动回落原 IPC，行为不变）
+// 已接 Rust 命令的通道（无 Tauri 运行时回落 window.pixyang 注入面）
 const TAURI_SEAMS = new Set([
   'getSettings',
   'getSetting',

@@ -1,5 +1,5 @@
 // M7 WebGL2 预览渲染器：shader 直接消费 RenderSpec uniforms（specToShaderUniforms 产出），
-// 与 sharp 执行器共享 shared/ 数学（曲线 LUT/HSL/分级/暗角逐像素同公式）。
+// 与 Rust 执行器共享 shared/ 数学（曲线 LUT/HSL/分级/暗角逐像素同公式）。
 // 无 WebGL2 环境由调用方回退 CSS/SVG 滤镜链。几何/裁剪不在此渲染（CSS transform 承担）。
 
 const VERTEX_SRC = `#version 300 es

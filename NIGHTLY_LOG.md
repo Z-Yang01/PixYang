@@ -418,3 +418,14 @@
   速度：保存旋转/翻转加脏门禁——与已存元数据一致时按钮禁用、点击不再发无意义 IPC 与本地补丁。
   +2 用例（垂直翻转入口移除+存量渲染、脏门禁保存链路）。vitest 981/981；typecheck ✅；
   lint 0 error；vite build ✅；NSIS 安装包重打。
+- 2026-09-21 21:40 R36 删除冗余代码（Electron 层退役，Rust/Tauri 为唯一后端）：删 electron/
+  全部 7 文件（main/database/preload/workers/render，约 4281 行）、scripts/native.js 双 ABI
+  切换、build/ 旧 electron-builder 图标、sharp 对照工具链（tests/golden runner.cjs/
+  previewBaseline/fixtures）与其测试（unit/database 5 文件、unit/main、unit/render 3 文件，
+  -283 例；语义由 Rust 镜像测试与 golden_audit 承接）。package.json：主入口/build 段/
+  electron-builder/sharp/better-sqlite3/exifr/electron 等依赖移除（npm 剪枝 -337 包），
+  scripts 收敛为 dev/build/tauri:dev/tauri:build/test 等；vitest 覆盖 include、eslint CJS
+  块、.gitignore 同步；前端 Electron 陈旧注释改写；AGENTS.md 技术栈/目录/约定/验证
+  四节改为 Tauri-only（测试基线 55 文件/698 例）。window.pixyang 透传面保留为单测注入。
+  vitest 698/698；覆盖率 92.6%（阈值过）；typecheck ✅；lint 0 error；vite build ✅；
+  NSIS 安装包重打（4.1MB）。遗留：release/ 旧 electron-builder 产物（98MB）未删，待定。

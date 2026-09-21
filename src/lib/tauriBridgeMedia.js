@@ -8,14 +8,14 @@ function tauriEvent() {
   return window.__TAURI__?.event ?? null;
 }
 
-// 契约对齐 Electron IPC：返回 Promise（组件以 .then/await 消费）；缺失时 resolve 空串/空映射
+// 契约对齐桥接层：返回 Promise（组件以 .then/await 消费）；缺失时 resolve 空串/空映射
 export function toFileUrl(filepath) {
   const core = tauriCore();
   if (!core || typeof core.convertFileSrc !== 'function') return Promise.resolve('');
   return Promise.resolve(core.convertFileSrc(filepath));
 }
 
-// 镜像 Electron fs:to-file-urls：返回 {路径: URL} 映射（组件按原始路径取 URL）
+// 返回 {路径: URL} 映射（组件按原始路径取 URL）
 export function toFileUrls(paths) {
   return Promise.resolve().then(() => {
     const core = tauriCore();

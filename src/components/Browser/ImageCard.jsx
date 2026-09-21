@@ -40,7 +40,7 @@ const ImageCard = memo(function ImageCard({
   onThumbError,
   onOriginalError,
 }) {
-  // 缩略图由 sharp 按 EXIF 方向物理转正，竖图同样优先缩略图；缺失时回退原图（浏览器自动转正）
+  // 缩略图由后端按 EXIF 方向物理转正，竖图同样优先缩略图；缺失时回退原图（浏览器自动转正）
   const cardTransform =
     image.rotation || image.flip_h || image.flip_v
       ? `rotate(${image.rotation || 0}deg) scaleX(${image.flip_h ? -1 : 1}) scaleY(${image.flip_v ? -1 : 1})`

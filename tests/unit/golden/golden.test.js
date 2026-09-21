@@ -1,7 +1,6 @@
 // Golden 测试（CI 集成）：spec 快照与管线结构断言。
-// 像素锁定门禁已迁移至 Rust 执行器：cargo test --test golden_audit
+// 像素锁定门禁在 Rust 执行器侧：cargo test --test golden_audit
 //（基线 2026-09-20 起由 Rust 执行器产物锁定，Δ 审计见 tests/golden/rust-relock-audit.md）。
-// node tests/golden/runner.cjs 为 sharp 执行器对照工具，将随 Electron 删除移除。
 import { describe, it, expect } from 'vitest';
 import path from 'path';
 import fs from 'fs';

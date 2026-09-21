@@ -1,4 +1,4 @@
-// 编辑参数语义中心：前端预览（CSS）与 worker 渲染（sharp）共用同一换算，
+// 编辑参数语义中心：前端预览（CSS）与 Rust 渲染执行器共用同一换算，
 // 保证"所见即所得"。持久化结构 EditParams 见 shared/editSchema.cjs（唯一事实源），
 // 本文件的平铺结构仅作 UI 内部模型，经 toEditParams/fromEditParams 在边界转换。
 

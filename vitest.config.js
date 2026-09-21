@@ -23,9 +23,7 @@ export default defineConfig({
       provider: 'v8',
       reporter: ['text', 'html', 'json-summary'],
       include: [
-        'electron/database.js',
         'shared/**',
-        'electron/main.js',
         'src/lib/**',
         'src/hooks/**',
         'src/components/**', // D 组组件冒烟测试：将 UI 组件纳入覆盖率统计

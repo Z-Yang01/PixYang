@@ -1,5 +1,5 @@
 // RenderSpec → WebGL2 shader uniforms：预览 shader 直接消费 spec.stages（M7），
-// 与渲染执行器（renderSpecToSharp）共享 shared/ 下的数学实现，保证预览/导出同语义。
+// 与渲染执行器（Rust executor.rs）共享 shared/ 下的数学实现，保证预览/导出同语义。
 // 管线序（shader 内应用）：affine(白平衡/曝光/影调线性) → 阴影 gamma → 高光线性
 //   → 曲线 LUT → HSL 带调整 → 分级(真亮度加权) → 饱和度 → 暗角。
 // 几何/裁剪不进 shader（CSS transform 与裁剪框承担）；detail.sharpness 预览不呈现（与 SVG 路径一致）。
