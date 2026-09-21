@@ -388,3 +388,8 @@
   accent 光圈；prefers-reduced-motion 关停动画；对话框模糊背景 + 入场上浮动效；侧边栏活动项
   accent 指示条；卡片 hover 上浮；查看器信息条玻璃化。安装包已重打（4.1MB）。
   vitest 974/974；lint 0 error。
+- 2026-09-21 07:30 CDP 实测诊断（WebView2 remote-debugging）：当前 release 构建实时 DOM
+  完全健康——网格 5 列/20 卡 234px/20 张图片全部经 asset.localhost 加载/无损坏。用户反馈的
+  截图与控制台错误（meta CSP 拒绝、undefined.length）比对确认来自 13:10 的旧安装包
+  （修复落地前产物）。18:59 的新安装包含全部修复（meta CSP 移除/形状/Promise 契约/响应性/便携化）。
+  便携库实测：933 可见图/5 标签完整迁移。
