@@ -262,6 +262,7 @@ pub fn import_one(
 pub fn import_images(
     conn: &Connection,
     files: &Value,
+    date_override: Option<&str>,
     today: &str,
     thumbs_dir: &Path,
 ) -> Result<Vec<ImageRow>, PixError> {
@@ -270,8 +271,13 @@ pub fn import_images(
     let root = crate::db::images_root(conn, &PathBuf::from("."))?;
     for (_, group) in &groups {
         if let Some(jpg) = &group.jpg {
-            let jpg_value = import_file_to_value(jpg);
-            let pair = group.nef.as_ref().map(import_file_to_value);
+            let mut jpg_value = import_file_to_value(jpg);
+            apply_date_override(&mut jpg_value, date_override, today);
+            let pair = group.nef.as_ref().map(|n| {
+                let mut v = import_file_to_value(n);
+                apply_date_override(&mut v, date_override, today);
+                v
+            });
             if let Some(row) = import_one(
                 conn,
                 &root,
@@ -284,7 +290,8 @@ pub fn import_images(
                 imported.push(row);
             }
         } else if let Some(nef) = &group.nef {
-            let nef_value = import_file_to_value(nef);
+            let mut nef_value = import_file_to_value(nef);
+            apply_date_override(&mut nef_value, date_override, today);
             if let Some(row) = import_one(conn, &root, &nef_value, None, true, today, thumbs_dir)? {
                 imported.push(row);
             }
@@ -317,6 +324,31 @@ fn parse_import_files(files: &Value) -> Vec<image_group::ImportFile> {
 
 fn import_file_to_value(f: &image_group::ImportFile) -> Value {
     json!({ "filename": f.filename, "filepath": f.filepath })
+}
+
+/// 镜像 db:import-images 的日期链：dateOverride > 文件自带 importDate > EXIF 拍摄日期 > 今天
+fn apply_date_override(img: &mut Value, date_override: Option<&str>, today: &str) {
+    if let Some(d) = date_override.filter(|s| !s.is_empty()) {
+        img["importDate"] = json!(d);
+        return;
+    }
+    let has_date = img
+        .get("importDate")
+        .and_then(|v| v.as_str())
+        .map(|s| !s.is_empty())
+        .unwrap_or(false);
+    if has_date {
+        return;
+    }
+    let src = img.get("filepath").and_then(|v| v.as_str()).unwrap_or("");
+    if let Ok(fields) = crate::exif_read::exif_fields(Path::new(src)) {
+        if let Some(taken) = fields.get("taken_at").and_then(|v| v.as_str()) {
+            if taken.len() >= 10 {
+                img["importDate"] = json!(taken[..10].to_string());
+            }
+        }
+    }
+    let _ = today;
 }
 
 /// 镜像 renameImage：校验→NEF 跟随→磁盘改名（失败回滚）→DB 更新（失败双回滚）
@@ -419,7 +451,11 @@ pub struct ExportOutcome {
 // EXCL 独占复制 + _1.._9999 避让，直译 electron/main.js exportFiles 的 COPYFILE_EXCL 循环
 fn copy_exclusive(src: &Path, dest: &Path) -> Result<(), std::io::Error> {
     let ext = dest.extension().and_then(|e| e.to_str()).unwrap_or("");
-    let ext_dot = if ext.is_empty() { String::new() } else { format!(".{ext}") };
+    let ext_dot = if ext.is_empty() {
+        String::new()
+    } else {
+        format!(".{ext}")
+    };
     let stem = dest.file_stem().and_then(|s| s.to_str()).unwrap_or("");
     let parent = dest.parent().map(Path::to_path_buf).unwrap_or_default();
     let mut final_dest = dest.to_path_buf();
@@ -483,9 +519,15 @@ pub fn export_image_files(images: &[ImageRow], dest_dir: &str) -> Result<ExportO
             let raw_path = Path::new(raw);
             if raw_path.exists() {
                 let raw_ext = raw_path.extension().and_then(|e| e.to_str()).unwrap_or("");
-                let raw_ext_dot =
-                    if raw_ext.is_empty() { String::new() } else { format!(".{raw_ext}") };
-                let stem = Path::new(out_name).file_stem().and_then(|s| s.to_str()).unwrap_or("");
+                let raw_ext_dot = if raw_ext.is_empty() {
+                    String::new()
+                } else {
+                    format!(".{raw_ext}")
+                };
+                let stem = Path::new(out_name)
+                    .file_stem()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or("");
                 match copy_exclusive(raw_path, &dest_root.join(format!("{stem}{raw_ext_dot}"))) {
                     Ok(()) => outcome.nef_copied += 1,
                     Err(e) => outcome.failed.push(format!("{out_name}: {e}")),

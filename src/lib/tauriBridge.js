@@ -111,7 +111,8 @@ export const tauriApi = {
   backupDatabase: () => tauriInvoke('backup_database'),
   renderEdit: (spec, inputPath, outputPath) =>
     tauriInvoke('render_edit', { spec, inputPath, outputPath }),
-  importImages: (files) => tauriInvoke('import_images', { files }),
+  importImages: (files, dateOverride) =>
+    tauriInvoke('import_images', { files, dateOverride: dateOverride ?? null }),
   renameImage: (id, newFilename) => tauriInvoke('rename_image', { id, newFilename }),
   exportImages: (ids, destDir) => tauriInvoke('export_images', { ids, destDir }),
   exportAlbumImages: (albumId, destDir) =>

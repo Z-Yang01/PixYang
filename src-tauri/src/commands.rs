@@ -372,11 +372,18 @@ pub fn import_images(
     db: State<'_, Db>,
     paths: State<'_, AppPaths>,
     files: serde_json::Value,
+    date_override: Option<String>,
 ) -> Result<Vec<images_query::ImageRow>, String> {
     let conn = db.0.lock().unwrap();
     let root = db::images_root(&conn, &paths.default_images_dir).map_err(|e| e.to_string())?;
-    file_ops::import_images(&conn, &files, &file_ops::today_ymd(), &paths.thumbs_dir)
-        .map_err(|e| e.to_string())
+    file_ops::import_images(
+        &conn,
+        &files,
+        date_override.as_deref(),
+        &file_ops::today_ymd(),
+        &paths.thumbs_dir,
+    )
+    .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -734,8 +741,11 @@ pub(crate) fn render_edit_preview_kernel(
         "UPDATE images SET thumbnail_edit_path = ?1 WHERE id = ?2",
         rusqlite::params![preview.to_string_lossy(), id],
     );
-    let _ =
-        edit_session::enforce_edit_preview_limit(conn, thumbs_dir, edit_session::EDIT_PREVIEW_LIMIT);
+    let _ = edit_session::enforce_edit_preview_limit(
+        conn,
+        thumbs_dir,
+        edit_session::EDIT_PREVIEW_LIMIT,
+    );
     Ok(serde_json::json!({ "path": preview.to_string_lossy() }))
 }
 
@@ -749,13 +759,8 @@ pub fn edit_render_preview(
     input_path: String,
 ) -> Result<Value, String> {
     let conn = db.0.lock().unwrap();
-    let result = render_edit_preview_kernel(
-        &conn,
-        &paths.thumbs_dir,
-        id,
-        &spec,
-        Path::new(&input_path),
-    );
+    let result =
+        render_edit_preview_kernel(&conn, &paths.thumbs_dir, id, &spec, Path::new(&input_path));
     if let Some(path) = result
         .as_ref()
         .ok()
@@ -952,7 +957,6 @@ pub fn get_stats(db: State<'_, Db>) -> Result<images_query::StatsRow, String> {
     images_query::get_stats(&conn).map_err(|e| e.to_string())
 }
 
-
 #[cfg(test)]
 mod edit_cmd_tests {
     use super::*;
@@ -1132,7 +1136,10 @@ mod edit_cmd_tests {
             .unwrap();
         let broken_spec = serde_json::json!({ "specVersion": 1 });
         let result = render_edit_preview_kernel(&conn, &thumbs, id, &broken_spec, &src).unwrap();
-        assert!(result["error"].as_str().unwrap_or("").starts_with("渲染失败"));
+        assert!(result["error"]
+            .as_str()
+            .unwrap_or("")
+            .starts_with("渲染失败"));
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -1146,7 +1153,10 @@ mod edit_cmd_tests {
         std::fs::create_dir_all(&thumbs).unwrap();
         let broken_spec = serde_json::json!({ "specVersion": 1 });
         let result = render_edit_preview_kernel(&conn, &thumbs, id, &broken_spec, &src).unwrap();
-        assert!(result["error"].as_str().unwrap_or("").starts_with("渲染失败"));
+        assert!(result["error"]
+            .as_str()
+            .unwrap_or("")
+            .starts_with("渲染失败"));
         let stored: String = conn
             .query_row(
                 "SELECT thumbnail_edit_path FROM images WHERE id = ?1",
@@ -1217,8 +1227,7 @@ mod edit_cmd_tests {
             )
             .unwrap();
         }
-        let removed =
-            edit_session::enforce_edit_preview_limit(&conn, &thumbs, 2).unwrap();
+        let removed = edit_session::enforce_edit_preview_limit(&conn, &thumbs, 2).unwrap();
         assert_eq!(removed, 1);
         // 最旧（updated_at 2026-09-20）被清：文件删除、列清空；其余保留
         assert!(!thumbs.join(format!("edit-{}.jpg", ids[0])).exists());

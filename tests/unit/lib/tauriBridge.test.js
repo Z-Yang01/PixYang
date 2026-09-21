@@ -105,7 +105,12 @@ describe('tauriBridge', () => {
     await api.editBake(5, edits);
     expect(invoke).toHaveBeenLastCalledWith(
       'edit_bake',
-      expect.objectContaining({ id: 5, edits, inputPath: session.basePath, spec: expect.any(Object) })
+      expect.objectContaining({
+        id: 5,
+        edits,
+        inputPath: session.basePath,
+        spec: expect.any(Object),
+      })
     );
     await api.editExport(5, edits, 'E:/dest', { format: 'png', quality: 88 });
     expect(invoke).toHaveBeenLastCalledWith(
@@ -246,9 +251,15 @@ describe('tauriBridge', () => {
   it('接缝 4c：导入/改名通道走 Rust 命令', async () => {
     const invoke = vi.fn().mockResolvedValue([]);
     window.__TAURI__ = { core: { invoke } };
-    await api.importImages([{ filename: 'a.jpg', filepath: 'E:/src/a.jpg' }]);
+    await api.importImages([{ filename: 'a.jpg', filepath: 'E:/src/a.jpg' }], '2026-09-20');
     expect(invoke).toHaveBeenCalledWith('import_images', {
       files: [{ filename: 'a.jpg', filepath: 'E:/src/a.jpg' }],
+      dateOverride: '2026-09-20',
+    });
+    await api.importImages([{ filename: 'a.jpg', filepath: 'E:/src/a.jpg' }]);
+    expect(invoke).toHaveBeenLastCalledWith('import_images', {
+      files: [{ filename: 'a.jpg', filepath: 'E:/src/a.jpg' }],
+      dateOverride: null,
     });
     await api.renameImage(5, 'new.jpg');
     expect(invoke).toHaveBeenCalledWith('rename_image', { id: 5, newFilename: 'new.jpg' });

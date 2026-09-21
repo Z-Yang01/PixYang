@@ -427,13 +427,15 @@ mod path_tests {
             std::fs::write(&p, b"x").unwrap();
             existing.insert(name);
         }
-        delete_image_files(Some(original.to_str().unwrap()), None, &dir.join("thumbs"), id);
+        delete_image_files(
+            Some(original.to_str().unwrap()),
+            None,
+            &dir.join("thumbs"),
+            id,
+        );
         assert!(!original.exists());
         for name in &existing {
-            assert!(
-                !dir.join("thumbs").join(name).exists(),
-                "应被清理: {name}"
-            );
+            assert!(!dir.join("thumbs").join(name).exists(), "应被清理: {name}");
         }
         // 缺失文件静默跳过：重复调用不报错
         delete_image_files(None, None, &dir.join("thumbs"), id);

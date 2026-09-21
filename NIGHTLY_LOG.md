@@ -338,3 +338,9 @@
   2. tauri 点击级全功能冒烟：cd src-tauri && cargo run ——重点：编辑保存后网格缩略图
      即时更新、烘焙/导出、拖拽导入、onDragDropEvent 实际事件形态；
   3. 冒烟通过后即可安排 Electron 删除轮（前置条件已全部满足）。
+- 2026-09-21 01:50 R25 断点复核与修复：用户反馈导入/编辑不可用——复核定位为 CSP 全断时期症状
+  （selectDirectory/editOpen 的 IPC 均被 meta CSP 拒绝），CSP 修复后随 IPC 恢复。真实缺口一处：
+  importImages 的 dateOverride 参数被丢弃 + 无覆盖时未按 EXIF 拍摄日期归档——已补
+  （dateOverride > 文件自带 > EXIF taken_at 日期 > 今天，命令/内核/桥接三层）。
+  另核实 edit_open 契约已由 edit_session_snapshot 镜像（含 temp 残留清理/NEF 标记/savedEdits）。
+  cargo 129/129；vitest 969/969。构建产物已刷新（dist + debug exe）。
