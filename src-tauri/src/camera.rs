@@ -744,7 +744,7 @@ pub async fn sync_camera_folder(
     let paths = paths.inner().clone();
     let app = app.clone();
     tauri::async_runtime::spawn_blocking(move || {
-        let conn = db.0.lock().unwrap();
+        let conn = db.write_lock();
         let camera_dir: String = conn
             .query_row(
                 "SELECT value FROM settings WHERE key = 'camera_folder'",
@@ -789,7 +789,7 @@ pub async fn set_images_root(
     let paths = paths.inner().clone();
     let app = app.clone();
     tauri::async_runtime::spawn_blocking(move || {
-        let conn = db.0.lock().unwrap();
+        let conn = db.write_lock();
         match migrate_images_root(
             &conn,
             &dir_path,

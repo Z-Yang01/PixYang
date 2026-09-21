@@ -356,3 +356,10 @@
   拒绝（不再中止进程），UI 不再被长任务阻塞。配套：Db 改 Arc 可克隆、AppPaths Clone、
   执行器 from_raw expect 全部转错误返回、panic 钩子落盘 %APPDATA%/pixyang/panic.log。
   另修复互斥锁中毒连锁（poison-recovering lock）。cargo 138/138 + golden；vitest 961/961。
+- 2026-09-21 05:30 R27 响应性重构（用户反馈各种不响应/卡顿）：根因=全部命令共用一把
+  写锁且长任务（重建/预览/编辑打开/导入）持锁横跨全程。修复：① Db 改造（写连接 + path，
+  WAL open_read 独立读连接，18+ 只读命令改走读者——写期间读不再被卡，含并发测试证明）；
+  ② 长任务去锁化（rebuild/预览渲染/编辑快照/update_image 锁内只护 DB 语句，渲染与文件
+  IO 移锁外）；③ 剩余同步重 IO 命令（EXIF/扫描/批量/删除/改名/导出等 11 个）转
+  async+spawn_blocking。cargo 143/143 + golden；clippy 0 error；vitest 971/971。
+  新安装包已重打（bundle/nsis/PixYang_0.1.0_x64-setup.exe），release exe 启动冒烟通过。

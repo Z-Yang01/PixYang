@@ -7,12 +7,28 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 #[derive(Clone)]
-pub struct Db(pub std::sync::Arc<Mutex<Connection>>);
+pub struct Db {
+    write: std::sync::Arc<Mutex<Connection>>,
+    path: PathBuf,
+}
 
 impl Db {
-    /// 中毒恢复锁：任一命令 panic 不应让后续所有命令连锁闪退
-    pub fn lock(&self) -> std::sync::MutexGuard<'_, Connection> {
-        self.0.lock().unwrap_or_else(|p| p.into_inner())
+    /// 唯一写连接的中毒恢复锁：任一命令 panic 不应让后续所有命令连锁闪退
+    pub fn write_lock(&self) -> std::sync::MutexGuard<'_, Connection> {
+        self.write.lock().unwrap_or_else(|p| p.into_inner())
+    }
+
+    /// WAL 只读连接：写连接持锁（长任务）期间读命令照常并发；
+    /// :memory:（测试夹具）退回独立内存库，仅保证 settings 表可读，不含业务表
+    pub fn open_read(&self) -> Result<Connection, rusqlite::Error> {
+        if self.path.as_os_str().is_empty() {
+            let conn = Connection::open_in_memory()?;
+            ensure_settings_table(&conn)?;
+            return Ok(conn);
+        }
+        let conn = Connection::open(&self.path)?;
+        conn.busy_timeout(std::time::Duration::from_secs(5))?;
+        Ok(conn)
     }
 }
 
@@ -22,20 +38,31 @@ impl Db {
             let _ = std::fs::create_dir_all(parent);
         }
         let conn = Connection::open(path)?;
+        let stored = if path == Path::new(":memory:") {
+            PathBuf::new()
+        } else {
+            path.to_path_buf()
+        };
         if path != Path::new(":memory:") {
             conn.pragma_update(None, "journal_mode", "WAL")?;
         }
         ensure_settings_table(&conn)?;
-        Ok(Self(std::sync::Arc::new(Mutex::new(conn))))
+        Ok(Self {
+            write: std::sync::Arc::new(Mutex::new(conn)),
+            path: stored,
+        })
     }
 
     pub fn from_connection(conn: Connection) -> Self {
         ensure_settings_table(&conn).expect("settings 表创建失败");
-        Self(std::sync::Arc::new(Mutex::new(conn)))
+        Self {
+            write: std::sync::Arc::new(Mutex::new(conn)),
+            path: PathBuf::new(),
+        }
     }
 
     pub fn get_setting(&self, key: &str) -> Result<Option<String>, rusqlite::Error> {
-        let conn = self.0.lock().unwrap();
+        let conn = self.write_lock();
         conn.query_row("SELECT value FROM settings WHERE key = ?", [key], |r| {
             r.get(0)
         })
@@ -43,7 +70,7 @@ impl Db {
     }
 
     pub fn set_setting(&self, key: &str, value: &str) -> Result<(), rusqlite::Error> {
-        let conn = self.0.lock().unwrap();
+        let conn = self.write_lock();
         conn.execute(
             "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
             [key, value],
@@ -52,26 +79,37 @@ impl Db {
     }
 
     pub fn get_all_settings(&self) -> Result<Vec<(String, String)>, rusqlite::Error> {
-        let conn = self.0.lock().unwrap();
-        let mut stmt = conn.prepare("SELECT key, value FROM settings")?;
-        let rows = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?;
-        rows.collect()
+        let conn = self.write_lock();
+        all_settings(&conn)
     }
 
     /// 对象形态（镜像 JS getAllSettings 的 {key: value}），命令层直接序列化
     pub fn get_all_settings_map(
         &self,
     ) -> Result<std::collections::BTreeMap<String, String>, rusqlite::Error> {
-        let conn = self.0.lock().unwrap();
-        let mut stmt = conn.prepare("SELECT key, value FROM settings")?;
-        let rows = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?;
-        let mut map = std::collections::BTreeMap::new();
-        for row in rows {
-            let (k, v) = row?;
-            map.insert(k, v);
-        }
-        Ok(map)
+        let conn = self.write_lock();
+        all_settings_map(&conn)
     }
+}
+
+pub fn all_settings(conn: &Connection) -> Result<Vec<(String, String)>, rusqlite::Error> {
+    let mut stmt = conn.prepare("SELECT key, value FROM settings")?;
+    let rows = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?;
+    rows.collect()
+}
+
+/// 对象形态（镜像 JS getAllSettings 的 {key: value}），读命令经 open_read 连接调用
+pub fn all_settings_map(
+    conn: &Connection,
+) -> Result<std::collections::BTreeMap<String, String>, rusqlite::Error> {
+    let mut stmt = conn.prepare("SELECT key, value FROM settings")?;
+    let rows = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?;
+    let mut map = std::collections::BTreeMap::new();
+    for row in rows {
+        let (k, v) = row?;
+        map.insert(k, v);
+    }
+    Ok(map)
 }
 
 fn ensure_settings_table(conn: &Connection) -> Result<(), rusqlite::Error> {
@@ -117,7 +155,7 @@ pub struct AppPaths {
     pub default_images_dir: PathBuf,
 }
 
-fn get_setting_raw(conn: &Connection, key: &str) -> Result<Option<String>, PixError> {
+pub fn get_setting_raw(conn: &Connection, key: &str) -> Result<Option<String>, PixError> {
     conn.query_row("SELECT value FROM settings WHERE key = ?", [key], |r| {
         r.get(0)
     })
@@ -293,6 +331,40 @@ mod tests {
         let db = Db::open(&dir.join("t.db")).unwrap();
         db.set_setting("k", "v").unwrap();
         assert_eq!(db.get_setting("k").unwrap().as_deref(), Some("v"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn open_read_文件库读到已提交数据() {
+        let dir = std::env::temp_dir().join("pixyang_db_readconn");
+        let _ = std::fs::remove_dir_all(&dir);
+        let db = Db::open(&dir.join("t.db")).unwrap();
+        db.set_setting("k", "v1").unwrap();
+        let conn = db.open_read().unwrap();
+        assert_eq!(get_setting_raw(&conn, "k").unwrap().as_deref(), Some("v1"));
+        db.set_setting("k", "v2").unwrap();
+        assert_eq!(get_setting_raw(&conn, "k").unwrap().as_deref(), Some("v2"));
+        drop(conn);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn 写连接持锁期间_open_read读不被阻塞() {
+        let dir = std::env::temp_dir().join("pixyang_db_conc");
+        let _ = std::fs::remove_dir_all(&dir);
+        let db = Db::open(&dir.join("c.db")).unwrap();
+        db.set_setting("k", "v").unwrap();
+        let guard = db.write_lock();
+        let db2 = db.clone();
+        let reader = std::thread::spawn(move || {
+            let conn = db2.open_read().unwrap();
+            conn.query_row("SELECT value FROM settings WHERE key = 'k'", [], |r| {
+                r.get::<_, String>(0)
+            })
+            .unwrap()
+        });
+        assert_eq!(reader.join().unwrap(), "v");
+        drop(guard);
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

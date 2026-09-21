@@ -143,23 +143,30 @@ fn delete_thumbnail_file(thumbs_dir: &Path, id: i64) {
     }
 }
 
-pub fn update_image(
+struct DateMovePlan {
+    img: ImageRow,
+    sub_dir: PathBuf,
+    new_name: String,
+    new_path: PathBuf,
+    new_path_str: String,
+}
+
+// 阶段 1（锁内）：校验 + 读行 + 规划日期移动。Ok((None, Some(v)))=提前终止返回 v；
+// Ok((None, None))=无日期移动，继续白名单阶段
+fn plan_update_image(
     conn: &Connection,
     id: i64,
     updates: &Value,
     default_images_dir: &Path,
-    _thumbs_dir: &Path,
-) -> Result<Value, PixError> {
-    let mut date_moved = false;
-    let mut moved_files: Vec<(PathBuf, PathBuf)> = Vec::new();
-    let mut sets: Vec<String> = Vec::new();
-    let mut params_sql: Vec<SqlValue> = Vec::new();
-
+) -> Result<(Option<DateMovePlan>, Option<Value>), PixError> {
     let import_date = updates.get("import_date");
     if js_truthy(import_date) {
         let new_date = js_string(import_date.unwrap()).trim().to_string();
         if !new_date.is_empty() && !valid_ymd(&new_date) {
-            return Ok(json!({ "error": "日期格式无效（应为 YYYY-MM-DD）" }));
+            return Ok((
+                None,
+                Some(json!({ "error": "日期格式无效（应为 YYYY-MM-DD）" })),
+            ));
         }
         if !new_date.is_empty() {
             if let Some(img) = get_img_row(conn, id) {
@@ -175,71 +182,71 @@ pub fn update_image(
                             p.exists()
                         });
                     let new_path = sub_dir.join(&new_name);
-                    let new_path_str = new_path.to_string_lossy().into_owned();
-                    let mut new_raw_path = img.raw_path.clone().unwrap_or_default();
-
                     if !Path::new(&img.filepath).exists() {
-                        return Ok(json!({ "error": "源文件不存在，无法修改导入日期" }));
+                        return Ok((
+                            None,
+                            Some(json!({ "error": "源文件不存在，无法修改导入日期" })),
+                        ));
                     }
-
-                    let outcome = (|| -> Result<Vec<(PathBuf, PathBuf)>, PixError> {
-                        let mut moves: Vec<(PathBuf, PathBuf)> = Vec::new();
-                        if img.filepath != new_path_str {
-                            crate::file_ops::move_file_safe(Path::new(&img.filepath), &new_path)?;
-                            moves.push((PathBuf::from(&img.filepath), new_path.clone()));
-                        }
-                        let raw = img.raw_path.clone().unwrap_or_default();
-                        if !raw.is_empty() && Path::new(&raw).exists() {
-                            let raw_ext = naming::extname(&raw);
-                            new_raw_path = sub_dir
-                                .join(format!("{}{raw_ext}", naming::basename_no_ext(&new_name)))
-                                .to_string_lossy()
-                                .into_owned();
-                            if raw != new_raw_path {
-                                // POSIX rename 会静默覆盖占用者：NEF 目标名被占必须显式检查并走回滚分支
-                                if Path::new(&new_raw_path).exists() {
-                                    rollback_moves(&moves);
-                                    return Err(PixError::Io("目标 NEF 文件名已被占用".into()));
-                                }
-                                if let Err(e) = crate::file_ops::move_file_safe(
-                                    Path::new(&raw),
-                                    Path::new(&new_raw_path),
-                                ) {
-                                    // NEF 移动失败：已移动文件逆序移回，绝不留下 DB 指向不存在路径的 broken 记录
-                                    rollback_moves(&moves);
-                                    return Err(e);
-                                }
-                                moves.push((PathBuf::from(&raw), PathBuf::from(&new_raw_path)));
-                            }
-                        }
-                        Ok(moves)
-                    })();
-
-                    match outcome {
-                        Ok(moves) => {
-                            date_moved = true;
-                            // 不单独 UPDATE：三个文件字段并入下方同一语句，杜绝两条语句间的半写窗口
-                            moved_files = moves;
-                            sets.push("filename = ?".into());
-                            sets.push("filepath = ?".into());
-                            sets.push("raw_path = ?".into());
-                            params_sql.push(SqlValue::Text(new_name));
-                            params_sql.push(SqlValue::Text(new_path_str));
-                            params_sql.push(SqlValue::Text(new_raw_path));
-                        }
-                        Err(e) => {
-                            eprintln!("[日期] 移动文件失败: {e}");
-                            return Ok(
-                                json!({ "error": format!("移动文件失败：{}", err_message(&e)) }),
-                            );
-                        }
-                    }
+                    return Ok((
+                        Some(DateMovePlan {
+                            img,
+                            sub_dir,
+                            new_name,
+                            new_path_str: new_path.to_string_lossy().into_owned(),
+                            new_path,
+                        }),
+                        None,
+                    ));
                 }
             }
         }
     }
+    Ok((None, None))
+}
 
-    let mut bind_unsupported = false;
+// 阶段 2（锁外）：执行文件移动；任一步失败把已移动文件逆序移回，绝不留下 DB 指向不存在路径的 broken 记录。
+// 返回（已移动清单, raw_path 终值）
+fn execute_date_moves(plan: &DateMovePlan) -> Result<(Vec<(PathBuf, PathBuf)>, String), PixError> {
+    let mut new_raw_path = plan.img.raw_path.clone().unwrap_or_default();
+    let mut moves: Vec<(PathBuf, PathBuf)> = Vec::new();
+    if plan.img.filepath != plan.new_path_str {
+        crate::file_ops::move_file_safe(Path::new(&plan.img.filepath), &plan.new_path)?;
+        moves.push((PathBuf::from(&plan.img.filepath), plan.new_path.clone()));
+    }
+    let raw = plan.img.raw_path.clone().unwrap_or_default();
+    if !raw.is_empty() && Path::new(&raw).exists() {
+        let raw_ext = naming::extname(&raw);
+        new_raw_path = plan
+            .sub_dir
+            .join(format!(
+                "{}{raw_ext}",
+                naming::basename_no_ext(&plan.new_name)
+            ))
+            .to_string_lossy()
+            .into_owned();
+        if raw != new_raw_path {
+            // POSIX rename 会静默覆盖占用者：NEF 目标名被占必须显式检查并走回滚分支
+            if Path::new(&new_raw_path).exists() {
+                rollback_moves(&moves);
+                return Err(PixError::Io("目标 NEF 文件名已被占用".into()));
+            }
+            if let Err(e) =
+                crate::file_ops::move_file_safe(Path::new(&raw), Path::new(&new_raw_path))
+            {
+                rollback_moves(&moves);
+                return Err(e);
+            }
+            moves.push((PathBuf::from(&raw), PathBuf::from(&new_raw_path)));
+        }
+    }
+    Ok((moves, new_raw_path))
+}
+
+// 阶段 2.5（纯函数，不触库）：白名单字段收集，返回 (sets, params, bind_unsupported)
+fn whitelist_sets(updates: &Value) -> (Vec<String>, Vec<SqlValue>, bool) {
+    let mut sets: Vec<String> = Vec::new();
+    let mut params_sql: Vec<SqlValue> = Vec::new();
     if let Some(map) = updates.as_object() {
         for (key, value) in map {
             let column = match key.as_str() {
@@ -253,18 +260,65 @@ pub fn update_image(
                         sets.push(format!("{column} = ?"));
                         params_sql.push(v);
                     }
-                    None => {
-                        bind_unsupported = true;
-                        break;
-                    }
+                    None => return (sets, params_sql, true),
                 }
             }
         }
     }
+    (sets, params_sql, false)
+}
+
+fn apply_date_sets(
+    plan: &DateMovePlan,
+    new_raw_path: &str,
+    sets: &mut Vec<String>,
+    params_sql: &mut Vec<SqlValue>,
+) {
+    sets.push("filename = ?".into());
+    sets.push("filepath = ?".into());
+    sets.push("raw_path = ?".into());
+    params_sql.push(SqlValue::Text(plan.new_name.clone()));
+    params_sql.push(SqlValue::Text(plan.new_path_str.clone()));
+    params_sql.push(SqlValue::Text(new_raw_path.to_string()));
+}
+
+pub fn update_image(
+    conn: &Connection,
+    id: i64,
+    updates: &Value,
+    default_images_dir: &Path,
+    _thumbs_dir: &Path,
+) -> Result<Value, PixError> {
+    let (plan, terminal) = plan_update_image(conn, id, updates, default_images_dir)?;
+    if let Some(v) = terminal {
+        return Ok(v);
+    }
+    let mut date_moved = false;
+    let mut moved_files: Vec<(PathBuf, PathBuf)> = Vec::new();
+    let mut sets: Vec<String> = Vec::new();
+    let mut params_sql: Vec<SqlValue> = Vec::new();
+
+    if let Some(plan) = &plan {
+        match execute_date_moves(plan) {
+            Ok((moves, new_raw_path)) => {
+                date_moved = true;
+                moved_files = moves;
+                apply_date_sets(plan, &new_raw_path, &mut sets, &mut params_sql);
+            }
+            Err(e) => {
+                eprintln!("[日期] 移动文件失败: {e}");
+                return Ok(json!({ "error": format!("移动文件失败：{}", err_message(&e)) }));
+            }
+        }
+    }
+
+    let (w_sets, w_params, bind_unsupported) = whitelist_sets(updates);
     if bind_unsupported {
         rollback_moves(&moved_files);
         return Ok(json!({ "error": "更新失败：不支持的更新值类型" }));
     }
+    sets.extend(w_sets);
+    params_sql.extend(w_params);
 
     if sets.is_empty() {
         return if date_moved {
@@ -284,6 +338,70 @@ pub fn update_image(
     }
     if date_moved {
         row_to_json(conn, id)
+    } else {
+        Ok(json!(true))
+    }
+}
+
+/// Db 级短锁编排：锁内规划 → 锁外文件移动 → 锁内单条 UPDATE + 回读。
+/// 与 update_image 行为契约一致；供命令层在 WAL 读连接可用时避免长持写锁
+pub fn update_image_db(
+    db: &crate::db::Db,
+    id: i64,
+    updates: &Value,
+    default_images_dir: &Path,
+    _thumbs_dir: &Path,
+) -> Result<Value, PixError> {
+    let (plan, terminal) = {
+        let conn = db.write_lock();
+        plan_update_image(&conn, id, updates, default_images_dir)?
+    };
+    if let Some(v) = terminal {
+        return Ok(v);
+    }
+    let mut date_moved = false;
+    let mut moved_files: Vec<(PathBuf, PathBuf)> = Vec::new();
+    let mut sets: Vec<String> = Vec::new();
+    let mut params_sql: Vec<SqlValue> = Vec::new();
+
+    if let Some(plan) = &plan {
+        match execute_date_moves(plan) {
+            Ok((moves, new_raw_path)) => {
+                date_moved = true;
+                moved_files = moves;
+                apply_date_sets(plan, &new_raw_path, &mut sets, &mut params_sql);
+            }
+            Err(e) => {
+                eprintln!("[日期] 移动文件失败: {e}");
+                return Ok(json!({ "error": format!("移动文件失败：{}", err_message(&e)) }));
+            }
+        }
+    }
+
+    let (w_sets, w_params, bind_unsupported) = whitelist_sets(updates);
+    if bind_unsupported {
+        return Ok(json!({ "error": "更新失败：不支持的更新值类型" }));
+    }
+    sets.extend(w_sets);
+    params_sql.extend(w_params);
+
+    let conn = db.write_lock();
+    if sets.is_empty() {
+        return if date_moved {
+            row_to_json(&conn, id)
+        } else {
+            Ok(json!(true))
+        };
+    }
+    params_sql.push(SqlValue::Integer(id));
+    let sql = format!("UPDATE images SET {} WHERE id = ?", sets.join(", "));
+    if let Err(e) = conn.execute(&sql, params_from_iter(params_sql)) {
+        rollback_moves(&moved_files);
+        eprintln!("[日期] 更新失败: {e}");
+        return Ok(json!({ "error": format!("更新失败：{e}") }));
+    }
+    if date_moved {
+        row_to_json(&conn, id)
     } else {
         Ok(json!(true))
     }
@@ -395,6 +513,89 @@ pub fn rebuild_thumbnails(
                             eprintln!("[缩略图] 写入失败: {filepath} {e}");
                         }
                     }
+                }
+            }
+            Err(e) => {
+                failed += 1;
+                eprintln!("[缩略图] 重建失败: {filepath} {e}");
+            }
+        }
+        if let Some(app) = app {
+            progress::emit_progress(
+                app,
+                progress::REBUILD_PROGRESS,
+                progress::rebuild_payload(index as i64 + 1, total, failed),
+            );
+        }
+    }
+    if let Some(app) = app {
+        progress::emit_progress(app, progress::THUMBNAILS_READY, Value::Null);
+    }
+    Ok(json!({ "total": total, "rebuilt": rebuilt, "failed": failed }))
+}
+
+/// Db 级短锁编排：锁内拉取待重建清单 → 锁外逐张生成缩略图（含进度事件）→ 每张核验+写回用短锁。
+/// 与 rebuild_thumbnails 统计/写回契约一致；供命令层避免整批长持写锁
+pub fn rebuild_thumbnails_unlocked(
+    db: &crate::db::Db,
+    thumbs_dir: &Path,
+    all: bool,
+    app: Option<&tauri::AppHandle>,
+) -> Result<Value, PixError> {
+    let where_clause = if all {
+        "hidden = 0".to_string()
+    } else {
+        "hidden = 0 AND (thumbnail_path = '' OR thumbnail_small_path = '')".to_string()
+    };
+    let rows: Vec<(i64, String)> = {
+        let conn = db.write_lock();
+        let mut stmt = conn.prepare(&format!(
+            "SELECT id, filepath FROM images WHERE {where_clause}"
+        ))?;
+        let it = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?;
+        it.collect::<rusqlite::Result<Vec<_>>>()?
+    };
+    let total = rows.len() as i64;
+    let mut rebuilt = 0i64;
+    let mut failed = 0i64;
+    std::fs::create_dir_all(thumbs_dir)
+        .map_err(|e| PixError::Io(format!("建缩略图目录失败: {e}")))?;
+    for (index, (id, filepath)) in rows.iter().enumerate() {
+        let src = PathBuf::from(filepath);
+        match thumbs::generate_tiers(&src) {
+            Ok((small, medium, w, h)) => {
+                let medium_path = thumbs_dir.join(format!("{id}.jpg"));
+                let small_path = thumbs_dir.join(format!("{id}_s.jpg"));
+                // 短锁：写回前核验记录仍在且未改名，文件写 + 单条 UPDATE 同锁内完成
+                let applied = (|| -> Result<bool, PixError> {
+                    let conn = db.write_lock();
+                    let fresh = crate::images_query::get_image_by_id(&conn, *id)?;
+                    if fresh.is_some_and(|cur| cur.filepath == *filepath) {
+                        match std::fs::write(&medium_path, &medium)
+                            .and_then(|_| std::fs::write(&small_path, &small))
+                        {
+                            Ok(_) => {
+                                update_image_thumbs(
+                                    &conn,
+                                    *id,
+                                    &medium_path.to_string_lossy(),
+                                    &small_path.to_string_lossy(),
+                                    w as i64,
+                                    h as i64,
+                                )?;
+                                Ok(true)
+                            }
+                            Err(e) => {
+                                eprintln!("[缩略图] 写入失败: {filepath} {e}");
+                                Ok(false)
+                            }
+                        }
+                    } else {
+                        Ok(false)
+                    }
+                })()?;
+                if applied {
+                    rebuilt += 1;
                 }
             }
             Err(e) => {
@@ -1065,6 +1266,120 @@ mod tests {
         assert_eq!(items[0]["id"], ida);
         assert_eq!(items[1]["id"], idb);
         assert_eq!(g["wasted"], size_a);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn 日期移动_Db短锁路径_jpg与nef一起移动() {
+        let dir = temp_dir("pixyang_ui_move_db");
+        let root = dir.join("root");
+        let old_dir = root.join("2026").join("01").join("01");
+        let new_dir = root.join("2026").join("02").join("03");
+        let jpg = make_jpeg(&old_dir, "a.jpg", 60, 40);
+        let jpg_bytes = std::fs::read(&jpg).unwrap();
+        let nef = old_dir.join("a.NEF");
+        std::fs::write(&nef, b"RAWDATA").unwrap();
+        let conn = mem_db();
+        let id = insert_image(
+            &conn,
+            "a.jpg",
+            &jpg,
+            &nef.to_string_lossy(),
+            "2026-01-01",
+            0,
+        );
+        let db = crate::db::Db::from_connection(conn);
+
+        let result = update_image_db(
+            &db,
+            id,
+            &json!({ "import_date": "2026-02-03" }),
+            &root,
+            &dir.join("thumbs"),
+        )
+        .unwrap();
+        assert!(result.get("error").is_none(), "{result}");
+        assert_eq!(
+            result["filepath"].as_str().unwrap(),
+            new_dir.join("a.jpg").to_string_lossy().to_string()
+        );
+        assert!(!jpg.exists());
+        assert!(!nef.exists());
+        assert_eq!(std::fs::read(new_dir.join("a.jpg")).unwrap(), jpg_bytes);
+        assert_eq!(std::fs::read(new_dir.join("a.NEF")).unwrap(), b"RAWDATA");
+        let row = get_image_by_id(&db.write_lock(), id).unwrap().unwrap();
+        assert_eq!(row.filepath, new_dir.join("a.jpg").to_string_lossy());
+        assert_eq!(
+            row.raw_path.as_deref(),
+            Some(new_dir.join("a.NEF").to_string_lossy().as_ref())
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn 日期移动_Db短锁路径_源缺失报错且库不动() {
+        let dir = temp_dir("pixyang_ui_move_db_missing");
+        let root = dir.join("root");
+        let conn = mem_db();
+        let missing = root.join("2026").join("01").join("01").join("a.jpg");
+        let id = insert_image(&conn, "a.jpg", &missing, "", "2026-01-01", 0);
+        let db = crate::db::Db::from_connection(conn);
+        let result = update_image_db(
+            &db,
+            id,
+            &json!({ "import_date": "2026-02-03", "rating": 5 }),
+            &root,
+            &dir.join("thumbs"),
+        )
+        .unwrap();
+        assert_eq!(result["error"], "源文件不存在，无法修改导入日期");
+        let row = get_image_by_id(&db.write_lock(), id).unwrap().unwrap();
+        assert_eq!(row.import_date, "2026-01-01");
+        assert_eq!(row.rating, Some(0));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn 重建缩略图_Db短锁路径_统计与回写一致() {
+        let dir = temp_dir("pixyang_ui_rebuild_db");
+        let files = dir.join("files");
+        let f1 = make_jpeg(&files, "ok1.jpg", 60, 40);
+        let f2 = make_jpeg(&files, "ok2.jpg", 30, 20);
+        let gone = make_jpeg(&files, "gone.jpg", 10, 10);
+        let conn = mem_db();
+        let id1 = insert_image(&conn, "ok1.jpg", &f1, "", "2026-01-01", 0);
+        let _ = insert_image(&conn, "ok2.jpg", &f2, "", "2026-01-01", 0);
+        let _ = insert_image(
+            &conn,
+            "gone.jpg",
+            &files.join("gone.jpg"),
+            "",
+            "2026-01-01",
+            0,
+        );
+        std::fs::remove_file(&gone).unwrap();
+        let db = crate::db::Db::from_connection(conn);
+        let thumbs_dir = dir.join("thumbs");
+
+        let r1 = rebuild_thumbnails_unlocked(&db, &thumbs_dir, true, None).unwrap();
+        assert_eq!(r1, json!({ "total": 3, "rebuilt": 2, "failed": 1 }));
+        let row1 = get_image_by_id(&db.write_lock(), id1).unwrap().unwrap();
+        assert_eq!(
+            row1.thumbnail_path.as_deref(),
+            Some(
+                thumbs_dir
+                    .join(format!("{id1}.jpg"))
+                    .to_string_lossy()
+                    .as_ref()
+            )
+        );
+        assert!(Path::new(row1.thumbnail_path.as_deref().unwrap_or("")).exists());
+        assert!(Path::new(row1.thumbnail_small_path.as_deref().unwrap_or("")).exists());
+        assert_eq!(row1.width, Some(60));
+        assert_eq!(row1.height, Some(40));
+
+        let r2 = rebuild_thumbnails_unlocked(&db, &thumbs_dir, false, None).unwrap();
+        assert_eq!(r2, json!({ "total": 1, "rebuilt": 0, "failed": 1 }));
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

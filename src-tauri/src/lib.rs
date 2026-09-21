@@ -85,7 +85,7 @@ pub fn run() {
                 .unwrap_or_else(|| default_images_dir.clone());
             let _ = std::fs::create_dir_all(&images_root);
             {
-                let conn = database.0.lock().unwrap();
+                let conn = database.write_lock();
                 let removed = file_ops::cleanup_stale_bake_temps(&conn);
                 if removed > 0 {
                     eprintln!("[启动] 清扫烘焙残留 temp {removed} 个");

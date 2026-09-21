@@ -46,7 +46,7 @@ pub async fn open_path(
     }
     let target = std::path::PathBuf::from(&path);
     let images_root = {
-        let conn = db.0.lock().unwrap();
+        let conn = db.open_read().map_err(|e| e.to_string())?;
         db::images_root(&conn, &paths.default_images_dir).map_err(|e| e.to_string())?
     };
     let database_dir = db::default_db_path()
@@ -110,7 +110,7 @@ pub async fn backup_database(db: State<'_, Db>, window: Window) -> Result<Backup
             return Ok(backup_failure(Some(e.to_string())));
         }
     }
-    let conn = db.0.lock().unwrap();
+    let conn = db.write_lock();
     match conn.execute("VACUUM INTO ?1", params![dest]) {
         Ok(_) => Ok(BackupResult {
             success: true,
