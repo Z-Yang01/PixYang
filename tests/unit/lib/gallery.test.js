@@ -45,6 +45,21 @@ describe('dateKeyOf / groupImagesByDate', () => {
     expect(items.filter((i) => i.type === 'card')).toHaveLength(4);
   });
 
+  it('同日期非相邻图片强制合并（非日期排序下不碎片化）', () => {
+    // 模拟按评分排序后的交错顺序：同日期图片被拆到多处
+    const images = [
+      { id: 1, import_date: '2026-05-15' },
+      { id: 2, import_date: '2026-04-18' },
+      { id: 3, import_date: '2026-05-15' },
+      { id: 4, import_date: '2026-05-15' },
+      { id: 5, import_date: '2026-04-18' },
+    ];
+    const { items, counts } = groupImagesByDate(images);
+    const headers = items.filter((i) => i.type === 'header');
+    expect(headers.map((h) => h.date)).toEqual(['2026-05-15', '2026-04-18']);
+    expect(items.filter((i) => i.type === 'card')).toHaveLength(5);
+  });
+
   it('无日期图片不产生表头', () => {
     const { items, counts } = groupImagesByDate([{ id: 1 }, { id: 2 }]);
     expect(items.every((i) => i.type === 'card')).toBe(true);

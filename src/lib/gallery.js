@@ -2,21 +2,29 @@ export function dateKeyOf(image) {
   return String(image?.taken_at || image?.import_date || '').slice(0, 10);
 }
 
+// 聚合式分组：同日期强制合并为单一分组（与输入顺序解耦）。
+// 旧实现按"相邻日期变化"插表头——非日期排序（大小/评分/名称）下日期交错，
+// 每张图前都可能插头，分组头堆叠把卡片挤出可视区（用户实测闪图 bug）。
 export function groupImagesByDate(images) {
-  const items = [];
   const counts = {};
-  let lastDate = '';
-  let run = 0;
+  const byDate = new Map();
+  const order = [];
   images.forEach((image, index) => {
     const date = dateKeyOf(image);
     if (date) counts[date] = (counts[date] || 0) + 1;
-    if (date && date !== lastDate) {
-      items.push({ type: 'header', date, run });
-      lastDate = date;
-      run += 1;
+    if (!byDate.has(date)) {
+      byDate.set(date, []);
+      order.push(date);
     }
-    items.push({ type: 'card', image, index });
+    byDate.get(date).push({ image, index });
   });
+  const items = [];
+  for (const date of order) {
+    if (date) items.push({ type: 'header', date });
+    for (const entry of byDate.get(date)) {
+      items.push({ type: 'card', image: entry.image, index: entry.index });
+    }
+  }
   return { items, counts };
 }
 
