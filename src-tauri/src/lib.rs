@@ -26,6 +26,14 @@ use tauri::Manager;
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        // 单实例锁必须最先注册（镜像 requestSingleInstanceLock：二实例唤起已有窗口）
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.unminimize();
+                let _ = window.set_focus();
+            }
+        }))
+        .plugin(tauri_plugin_window_state::Builder::default().build())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
@@ -42,6 +50,13 @@ pub fn run() {
                 .map(std::path::PathBuf::from)
                 .unwrap_or_else(|| default_images_dir.clone());
             let _ = std::fs::create_dir_all(&images_root);
+            {
+                let conn = database.0.lock().unwrap();
+                let removed = file_ops::cleanup_stale_bake_temps(&conn);
+                if removed > 0 {
+                    eprintln!("[启动] 清扫烘焙残留 temp {removed} 个");
+                }
+            }
             {
                 use tauri::Manager;
                 let scope = app.asset_protocol_scope();

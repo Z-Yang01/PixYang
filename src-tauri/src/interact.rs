@@ -26,7 +26,7 @@ pub async fn select_export_directory(window: Window) -> Option<String> {
 }
 
 // 托管边界同 Electron isManagedPath：图库根 + 数据库所在目录，Path::starts_with 按组件比较等价于 r + path.sep 前缀
-fn is_managed_path(
+pub(crate) fn is_managed_path(
     images_root: &std::path::Path,
     database_dir: &std::path::Path,
     target: &std::path::Path,

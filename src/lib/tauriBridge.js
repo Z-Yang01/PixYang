@@ -29,11 +29,6 @@ function tauriDialog() {
   return window.__TAURI__?.dialog ?? null;
 }
 
-function tauriOpener() {
-  if (typeof window === 'undefined') return null;
-  return window.__TAURI__?.opener ?? null;
-}
-
 function requirePluginGlobal(plugin, method) {
   if (!plugin || typeof plugin[method] !== 'function') {
     throw new Error('[tauriBridge] Tauri 运行时不可用');
@@ -104,10 +99,7 @@ export const tauriApi = {
     const dialog = requirePluginGlobal(tauriDialog(), 'open');
     return dialog.open({ directory: true, title: '选择导出的目标文件夹' });
   },
-  openPath: async (path) => {
-    const opener = requirePluginGlobal(tauriOpener(), 'openPath');
-    return opener.openPath(path);
-  },
+  openPath: (path) => tauriInvoke('open_path', { path }),
   backupDatabase: () => tauriInvoke('backup_database'),
   renderEdit: (spec, inputPath, outputPath) =>
     tauriInvoke('render_edit', { spec, inputPath, outputPath }),
@@ -115,28 +107,39 @@ export const tauriApi = {
     tauriInvoke('import_images', { files, dateOverride: dateOverride ?? null }),
   renameImage: (id, newFilename) => tauriInvoke('rename_image', { id, newFilename }),
   exportImages: (ids, destDir) => tauriInvoke('export_images', { ids, destDir }),
-  exportAlbumImages: (albumId, destDir) =>
-    tauriInvoke('export_album_images', { albumId, destDir }),
+  exportAlbumImages: (albumId, destDir) => tauriInvoke('export_album_images', { albumId, destDir }),
   getExif: (filepath) => tauriInvoke('get_exif', { filepath }),
   scanDirectory: (dirPath) => tauriInvoke('scan_directory', { dir: dirPath }),
   collectImportFiles: (paths) => tauriInvoke('collect_import_files', { paths }),
   updateImage: (id, updates) => tauriInvoke('update_image', { id, updates }),
   updateImages: (imageIds, updates) => tauriInvoke('update_images', { imageIds, updates }),
-  rebuildThumbnails: () => tauriInvoke('rebuild_thumbnails', { all: false }),
+  rebuildThumbnails: () => tauriInvoke('rebuild_thumbnails_with_events', { all: true }),
   scanBrokenRecords: () => tauriInvoke('scan_broken_records', {}),
   deleteBrokenRecords: (ids) => tauriInvoke('delete_broken_records', { ids }),
   findDuplicates: () => tauriInvoke('find_duplicates', {}),
-  getEdits: (id) => tauriInvoke('get_edits', { id }),
+  getEdits: async (id) => {
+    const row = await tauriInvoke('get_edits', { id });
+    if (!row) return null;
+    let params = row.params;
+    try {
+      params = upgradeEdits(row.params);
+    } catch (e) {
+      console.error('[tauriBridge] 编辑参数规整失败:', e.message);
+    }
+    return { version: row.version, updatedAt: row.updatedAt, params };
+  },
   saveEdits: (id, params, command) =>
-    tauriInvoke('save_edit_params', { id, params, command }).then((result) => {
-      // 镜像 Electron edits:save：保存成功后异步刷新编辑预览缩略图（不阻塞保存；失败仅告警）
-      if (result && !result.error) {
-        renderEditPreviewAfterSave(id, params).catch((e) =>
-          console.error('[tauriBridge] 编辑预览渲染失败:', e.message)
-        );
+    tauriInvoke('save_edit_params', { id, params: upgradeEdits(params), command }).then(
+      (result) => {
+        // 镜像 Electron edits:save：保存成功后异步刷新编辑预览缩略图（不阻塞保存；失败仅告警）
+        if (result && !result.error) {
+          renderEditPreviewAfterSave(id, params).catch((e) =>
+            console.error('[tauriBridge] 编辑预览渲染失败:', e.message)
+          );
+        }
+        return result;
       }
-      return result;
-    }),
+    ),
   getEditHistory: (id) => tauriInvoke('get_edit_history', { id }),
   editCancel: (id) => Promise.resolve({ ok: true }),
   // 编辑器三通道：spec 桥内构建（sourceHash 仅作 renderSpec 必填占位，Tauri 执行器不消费）；

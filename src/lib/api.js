@@ -101,6 +101,7 @@ for (const name of [
   'syncCameraFolder',
   'getImages',
   'getImage',
+  'getAlbumImages',
   'getAllImageIds',
   'updateImage',
   'renameImage',

@@ -469,6 +469,14 @@ pub fn edit_bake(
         }
     }
 
+    // EXIF 回接来源改原图：base 为再编码副本/NEF 预览时无原图 EXIF（零拷贝时执行器已从原图回接）
+    // 必须先于 save_edits：落库 size 需与回接后的磁盘字节一致
+    if input != Path::new(&img.filepath) {
+        if let Err(e) = crate::exif_relay::relay_exif_files(Path::new(&img.filepath), &temp_path) {
+            eprintln!("[编辑烘焙] EXIF 回接失败: {e}");
+        }
+    }
+
     let saved = match save_edits(
         conn,
         id,
@@ -490,13 +498,14 @@ pub fn edit_bake(
         return Ok(saved);
     }
 
-    // 烘焙后原图已是新像素：预览与底图缓存必须整组清除（ensure_edit_base 按存在性复用，
-    // 残留底图会让下次编辑从烘焙前像素开始——镜像 Electron cleanupEditBaseCache）
+    // 烘焙后原图已是新像素：预览与底图缓存必须整组清除（ensure_edit_base 按 mtime+size 侧车
+    // 复用，残留底图/侧车会让下次编辑从烘焙前像素开始——镜像 Electron cleanupEditBaseCache）
     let preview = thumbs_dir.join(format!("edit-{id}.jpg"));
     let preview_meta = PathBuf::from(format!("{}.meta.json", preview.to_string_lossy()));
     let base_jpg = thumbs_dir.join(format!("edit-{id}-base.jpg"));
     let base_png = thumbs_dir.join(format!("edit-{id}-base.png"));
-    for p in [preview, preview_meta, base_jpg, base_png] {
+    let base_sidecar = PathBuf::from(format!("{}.meta.json", base_jpg.to_string_lossy()));
+    for p in [preview, preview_meta, base_jpg, base_png, base_sidecar] {
         if p.exists() {
             let _ = std::fs::remove_file(p);
         }
@@ -514,16 +523,26 @@ pub fn edit_export(
     input: &Path,
     export_path: &Path,
 ) -> Result<Value, PixError> {
-    if images_query::get_image_by_id(conn, id)?.is_none() {
-        return Ok(json!({ "error": "编辑会话不存在" }));
-    }
+    let img = match images_query::get_image_by_id(conn, id)? {
+        Some(row) => row,
+        None => return Ok(json!({ "error": "编辑会话不存在" })),
+    };
     match executor::render_spec_to_file(spec, input, export_path) {
-        Ok(dims) => Ok(json!({
-            "ok": true,
-            "path": export_path.to_string_lossy(),
-            "width": dims.width,
-            "height": dims.height,
-        })),
+        Ok(dims) => {
+            if input != Path::new(&img.filepath) {
+                if let Err(e) =
+                    crate::exif_relay::relay_exif_files(Path::new(&img.filepath), export_path)
+                {
+                    eprintln!("[编辑导出] EXIF 回接失败: {e}");
+                }
+            }
+            Ok(json!({
+                "ok": true,
+                "path": export_path.to_string_lossy(),
+                "width": dims.width,
+                "height": dims.height,
+            }))
+        }
         Err(e) => Ok(json!({ "error": format!("导出失败：{e}") })),
     }
 }
@@ -998,6 +1017,64 @@ mod tests {
         assert_eq!(
             edit_export(&conn, 424_242, &spec, &src, &dir.join("y.jpg")).unwrap(),
             json!({ "error": "编辑会话不存在" })
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // ③ EXIF 回接来源改原图：base 为再编码副本（无 EXIF）时，烘焙/导出产物必须从原图回接
+    fn seed_with_exif(dir: &Path, conn: &Connection) -> (i64, PathBuf, Vec<u8>) {
+        let plain = make_jpeg(dir, "plain.jpg", 16, 8, 100);
+        let plain_bytes = std::fs::read(&plain).unwrap();
+        let exif_payload = b"Exif\0\0MM\x00\x2a-fake-tiff".to_vec();
+        let with_exif = crate::exif_relay::inject_jpeg_exif(&plain_bytes, &[exif_payload.clone()]);
+        let src = dir.join("photo.jpg");
+        std::fs::write(&src, &with_exif).unwrap();
+        let id = seed_record(conn, "photo.jpg", &src, ".jpg");
+        let base = dir.join("base-copy.jpg");
+        std::fs::write(&base, &plain_bytes).unwrap();
+        (id, base, exif_payload)
+    }
+
+    #[test]
+    fn edit_bake_底图为副本时产物从原图回接exif() {
+        let dir = fresh_dir("bake_relay");
+        let conn = edit_mem_db();
+        let (id, base, exif_payload) = seed_with_exif(&dir, &conn);
+        let spec = json!({
+            "specVersion": 1,
+            "stages": [
+                { "kind": "exposure", "params": { "ev": 0.3 } },
+                { "kind": "encode", "params": { "format": "jpeg" } }
+            ]
+        });
+        let result = edit_bake(&conn, id, &Value::Null, &spec, &base, &dir).unwrap();
+        assert!(result.get("error").is_none(), "{result}");
+        let product = std::fs::read(dir.join("photo.jpg")).unwrap();
+        assert_eq!(
+            crate::exif_relay::jpeg_exif_segments(&product),
+            vec![exif_payload]
+        );
+        assert!(!dir.join("photo-temp.jpg").exists());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn edit_export_底图为副本时产物从原图回接exif() {
+        let dir = fresh_dir("export_relay");
+        let conn = edit_mem_db();
+        let (id, base, exif_payload) = seed_with_exif(&dir, &conn);
+        std::fs::create_dir_all(dir.join("out")).unwrap();
+        let dest = dir.join("out").join("photo-edited.jpg");
+        let spec = json!({
+            "specVersion": 1,
+            "stages": [{ "kind": "encode", "params": { "format": "jpeg", "quality": 90 } }]
+        });
+        let r = edit_export(&conn, id, &spec, &base, &dest).unwrap();
+        assert_eq!(r["ok"], true, "{r}");
+        let product = std::fs::read(&dest).unwrap();
+        assert_eq!(
+            crate::exif_relay::jpeg_exif_segments(&product),
+            vec![exif_payload]
         );
         let _ = std::fs::remove_dir_all(&dir);
     }

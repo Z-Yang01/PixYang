@@ -6,6 +6,7 @@
 // 串行锁由命令层经 Db(Mutex<Connection>) 持有，内核不做并发处理。
 
 use crate::db::{delete_image_record, images_root, AppPaths, Db, PixError};
+use crate::file_ops::EXIF_BATCH;
 use crate::image_group;
 use crate::images_query::{row_from, ImageRow};
 use crate::naming;
@@ -100,7 +101,7 @@ fn ymd_from_days(days: i64) -> String {
     format!("{y:04}-{m:02}-{d:02}")
 }
 
-fn mtime_ymd(path: &Path) -> String {
+pub fn mtime_ymd(path: &Path) -> String {
     let secs = std::fs::metadata(path)
         .and_then(|m| m.modified())
         .ok()
@@ -456,16 +457,20 @@ fn import_camera_files(
 /// 镜像 db:sync-camera-folder 全流程（camera_dir 由命令层从 settings 解析）：
 /// 扫描（含 NEF）→ prepareCameraSync 去重 → EXIF 提取 → 分组导入 → 补配对，
 /// 返回契约同 JS：{scanned, imported, jpgImported, nefImported, attached, skipped}
+/// EXIF 提取阶段按批发射 import-progress {done,total,task:'camera-sync'}（镜像 extractExifBatch）
 pub fn camera_sync(
     conn: &Connection,
     camera_dir: &Path,
     default_images_dir: &Path,
     thumbs_dir: &Path,
+    app: Option<&tauri::AppHandle>,
 ) -> Result<Value, PixError> {
     let files = scan_camera_files(camera_dir);
     let (to_import, attach_pairs, skipped) = prepare_camera_sync(conn, &files)?;
 
-    let mut enriched: Vec<Value> = Vec::with_capacity(to_import.len());
+    let total = to_import.len();
+    let mut done = 0usize;
+    let mut enriched: Vec<Value> = Vec::with_capacity(total);
     for f in &to_import {
         let info = read_exif_info(Path::new(&f.filepath));
         enriched.push(json!({
@@ -477,6 +482,16 @@ pub fn camera_sync(
             "takenAt": info.taken_at,
             "orientation": info.orientation,
         }));
+        done += 1;
+        if let Some(app) = app {
+            if done.is_multiple_of(EXIF_BATCH) || done == total {
+                crate::progress::emit_progress(
+                    app,
+                    crate::progress::IMPORT_PROGRESS,
+                    json!({ "done": done, "total": total, "task": "camera-sync" }),
+                );
+            }
+        }
     }
 
     let root = images_root(conn, default_images_dir)?;
@@ -720,7 +735,11 @@ pub fn migrate_images_root(
 // ── 命令封装 ──
 
 #[tauri::command]
-pub fn sync_camera_folder(db: State<'_, Db>, paths: State<'_, AppPaths>) -> Result<Value, String> {
+pub fn sync_camera_folder(
+    db: State<'_, Db>,
+    paths: State<'_, AppPaths>,
+    app: tauri::AppHandle,
+) -> Result<Value, String> {
     let conn = db.0.lock().unwrap();
     let camera_dir: String = conn
         .query_row(
@@ -742,6 +761,7 @@ pub fn sync_camera_folder(db: State<'_, Db>, paths: State<'_, AppPaths>) -> Resu
         Path::new(&camera_dir),
         &paths.default_images_dir,
         &paths.thumbs_dir,
+        Some(&app),
     ) {
         Ok(v) => Ok(v),
         Err(e) => {
@@ -824,7 +844,7 @@ mod tests {
         std::fs::write(cam.join("lone.nef"), b"lone-raw").unwrap();
 
         let conn = mem_db();
-        let result = camera_sync(&conn, &cam, &default_images, &thumbs).unwrap();
+        let result = camera_sync(&conn, &cam, &default_images, &thumbs, None).unwrap();
         assert_eq!(result["scanned"], 3);
         assert_eq!(result["imported"], 2);
         assert_eq!(result["jpgImported"], 1);
@@ -880,10 +900,10 @@ mod tests {
         std::fs::write(cam.join("lone.nef"), b"lone-raw").unwrap();
 
         let conn = mem_db();
-        let first = camera_sync(&conn, &cam, &default_images, &dir.join("thumbs")).unwrap();
+        let first = camera_sync(&conn, &cam, &default_images, &dir.join("thumbs"), None).unwrap();
         assert_eq!(first["imported"], 2);
 
-        let second = camera_sync(&conn, &cam, &default_images, &dir.join("thumbs")).unwrap();
+        let second = camera_sync(&conn, &cam, &default_images, &dir.join("thumbs"), None).unwrap();
         assert_eq!(second["scanned"], 3);
         assert_eq!(second["imported"], 0);
         assert_eq!(second["jpgImported"], 0);
@@ -905,7 +925,7 @@ mod tests {
         std::fs::write(&cam_nef, b"late-raw").unwrap();
 
         let conn = mem_db();
-        camera_sync(&conn, &cam, &default_images, &dir.join("thumbs")).unwrap();
+        camera_sync(&conn, &cam, &default_images, &dir.join("thumbs"), None).unwrap();
         let visible: ImageRow = conn
             .query_row("SELECT * FROM images WHERE hidden = 0", [], row_from)
             .unwrap();
@@ -917,7 +937,7 @@ mod tests {
         )
         .unwrap();
 
-        let result = camera_sync(&conn, &cam, &default_images, &dir.join("thumbs")).unwrap();
+        let result = camera_sync(&conn, &cam, &default_images, &dir.join("thumbs"), None).unwrap();
         assert_eq!(result["imported"], 0);
         assert_eq!(result["attached"], 1);
         assert_eq!(result["skipped"], 1);

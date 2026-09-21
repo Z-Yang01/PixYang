@@ -12,6 +12,9 @@ use rusqlite::{Connection, OptionalExtension};
 use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
 
+// 镜像 extractExifBatch 的 BATCH=8：EXIF/导入进度每批处理完发射一次
+pub const EXIF_BATCH: usize = 8;
+
 /// 今天 YYYY-MM-DD（days-since-epoch 民用历算法，免 chrono 依赖）
 pub fn today_ymd() -> String {
     let secs = std::time::SystemTime::now()
@@ -258,41 +261,53 @@ pub fn import_one(
     Ok(row)
 }
 
-/// 镜像 importImages：分组编排（jpg 组可见导入，nef-only 组隐藏导入）
+/// 镜像 importImages：分组编排（jpg 组可见导入，nef-only 组隐藏导入）。
+/// 先整批完成 EXIF 日期富化（镜像 extractExifBatch，按批发射 import-progress），再逐组落库
 pub fn import_images(
     conn: &Connection,
     files: &Value,
     date_override: Option<&str>,
     today: &str,
     thumbs_dir: &Path,
+    app: Option<&tauri::AppHandle>,
 ) -> Result<Vec<ImageRow>, PixError> {
     let mut imported = Vec::new();
     let groups = image_group::group_import_files(&parse_import_files(files));
     let root = crate::db::images_root(conn, &PathBuf::from("."))?;
+    let total = groups.len();
+    let mut done = 0usize;
+    let mut prepared: Vec<(Option<Value>, Option<Value>)> = Vec::with_capacity(total);
     for (_, group) in &groups {
-        if let Some(jpg) = &group.jpg {
-            let mut jpg_value = import_file_to_value(jpg);
-            apply_date_override(&mut jpg_value, date_override, today);
-            let pair = group.nef.as_ref().map(|n| {
-                let mut v = import_file_to_value(n);
-                apply_date_override(&mut v, date_override, today);
-                v
-            });
-            if let Some(row) = import_one(
-                conn,
-                &root,
-                &jpg_value,
-                pair.as_ref(),
-                false,
-                today,
-                thumbs_dir,
-            )? {
+        let jpg = group.jpg.as_ref().map(|j| {
+            let mut v = import_file_to_value(j);
+            apply_date_override(&mut v, date_override, today);
+            v
+        });
+        let nef = group.nef.as_ref().map(|n| {
+            let mut v = import_file_to_value(n);
+            apply_date_override(&mut v, date_override, today);
+            v
+        });
+        prepared.push((jpg, nef));
+        done += 1;
+        if let Some(app) = app {
+            if done.is_multiple_of(EXIF_BATCH) || done == total {
+                crate::progress::emit_progress(
+                    app,
+                    crate::progress::IMPORT_PROGRESS,
+                    json!({ "done": done, "total": total, "task": "import" }),
+                );
+            }
+        }
+    }
+    for (jpg, nef) in &prepared {
+        if let Some(jpg) = jpg {
+            if let Some(row) = import_one(conn, &root, jpg, nef.as_ref(), false, today, thumbs_dir)?
+            {
                 imported.push(row);
             }
-        } else if let Some(nef) = &group.nef {
-            let mut nef_value = import_file_to_value(nef);
-            apply_date_override(&mut nef_value, date_override, today);
-            if let Some(row) = import_one(conn, &root, &nef_value, None, true, today, thumbs_dir)? {
+        } else if let Some(nef) = nef {
+            if let Some(row) = import_one(conn, &root, nef, None, true, today, thumbs_dir)? {
                 imported.push(row);
             }
         }
@@ -326,7 +341,7 @@ fn import_file_to_value(f: &image_group::ImportFile) -> Value {
     json!({ "filename": f.filename, "filepath": f.filepath })
 }
 
-/// 镜像 db:import-images 的日期链：dateOverride > 文件自带 importDate > EXIF 拍摄日期 > 今天
+/// 镜像 db:import-images 的日期链：dateOverride > 文件自带 importDate > EXIF 拍摄日期 > 文件 mtime > 今天
 fn apply_date_override(img: &mut Value, date_override: Option<&str>, today: &str) {
     if let Some(d) = date_override.filter(|s| !s.is_empty()) {
         img["importDate"] = json!(d);
@@ -340,12 +355,24 @@ fn apply_date_override(img: &mut Value, date_override: Option<&str>, today: &str
     if has_date {
         return;
     }
-    let src = img.get("filepath").and_then(|v| v.as_str()).unwrap_or("");
-    if let Ok(fields) = crate::exif_read::exif_fields(Path::new(src)) {
+    let src = img
+        .get("filepath")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+    let mut dated = false;
+    if let Ok(fields) = crate::exif_read::exif_fields(Path::new(&src)) {
         if let Some(taken) = fields.get("taken_at").and_then(|v| v.as_str()) {
             if taken.len() >= 10 {
                 img["importDate"] = json!(taken[..10].to_string());
+                dated = true;
             }
+        }
+    }
+    if !dated {
+        // 镜像 readExifInfo 的 mtime 回退（stat 失败时保持留空 → import_one 落今天）
+        if std::fs::metadata(&src).is_ok() {
+            img["importDate"] = json!(crate::camera::mtime_ymd(Path::new(&src)));
         }
     }
     let _ = today;
@@ -439,6 +466,95 @@ pub fn rename_image(conn: &Connection, id: i64, new_filename: &str) -> Result<Va
         ),
         Err(e) => Ok(json!({ "error": format!("重命名失败: {}", e) })),
     }
+}
+
+// 启动清扫烘焙残留：镜像 electron/database.js cleanupStaleBakeTemps。
+// 按可见记录目录精确匹配「存在主名相同的图片」才删，且候选本身是被管理的图片路径时跳过——
+// 绝不误删用户自己命名带 -temp 的文件。覆盖 -temp.(jpg|png|webp)[.part|.icc] 与 主名.ext.bake-tmp 双形态。
+pub fn cleanup_stale_bake_temps(conn: &Connection) -> usize {
+    let load = |sql: &str| -> rusqlite::Result<Vec<String>> {
+        let mut stmt = conn.prepare(sql)?;
+        let rows = stmt.query_map([], |r| r.get::<_, String>(0))?;
+        rows.collect()
+    };
+    let (all, visible) = match (
+        load("SELECT filepath FROM images"),
+        load("SELECT filepath FROM images WHERE hidden = 0"),
+    ) {
+        (Ok(a), Ok(v)) => (a, v),
+        (Err(e), _) | (_, Err(e)) => {
+            eprintln!("[编辑清理] -temp 清扫失败: {e}");
+            return 0;
+        }
+    };
+    let mut managed: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut by_dir: std::collections::HashMap<String, std::collections::HashSet<String>> =
+        std::collections::HashMap::new();
+    for p in &all {
+        managed.insert(p.to_lowercase());
+    }
+    for p in &visible {
+        if let Some(dir) = Path::new(p).parent() {
+            by_dir
+                .entry(dir.to_string_lossy().into_owned())
+                .or_default()
+                .insert(naming::basename_no_ext(&image_group::basename(p)).to_lowercase());
+        }
+    }
+    let mut removed = 0usize;
+    for (dir, bases) in &by_dir {
+        let entries = match std::fs::read_dir(dir) {
+            Ok(entries) => entries,
+            Err(_) => continue,
+        };
+        for entry in entries.flatten() {
+            let name = entry.file_name().to_string_lossy().into_owned();
+            let Some(base_key) = stale_bake_temp_base(&name) else {
+                continue;
+            };
+            if !bases.contains(&base_key) {
+                continue;
+            }
+            let full = Path::new(dir).join(&name);
+            if managed.contains(&full.to_string_lossy().to_lowercase()) {
+                continue;
+            }
+            if std::fs::remove_file(&full).is_ok() {
+                removed += 1;
+            }
+        }
+    }
+    removed
+}
+
+// 匹配清理候选并提取主名（小写）：base-temp.(jpe?g|png|webp)[.part|.icc] 或 base.(…).bake-tmp
+fn stale_bake_temp_base(name: &str) -> Option<String> {
+    let lower = name.to_lowercase();
+    let stripped = lower
+        .strip_suffix(".part")
+        .or_else(|| lower.strip_suffix(".icc"))
+        .unwrap_or(&lower);
+    for ext in [".jpeg", ".jpg", ".png", ".webp"] {
+        if let Some(head) = stripped.strip_suffix(ext) {
+            if let Some(base) = head.strip_suffix("-temp") {
+                if !base.is_empty() {
+                    return Some(base.to_string());
+                }
+            }
+        }
+    }
+    if let Some(head) = lower.strip_suffix(".bake-tmp") {
+        for ext in [
+            ".jpeg", ".jpg", ".png", ".webp", ".gif", ".bmp", ".tiff", ".nef",
+        ] {
+            if let Some(base) = head.strip_suffix(ext) {
+                if !base.is_empty() {
+                    return Some(base.to_string());
+                }
+            }
+        }
+    }
+    None
 }
 
 #[derive(Debug)]
@@ -667,6 +783,77 @@ mod tests {
         let t = today_ymd();
         assert_eq!(t.len(), 10);
         assert_eq!(&t[4..5], "-");
+    }
+
+    #[test]
+    fn 手动导入无exif日期_回退文件mtime_有覆盖日期时优先() {
+        let dir = std::env::temp_dir().join("pixyang_mtime_fallback");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let src = make_jpeg(&dir, "noexif.jpg", 20, 10);
+        // 定到 2020-06-15T12:00:00Z（正午落点，各时区同日），镜像素材无 EXIF → 走 mtime
+        let stamp = std::time::UNIX_EPOCH + std::time::Duration::from_secs(1_592_222_400);
+        let f = std::fs::File::options().append(true).open(&src).unwrap();
+        f.set_modified(stamp).unwrap();
+        drop(f);
+
+        let mut img = json!({ "filename": "noexif.jpg", "filepath": src.to_string_lossy() });
+        apply_date_override(&mut img, None, "2026-09-21");
+        assert_eq!(img["importDate"], "2020-06-15");
+
+        let mut overridden = json!({ "filename": "noexif.jpg", "filepath": src.to_string_lossy() });
+        apply_date_override(&mut overridden, Some("2026-01-02"), "2026-09-21");
+        assert_eq!(overridden["importDate"], "2026-01-02");
+
+        let mut missing =
+            json!({ "filename": "noexif.jpg", "filepath": dir.join("gone.jpg").to_string_lossy() });
+        apply_date_override(&mut missing, None, "2026-09-21");
+        assert!(missing["importDate"].as_str().unwrap_or("").is_empty());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn 启动清扫_删残留temp双形态_保留托管与无关文件() {
+        let dir = std::env::temp_dir().join("pixyang_bake_temp_clean");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let conn = mem_db();
+        let seed = |filename: &str, filepath: &Path, hidden: i64| {
+            conn.execute(
+                "INSERT INTO images (filename, filepath, import_date, hidden) VALUES (?1, ?2, '2026-09-21', ?3)",
+                rusqlite::params![filename, filepath.to_string_lossy(), hidden],
+            )
+            .unwrap();
+        };
+        let photo = make_jpeg(&dir, "photo.jpg", 16, 8);
+        seed("photo.jpg", &photo, 0);
+        let managed_temp = dir.join("m-temp.jpg");
+        std::fs::write(&managed_temp, b"real").unwrap();
+        let m_jpg = dir.join("m.jpg");
+        std::fs::write(&m_jpg, b"m").unwrap();
+        seed("m-temp.jpg", &managed_temp, 0);
+        let hidden_jpg = dir.join("h.jpg");
+        std::fs::write(&hidden_jpg, b"h").unwrap();
+        seed("h.jpg", &hidden_jpg, 1);
+
+        std::fs::write(dir.join("photo-temp.jpg"), b"stale").unwrap();
+        std::fs::write(dir.join("photo-temp.png.part"), b"stale").unwrap();
+        std::fs::write(dir.join("photo.jpg.bake-tmp"), b"stale").unwrap();
+        std::fs::write(dir.join("photo-temp.txt"), b"keep").unwrap();
+        std::fs::write(dir.join("other-temp.jpg"), b"keep").unwrap();
+        std::fs::write(dir.join("h-temp.jpg"), b"keep").unwrap();
+
+        let removed = cleanup_stale_bake_temps(&conn);
+        assert_eq!(removed, 3, "双形态残留各计一次");
+        assert!(!dir.join("photo-temp.jpg").exists());
+        assert!(!dir.join("photo-temp.png.part").exists());
+        assert!(!dir.join("photo.jpg.bake-tmp").exists());
+        assert!(dir.join("photo-temp.txt").exists(), "扩展名不合不删");
+        assert!(dir.join("other-temp.jpg").exists(), "无同名可见主图不删");
+        assert!(dir.join("h-temp.jpg").exists(), "隐藏记录主名不参与匹配");
+        assert!(managed_temp.exists(), "候选本身是托管记录时绝不删");
+        assert!(photo.exists());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

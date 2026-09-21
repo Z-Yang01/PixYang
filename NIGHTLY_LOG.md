@@ -344,3 +344,7 @@
   （dateOverride > 文件自带 > EXIF taken_at 日期 > 今天，命令/内核/桥接三层）。
   另核实 edit_open 契约已由 edit_session_snapshot 镜像（含 temp 残留清理/NEF 标记/savedEdits）。
   cargo 129/129；vitest 969/969。构建产物已刷新（dist + debug exe）。
+- 2026-09-21 02:30 R26 全功能对等收口：审计（TAURI_PARITY.md，64 API 面 ✅41/⚠️20/❌2/➖1）
+  → 双 agent 实施全部 P0/P1 缺口 + P2 插件（单实例/窗口状态）。合并验证：
+  cargo 138/138 + golden 门禁；clippy 0 error；vitest 971/971；build 干净。
+  对等功能可用率 96.9%→100%（P0-4 渲染取消与 P2-21 崩溃自愈评估后置，见 TAURI_PARITY.md 修复轮状态）。

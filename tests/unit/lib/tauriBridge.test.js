@@ -128,11 +128,9 @@ describe('tauriBridge', () => {
   it('接缝 R24：对话框/外壳通道在 Tauri 可用时走插件与 Rust 命令', async () => {
     const invoke = vi.fn().mockResolvedValue({ success: true, path: 'E:/backup.db' });
     const dialogOpen = vi.fn().mockResolvedValue('E:/picked');
-    const openerOpenPath = vi.fn().mockResolvedValue('');
     window.__TAURI__ = {
       core: { invoke },
       dialog: { open: dialogOpen },
-      opener: { openPath: openerOpenPath },
     };
     await expect(api.selectDirectory()).resolves.toBe('E:/picked');
     expect(dialogOpen).toHaveBeenCalledWith({
@@ -144,8 +142,11 @@ describe('tauriBridge', () => {
       directory: true,
       title: '选择导出的目标文件夹',
     });
-    await expect(api.openPath('E:/picked/sub')).resolves.toBe('');
-    expect(openerOpenPath).toHaveBeenCalledWith('E:/picked/sub');
+    await expect(api.openPath('E:/picked/sub')).resolves.toEqual({
+      success: true,
+      path: 'E:/backup.db',
+    });
+    expect(invoke).toHaveBeenCalledWith('open_path', { path: 'E:/picked/sub' });
     await expect(api.backupDatabase()).resolves.toEqual({ success: true, path: 'E:/backup.db' });
     expect(invoke).toHaveBeenCalledWith('backup_database', {});
   });
@@ -217,6 +218,34 @@ describe('tauriBridge', () => {
     expect(invoke).toHaveBeenCalledWith('delete_preset', { id: 1 });
   });
 
+  it('接缝 P0-2：缩略图重建走带进度事件的全量命令', async () => {
+    const invoke = vi.fn().mockResolvedValue({ rebuilt: 3, failed: 0, total: 3 });
+    window.__TAURI__ = { core: { invoke } };
+    await expect(api.rebuildThumbnails()).resolves.toEqual({ rebuilt: 3, failed: 0, total: 3 });
+    expect(invoke).toHaveBeenCalledWith('rebuild_thumbnails_with_events', { all: true });
+  });
+
+  it('接缝 P1-10：getEdits 返回 params 经 upgradeEdits 规整，无记录为 null', async () => {
+    const invoke = vi
+      .fn()
+      .mockResolvedValueOnce({
+        version: 3,
+        updatedAt: '2026-09-21 10:00',
+        params: { exposure: 0.5 },
+      })
+      .mockResolvedValueOnce(null);
+    window.__TAURI__ = { core: { invoke } };
+    const row = await api.getEdits(5);
+    expect(invoke).toHaveBeenNthCalledWith(1, 'get_edits', { id: 5 });
+    expect(row).toEqual({
+      version: 3,
+      updatedAt: '2026-09-21 10:00',
+      params: upgradeEdits({ exposure: 0.5 }),
+    });
+    await expect(api.getEdits(6)).resolves.toBeNull();
+    expect(invoke).toHaveBeenNthCalledWith(2, 'get_edits', { id: 6 });
+  });
+
   it('接缝 14：托管路径与跨页全选通道走 Rust 命令', async () => {
     const invoke = vi.fn().mockResolvedValue(null);
     window.__TAURI__ = { core: { invoke } };
@@ -278,7 +307,7 @@ describe('tauriBridge', () => {
     expect(result).toEqual({ version: 2, params: {} });
     expect(invoke).toHaveBeenNthCalledWith(1, 'save_edit_params', {
       id: 5,
-      params: edits,
+      params: upgradeEdits(edits),
       command: { label: '保存编辑参数' },
     });
     await vi.waitFor(() => {

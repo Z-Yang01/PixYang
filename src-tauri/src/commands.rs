@@ -128,6 +128,41 @@ mod tests {
         assert_eq!(out.len(), 1);
         assert!(out[0].jpg.is_some() && out[0].nef.is_some());
     }
+
+    #[test]
+    fn 创建标签_重名与非法名返回错误对象() {
+        let conn = crate::images_query::tests::mem_db();
+        let ok = create_tag_result(&conn, " travel ", "#abc").unwrap();
+        assert_eq!(ok["name"], "travel");
+        assert_eq!(ok["id"], 1);
+        let dup = create_tag_result(&conn, "travel", "#fff").unwrap();
+        assert_eq!(dup["error"], "创建标签失败：名称重复或无效");
+        let blank = create_tag_result(&conn, "   ", "#fff").unwrap();
+        assert_eq!(blank["error"], "创建标签失败：名称重复或无效");
+    }
+
+    #[test]
+    fn 创建相册_非法名返回错误对象() {
+        let conn = crate::images_query::tests::mem_db();
+        let ok = create_album_result(&conn, "trip", "d").unwrap();
+        assert_eq!(ok["name"], "trip");
+        assert_eq!(ok["image_count"], 0);
+        let blank = create_album_result(&conn, "  ", "").unwrap();
+        assert_eq!(blank["error"], "创建相册失败：名称无效");
+    }
+
+    #[test]
+    fn 批量操作失败映射为错误返回值而非reject() {
+        let ok = ok_or_error_value::<i64, String>("批量添加标签失败", Ok(3)).unwrap();
+        assert_eq!(ok, serde_json::json!(3));
+        let err = ok_or_error_value::<i64, String>("批量添加标签失败", Err("boom".into())).unwrap();
+        assert_eq!(err["error"], "批量添加标签失败: boom");
+        let del =
+            ok_or_error_value::<Vec<i64>, String>("批量删除失败", Err("db断开".into())).unwrap();
+        assert_eq!(del["error"], "批量删除失败: db断开");
+        let rows = ok_or_error_value::<Vec<i64>, String>("批量删除失败", Ok(vec![1, 2])).unwrap();
+        assert_eq!(rows, serde_json::json!([1, 2]));
+    }
 }
 
 // ── 设置通道（迁移接缝 1：与 Electron 读写同一 pixyang.db 的 settings 表） ──
@@ -138,8 +173,14 @@ pub fn get_setting(db: State<'_, Db>, key: String) -> Result<Option<String>, Str
 }
 
 #[tauri::command]
-pub fn set_setting(db: State<'_, Db>, key: String, value: String) -> Result<(), String> {
-    db.set_setting(&key, &value).map_err(|e| e.to_string())
+pub fn set_setting(db: State<'_, Db>, key: String, value: String) -> Result<Value, String> {
+    // images_root 只能经 set_images_root 变更：它绑定文件搬迁，裸写会让 DB 路径整体失效
+    if key == "images_root" {
+        return Ok(json!({ "error": "images_root 需通过迁移图片流程修改" }));
+    }
+    db.set_setting(&key, &value)
+        .map(|_| Value::Null)
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -186,14 +227,46 @@ pub fn get_albums(db: State<'_, Db>) -> Result<Vec<tags_albums::AlbumRow>, Strin
 
 // ── 标签/相册写通道（迁移接缝 4a） ──
 
+// 失败契约镜像 electron/main.js guardDb：invoke reject 对无 catch 的调用点完全静默，
+// 失败必须回 {error} 返回值（成功路径维持原形状）
+fn ok_or_error_value<T: Serialize, E: std::fmt::Display>(
+    label: &str,
+    result: Result<T, E>,
+) -> Result<Value, String> {
+    match result {
+        Ok(v) => serde_json::to_value(v).map_err(|e| e.to_string()),
+        Err(e) => Ok(json!({ "error": format!("{label}: {e}") })),
+    }
+}
+
+fn create_tag_result(
+    conn: &rusqlite::Connection,
+    name: &str,
+    color: &str,
+) -> Result<Value, String> {
+    match tags_albums::create_tag(conn, name, color) {
+        Ok(Some(t)) => serde_json::to_value(t).map_err(|e| e.to_string()),
+        Ok(None) => Ok(json!({ "error": "创建标签失败：名称重复或无效" })),
+        Err(e) => Ok(json!({ "error": format!("创建标签失败: {e}") })),
+    }
+}
+
+fn create_album_result(
+    conn: &rusqlite::Connection,
+    name: &str,
+    description: &str,
+) -> Result<Value, String> {
+    match tags_albums::create_album(conn, name, description) {
+        Ok(Some(a)) => serde_json::to_value(a).map_err(|e| e.to_string()),
+        Ok(None) => Ok(json!({ "error": "创建相册失败：名称无效" })),
+        Err(e) => Ok(json!({ "error": format!("创建相册失败: {e}") })),
+    }
+}
+
 #[tauri::command]
-pub fn create_tag(
-    db: State<'_, Db>,
-    name: String,
-    color: String,
-) -> Result<Option<tags_albums::TagLite>, String> {
+pub fn create_tag(db: State<'_, Db>, name: String, color: String) -> Result<Value, String> {
     let conn = db.0.lock().unwrap();
-    tags_albums::create_tag(&conn, &name, &color).map_err(|e| e.to_string())
+    create_tag_result(&conn, &name, &color)
 }
 
 #[tauri::command]
@@ -219,19 +292,18 @@ pub fn add_tag_to_images(
     db: State<'_, Db>,
     image_ids: Vec<i64>,
     tag_id: i64,
-) -> Result<i64, String> {
+) -> Result<Value, String> {
     let conn = db.0.lock().unwrap();
-    tags_albums::add_tag_to_images(&conn, &image_ids, tag_id).map_err(|e| e.to_string())
+    ok_or_error_value(
+        "批量添加标签失败",
+        tags_albums::add_tag_to_images(&conn, &image_ids, tag_id),
+    )
 }
 
 #[tauri::command]
-pub fn create_album(
-    db: State<'_, Db>,
-    name: String,
-    description: String,
-) -> Result<Option<tags_albums::AlbumRow>, String> {
+pub fn create_album(db: State<'_, Db>, name: String, description: String) -> Result<Value, String> {
     let conn = db.0.lock().unwrap();
-    tags_albums::create_album(&conn, &name, &description).map_err(|e| e.to_string())
+    create_album_result(&conn, &name, &description)
 }
 
 #[tauri::command]
@@ -371,17 +443,18 @@ pub fn image_meta(filepath: String) -> Result<(u32, u32, u32, bool), String> {
 pub fn import_images(
     db: State<'_, Db>,
     paths: State<'_, AppPaths>,
+    app: AppHandle,
     files: serde_json::Value,
     date_override: Option<String>,
 ) -> Result<Vec<images_query::ImageRow>, String> {
     let conn = db.0.lock().unwrap();
-    let root = db::images_root(&conn, &paths.default_images_dir).map_err(|e| e.to_string())?;
     file_ops::import_images(
         &conn,
         &files,
         date_override.as_deref(),
         &file_ops::today_ymd(),
         &paths.thumbs_dir,
+        Some(&app),
     )
     .map_err(|e| e.to_string())
 }
@@ -453,9 +526,25 @@ pub fn render_edit(
 
 // ── 外围与编辑会话通道（多 agent 内核集成） ──
 
+// 镜像 fs:get-exif：完整 EXIF 仅限托管根内文件（images_root ∪ 数据库目录），越界返回空对象
 #[tauri::command]
-pub fn get_exif(filepath: String) -> Value {
-    crate::exif_read::exif_fields(Path::new(&filepath)).unwrap_or_else(|_| serde_json::json!({}))
+pub fn get_exif(db: State<'_, Db>, paths: State<'_, AppPaths>, filepath: String) -> Value {
+    let database_dir = db::default_db_path()
+        .parent()
+        .map(std::path::Path::to_path_buf)
+        .unwrap_or_else(|| std::path::PathBuf::from("."));
+    let managed = {
+        let conn = db.0.lock().unwrap();
+        db::images_root(&conn, &paths.default_images_dir)
+            .map(|root| {
+                crate::interact::is_managed_path(&root, &database_dir, Path::new(&filepath))
+            })
+            .unwrap_or(false)
+    };
+    if !managed {
+        return json!({});
+    }
+    crate::exif_read::exif_fields(Path::new(&filepath)).unwrap_or_else(|_| json!({}))
 }
 
 #[tauri::command]
@@ -571,23 +660,46 @@ pub fn edit_cancel(id: String) -> Value {
     serde_json::json!({ "ok": true })
 }
 
-/// normalizeBase 等价：自动转正 + alpha 源写 PNG，其余 JPEG q92；缓存于 thumbs/edit-{id}-base.*
+/// 镜像 ensureEditBase：base 解析顺序 ① raw_path 存在且可提取 → NEF 预览底图（source='nef'）；
+/// ② orientation=1 且无 alpha → 零拷贝直用原图（不落底图文件，EXIF/alpha 天然保留）；
+/// ③ 否则规范化副本。副本/NEF 底图按 mtime+size 侧车校验复用（原图被外部改写后重建）
 fn ensure_edit_base(
+    conn: &rusqlite::Connection,
     thumbs_dir: &Path,
     id: i64,
     src: &Path,
-) -> Result<(std::path::PathBuf, u32, u32), String> {
+) -> Result<(PathBuf, u32, u32, &'static str), String> {
+    std::fs::create_dir_all(thumbs_dir).map_err(|e| e.to_string())?;
+    let base_jpg = thumbs_dir.join(format!("edit-{id}-base.jpg"));
+    let sidecar = PathBuf::from(format!("{}.meta.json", base_jpg.to_string_lossy()));
+    let raw = images_query::get_image_by_id(conn, id)
+        .map_err(|e| e.to_string())?
+        .and_then(|i| i.raw_path)
+        .filter(|s| !s.is_empty());
+    if let Some(raw) = raw {
+        let raw_path = PathBuf::from(&raw);
+        if raw_path.exists() {
+            if base_cache_fresh(&sidecar, "nef", &raw_path) && base_jpg.exists() {
+                if let Ok((w, h)) = image_dims(&base_jpg) {
+                    return Ok((base_jpg, w, h, "nef"));
+                }
+            }
+            if let Ok(Some((w, h))) = thumbs::extract_nef_preview(&raw_path, &base_jpg) {
+                write_base_sidecar(&sidecar, "nef", &raw_path);
+                return Ok((base_jpg, w, h, "nef"));
+            }
+        }
+    }
     let (sw, sh, orientation, has_alpha) = thumbs::image_meta(src).map_err(|e| e.to_string())?;
+    if orientation == 1 && !has_alpha {
+        return Ok((src.to_path_buf(), sw, sh, "jpg"));
+    }
     let ext = if has_alpha { "png" } else { "jpg" };
     let base = thumbs_dir.join(format!("edit-{id}-base.{ext}"));
-    if base.exists() {
-        let dims = image::ImageReader::open(&base)
-            .map_err(|e| e.to_string())?
-            .with_guessed_format()
-            .map_err(|e| e.to_string())?
-            .into_dimensions()
-            .map_err(|e| e.to_string())?;
-        return Ok((base, dims.0, dims.1));
+    if base_cache_fresh(&sidecar, "jpg", src) && base.exists() {
+        if let Ok((w, h)) = image_dims(&base) {
+            return Ok((base, w, h, "jpg"));
+        }
     }
     let img = image::ImageReader::open(src)
         .map_err(|e| e.to_string())?
@@ -620,10 +732,64 @@ fn ensure_edit_base(
             .map_err(|e| e.to_string())?;
         buf.into_inner()
     };
-    std::fs::create_dir_all(thumbs_dir).map_err(|e| e.to_string())?;
     std::fs::write(&base, out).map_err(|e| e.to_string())?;
+    write_base_sidecar(&sidecar, "jpg", src);
     let (w, h) = if orientation >= 5 { (sh, sw) } else { (sw, sh) };
-    Ok((base, w, h))
+    Ok((base, w, h, "jpg"))
+}
+
+fn image_dims(p: &Path) -> Result<(u32, u32), String> {
+    image::ImageReader::open(p)
+        .map_err(|e| e.to_string())?
+        .with_guessed_format()
+        .map_err(|e| e.to_string())?
+        .into_dimensions()
+        .map(|d| (d.0, d.1))
+        .map_err(|e| e.to_string())
+}
+
+// 侧车 json 记录底图来源（nef|jpg）与源文件 mtime+size，复用前逐项校验
+fn base_cache_fresh(sidecar: &Path, source: &str, src: &Path) -> bool {
+    let Some((cached_source, mtime, size)) = read_base_sidecar(sidecar) else {
+        return false;
+    };
+    if cached_source != source {
+        return false;
+    }
+    let Some((src_mtime, src_size)) = file_mtime_secs_size(src) else {
+        return false;
+    };
+    mtime == src_mtime && size == src_size
+}
+
+fn file_mtime_secs_size(p: &Path) -> Option<(i64, u64)> {
+    let meta = std::fs::metadata(p).ok()?;
+    let secs = meta
+        .modified()
+        .ok()?
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()?
+        .as_secs() as i64;
+    Some((secs, meta.len()))
+}
+
+fn read_base_sidecar(path: &Path) -> Option<(String, i64, u64)> {
+    let text = std::fs::read_to_string(path).ok()?;
+    let v: Value = serde_json::from_str(&text).ok()?;
+    Some((
+        v.get("source")?.as_str()?.to_string(),
+        v.get("srcMtime")?.as_i64()?,
+        v.get("srcSize")?.as_u64()?,
+    ))
+}
+
+fn write_base_sidecar(sidecar: &Path, source: &str, src: &Path) {
+    if let Some((mtime, size)) = file_mtime_secs_size(src) {
+        let _ = std::fs::write(
+            sidecar,
+            json!({ "source": source, "srcMtime": mtime, "srcSize": size }).to_string(),
+        );
+    }
 }
 
 // 编辑会话快照（契约镜像 Electron openEditSession 成功返回）
@@ -659,16 +825,11 @@ pub(crate) fn edit_session_snapshot(
             }
         }
     }
-    let (base, w, h) = ensure_edit_base(thumbs_dir, id, Path::new(&img.filepath))?;
+    let (base, w, h, source) = ensure_edit_base(conn, thumbs_dir, id, Path::new(&img.filepath))?;
     let saved_edits = edit_session::get_edits(conn, id).map_err(|e| e.to_string())?;
-    let src_ext = Path::new(&img.filepath)
-        .extension()
-        .and_then(|e| e.to_str())
-        .map(|e| e.to_ascii_lowercase())
-        .unwrap_or_default();
     Ok(serde_json::json!({
         "id": id,
-        "source": if src_ext == "nef" { "nef" } else { "jpg" },
+        "source": source,
         "basePath": base.to_string_lossy(),
         "width": w,
         "height": h,
@@ -708,7 +869,7 @@ pub(crate) fn render_edit_preview_kernel(
             .unwrap_or(0))
     };
     let version_before = edits_version()?;
-    let (base, _, _) = ensure_edit_base(thumbs_dir, id, input_path)?;
+    let (base, _, _, _) = ensure_edit_base(conn, thumbs_dir, id, input_path)?;
     let preview = thumbs_dir.join(format!("edit-{id}.jpg"));
     let preview_meta = PathBuf::from(format!("{}.meta.json", preview.to_string_lossy()));
     if preview.exists() {
@@ -787,7 +948,7 @@ pub fn edit_bake(
     input_path: String,
 ) -> Result<Value, String> {
     let conn = db.0.lock().unwrap();
-    let (base, _, _) = ensure_edit_base(&paths.thumbs_dir, id, Path::new(&input_path))?;
+    let (base, _, _, _) = ensure_edit_base(&conn, &paths.thumbs_dir, id, Path::new(&input_path))?;
     let result = edit_session::edit_bake(&conn, id, &edits, &spec, &base, &paths.thumbs_dir)
         .map_err(|e| e.to_string());
     drop(conn);
@@ -817,8 +978,8 @@ pub fn edit_export(
     dest_dir: String,
     output: Value,
 ) -> Result<Value, String> {
-    let _ = id;
-    let (base, _, _) = ensure_edit_base(&paths.thumbs_dir, id, Path::new(&input_path))?;
+    let conn = db.0.lock().unwrap();
+    let (base, _, _, _) = ensure_edit_base(&conn, &paths.thumbs_dir, id, Path::new(&input_path))?;
     if !Path::new(&dest_dir).exists() {
         return Ok(serde_json::json!({ "error": "导出目录不存在" }));
     }
@@ -900,12 +1061,20 @@ pub fn edit_export(
     encode_obj["params"] = encode_params;
 
     match executor::render_spec_to_file(&spec, Path::new(&base), &dest) {
-        Ok(out) => Ok(serde_json::json!({
-            "ok": true,
-            "path": dest.to_string_lossy(),
-            "width": out.width,
-            "height": out.height,
-        })),
+        Ok(out) => {
+            // EXIF 回接来源改原图：base 为再编码副本/NEF 预览时无原图 EXIF（零拷贝时执行器已回接）
+            if base != Path::new(&input_path) {
+                if let Err(e) = crate::exif_relay::relay_exif_files(Path::new(&input_path), &dest) {
+                    eprintln!("[编辑导出] EXIF 回接失败: {e}");
+                }
+            }
+            Ok(serde_json::json!({
+                "ok": true,
+                "path": dest.to_string_lossy(),
+                "width": out.width,
+                "height": out.height,
+            }))
+        }
         Err(e) => Ok(serde_json::json!({ "error": format!("导出失败：{}", e) })),
     }
 }
@@ -925,9 +1094,12 @@ pub fn batch_delete_images(
     db: State<'_, Db>,
     paths: State<'_, AppPaths>,
     ids: Vec<i64>,
-) -> Result<Vec<images_query::ImageRow>, String> {
+) -> Result<Value, String> {
     let conn = db.0.lock().unwrap();
-    db::batch_delete_images(&conn, &ids, &paths.thumbs_dir).map_err(|e| e.to_string())
+    ok_or_error_value(
+        "批量删除失败",
+        db::batch_delete_images(&conn, &ids, &paths.thumbs_dir),
+    )
 }
 
 // ── 图片列表查询通道（迁移接缝 3） ──
@@ -1055,9 +1227,87 @@ mod edit_cmd_tests {
         assert_eq!(snap["width"], 40);
         assert_eq!(snap["height"], 30);
         assert!(snap["savedEdits"].is_null());
+        // raw_path 指向的 NEF 不存在：零拷贝直用原图，不落底图文件
+        assert_eq!(snap["basePath"], src.to_string_lossy().as_ref());
+        assert!(!thumbs.join(format!("edit-{id}-base.jpg")).exists());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn edit_snapshot_nef底图优先提取预览() {
+        let dir = fresh_dir("open_nef");
+        let src = make_jpeg(&dir, "a.jpg", 40, 30, 100);
+        let conn = edit_mem_db();
+        let id = seed_record(&conn, "a.jpg", &src);
+        // 合成含内嵌全尺寸 JPEG 段（宽 ≥320）的 NEF，走真实提取链路
+        let preview_img = DynamicImage::from(RgbaImage::from_fn(320, 200, |x, y| {
+            image::Rgba([(x % 256) as u8, (y % 256) as u8, 40, 255])
+        }));
+        let mut preview_bytes = Vec::new();
+        preview_img
+            .write_to(
+                &mut std::io::Cursor::new(&mut preview_bytes),
+                image::ImageFormat::Jpeg,
+            )
+            .unwrap();
+        let nef = dir.join("a.nef");
+        std::fs::write(&nef, &preview_bytes).unwrap();
+        conn.execute(
+            "UPDATE images SET raw_path = ?1 WHERE id = ?2",
+            rusqlite::params![nef.to_string_lossy(), id],
+        )
+        .unwrap();
+        let thumbs = dir.join("thumbs");
+        std::fs::create_dir_all(&thumbs).unwrap();
+        let snap = edit_session_snapshot(&conn, &thumbs, id).unwrap();
+        assert_eq!(snap["source"], "nef");
         let base = snap["basePath"].as_str().unwrap();
-        assert!(base.contains(&format!("edit-{id}-base")));
+        assert!(base.ends_with(&format!("edit-{id}-base.jpg")));
         assert!(Path::new(base).exists());
+        assert_eq!(snap["width"], 320);
+        assert_eq!(snap["height"], 200);
+        // 第二次打开：侧车 mtime+size 命中缓存，不再重复提取（直接复用同一底图）
+        let before = std::fs::read(base).unwrap();
+        let again = edit_session_snapshot(&conn, &thumbs, id).unwrap();
+        assert_eq!(again["source"], "nef");
+        assert_eq!(std::fs::read(base).unwrap(), before);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn 编辑底图_规范化副本侧车失效时重建() {
+        let dir = fresh_dir("base_stale");
+        let conn = edit_mem_db();
+        let thumbs = dir.join("thumbs");
+        std::fs::create_dir_all(&thumbs).unwrap();
+        let id = 7;
+        let src = dir.join("alpha.png");
+        DynamicImage::from(RgbaImage::from_fn(20, 10, |_, _| {
+            image::Rgba([1, 2, 3, 140])
+        }))
+        .save(&src)
+        .unwrap();
+        let (base1, w, h, source) = ensure_edit_base(&conn, &thumbs, id, &src).unwrap();
+        assert_eq!(source, "jpg");
+        assert_eq!((w, h), (20, 10));
+        let bytes1 = std::fs::read(&base1).unwrap();
+        assert!(!bytes1.is_empty());
+        // 原图被外部改写（尺寸变化 → size 必变）：侧车失效，底图必须重建
+        DynamicImage::from(RgbaImage::from_fn(40, 30, |_, _| {
+            image::Rgba([9, 9, 9, 250])
+        }))
+        .save(&src)
+        .unwrap();
+        let (base2, w2, h2, _) = ensure_edit_base(&conn, &thumbs, id, &src).unwrap();
+        assert_eq!(base2, base1);
+        assert_eq!((w2, h2), (40, 30));
+        assert_ne!(std::fs::read(&base2).unwrap(), bytes1);
+        // mtime+size 未变时命中缓存复用
+        let again = ensure_edit_base(&conn, &thumbs, id, &src).unwrap();
+        assert_eq!(
+            std::fs::read(&again.0).unwrap(),
+            std::fs::read(&base2).unwrap()
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 
