@@ -99,6 +99,27 @@ getSettings / getSetting / setSetting ✅（db.rs 同库读写，get_settings �
 **无（64/64 全通）。** 后续工作 = tauri 全功能点击级冒烟（人工，`cd src-tauri && cargo run`）
 + 已标注「需人工复核」项的逐项确认 + Electron 删除轮。
 
+## 行为对齐补全（R30-R35，通道清单之外的副作用/行为类修复）
+
+| 轮次 | 修复 | 性质 |
+|---|---|---|
+| R30 | 删除图片（单删/批删/损坏记录清理）时清编辑派生文件（预览/meta/底图缓存），对齐 cleanupEditDerivedFiles | 磁盘泄漏 |
+| R31 | 烘焙后清除编辑底图缓存——残留会让下次编辑从烘焙前像素开始 | 正确性 |
+| R32 | 烘焙后后台重建缩略图（仅缺失者，带 thumbnails-ready 事件），对齐「缩略图由 rebuild 重生成」 | 用户可见 |
+| R33 | 事件通道名三层审计：orientation-backfill → orientation-backfill-done（R23 错名修正） | 埋雷 |
+| R34 | 编辑打开时清理烘焙残留 temp（非托管才删）+ hidden 拒编辑守卫 | 磁盘泄漏/契约 |
+| R35 | 编辑预览磁盘 LRU 上限 500（按 edits.updated_at 清最旧），对齐 enforceEditPreviewLimit | 磁盘泄漏 |
+
+已记录的接受性取舍（不移植，理由见 NIGHTLY_LOG 当轮）：启动时全库 stale temp 清理
+（R34，打开时清理已覆盖常见路径）、orientation 一次性启动回填（R33，共享库已被
+Electron 启动消耗过标记）、导入中逐文件 import-progress 事件（Tauri 导入为同步命令，
+进度条语义不同属 UX 层差异）。
+
+## 验证口径基线（2026-09-21 R36 记录）
+
+vitest 969/969；cargo 129/129 + golden 门禁；typecheck / lint 0 error；
+覆盖率 stmts 91.73% / branch 85.25% / funcs 80.37%（门槛 75/70/50）。
+
 ## 验证口径
 
 - 前端：`npm run -s test` + `npm run -s typecheck` + `npm run -s lint`（0 error）。
