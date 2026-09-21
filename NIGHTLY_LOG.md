@@ -368,3 +368,8 @@
   复制到 data\（旧位置保留只读兼容）。照片本体不搬：images_root 设置优先，未设置但旧默认
   目录有照片时沿用旧绝对路径（可在设置页用图片根迁移搬到新盘）。实测：release exe 启动后
   data\ 生成完整库（933 可见图/5 标签/2 相册/851 缩略图）。cargo 143/143 + golden；vitest 971/971。
+- 2026-09-21 06:10 R29 对话框/详情被查看器遮挡修复（用户视觉冒烟反馈）：全屏查看器
+  .viewer-overlay z-1000 高于 shadcn/Radix 弹层 z-50（Portal 到 body）——编辑态"放弃编辑"
+  确认框、导出对话框、面板下拉全部被盖住不可见（点 X 表现为无反应），.info-panel z-900
+  同理被盖。修复：index.css 按 data-slot 统一提 Radix 弹层层级至 2000；.info-panel 提至
+  1600。cargo 143/143 + golden；vitest 971/971；新安装包已重打。

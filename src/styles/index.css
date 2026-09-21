@@ -1075,7 +1075,7 @@ body {
   height: 100vh;
   background: var(--bg-secondary);
   border-left: 1px solid var(--border);
-  z-index: 900;
+  z-index: 1600;
   animation: slideIn 0.2s ease;
   overflow-y: auto;
 }
@@ -2585,4 +2585,18 @@ body {
   min-width: 28px;
   opacity: 0.6;
   font-variant-numeric: tabular-nums;
+}
+
+/* Radix/shadcn 弹层层级：必须高于全屏查看器（.viewer-overlay z-1000）与拖拽导入（z-1500）。
+   编辑态确认框/导出对话框/下拉若低于查看器会被整层盖住，表现为"点 X 无反应/下拉消失" */
+[data-slot='dialog-overlay'],
+[data-slot='dialog-content'],
+[data-slot='alert-dialog-overlay'],
+[data-slot='alert-dialog-content'],
+[data-slot='select-content'],
+[data-slot='dropdown-menu-content'],
+[data-slot='popover-content'],
+[data-slot='command'],
+[data-slot='tooltip-content'] {
+  z-index: 2000;
 }
