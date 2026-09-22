@@ -3,6 +3,8 @@
 // 每个 api 方法在 Tauri 运行时的命令名/参数序列化形状，以及无桥时对 window.pixyang 的回落。
 // R37 由该表抓到 syncCameraFolder/setImagesRoot 有接缝无包装的实机 TypeError。
 import { describe, it, expect, vi, afterEach } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import api from '@/lib/api';
 import editSchema from '../../../shared/editSchema.cjs';
 
@@ -326,5 +328,58 @@ describe('api → tauriBridge 生产路径契约', () => {
     expect(api.getImages()).toBeUndefined();
     expect(api.getTags()).toBeUndefined();
     expect(api.isBridgeAvailable()).toBe(false);
+  });
+});
+
+// 桥接三层对拍锁：tauriBridge.js invoke 字面量 ↔ src-tauri/src/lib.rs generate_handler! 注册表
+// ↔ 本文件契约表 cmd。R37 契约表是手写的，Rust 侧改名/删命令时上面的测试仍绿而生产 invoke
+// 会以「命令不存在」断裂——这里把两侧事实源钉在同一张表上。
+// 路径从 cwd 解析（happy-dom 下 import.meta.url 非 file scheme，不能走 themes.test.js 的 URL 法）。
+const readRepo = (rel) => readFileSync(resolve(process.cwd(), rel), 'utf8');
+const rustSource = readRepo('src-tauri/src/lib.rs');
+const bridgeSource = readRepo('src/lib/tauriBridge.js');
+const mediaSource = readRepo('src/lib/tauriBridgeMedia.js');
+const progressSource = readRepo('src-tauri/src/progress.rs');
+const rustEvents = new Set(
+  [...progressSource.matchAll(/^pub const [A-Z_]+: &str = "([a-z-]+)";/gm)].map((m) => m[1])
+);
+
+const handlerBlock = rustSource.match(/generate_handler!\[([\s\S]*?)\]\)/)?.[1] ?? '';
+const rustCommands = new Set(
+  [...handlerBlock.matchAll(/(?:commands|interact|camera)::([a-z_]+)/g)].map((m) => m[1])
+);
+const bridgeCommands = new Set(
+  [...bridgeSource.matchAll(/tauriInvoke\(\s*'([a-z_]+)'/g)].map((m) => m[1])
+);
+
+describe('Rust 注册表 ↔ 桥接层命令对拍', () => {
+  it('两侧清单非空（正则失配时对拍会空转，先哨兵拦截）', () => {
+    expect(rustCommands.size).toBeGreaterThan(50);
+    expect(bridgeCommands.size).toBeGreaterThan(50);
+  });
+
+  it('桥内每个 invoke 字面量都在 Rust 注册（Rust 改名/删命令 → 桥侧孤儿暴露）', () => {
+    const orphans = [...bridgeCommands].filter((c) => !rustCommands.has(c));
+    expect(orphans).toEqual([]);
+  });
+
+  it('Rust 注册的每个命令都有桥包装（注册即消费，无死命令）', () => {
+    const unbound = [...rustCommands].filter((c) => !bridgeCommands.has(c));
+    expect(unbound).toEqual([]);
+  });
+
+  it('契约表 invoke/chain 命令全部在 Rust 注册', () => {
+    const tableCmds = ROUTES.flatMap((r) =>
+      r.kind === 'chainEdit' ? [r.chainCmd] : r.kind ? [] : [r.cmd]
+    );
+    expect([...new Set(tableCmds)].filter((c) => !rustCommands.has(c))).toEqual([]);
+  });
+
+  it('桥监听的事件与契约表一致，且每个事件在 Rust 侧有生产者（progress.rs 常量）', () => {
+    const listened = [...mediaSource.matchAll(/listen\('([a-z-]+)'/g)].map((m) => m[1]);
+    expect(new Set(listened)).toEqual(
+      new Set(ROUTES.filter((r) => r.kind === 'event').map((r) => r.evt))
+    );
+    expect(rustEvents).toEqual(new Set(listened));
   });
 });

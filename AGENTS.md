@@ -17,7 +17,7 @@ PixYang 是一个本地桌面图片管理应用，技术栈：
 
 ```
 src-tauri/        Rust/Tauri 后端（唯一运行时桌面端）
-  src/lib.rs      模块声明 + run()（Builder + dialog/opener 插件，generate_handler! 注册 63 命令）
+  src/lib.rs      模块声明 + run()（Builder + dialog/opener 插件，generate_handler! 注册 61 命令）
   src/main.rs     桌面入口（release 隐控制台）
   src/naming.rs   唯一命名/配对主名（移植 electron/database.js 语义）
   src/image_group.rs 导入分组/日期围栏/安全文件名
@@ -131,7 +131,7 @@ tests/            vitest（node 环境 + per-file happy-dom pragma）
 
 ## 验证
 
-- 测试：`npm test`（vitest，58 个文件 / 795 例；含 R37 桥接全通道契约、R51/R52 主题↔CSS 对拍、R53 右栏让位契约、R54/R55 错误文案中文化 + 全仓 `${e.message}` 直插与裸 `x.error` 上屏扫描；像素 golden 门禁在 cargo 侧 `golden_audit`，Rust 单测 154 例）；覆盖率：`npm run test:coverage`，门槛配置在 `vitest.config.js`（statements/lines 75、branches 70、functions 50）。
+- 测试：`npm test`（vitest，58 个文件 / 800 例；含 R37 桥接全通道契约、R51/R52 主题↔CSS 对拍、R53 右栏让位契约、R54/R55 错误文案中文化、R56 Rust 注册表↔桥命令对拍 + 全仓 `${e.message}` 直插与裸 `x.error` 上屏扫描；像素 golden 门禁在 cargo 侧 `golden_audit`，Rust 单测 154 例）；覆盖率：`npm run test:coverage`，门槛配置在 `vitest.config.js`（statements/lines 75、branches 70、functions 50）。
 - Lint：`npm run lint`（ESLint flat config，`eslint.config.mjs`）；0 error 为准，warning 不阻塞。
 - 类型检查：`npm run typecheck`（tsc --noEmit，覆盖 src 下 TS/TSX）。
 - 格式检查：`npm run format:check`（Prettier 基线已于 R40 全仓落库，改动后的文件须保持 prettier 合规；历史 `*.md` 与 `src-tauri/gen/` 在 `.prettierignore` 豁免）。

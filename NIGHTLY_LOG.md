@@ -989,3 +989,37 @@
     主题命名/配色与 chips 口味（裁决「优化」→ 待排轮）、R27 保存后缩略图真机复核、曲线用例全量偶发超时。
 
 
+
+- 2026-09-23 01:05 R56 桥接契约补锁（api 通道↔桥 invoke↔Rust 注册表 命令对拍 + 事件生产者链）：
+  ① 需求/裁决来源：池子 §3-② 口径/契约漂移补锁（本轮指定优先 ④冗余清理/②契约补锁；避开 ①shader/golden 实机
+    对拍与主题配色/chips 口味——用户已裁决待排轮）。
+  ② 根因（取证）：R37 的 ROUTES 契约表 cmd 是手写字面量，全仓无任何测试读取 src-tauri/src/lib.rs——
+    「api 方法集↔ROUTES 一一对应」只锁 JS 侧自洽，ROUTES.cmd 是否真被 Rust generate_handler! 注册完全无锁；
+    Rust 侧改名/删命令时该文件照绿、生产 invoke 以「命令不存在」断裂。程序化取证：generate_handler! 注册
+    61 命令 ↔ tauriBridge.js tauriInvoke 字面量 61 个，双向恰好 1:1、零例外——现状成立但零锁定；
+    事件面同样无生产者锁（tauriBridgeMedia.js 4 个 listen ↔ progress.rs 4 个 pub const）。
+  ③ 修法：apiTauriContract.test.js 追加 describe「Rust 注册表 ↔ 桥接层命令对拍」（+55 行，零生产源改动）：
+    正则提取 lib.rs generate_handler![..] 清单与桥内 tauriInvoke('…') 字面量建集合，四道断言——
+    哨兵（两侧 size>50，防正则失配空转）、桥字面量⊆注册表（Rust 改名/删命令→桥侧孤儿）、
+    注册表⊆桥字面量（注册即消费，无死命令）、ROUTES invoke/chainCmd⊆注册表（手写表笔误同拦）；
+    事件锁：桥 listen('…') 集 == ROUTES kind:event 的 evt 集 == progress.rs pub const 事件值集（双向相等）。
+    路径从 process.cwd() 解析（happy-dom 下 import.meta.url 非 file scheme，走不了 themes.test.js 的 URL 法）。
+  ④ 回归锁 + 变异验证（单文件实跑，各红后回退复绿 72）：M1 ROUTES cmd get_stats→get_stats_typo →
+    契约表测试 1 红；M2 lib.rs commands::get_stats→get_stats_renamed → 孤儿+死命令+契约表 3 红
+    （桥↔Rust 双方向同时暴露）；M3 lib.rs commands::edit_bake→edit_bake_x → 同 3 红，契约表红只能经
+    chainEdit 分支触发（该分支活性得证）；M4 progress.rs "rebuild-progress"→"rebuild-progress-x" →
+    初版锁 72 全绿（未红！），暴露弱锁缺陷：toContain 字面量命中 cfg(test) 内 assert_eq! 的同字面量
+    （AGENTS §10「排除 cfg(test) 夹具」教训的镜像），收紧为只提取 ^pub const …: &str = "…" 声明值集合后
+    重验 → 事件锁恰 1 红，回退复绿。教训附带：回退未提交锁代码的变异点不可用 git checkout --（会连带抹掉
+    锁本身，本轮已发生一次并用 Edit 重放恢复，重放后由 M2/M3 重新验红）。
+  ⑤ 真机取证：不适用——纯测试锁零生产源改动；交付物一致性以重打包哈希链证明（见下）。
+  ⑥ 附带发现：AGENTS.md「注册 63 命令」为陈账，实测 61（已同步改 61；桥/Rust 总数 1:1 使该数字从此被锁钉住）；
+    R55 待复核④「7 条零调用 api.js 通道删否」不属本轮锁层（该锁在桥↔Rust，api.js 消费面待用户裁决维持）。
+  - 验证：vitest 800/800（58 文件，795+5）；lint 0 error / 8 warning（基线不变）；typecheck ✓；
+    format:check ✓；cargo 154 lib + 1 golden_audit ✓；安装包 01:00 重打
+    （PixYang_0.1.0_x64-setup.exe 4,105,306 B，pixyang.exe 16,236,032 B），哈希链：dist 引用
+    index-DBxhVE6f.js / index-D1t41p9t.css 与 R55 同哈希（零生产改动→确定性复现），二进制 latin1 扫描
+    各命中 1 次，R54 旧哈希 index-1UnbPTol.js / index-Czb4Wk9j.css 均 0 命中；本轮无 Cargo.toml/gen-schemas
+    LF 噪声。提交范围：tests/unit/lib/apiTauriContract.test.js、AGENTS.md、NIGHTLY_LOG.md。
+  待人工复核：① 未来 Rust 新增/改名命令或事件，红锁会强制同步桥包装与监听器（刻意设计，无豁免通道）；
+    ② R55 待复核④「7 条零调用 api.js 通道」仍待裁决，本轮锁不含该层。
