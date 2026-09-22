@@ -5,12 +5,15 @@
 //   四条路径逐位同值，回读非差异源；--read-pixels 仅作对照开关保留）。
 //   容差 TOL 依据（R59 取证）：执行器按 libvips 语义做逐阶段 u8 trunc 量化，shader 全程 float，
 //   系统性偏差实测 meanΔ 0.14~0.52 / maxΔ≤2（GPU 舍入 +1 与 trunc −1 对冲），故 max 2 / mean 0.6。
-//   已知真偏离（工具如实判红，勿调容差掩盖，见 NIGHTLY_LOG R59 待人工复核）：
-//   ① 01-full-combo（meanΔ≈66）：shader uHighlightsSlope 相乘后缺 clamp，c>1 时曲线 LUT
-//      texelFetch 索引越界（int(c*255+0.5)≤268）返回黑 → 单通道全黑；
+//   已知真偏离（工具如实判红，勿调容差掩盖，见 NIGHTLY_LOG R59/R60 待人工复核）：
+//   ① 01-full-combo（R59 时 meanΔ≈66）：shader uHighlightsSlope 相乘后缺 clamp，c>1 时曲线 LUT
+//      texelFetch 索引越界（int(c*255+0.5)≤268）返回黑 → 单通道全黑。——R60 已修（生产源码
+//      webglPreview.js 高光相乘后补 clamp），降至 meanΔ 1.39 / maxΔ 18；残差为多阶段叠加量化
+//      （R60 二分：basic-only 已 meanΔ 0.90），超出按单阶段标定的 mean 包络 0.6，TOL 口径待裁决；
 //   ② 03-tone（meanΔ≈16.6）：负阴影指数反转——执行器 gamma_byte(g)=x^(1/g) 实际施加 1/e（变暗），
-//      shader/previewUniforms 施加 e（变亮）。
-//   两处临时修复的因果变异验证（clamp + 指数 1/e）分别使 66.19→1.39 / 16.61→0.52，修复后预期 8/8 全绿。
+//      shader/previewUniforms 施加 e（变亮）。（仍待人工裁决）
+//   R59 头注「两处修复落地后预期 8/8 全绿」与 TOL{2,0.6} 矛盾，R60 实测勘正：修复①后 01 仍超
+//   mean 容差（1.39>0.6），8/8 需先裁决叠加量化残差的口径。
 // WebGL shader 输出 vs Rust 执行器 实机像素对拍（取证驱动脚本；纯取证工具，不进 CI）。
 // 前置：npx vite build（dist/index.html 缺失时本脚本自动补跑）。
 // 用法：node tests/webgl-parity/run.cjs [--keep] [--headed] [--read-pixels] [--force-srgb] [--case <name>]

@@ -140,7 +140,7 @@ void main() {
   if (uShadows.x > 0.0) {
     c = uShadows.y > 0.5 ? 1.0 - pow(1.0 - c, vec3(uShadows.x)) : pow(c, vec3(uShadows.x));
   }
-  if (uHighlightsSlope != 1.0) c *= uHighlightsSlope;
+  if (uHighlightsSlope != 1.0) c = clamp(c * uHighlightsSlope, 0.0, 1.0);
   if (uCurveLutOn > 0.5) {
     // texelFetch 显式最近邻取整（round 语义），与执行器 applyCurveLutsInPlace 的
     // data[byte] 同式；NEAREST+floor(u*256) 在上半值区间存在差一输入档的采样分叉

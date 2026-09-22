@@ -1173,3 +1173,47 @@
     未逐项归因（执行器 trunc vs float + render.rs round 混合语义），若追求 8/8 全绿需在修复轮一并
     收敛；TOL{max 2, mean 0.6} 为当前证据口径。④ 对拍是否在 8/8 后升级为 CI 门禁（当前为取证工具，
     examples 不进 cargo test）。⑤ 历史文档「JS 对拍 8/8 零偏差」补注旧口径事宜（R58 遗留，未动）。
+- 2026-09-23 06:00 R60 高光斜率 clamp 修复曲线 LUT 越界黑通道（R59 定案缺陷①落地；01 66.19→1.39，残差口径待裁决）：
+  ① 需求/裁决来源：R59 待人工复核①选项 A（用户 R60 任务书点名：自决范围内的纯技术缺陷，shader
+    高光斜率计算点补 clamp 一行；缺陷②（负阴影指数）绝不修、待裁决）。
+  ② 根因（R59 定案，本轮 HEAD 基线复现逐位同值）：shader `uHighlightsSlope` 相乘后无 clamp，c>1 进
+    曲线 LUT texelFetch，int(c*255+0.5)≤268 越界（256 宽纹理）返回黑 → 高亮饱和区单通道全黑。执行器
+    侧 highlights 走 affine 进 u8 trunc 天然饱和，JS 模型 simulateShaderPixel 在 LUT 索引处已有
+    clamp(x,0,1)——shader 是唯一未防护消费点。基线复跑 8 用例：6/8 绿、01 meanΔ 66.19（max 231）、
+    03-tone 16.61，与 R59 定版一致。
+  ③ 修法：src/lib/webglPreview.js 一行——`if (uHighlightsSlope != 1.0) c = clamp(c * uHighlightsSlope,
+    0.0, 1.0);`（相乘后立即回 [0,1]，与执行器逐阶段字节化语义一致，下游 HSL/分级/蒙版不再见 c>1）。
+    负阴影指数（缺陷②）未动。
+  ④ 回归锁 + 变异验证：锁 1 = tests/unit/lib/webglPreview.test.js 新增 shader 源码契约锁（必须含
+    clamp 形式、禁止无 clamp 的 `c *= uHighlightsSlope`，happy-dom 无 WebGL2 故与既有 texelFetch 锁
+    同取源码串口径）；锁 2 = webgl-parity 对拍。变异：临时还原无 clamp 相乘 → 锁 1 红（该文件 1 failed
+    /14 passed）+ 重建 dist 后 01-full-combo 66.1892/max[220,214,231] 如实红 → 回退 clamp → 01 复
+    1.3921/max[10,7,18]。
+  ⑤ 真机取证：webgl-parity 定版矩阵（encode=png + TOL{2,0.6}，无头 Edge 153，ANGLE Intel UHD
+    D3D11）：6/8 绿（02 0.2986、04 0.4795、05 0/0、06 0.0017、07 0.1446、08 0.0295，max≤1）+
+    2/8 红——01-full-combo **1.3921**/max[10,7,18]（修复前 66.19/max231，黑通道消除；R59 d6 解剖的
+    「rust 202/web 3」类黑斑消失）、03-tone 16.6105（缺陷②，按任务书未动）。残差二分取证（临时 dA-dF
+    诊断用例，取证完 cases.json 已 git checkout 还原）：dA basic-only meanΔ 0.8975/max4、dB+curves
+    0.8961/5、dC+grading 0.9081/5、dD+vignette(-35) 1.9187/15、dE 负暗角单独 0.0123/max1、dF 正暗角
+    单独 0.0126/max1 → 残差 = 多阶段叠加 trunc/round vs float 量化（R59 ③基线语义），单阶段标定的
+    mean 包络 0.6 不覆盖多阶段叠加；暗角两分支单独均干净、两端管线顺序一致（pipelineOrder ↔ shader
+    块序），非新缺陷。诊断帧留存 %TEMP%/pixyang_parity/（可整目录删除）。
+  ⑥ 附带发现/勘正：①R59 ④「两处修复落地后预期 8/8 全绿」与 TOL{2,0.6} 及其自身「残差 mean
+    0.5~1.4/max≤18 未归因」记载矛盾，R60 实测证伪（run.cjs 头注与 AGENTS.md 已同步勘正，R59 原文
+    不改写）；②AGENTS.md vitest 基线 806→807（本轮 +1 锁）；③UNATTENDED.md §4 仍写「795 例」（R59
+    前已陈旧、非本轮引入，未动）；④tauri 打包噪声（Cargo.toml/gen schemas 显示 M、diff 为空）本轮
+    未出现，工作树仅 5 个点名文件。
+  - 验证：vitest 807/807（58 文件）✓；lint 0 error/8 warning（既有基线）✓；typecheck 净 ✓；
+    format:check 净（含本轮 run.cjs 头注改动后复验）✓；cargo 154 lib + 1 golden_audit ✓（examples
+    不进 cargo test）；FreeGB 起点 281（≥4 满足）；安装包 PixYang_0.1.0_x64-setup.exe mtime 2026-09-23
+    05:57 / 4,104,913 字节（旧 01:43 / 4,107,781）；哈希链一手核对：release exe 内嵌 index-Dq6YwgLN.js
+    + index-D1t41p9t.css 与 dist/index.html 逐值一致（各 1 命中），旧 index-DBxhVE6f.js 0 命中。
+    提交范围：src/lib/webglPreview.js、tests/unit/lib/webglPreview.test.js、tests/webgl-parity/run.cjs、
+    AGENTS.md、NIGHTLY_LOG.md。
+  待人工复核：① 01-full-combo 残差口径（R60 新增裁决项）：修复①后 01=1.39/max18 仍超 TOL{2,0.6}，
+    已归因多阶段叠加量化（dA basic-only 已 0.90>0.6）。选项 A：TOL 按用例分档（单阶段维持 {2,0.6}，
+    full-combo 按证据放宽至包络上界如 {18,1.5}），代价是口径分叉、需防「调容差掩盖」质疑（故须用户
+    定案）；B：执行器量化语义 float 化/统一以收敛残差，代价大（动 libvips 锁定语义 + golden 重锁）；
+    C：维持现状（对拍如实红、理由在案）。推荐 A。② 缺陷②（负阴影指数反转，03-tone 16.61）维持 R59
+    待裁决状态，本轮未动（任务书明令）。③ 残差逐像素机理（尤其 dD 暗角叠加段 0.91→1.92 的放大路径）
+    未逐项解释，若走选项 B 需先补此取证。④ 对拍升级 CI 门禁事宜仍如 R59 待复核④（未动）。

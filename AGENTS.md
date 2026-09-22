@@ -136,15 +136,19 @@ tests/            vitest（node 环境 + per-file happy-dom pragma）
   encode 段强制 format:'png'（默认 jpeg q92 会把 Rust 参考帧变有损——R58 全部「超容差」的量级来源，
   R59 已定案为工具链缺陷）。examples 不被 cargo test 运行，门禁数字不受影响。
   R59 定案（R58「色彩管理」假设被排除：--headed/--force-color-profile=srgb/gl.readPixels 三条对照
-  与无头 2D 回读逐位同值，回读路径是纯直通）。真实差异三类，前两类为**生产缺陷待人工裁决**（修复
-  前对拍如实判红，勿调容差掩盖）：① 01-full-combo meanΔ≈66——shader `uHighlightsSlope` 相乘后缺
-  clamp，c>1 时曲线 LUT texelFetch 索引越界（int(c*255+0.5) 最大 268）返回黑，单通道全黑（因果变异
-  验证：加 clamp 后 66.19→1.39）；② 03-tone meanΔ≈16.6——负阴影指数反转，执行器 gamma_byte 按
+  与无头 2D 回读逐位同值，回读路径是纯直通）。真实差异三类（修复前对拍如实判红，勿调容差掩盖）：
+  ① 01-full-combo R59 时 meanΔ≈66——shader `uHighlightsSlope` 相乘后缺 clamp，c>1 时曲线 LUT
+  texelFetch 索引越界（int(c*255+0.5) 最大 268）返回黑，单通道全黑；R60 已修（webglPreview.js
+  高光相乘后补 clamp(c,0,1)，66.19→1.39 / max 231→18，黑通道消除；残差为多阶段叠加量化——
+  basic-only 子集已 meanΔ 0.90——超单阶段标定的 mean 包络 0.6，TOL 口径待人工裁决）；
+  ② 03-tone meanΔ≈16.6——负阴影指数反转，执行器 gamma_byte 按
   libvips 语义施加 1/e（变暗），shader/previewUniforms 施加 e（变亮）（因果变异：指数改 1/e 后
-  16.61→0.52）；③ 执行器逐阶段 u8 trunc 量化（libvips 锁定）vs shader 全程 float 的系统性偏差
-  meanΔ 0.14~0.52 / maxΔ≤2——属设计内，容差口径 TOL{maxDelta:2, meanDelta:0.6} 即据此定。
-  当前 6/8 绿（02/04/05/06/07/08，05-curves 逐字节 0），①②对应两用例如实红；两处修复落地后
-  预期 8/8。历史「JS 对拍 8/8 零偏差」是旧验证体系（非实机 GPU）口径，不可与本实机口径混用。
+  16.61→0.52；仍待人工裁决）；③ 执行器逐阶段 u8 trunc 量化（libvips 锁定）vs shader 全程 float 的
+  系统性偏差，单阶段实测 meanΔ 0.14~0.52 / maxΔ≤2——属设计内，容差口径 TOL{maxDelta:2, meanDelta:0.6}
+  即据此定（仅覆盖单阶段，不覆盖多阶段叠加）。
+  当前 6/8 绿（02/04/05/06/07/08，05-curves 逐字节 0），①残差与②对应两用例如实红（R59「修复后
+  预期 8/8」与 TOL{2,0.6} 矛盾，R60 实测勘正）。历史「JS 对拍 8/8 零偏差」是旧验证体系
+  （非实机 GPU）口径，不可与本实机口径混用。
   运行注意：vite preview 须 `--host 127.0.0.1`（默认只绑 [::1]，浏览器走 127.0.0.1 必落
   chrome-error://）；假桥需 Proxy 兜底全部通道（ImageViewer 挂载即调 api.getImageTags().then）；
   启动器 msedge.exe 秒退 0、真身按 CDP 端口定位清理；Browser.close 需限时护栏（无响应会挂死清理段，
@@ -152,7 +156,7 @@ tests/            vitest（node 环境 + per-file happy-dom pragma）
 
 ## 验证
 
-- 测试：`npm test`（vitest，58 个文件 / 806 例；含 R37 桥接全通道契约、R51/R52 主题↔CSS 对拍、R53 右栏让位契约、R54/R55 错误文案中文化、R56 Rust 注册表↔桥命令对拍 + 全仓 `${e.message}` 直插与裸 `x.error` 上屏扫描、R57 主题双事实源对拍（`:root`↔块↔`@theme inline`↔色卡）；像素 golden 门禁在 cargo 侧 `golden_audit`，Rust 单测 154 例）；覆盖率：`npm run test:coverage`，门槛配置在 `vitest.config.js`（statements/lines 75、branches 70、functions 50）。
+- 测试：`npm test`（vitest，58 个文件 / 807 例；含 R37 桥接全通道契约、R51/R52 主题↔CSS 对拍、R53 右栏让位契约、R54/R55 错误文案中文化、R56 Rust 注册表↔桥命令对拍 + 全仓 `${e.message}` 直插与裸 `x.error` 上屏扫描、R57 主题双事实源对拍（`:root`↔块↔`@theme inline`↔色卡）；像素 golden 门禁在 cargo 侧 `golden_audit`，Rust 单测 154 例）；覆盖率：`npm run test:coverage`，门槛配置在 `vitest.config.js`（statements/lines 75、branches 70、functions 50）。
 - Lint：`npm run lint`（ESLint flat config，`eslint.config.mjs`）；0 error 为准，warning 不阻塞。
 - 类型检查：`npm run typecheck`（tsc --noEmit，覆盖 src 下 TS/TSX）。
 - 格式检查：`npm run format:check`（Prettier 基线已于 R40 全仓落库，改动后的文件须保持 prettier 合规；历史 `*.md` 与 `src-tauri/gen/` 在 `.prettierignore` 豁免）。

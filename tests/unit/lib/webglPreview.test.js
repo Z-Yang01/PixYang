@@ -173,6 +173,21 @@ describe('renderWebGLPreview', () => {
     // NEAREST + texture() 的 floor(u*256) 在上半值区间存在差一输入档，禁止回退
     expect(src).not.toMatch(/texture\(\s*uCurveLut/);
   });
+
+  it('高光斜率相乘后 clamp 到 [0,1]，防 c>1 进曲线 LUT texelFetch 越界取黑（R60）', async () => {
+    const { canvas, gl } = makeCanvas();
+    globalThis.createImageBitmap = vi.fn().mockResolvedValue({ close: vi.fn() });
+    expect(await renderWebGLPreview(canvas, testImage, baseUniforms())).toBe(true);
+    const frag = gl.__calls.find(
+      (c) => c.prop === 'shaderSource' && String(c.args[1]).includes('uHighlightsSlope')
+    );
+    expect(frag).toBeTruthy();
+    const src = String(frag.args[1]);
+    expect(src).toContain(
+      'if (uHighlightsSlope != 1.0) c = clamp(c * uHighlightsSlope, 0.0, 1.0);'
+    );
+    expect(src).not.toContain('c *= uHighlightsSlope');
+  });
 });
 
 describe('上下文丢失与释放（审查批 8 P-1）', () => {
