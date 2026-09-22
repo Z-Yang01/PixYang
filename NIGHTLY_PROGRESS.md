@@ -1,22 +1,23 @@
-# NIGHTLY_PROGRESS — Rust/Tauri 结构推进
+# NIGHTLY_PROGRESS — Rust/Tauri 结构推进（已收官，迁移期历史文档）
 
-状态：**通道对齐 63/63 全通**（R28 收官时为 64/64；2026-09-22 R44 删除无生产者的
-orientation-backfill-done 事件链后为 63）。对齐口径自 R24 起以
-`docs/TAURI_PARITY.md` 为唯一权威（基准=api.js 暴露的 59 数据通道+4 事件；旧「58 通道」
-为手工清点口径，已废弃）。Electron 层已于 2026-09-21 R36 整体删除，逐轮记录见 NIGHTLY_LOG.md。
+状态：**迁移完成，通道对齐 64/64 全通**。Electron 层已于 2026-09-21 R36 整体删除，
+此后逐轮记录见 `NIGHTLY_LOG.md`；本文件只保留迁移期的模块/接缝对照表。
+对齐口径自 R24 起以 `docs/TAURI_PARITY.md` 为唯一权威（基准 = `src/lib/api.js`
+循环暴露的 **64 个通道 = 60 数据 + 4 事件**；旧「58 通道」「63 通道」为手工清点口径，已废弃——
+`getAlbumImages` 实际在 api.js 循环内，R44 删事件链后正确计数为 64 而非 63）。
 **下一步 = 人工 tauri 全功能点击级冒烟**（`cd src-tauri && cargo run`，重点：编辑保存后
 网格缩略图即时更新、烘焙/导出、拖拽导入）。
 
-分支：`auto/nightly/pixyang-rust-tauri-20260920-0114`（基线 optimize/architecture + wip 6d20c40）
-提交链：6d20c40 wip → 65e3ff7 R1 → 018752e R2 → b164a7c R3 → 09fde04 最终日志
+> 迁移期分支 `auto/nightly/pixyang-rust-tauri-20260920-0114` 与 R1-R3 提交链已合入
+> `optimize/architecture` 并失效，不再作为工作分支。
 
 ## 总体路线（渐进式，不做大爆炸迁移）
 
-1. **纯 Rust 内核先行**（编译秒级、测试快速闭环）：把 electron/database.js、shared/*.cjs 里
+1. **纯 Rust 内核先行**（编译秒级、测试快速闭环）：把历史 `electron/database.js`、`shared/*.cjs` 里
    可独立验证的纯算法逐个移植到 `src-tauri/src/`，测试向量对齐 JS 行为。
 2. **Tauri 壳后置**：内核稳定后再引入 tauri 依赖（首次编译重，单独占一轮），命令层薄封装内核模块。
 3. **前端桥**：`app.withGlobalTauri: true` + `src/lib/tauriBridge.js` 走 `window.__TAURI__` 全局，
-   不新增 npm 依赖；Electron 运行时保持原路径不受影响。
+   不新增 npm 依赖（迁移期为双运行时并存，Electron 走 `window.pixyang` 原路径）。
 
 ## 模块清单
 
@@ -58,7 +59,7 @@ orientation-backfill-done 事件链后为 63）。对齐口径自 R24 起以
   （getCurrentWebview().onDragDropEvent，兼容 {payload}/直出两种事件形态）+
   useDragImport 双事件源并存（Electron=DOM+webUtils.getPathForFile，
   Tauri=原生 enter/leave/drop 直接给绝对路径），队列/在途排队逻辑共用，零运行时分支。
-- 通道层无剩余缺口。**下一步 = 人工 tauri 全功能点击级冒烟**，通过后安排 Electron 删除轮。
+- 通道层无剩余缺口，Electron 删除轮已于 R36 完成。**当前待办 = 人工 tauri 全功能点击级冒烟。**
 
 ## 轮次记录（窗口外续作，2026-09-20 上午）
 

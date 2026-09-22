@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, fireEvent, cleanup, act } from '@testing-library/react';
+import { render, screen, fireEvent, cleanup, act, waitFor } from '@testing-library/react';
 import SettingsPage from '@/components/Settings/SettingsPage';
 import useGalleryStore from '@/store/galleryStore';
 
@@ -562,7 +562,8 @@ describe('SettingsPage（补充：存储/相机/维护/备份/重复图片等交
     window.pixyang.getSettings.mockResolvedValue({ ...baseSettings, theme: 'light' });
     renderPage();
     await screen.findByText('C:/PixData');
-    expect(document.documentElement.getAttribute('data-theme')).toBe('light');
+    // applyPreview 在 passive effect 里写 data-theme，全量并发下 commit 与 effect flush 有先后
+    await waitFor(() => expect(document.documentElement.getAttribute('data-theme')).toBe('light'));
   });
 
   it('选择保存路径：结果无 path 时回退所选目标目录', async () => {

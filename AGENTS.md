@@ -6,7 +6,7 @@
 
 PixYang 是一个本地桌面图片管理应用，技术栈：
 
-- 桌面框架：Tauri 2（Rust 后端在 `src-tauri/`，命令在 `src/lib.rs` 的 generate_handler! 注册，NSIS 打包）
+- 桌面框架：Tauri 2（Rust 后端在 `src-tauri/`，命令在 `src-tauri/src/lib.rs` 的 generate_handler! 注册，NSIS 打包）
 - 前端：React 18 + React Router v6 + zustand（`src/store/galleryStore.js` 集中筛选/勾选/网格/共享数据）（源码在 `src/`）
 - 构建：Vite 5（`vite.config.js`）
 - 数据库：rusqlite（WAL 模式，写操作即时持久化），连接/schema/迁移在 `src-tauri/src/db.rs` 与 `tags_albums.rs`，库文件与旧版共用 pixyang.db
@@ -17,7 +17,7 @@ PixYang 是一个本地桌面图片管理应用，技术栈：
 
 ```
 src-tauri/        Rust/Tauri 后端（唯一运行时桌面端）
-  src/lib.rs      模块声明 + run()（Builder + dialog/opener 插件，generate_handler! 注册 45+ 命令）
+  src/lib.rs      模块声明 + run()（Builder + dialog/opener 插件，generate_handler! 注册 63 命令）
   src/main.rs     桌面入口（release 隐控制台）
   src/naming.rs   唯一命名/配对主名（移植 electron/database.js 语义）
   src/image_group.rs 导入分组/日期围栏/安全文件名
@@ -34,16 +34,20 @@ src-tauri/        Rust/Tauri 后端（唯一运行时桌面端）
   src/scan.rs     目录扫描/导入收集
   src/exif_read.rs EXIF 读取（18 字段中文映射）
   src/interact.rs 对话框/openPath/backupDatabase（tauri-plugin-dialog/opener）
+  src/commands.rs tauri 命令薄封装层（磁盘 I/O + DTO 编排，内核算法在各专用模块）
+  src/error.rs    统一错误类型 AppError（命令错误契约）
   src/progress.rs 进度事件（rebuild-progress 等，Tauri Emitter）
   tauri.conf.json withGlobalTauri=true、frontendDist=../dist、assetProtocol（$CONFIG/pixyang scope）
-shared/
+shared/           11 个 .cjs；被前端以默认导入消费（19 处），仅由 vite build 的 rollup interop 提供 default
   editSchema.cjs  EditParams v1 zod schema（非破坏编辑参数唯一事实源，前后端同构）
   renderSpec.cjs  EditParams → RenderSpec 纯函数（渲染指令序列，预览/导出唯一消费格式）
-  pipelineOrder.cjs  渲染阶段固定顺序 + 能力矩阵（14 阶段全部支持）
+  pipelineOrder.cjs  渲染阶段固定顺序 + 能力矩阵（14 阶段全部支持，仅测试直接消费）
   builtinPresets.cjs  内置风格预设参数集
-  curves.cjs / colorGrading.cjs / hsl.cjs / lens.cjs / masks.cjs  各渲染阶段语义唯一实现（执行器 raw pass 与 WebGL2 shader 同公式）
+  maskGeometry.cjs  蒙版手柄/命中几何映射（MaskOverlay 与查看器共用）
+  curves.cjs / colorGrading.cjs / hsl.cjs / lens.cjs / masks.cjs / saturation.cjs  各渲染阶段语义唯一实现（执行器 raw pass 与 WebGL2 shader 同公式）
 error/
-  *.md            严重 bug 建档（Symptom/Root Cause/Fix/Prevention 格式）
+  README.md       历史归档说明：旧层（Electron/sharp/sql.js）引用 → 现行 Rust 落点对照表
+  *.md            严重 bug 建档（Symptom/Root Cause/Fix/Prevention 格式，时点事实不改写）
 src/
   App.jsx         组合根：路由、弹层状态、快捷键接线（批量操作在 useBatchActions）
   store/          zustand store（galleryStore：筛选/勾选/网格设置/图片页数据/共享数据）

@@ -607,4 +607,64 @@
   本轮零代码/零 Rust 改动，dist 与 R47 一致 → 安装包不重打（R47 的 12:01 包即当前可装版本）。
   提交仅 AGENTS.md + NIGHTLY_LOG.md；用户未提交的 themes.ts / index.css / release/ 原样未动。
   需人工复核：dev 通道修不修（选 ① 插件 ② 转 ESM ③ 维持现状）。
+- 2026-09-22 12:25 R49 冗余清理 + 文档对拍轮（全面测试）：
+  ① 冗余扫描（脚本全部放 %TEMP%，不入仓）：
+    · 文件级：src 下 0 个孤儿文件（对 src+tests+index.html 全量引用面反查）。
+    · JS 导出级：0 个「完全无引用」导出；3 个**过度导出**收敛为模块内常量
+      （galleryStore 的 SORT_KEYS / GRID_LIMITS / DEFAULT_GRID_SETTINGS，含测试在内全仓零 import）。
+      anyModalOpen 等其余导出经逐一核查确认在 App.jsx/ImageGrid.jsx 实际消费，保留。
+    · Rust 级：沿用 R43 的手动生产引用计数口径，无新增死项（仅 R43 已裁决保留的 Db::from_connection）。
+    · api.js 通道级：64 通道中 7 个零生产调用方（fileExists/getImage/getAlbumImages/getEdits/
+      getEditHistory/removeFromAlbum/getSetting）——每个都有在位的 Rust 命令 + 桥包装，属
+      「通道对齐」记录性能力面；单方面删 JS 侧会连带要求删 Rust 命令 → **登记为待裁决项**，
+      已在 docs/TAURI_PARITY.md 新增同名小节，本轮不删。
+      顺带确认 getPathForFile 是 64 通道里唯一无桥包装者（仅透传 window.pixyang）。
+    · CSS 级：index.css 246 个 class 选择器中 20 个源码零命中，逐一甄别后 **18 个为动态拼接误报**
+      （handle-${h} 裁剪八向、handle-${h.kind} 蒙版 center/rx/ry/rot/feather/p0/p1、
+      phase-${editPhase} 五态），真死规则仅 .pagination-total(899)、.editor-temp-overlay(2609)。
+      **未删**：index.css 载有用户未提交的主题调色 WIP，删这两条会把调色板改动卷进本轮提交 →
+      留待用户 WIP 落库后处理。
+  ② 测试稳定性：全量跑首轮出现 1 例偶发失败（SettingsPage.extra「已保存主题为浅色时回显浅色预览」
+    expected 'dark' to be 'light'）。定性=**既有 flake，非本轮引入、与用户 themes.ts WIP 无关**：
+    单文件跑 40/40 恒绿，连跑三轮全量 765/765 全绿（即 1/4 概率）。根因是 SettingsPage 的
+    applyPreview 写在 passive effect 里，而断言紧接 findByText 同步读 documentElement——全量并发
+    下 CPU 紧张时 React 的 passive effect flush 落后于 commit，读到的是上一次的 data-theme。
+    修法：该断言改 await waitFor（默认 1s 轮询），并在测试内注明 why。同文件其余 data-theme
+    断言跟在 fireEvent（act 内同步 flush effect）之后，无此风险，不改。
+  ③ 文档对拍（勘正事实错误，不改写历史结论）：
+    · README.md：整篇仍是 Electron 时代（技术栈表 Electron 32/sql.js/nativeImage/contextBridge、
+      安装节 npm run vite:dev 与 electron:dev 两条不存在的脚本、存储路径大小写错、
+      「未来扩展」里 6 项其实早已上线）→ 换为 Tauri 单后端实况，补数据模型全列
+      （raw_path/hidden/taken_at/hash/三档缩略图路径 + edits/edit_history/presets/settings）、
+      便携 data 优先的数据目录解析、非破坏编辑与 RAW 两节功能、门禁清单。
+    · docs/TAURI_PARITY.md：**通道数 63→64**（旧版把 getAlbumImages 记为「api.js 循环未暴露」，
+      实际早在 R11 就在循环内，R44 删事件链后正确计数是 64 不是 63）；删 preload.js/TAURI_SEAMS
+      两处已退役机制表述；selectDirectory/selectExportDirectory 两行改为「桥内直接消费
+      tauri-plugin-dialog JS API」（R43 已删对应 Rust 命令，旧文仍写 Rust 命令在位）；
+      各分节通道数与 64 对平（11+16+7+3+8+7+3+2+3+4）；验证基线 969/129 与
+      91.73/85.25/80.37 → 实测 765 例 / cargo 149 例 / 92.24 stmts、86.99 branch、82.25 funcs。
+    · NIGHTLY_PROGRESS.md：标注为迁移期历史文档并收官；同步 64/64；删失效分支与
+      R1-R3 提交链（已合入 optimize/architecture）；订正「Electron 运行时保持原路径不受影响」
+      与「通过后安排 Electron 删除轮」（R36 已删）两处。
+    · error/README.md（新建）：24 篇建档不改写，改为给出「退役层 → 现行落点」对照表
+      （electron/database.js→naming.rs+images_query.rs+tags_albums.rs、main.js→commands.rs、
+      preload→api.js+tauriBridge.js、thumbWorker→thumbs.rs、sharp/renderSpecToSharp→executor.rs+render.rs、
+      isManagedImagePath→interact.rs::is_managed_path、sql.js/better-sqlite3→rusqlite、
+      electron-builder→tauri:build），并点名两篇整篇随层退役的建档。
+    · AGENTS.md：generate_handler 命令数 45+ → 实测 63；目录结构补 commands.rs/error.rs 两条
+      未登记模块与 maskGeometry.cjs、saturation.cjs 两个未登记 shared 文件；
+      shared/ 标注「11 个 .cjs / 19 处前端默认导入」；error/ 挂上 README。
+    · 勘正本轮 R48 自记错误：「shared/*.cjs 13 个模块、13 处默认导入」实为 **11 个模块文件、
+      19 处 import（覆盖 10 个模块，pipelineOrder.cjs 仅测试直接消费）**；「14 测试」计数正确。
+- 验证：vitest 765/765 ✅（56 文件，另三轮全量 765/765 复现基线）；cargo 149 例 + golden_audit ✅
+  （本轮零 Rust 改动，跑作口径复验）；lint 0 error/8 warning（A-5 定性基线不变）；typecheck ✅；
+  format:check ✅（新改测试文件已 prettier 落齐）；vite build ✅。安装包按本轮 HEAD 重打
+  （12:46，4,112,277 B；上版 12:01 为 4,113,546 B）——galleryStore 仅去 `export` 关键字，
+  运行时零差异，仍按「可装版本跟 HEAD」规程重打。
+  提交范围：README.md、AGENTS.md、NIGHTLY_LOG.md、docs/TAURI_PARITY.md、NIGHTLY_PROGRESS.md、
+  error/README.md、src/store/galleryStore.js、tests/unit/components/Settings/SettingsPage.extra.test.jsx；
+  用户未提交的 themes.ts / index.css / release/ 原样未动、未暂存。
+  需人工复核：① dev 通道修不修（R48 遗留 ①②③）；② 7 个零调用通道删否（TAURI_PARITY 新节）；
+  ③ R43 的 6 个仅单测触达桥包装（旧②，未变）；④ index.css 两条真死规则待用户 WIP 落库后删；
+  ⑤ release/（98MB）删否；⑥ tauri 点击级冒烟。
 

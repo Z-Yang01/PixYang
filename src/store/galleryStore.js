@@ -2,19 +2,19 @@ import { create } from 'zustand';
 import api from '../lib/api';
 import { buildImageQuery, createLoadSequencer } from '../lib/gallery';
 
-export const SORT_KEYS = ['import_date', 'created_at', 'filename', 'size', 'rating'];
+const SORT_KEYS = ['import_date', 'created_at', 'filename', 'size', 'rating'];
 
 // 任一模态开着（勾选门禁/快捷键门禁共用）
 export const anyModalOpen = (s) => Object.keys(s.modals).length > 0;
 
-export const GRID_LIMITS = {
+const GRID_LIMITS = {
   rows: [1, 10],
   columns: [2, 10],
   gap: [0, 48],
   padding: [0, 64],
 };
 
-export const DEFAULT_GRID_SETTINGS = { rows: 3, columns: 5, gap: 12, padding: 16 };
+const DEFAULT_GRID_SETTINGS = { rows: 3, columns: 5, gap: 12, padding: 16 };
 
 const clamp = (v, [min, max]) => Math.max(min, Math.min(max, v));
 

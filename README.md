@@ -1,6 +1,6 @@
 # 🖼️ PixYang — 本地图片管理浏览器
 
-PixYang 是一款基于 **Electron + React + SQLite** 的本地桌面图片管理应用。它可以帮助你在电脑上集中管理、浏览、筛选和组织图片。
+PixYang 是一款基于 **Tauri 2（Rust）+ React + SQLite** 的本地桌面图片管理应用。它可以帮助你在电脑上集中管理、浏览、筛选和组织图片。
 
 ---
 
@@ -8,10 +8,15 @@ PixYang 是一款基于 **Electron + React + SQLite** 的本地桌面图片管�
 
 ### 📥 导入图片
 - 选择一个文件夹，PixYang 会**递归扫描**其中的所有图片文件
-- 支持格式：JPG、PNG、GIF、WebP、BMP、SVG、TIFF
+- 支持格式：JPG、PNG、GIF、WebP、BMP、SVG、TIFF；尼康原图 `.nef` 作为 RAW 跟随导入
 - 导入时图片会被**复制**到 PixYang 的统一管理目录（按日期自动整理）
 - 原始文件不受任何影响
-- 自动生成缩略图，浏览更流畅
+- 导入即生成**双档缩略图**（大/小），并在 Rust 侧读取 EXIF，浏览更流畅
+
+### 🌅 RAW（尼康 NEF）
+- 同目录同主名的 `jpg` + `nef` 视为一对：JPG 作为可见记录，NEF 绑定为 `raw_path`
+- 无 JPG 配对的 NEF 以隐藏记录导入，收藏/删除/改名时与其配对文件保持一致
+- 编辑烘焙时可将 NEF 的 EXIF 回接到输出 JPEG（保持拍摄信息不丢失）
 
 ### 🖼️ 浏览图片
 - **网格视图**以缩略图方式展示所有图片
@@ -69,10 +74,20 @@ PixYang 是一款基于 **Electron + React + SQLite** 的本地桌面图片管�
 - 添加/移除标签
 - 编辑备注文字
 
+### 🎨 非破坏编辑
+- 全屏查看器内编辑面板：裁剪/旋转/水平翻转、亮度对比度饱和、曲线、HSL 分色、色阶分级、暗角、镜头校正、蒙版（径向/线性/颜色）
+- 参数以 EditParams v1 存储（`shared/editSchema.cjs` 为唯一事实源），原图不被改写，可随时还原
+- WebGL2 预览与 Rust 执行器同公式，导出/烘焙走 Rust 渲染管线；支持烘焙进文件、单独导出、编辑历史与预设
+
+### 🗂️ 批量操作
+- 网格多选（Ctrl+点击、框选、跨页全选）后批量收藏、加/删标签、改日期、改评分、删除
+- 批量导出到指定目录（文件名冲突自动避让，NEF 主名跟随）
+
 ### 🔒 数据安全
 - 所有数据存储在本地，无需网络
 - 图片统一存放在应用数据目录下，方便备份
-- 数据库使用 SQLite（WAL 模式），读写性能优秀
+- 数据库使用 SQLite（rusqlite，WAL 模式），读写即时持久化
+- 设置页可一键备份数据库（`VACUUM INTO` 生成一致性副本）
 
 ---
 
@@ -82,40 +97,43 @@ PixYang 采用关系型数据库设计，兼顾当前功能与未来扩展：
 
 ```
 images (图片核心表)
-├── id              主键
-├── filename        显示名称（可修改）
-├── filepath        本地管理路径（实际存储位置）
-├── original_path   原始导入路径（溯源用）
-├── import_date     导入日期（YYYY-MM-DD，默认今天，可修改）
-├── size            文件大小（字节）
-├── width/height    图片尺寸
-├── format          文件格式（扩展名）
-├── thumbnail       缩略图（base64）
-├── rating          评分（0-5）
-├── favorite        是否收藏（0/1）
-├── notes           备注文本
-├── created_at      创建时间
-└── updated_at      更新时间
+├── id                 主键
+├── filename           显示名称（可修改）
+├── filepath           本地管理路径（实际存储位置，UNIQUE）
+├── original_path      原始导入路径（溯源/去重用）
+├── raw_path           配对 NEF 的管理路径
+├── original_raw_path  配对 NEF 的原始路径
+├── hidden             隐藏记录（无 JPG 配对的 NEF = 1，图库查询过滤）
+├── orientation/rotation/flip_h/flip_v  方向与几何状态
+├── import_date        导入日期（YYYY-MM-DD，默认今天，可修改）
+├── taken_at           拍摄时间（EXIF DateTimeOriginal，精确到分钟，空则回退 import_date）
+├── size               文件大小（字节）
+├── width/height       图片尺寸
+├── format             文件格式（扩展名）
+├── thumbnail          缩略图（base64，历史字段）
+├── thumbnail_path     大档缩略图磁盘路径
+├── thumbnail_small_path  小档缩略图磁盘路径
+├── thumbnail_edit_path   编辑预览缩略图路径
+├── rating             评分（0-5）
+├── favorite           是否收藏（0/1）
+├── notes              备注文本
+├── hash               文件哈希（重复检测）
+├── flag               标记位
+├── created_at         创建时间
+└── updated_at         更新时间
 
-tags (标签表)
-├── id              主键
-├── name            标签名（唯一）
-└── color           颜色值
-
-image_tags (图片-标签关联表，多对多)
-├── image_id  → images.id
-└── tag_id    → tags.id
-
-albums (相册表)
-├── id              主键
-├── name            相册名称
-├── description     描述
-└── created_at      创建时间
-
-album_images (相册-图片关联表，多对多)
-├── album_id  → albums.id
-└── image_id  → images.id
+tags (标签表)          name 唯一，color 默认 #6366f1
+image_tags             图片-标签多对多联合主键，ON DELETE CASCADE
+albums (相册表)        name/description/cover_image_id/created_at
+album_images           相册-图片多对多，含 sort_order，ON DELETE CASCADE
+edits (非破坏编辑参数) image_id 主键 + version + params_json
+edit_history           编辑步骤流水（image_id + step → command_json）
+presets                用户预设（name 唯一 + params_json）
+settings               key/value 全局设置（主题、网格、排序、相机目录等）
 ```
+
+建表与逐列回迁、索引都在 Rust 侧 `src-tauri/src/db.rs` 的 `ensure_business_schema` 自举完成，
+升级旧库不需要手工迁移。
 
 ### 为何采用这种设计？
 
@@ -124,6 +142,7 @@ album_images (相册-图片关联表，多对多)
 - **日期作为独立字段**：`import_date` 单独存储为 `TEXT` 类型（YYYY-MM-DD 格式），便于日期范围查询、按日期分组统计、时间线视图等扩展功能。
 - **保留原始路径**：`original_path` 记录了图片的来源，方便用户追溯，也不影响本地管理路径的独立性。
 - **文件名与路径分离**：`filename`（显示用）和 `filepath`（存储用）独立管理，支持重命名而不影响其他引用。
+- **编辑参数与像素分离**：`edits.params_json` 保存可重放的渲染指令，原图恒定不变；烘焙是显式动作，历史写入 `edit_history`。
 
 ---
 
@@ -131,7 +150,8 @@ album_images (相册-图片关联表，多对多)
 
 ### 环境要求
 - Node.js 18+
-- npm 或 yarn
+- Rust 工具链（Tauri 2 后端；Windows 需 MSVC 生成工具）
+- npm
 
 ### 安装与运行
 
@@ -139,37 +159,48 @@ album_images (相册-图片关联表，多对多)
 # 1. 安装依赖
 npm install
 
-# 2. 开发模式启动（Vite + Electron 并行）
-npm run dev
-
-# 3. 仅启动前端（浏览器预览，部分功能不可用）
-npm run vite:dev
-
-# 4. 仅启动 Electron
-npm run electron:dev
+# 2. 开发：起 Vite 前端（另开终端跑桌面窗口）
+npm run tauri:dev
 ```
+
+> ⚠️ `npm run dev` 只提供裸前端，且当前**不可用**：`shared/*.cjs` 依赖打包期的 CommonJS
+> interop 才具备 default 导出，dev server 原样伺服 `.cjs` 会让模块图报错、页面空白。
+> 前端自检请用 `npx vite build` + `npx vite preview`（详见 AGENTS.md「验证」）。
 
 ### 生产构建
 
 ```bash
-npm run build
+# 前端产物 + Rust 编译 + NSIS 安装包
+npm run tauri:build
+# 产物：src-tauri/target/release/bundle/nsis/
+```
+
+### 校验门禁
+
+```bash
+npm run lint        # 0 error 为准
+npm run typecheck   # tsc --noEmit
+npm test            # vitest
+npm run test:coverage
+cd src-tauri && cargo test   # Rust 单测 + 像素 golden 门禁
 ```
 
 ---
 
 ## 📂 文件存储说明
 
-导入的图片存储在以下位置：
+数据目录按以下顺序解析：
 
-- **Windows**: `%APPDATA%/PixYang/images/`
-- **macOS**: `~/Library/Application Support/PixYang/images/`
-- **Linux**: `~/.config/PixYang/images/`
+1. **便携模式**：可执行文件同级的 `data/`（可写即用）
+2. **回退位置**：Windows `%APPDATA%/pixyang/`，Linux/macOS `~/.config/pixyang/`
 
-图片按日期组织为三层目录结构：`images/年/月/日/文件名.jpg`
+库内文件组织：
 
-例如：`images/2026/06/15/IMG_001.jpg`
+- 图片：`<数据目录>/images/年/月/日/文件名.jpg`（例如 `images/2026/06/15/IMG_001.jpg`）
+- 缩略图：`<数据目录>/thumbs/`，编辑预览派生文件同侧管理
+- 数据库：`<数据目录>/pixyang.db`（WAL 模式的 `-wal`/`-shm` 随之）
 
-数据库文件 `pixyang.db` 位于 `userData` 根目录。
+首次运行会把旧位置（历史 `userData`）的库与缩略图**快照复制**进便携目录，非破坏、原位置仍可读。
 
 ---
 
@@ -177,34 +208,39 @@ npm run build
 
 | 层级 | 技术 |
 |------|------|
-| 桌面框架 | Electron 32 |
-| 前端 | React 18 + React Router v6 |
+| 桌面框架 | Tauri 2（Rust 后端 + WebView） |
+| 前端 | React 18 + React Router v6 + zustand |
+| 样式 | Tailwind v4 + shadcn/ui + CSS 变量主题 |
 | 构建工具 | Vite 5 |
-| 数据库 | SQLite (sql.js, WASM 版本) |
-| 图片处理 | Electron nativeImage |
-| IPC 通信 | contextBridge + ipcRenderer/ipcMain |
+| 数据库 | SQLite（rusqlite，WAL 模式） |
+| 图片处理 | Rust：image-rs + kamadak-exif（缩略图/EXIF/渲染执行器） |
+| 编辑预览 | WebGL2 shader（与 Rust 执行器同公式） |
+| 通信 | `invoke` 通道，集中在 `src/lib/tauriBridge.js` |
+| 打包 | NSIS 安装包（`@tauri-apps/cli build --bundles nsis`） |
+| 测试 | vitest（node + happy-dom）+ cargo test + 像素 golden 门禁 |
 
 ---
 
 ## 📝 开发笔记
 
-- **sql.js** 是 SQLite 的 WebAssembly 编译版本，无需任何原生编译工具（不需要 Visual Studio、Python、node-gyp），跨平台兼容性极好。
-- 缩略图使用 Electron 的 `nativeImage` API 在 Node.js 端生成，不占用渲染进程资源。
-- 所有数据库操作通过 Electron IPC 进行，渲染进程无法直接访问文件系统，保证安全性。
-- 数据库文件位于 Electron 的 `userData` 目录，不同操作系统自动适配。
+- WebView 不能直接访问文件系统：前端统一经 `src/lib/api.js` → `tauriBridge.js` 调用 Rust 命令，
+  单测通过 `window.pixyang` 注入替身。
+- 渲染内核分层：纯算法（曲线/分级/HSL/蒙版/镜头）在 `src-tauri/src/`，由 JS 对拍向量和
+  像素 golden 双重锁定；tauri 命令层只做薄封装（磁盘 I/O、DTO 编排）。
+- 编辑参数 `EditParams v1` 的唯一事实源是 `shared/editSchema.cjs`，前后端同构消费。
+- 数据库列/表的变更走 Rust 侧 `ensure_business_schema` 自举 + 逐列回迁，不做手工迁移脚本。
+- 像素级改动须重跑 `cargo test --test golden_audit`（重锁基线用 `GOLDEN_RELOCK=1`）。
 
 ---
 
 ## 🔮 未来可扩展方向
 
-基于当前数据模型，以下功能可以轻松实现：
+已落地的候选（曾经的「未来」项）：批量操作、导出/分享、去重检测、EXIF 信息、图片编辑、
+按日期分组的时间线浏览、损坏记录扫描、数据库备份、相机文件夹同步、多套全局主题。
 
-- **批量操作**：批量添加标签、批量修改日期、批量删除
-- **时间线视图**：按日期分布的时间线浏览模式
+仍然开放的：
+
 - **标签层级**：父子标签、标签分组
 - **智能标签**：基于 AI 的自动标签推荐
-- **导出/分享**：将图片连同标签信息导出
 - **云同步**：将 images 目录和数据库同步到云盘
-- **去重检测**：基于文件哈希的重复图片识别
-- **EXIF 信息**：读取并展示照片的 EXIF 元数据（相机型号、拍摄参数、GPS 等）
-- **图片编辑**：裁剪、旋转、滤镜等基本编辑功能
+- **人脸/内容检索**：在既有 `hash`、`taken_at` 列之上扩展
