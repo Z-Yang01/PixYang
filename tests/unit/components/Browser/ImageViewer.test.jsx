@@ -200,6 +200,15 @@ describe('ImageViewer', () => {
     expect(container.querySelectorAll('.viewer-nav').length).toBe(0);
   });
 
+  it('编辑底图 <img> 带 crossOrigin：WebGL 纹理源（asset:// 跨域）不得污染画布', async () => {
+    mockEditBridge();
+    render(<ImageViewer {...baseProps()} />);
+    fireEvent.click(screen.getByTitle(/编辑模式/));
+    await screen.findByText('参数已保存');
+    const img = document.querySelector('.editor-transform-layer img.viewer-image');
+    expect(img.getAttribute('crossorigin')).toBe('anonymous');
+  });
+
   it('编辑模式：保存参数只写 edits JSON（不渲染像素、不刷新列表），保存后 dirty 复位', async () => {
     mockEditBridge();
     const onImageUpdated = vi.fn();
@@ -1013,6 +1022,35 @@ describe('历史面板（本轮新功能验证）', () => {
       expect(img().getAttribute('src')).toContain('thumbs'); // 未解码不切换
       preloads[0].onload();
       await vi.waitFor(() => expect(img().getAttribute('src')).toContain('pics'));
+    } finally {
+      window.Image = RealImage;
+    }
+  });
+
+  it('预解码图与原图带同一 CORS 模式：asset 协议下纹理不得污染 WebGL 画布，且不二次下载', async () => {
+    const preloads = [];
+    class FakeImage {
+      set src(v) {
+        this._src = v;
+        preloads.push(this);
+      }
+      get src() {
+        return this._src;
+      }
+    }
+    const RealImage = window.Image;
+    window.Image = FakeImage;
+    window.pixyang.toFileUrl.mockImplementation((p) =>
+      Promise.resolve(p ? `file:///${p.replace(/\\/g, '/')}` : null)
+    );
+    const { container } = render(<ImageViewer {...baseProps()} />);
+    try {
+      const img = () => container.querySelector('.viewer-image');
+      await vi.waitFor(() => expect(preloads.length).toBeGreaterThan(0));
+      expect(preloads[0].crossOrigin).toBe('anonymous');
+      preloads[0].onload();
+      await vi.waitFor(() => expect(img().getAttribute('src')).toContain('pics'));
+      expect(img().getAttribute('crossorigin')).toBe('anonymous');
     } finally {
       window.Image = RealImage;
     }

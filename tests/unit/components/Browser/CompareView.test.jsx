@@ -17,6 +17,8 @@ describe('CompareView（Before/After 分屏）', () => {
     expect(container.querySelector('[data-testid="after-layer"]')).toBeInTheDocument();
     const beforeImg = container.querySelector('.editor-split-before img');
     expect(beforeImg?.getAttribute('src')).toBe('file:///before.jpg');
+    // Before 与 After 底图同 URL：CORS 模式必须一致，否则浏览器按 (URL, CORS) 分键二次下载
+    expect(beforeImg?.getAttribute('crossorigin')).toBe('anonymous');
     expect(screen.getByText('Before')).toBeInTheDocument();
     expect(screen.getByText('After')).toBeInTheDocument();
   });

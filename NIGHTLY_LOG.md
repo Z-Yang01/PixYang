@@ -668,3 +668,51 @@
   ③ R43 的 6 个仅单测触达桥包装（旧②，未变）；④ index.css 两条真死规则待用户 WIP 落库后删；
   ⑤ release/（98MB）删否；⑥ tauri 点击级冒烟。
 
+- 2026-09-22 19:09 R50 实机点击级冒烟打通 + 编辑预览 WebGL 纹理污染 P1 根治：
+  ① 取证「tauri:dev 是否可用」（R48 遗留①的前半）：**可用，且与坏掉的 `npm run dev` 无关**。
+    `tauri.conf.json` 的 `build` 只有 `frontendDist: "../dist"`（无 devUrl / beforeDevCommand），
+    dev 窗口由 cargo 产物 + 磁盘上的 `../dist` 提供，页面源 `http://127.0.0.1:1430/`；
+    实测 `Page.reload` 后加载的正是刚 `npx vite build` 出的 `index-CtFVxvPU.js`
+    → 改前端须先 build 再重载窗口，改 Rust 才需重编。dev 通道待决口径只剩 vite dev 本身。
+  ② R26 起挂账的「tauri 全功能点击级冒烟（人工）」**已可自动化**：以
+    `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS="--remote-debugging-port=9222"` 启动 `target/debug/pixyang.exe`，
+    读 `http://127.0.0.1:9222/json` 取 page 目标的 `webSocketDebuggerUrl`，用 Node 原生 WebSocket
+    直发 CDP（`Runtime.enable` + `Runtime.evaluate(returnByValue)` + 回收 `Runtime.consoleAPICalled`）
+    驱动真实点击/滑杆并读回 WebGL 画布像素，**零新增依赖**；脚本放 %TEMP% 不入仓，口径写入 AGENTS.md。
+  ③ 冒烟首轮即抓到实机 P1（建档 error/webgl-texture-crossorigin-silent-fallback.md）：
+    编辑预览的 WebGL2 通道在真机上**从未生效过**。底图 `<img>` 的 src 走 asset 协议
+    （`http://asset.localhost/...`）而页面源是 `http://127.0.0.1:1430`，跨域且未带 CORS 模式，
+    `gl.texImage2D` 抛 `SecurityError: The ImageBitmap contains cross-origin data, and may not be loaded`
+    → `webglFailed` 闩锁 → 画布卸载、静默降级 CSS/SVG 回退（能看、不报错，故长期无人察觉）。
+    happy-dom 无 WebGL2（`isWebGL2Available()` 恒 false），单测 / typecheck / build / 覆盖率全测不到。
+    取证：同一 asset URL 四态对比 —— `fetch()` 200、`no-cors` 得 opaque、默认 `<img>` 可 drawImage
+    但 getImageData 报 tainted、`crossOrigin='anonymous'` 的 img 正常 load
+    → **协议本来就发 CORS，是前端没索取**。
+  ④ 修法（四处必须同 CORS 键，否则缓存按 (URL, CORS 模式) 分键 → 原图二次下载）：
+    `ImageViewer.jsx` 编辑层底图 `<img>`（纹理源）+ 查看层原图 + 离屏预解码 `new Image()`、
+    `CompareView.jsx` Before 层，统一 `crossOrigin="anonymous"`。
+  ⑤ 真机复验（CDP 读回画布像素均值，非截图目测）：`img.viewer-image` 的 `crossorigin=anonymous`
+    落地、原图 5568×3128 正常解码；进编辑后 `.editor-transform-layer canvas` 2048×1151 常驻
+    （不再被 webglFailed 卸载）；曝光滑杆 −2 / 0 / +2 → 画布像素均值 **24 / 93 / 183**（shader 真在改像素）；
+    分屏与并排对比下 Before 层 5568×3128 正常显示；全程 broken img=0、WebGL 报错 0 条；
+    退出走「放弃编辑」→ editCancel，收尾后查看器/编辑面板均关闭、20 张卡片在位。
+  ⑥ 安全边界：调试实例 `images_root` 是真实图库 `E:\PicX`，本轮全程只读——仅点开卡片、进编辑、
+    拖滑杆、切对比，未触发删除/改名/日期移动/导入/相机同步/烘焙/导出任一项；沙盒库
+    `src-tauri/target/debug/data/pixyang.db` 事先备份到 `%TEMP%\r50-sandbox-db-backup.db`。
+  ⑦ 回归锁（变异验证：删掉属性即 `expected null to be 'anonymous'` 失败，两处均已实证会咬）：
+    ImageViewer.test.jsx 新增「编辑底图带 crossOrigin」「预解码图与原图同 CORS 模式」两例，
+    CompareView.test.jsx 在既有用例内加断言（Before 层与 After 底图同 CORS 键）。
+  ⑧ 文档：AGENTS.md 验证节新增三条约定——tauri:dev 加载磁盘 `../dist`（改前端须先 vite build）、
+    WebView2 CDP 实机冒烟接法、WebGL 纹理源 `<img>` 必须带 crossOrigin（含同键要求）。
+- 验证：vitest 767/767 ✅（56 文件；765→767 为本轮新增 2 例）；lint 0 error / 8 warning（基线不变）；
+  typecheck ✅；format:check ✅；`npx vite build` ✅；本轮零 Rust 逻辑改动（仅 release 重编）。
+  安装包 19:07 重打（4,115,279 B；上版 12:46 为 4,112,277 B），按二进制内嵌资源指纹核对
+  `index-CtFVxvPU.js` / `index-F9q-7w93.css` 与 `dist/index.html` 一致；变异复原后重 build 得同一
+  hash 序列 → 安装包与提交 HEAD 等价。
+  提交范围：src/components/Browser/{ImageViewer,CompareView}.jsx、tests/unit/components/Browser/
+  {ImageViewer,CompareView}.test.jsx、AGENTS.md、error/webgl-texture-crossorigin-silent-fallback.md、
+  NIGHTLY_LOG.md；用户未提交的 themes.ts / index.css / release/ 仍原样未动、未暂存。
+  待人工复核：R49 的 ①②③④⑤ 原样沿用（①dev 通道口径已收窄），⑥「tauri 点击级冒烟」本轮收口；
+  新增 ⑦——既然 WebGL 预览此前从未在真机跑过，历史轮次所有「WebGL2 shader 与 Rust 执行器同公式」
+  的对拍实际只覆盖到 JS/CSS 侧，是否需要一轮 shader 输出 vs golden 的实机像素对拍（现已有自动化通道）。
+

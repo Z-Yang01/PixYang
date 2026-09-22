@@ -129,6 +129,18 @@ tests/            vitest（node 环境 + per-file happy-dom pragma）
   全仓已无任何 Node `require()` 消费 shared/，Electron 主进程/worker 是它当初唯一非打包消费者，R36 已删）。
 - 真机浏览器 QA 口径：`npx vite build` 出包后用 `npx vite preview` 起静态服务，假数据经 `window.pixyang`
   注入（`api.js` 的 `px()` 每次调用现读桥，故可先注入再挂载）；不要指望 dev server。
+- `npm run tauri:dev` 可用且与 `npm run dev` 无关：`tauri.conf.json` 的 `build` 只有 `frontendDist: "../dist"`
+  （无 `devUrl`/`beforeDevCommand`），dev 窗口加载磁盘上的 `../dist`。因此改前端后必须先 `npx vite build`
+  再重载窗口（`Page.reload` 或 Ctrl+R），否则验的是旧包；Rust 改动才需要 cargo 重编。
+- 实机点击级冒烟（R50 起可用）：以 `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS="--remote-debugging-port=9222"`
+  启动 `target/debug/pixyang.exe`，读 `http://127.0.0.1:9222/json` 取 page 目标的 `webSocketDebuggerUrl`，
+  用 Node 原生 WebSocket 发 CDP `Runtime.enable` + `Runtime.evaluate`（`returnByValue`）直接驱动真实 DOM
+  查询/点击，并回收 `Runtime.consoleAPICalled` 日志。单测/构建看不到的只在 WebView 生效的问题（纹理污染、
+  协议 CORS、原生层降级）靠这条通道取证。
+- WebGL2 编辑预览的底图 `<img>` 必须带 `crossOrigin="anonymous"`：图片经 `asset://`（`http://asset.localhost`）
+  加载属跨域，无 CORS 模式时 `texImage2D` 抛 SecurityError → `webglFailed` 静默降级到 CSS/SVG 回退，
+  而 happy-dom 无 WebGL2，单测永远绿。同一 URL 的预解码 `new Image()`、CompareView 的 Before 层须与
+  纹理源同 CORS 模式，否则浏览器按 (URL, CORS) 分键二次下载原图。
 - 修改 Rust/前端后跑 `npm run tauri:dev` 手动验证实机窗口（release 验证走 NSIS 安装包）。
 - 修改 opencode 配置后需重启 opencode 生效。
 

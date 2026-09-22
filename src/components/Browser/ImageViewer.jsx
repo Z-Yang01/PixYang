@@ -1074,6 +1074,8 @@ export default function ImageViewer({
   useEffect(() => {
     if (!fullSrc) return undefined;
     const pre = new Image();
+    // 与查看/编辑层 <img> 同 crossOrigin：缓存按 (URL, CORS 模式) 分键，不一致会二次下载原图
+    pre.crossOrigin = 'anonymous';
     pre.onload = () => setFullLoaded(true);
     pre.onerror = () => setFullLoaded(true);
     pre.src = fullSrc;
@@ -1351,6 +1353,9 @@ export default function ImageViewer({
           ref={editImgRef}
           className="viewer-image"
           src={editBaseSrc || displaySrc}
+          // 底图是 WebGL 纹理源：asset:// 属跨域，缺 crossOrigin 则 texImage2D 抛 SecurityError，
+          // 预览会静默降级到 CSS/SVG 回退（单测环境无 WebGL2，只有真机暴露）
+          crossOrigin="anonymous"
           alt={image.filename?.replace(/\.\w+$/, '') || image.filename}
           draggable={false}
           style={{
@@ -1679,6 +1684,7 @@ export default function ImageViewer({
             key={image.id}
             className="viewer-image"
             src={displaySrc}
+            crossOrigin="anonymous"
             alt={image.filename?.replace(/\.\w+$/, '') || image.filename}
             draggable={false}
             style={{

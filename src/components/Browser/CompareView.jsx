@@ -31,7 +31,15 @@ export default function CompareView({ mode = 'split', beforeSrc, afterNode, init
     };
   }, [mode]);
 
-  const beforeImg = <img className="viewer-image" src={beforeSrc} alt="Before" draggable={false} />;
+  const beforeImg = (
+    <img
+      className="viewer-image"
+      src={beforeSrc}
+      crossOrigin="anonymous"
+      alt="Before"
+      draggable={false}
+    />
+  );
 
   if (mode === 'side') {
     return (
