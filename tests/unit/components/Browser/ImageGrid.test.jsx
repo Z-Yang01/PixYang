@@ -122,6 +122,34 @@ describe('ImageGrid', () => {
     expect(container.querySelector('.image-card[data-id="1"]')).toBeInTheDocument();
   });
 
+  // 用户实测：非日期排序（评分/大小）下反复切换 → 只剩日期头堆叠、卡片不见。
+  // 根因链=游程分组让同日期产生多个表头 → React key 重复 → 调和丢弃中间卡片。
+  it('回归：非日期排序下同日期交错图片全部渲染，每个日期仅一个表头', async () => {
+    const dates = ['2026-04-18', '2026-05-15', '2026-04-05'];
+    const images = Array.from({ length: 15 }, (_, i) =>
+      makeImage({
+        id: i + 1,
+        filename: `r${i}.jpg`,
+        taken_at: `${dates[i % dates.length]} 10:0${i % 10}`,
+      })
+    );
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    seedStore({ images, totalImages: 15 });
+    const { container } = render(<ImageGrid />);
+    await screen.findByText('r0');
+
+    expect(container.querySelectorAll('.image-card')).toHaveLength(15);
+    const headers = [...container.querySelectorAll('.grid-date-header .grid-date-text')].map(
+      (el) => el.textContent
+    );
+    expect(headers).toEqual(dates);
+    headers.forEach((h) => {
+      expect(headers.filter((x) => x === h)).toHaveLength(1);
+    });
+    expect(errSpy.mock.calls.flat().join('')).not.toMatch(/same key/);
+    errSpy.mockRestore();
+  });
+
   it('选中的卡片带 selected 样式类', async () => {
     seedStore({ images: [makeImage()], totalImages: 1, selectedIds: new Set([1]) });
     const { container } = render(<ImageGrid />);

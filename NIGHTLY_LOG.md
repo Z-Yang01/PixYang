@@ -567,3 +567,25 @@
   （②6 个兼容包装删否、tauri 点击级冒烟、R27 缩略图即时更新确认）。门禁基线：
   vitest 764/764、typecheck ✅、lint 0 error/8 warning（已定性为有意设计）、
   format:check ✅、cargo 149 + golden ✅、coverage 92.24/86.95/82.23。
+- 2026-09-22 12:05 R47 排序切换「图片不出现」复核 + 组件级回归锁（用户带截图复报同一症状）：
+  取证=时间线比对，用户所装安装包 mtime 00:33:45，早于两个修复提交（417850f R32 分组头 key
+  唯一化 00:35、915f44c 同日期聚合分组 01:52），截图里「同一日期重复成多个表头 + 卡片全缺」正是
+  R32 记录的旧根因链（游程分组 → 同日期多表头 → React key `h-日期` 重复 → 调和丢弃中间卡片）。
+  HEAD 代码不可能产生该截图（聚合后每日期恰一个表头、key 天然唯一）。
+  真机验证（生产构建 + 注入 window.pixyang 933 张假库，16 个日期、评分/大小/名称交错）：
+  ①24 次无延迟列切换、②48 次 160ms 延迟列切换、③56 次 200ms 延迟同列升降序切换，
+  每步断言 .image-card 恒 15、零尺寸卡 0、重复表头 0、img 加载失败 0；静置后落地顺序与最终
+  (sortBy,sortOrder) 一致（评分降序首屏 rating=5、名称默认升序 id 递增）→ 竞态未造成陈旧页。
+  顺带排除 store 侧疑虑：sequencer 令旧响应在 isCurrent 判假时直接 return，不会 bump
+  imagesLocalRev，故「A 落地抬世代号 → 在途 B 被误弃」不成立；抬世代只发生在真实本地写。
+  新增回归锁 1 例（ImageGrid.test.jsx）：交错日期 15 图断言卡片数=15、表头恰为 3 个唯一日期、
+  无 same-key console.error；临时回退聚合分组后该例与 gallery.test.js 的合并例双双变红，已复原。
+  附带发现（未修，仅记录）：`npm run dev` 起不来——editParams.js/tauriBridge.js 以
+  `import editSchema from '../../shared/editSchema.cjs'` 默认导入 CJS，vite dev 的 ?import 形态
+  不提供 default（rollup 的 commonjs 插件才提供），首屏模块图报错、#root 全空且无控制台异常。
+  生产走 frontendDist=../dist 不受影响；QA 因此改用 vite build + vite preview 双入口临时配置完成，
+  临时目录 qa-tmp/、dist-qa/、public/tile-qa.svg 已全部删除。
+- 验证：vitest 765/765 ✅（56 文件）；lint 0 error/8 warning（A-5 已定性基线）；typecheck ✅；
+  format:check ✅；NSIS 重打 12:01（4,113,546 B，内嵌当前 dist）。本轮未跑 cargo（零 Rust 改动）。
+  注意：安装包按工作树原样打包，含用户未提交的 themes.ts / index.css 主题微调；该两文件与
+  release/ 本轮均未提交、未改动。

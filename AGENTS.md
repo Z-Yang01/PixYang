@@ -111,7 +111,7 @@ tests/            vitest（node 环境 + per-file happy-dom pragma）
 
 ## 验证
 
-- 测试：`npm test`（vitest，56 个文件 / 767 例；像素 golden 门禁在 cargo 侧 `golden_audit`，Rust 单测 146 例）；覆盖率：`npm run test:coverage`，门槛配置在 `vitest.config.js`（statements/lines 75、branches 70、functions 50）。
+- 测试：`npm test`（vitest，56 个文件 / 765 例；像素 golden 门禁在 cargo 侧 `golden_audit`，Rust 单测 149 例）；覆盖率：`npm run test:coverage`，门槛配置在 `vitest.config.js`（statements/lines 75、branches 70、functions 50）。
 - Lint：`npm run lint`（ESLint flat config，`eslint.config.mjs`）；0 error 为准，warning 不阻塞。
 - 类型检查：`npm run typecheck`（tsc --noEmit，覆盖 src 下 TS/TSX）。
 - 格式检查：`npm run format:check`（Prettier 基线已于 R40 全仓落库，改动后的文件须保持 prettier 合规；历史 `*.md` 与 `src-tauri/gen/` 在 `.prettierignore` 豁免）。
