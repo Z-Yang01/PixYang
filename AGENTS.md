@@ -35,7 +35,8 @@ src-tauri/        Rust/Tauri 后端（唯一运行时桌面端）
   src/exif_read.rs EXIF 读取（18 字段中文映射）
   src/interact.rs 对话框/openPath/backupDatabase（tauri-plugin-dialog/opener）
   src/commands.rs tauri 命令薄封装层（磁盘 I/O + DTO 编排，内核算法在各专用模块）
-  src/error.rs    统一错误类型 PixError（命令错误契约；渲染为「中文前缀: 引擎英文原文」）
+  src/err_cn.rs   错误文案中文化唯一出口（text/line：中文前缀链 + 24 条有序规则 + （错误码 N）；上屏只出中文）
+  src/error.rs    统一错误类型 PixError（命令错误契约；Display 刻意保留「中文前缀: 引擎英文原文」供日志取证）
   src/progress.rs 进度事件（rebuild-progress 等，Tauri Emitter）
   tauri.conf.json withGlobalTauri=true、frontendDist=../dist、assetProtocol（$CONFIG/pixyang scope）
 shared/           11 个 .cjs；被前端以默认导入消费（19 处），仅由 vite build 的 rollup interop 提供 default
@@ -82,6 +83,14 @@ tests/            vitest（node 环境 + per-file happy-dom pragma）
 - 新功能需在 `src-tauri/src/` 实现并注册 tauri 命令，再在 `tauriBridge.js`（或 `tauriBridgeMedia.js`，事件/URL 类）加同名包装，`api.js` 即按包装存在性自动接缝；无包装的方法只透传 `window.pixyang`。
 - 数据库列/表的修改放在 Rust 侧兼容迁移中完成（生产唯一自举在 `db.rs` 的 `ensure_business_schema`：建表/逐列回迁/索引，参考其内注释的 legacy 语义）。
 - 中文 UI 文案，保持现有术语（图库、导入、相册、标签、收藏等）。
+- **错误文案在 Rust 侧直出中文**：命令层不得把 `e.to_string()` / 引擎原文直接拼进上屏句子，一律经
+  `src-tauri/src/err_cn.rs`（`err_cn::text(&e)` 取 Display、`err_cn::line(raw)` 做映射），io 类会补 `（错误码 N）`；
+  `PixError::Display` 保持英文原文，只供 `eprintln!`/日志取证。前端 `src/lib/errorText.js` 是其镜像实现，
+  仅兜 JS/WebView 侧错误（WebGL SecurityError、`TypeError`、`Failed to fetch`、`net::ERR_*`），且带 CJK 优先守卫——
+  已是中文的正文原样透传，不会二次覆写。新增/修改映射须同步改两张表，并同步 `shared/errorCorpus.json`
+  （双端唯一事实源：Rust `include_str!` 与 vitest `readFileSync` 逐条对拍，规则顺序也须一致）。
+  组件层不得把 `result.error` / `tag.error` 这类裸错误值直接送进 `toast.error` / `setError` / `setMessage` / `showToast`，
+  须经 `friendlyError()`（`tests/unit/lib/errorText.test.js` 会全仓扫描）。
 
 ## UI 与样式（shadcn/ui + Tailwind v4）
 
@@ -122,13 +131,15 @@ tests/            vitest（node 环境 + per-file happy-dom pragma）
 
 ## 验证
 
-- 测试：`npm test`（vitest，58 个文件 / 794 例；含 R37 桥接全通道契约、R51/R52 主题↔CSS 对拍、R53 右栏让位契约、R54 错误文案中文化 + 全仓 `${e.message}` 直插扫描；像素 golden 门禁在 cargo 侧 `golden_audit`，Rust 单测 149 例）；覆盖率：`npm run test:coverage`，门槛配置在 `vitest.config.js`（statements/lines 75、branches 70、functions 50）。
+- 测试：`npm test`（vitest，58 个文件 / 795 例；含 R37 桥接全通道契约、R51/R52 主题↔CSS 对拍、R53 右栏让位契约、R54/R55 错误文案中文化 + 全仓 `${e.message}` 直插与裸 `x.error` 上屏扫描；像素 golden 门禁在 cargo 侧 `golden_audit`，Rust 单测 154 例）；覆盖率：`npm run test:coverage`，门槛配置在 `vitest.config.js`（statements/lines 75、branches 70、functions 50）。
 - Lint：`npm run lint`（ESLint flat config，`eslint.config.mjs`）；0 error 为准，warning 不阻塞。
 - 类型检查：`npm run typecheck`（tsc --noEmit，覆盖 src 下 TS/TSX）。
 - 格式检查：`npm run format:check`（Prettier 基线已于 R40 全仓落库，改动后的文件须保持 prettier 合规；历史 `*.md` 与 `src-tauri/gen/` 在 `.prettierignore` 豁免）。
 - CI：GitHub Actions（`.github/workflows/ci.yml`），push/PR 时在 Windows + Ubuntu 跑 lint/typecheck/test。
 - better-sqlite3 原生二进制双 ABI 与 electron-builder 打包已随 Electron 层删除；安装包走 `npm run tauri:build`（vite build + `@tauri-apps/cli build --bundles nsis`，产物 `src-tauri/target/release/bundle/nsis/`）。
-- 前端编译验证：`npx vite build`。
+- 前端编译验证：`npx vite build`。注意 CSS 产物受 `.gitignore` 影响：Tailwind v4 的自动内容扫描遵循忽略规则，
+  `release/`（旧 Electron 打包产物，466MB）一旦不被忽略，其第三方 JS 与 `LICENSES.chromium.html` 会被当作 class 源，
+  多产出约 13 kB 死 utility（实测 96.75 kB → 110.12 kB）。勿删该忽略项。
 - **`npm run dev`（vite dev）当前不可用**：`shared/*.cjs` 被前端以默认导入消费，而 vite dev 原样直出
   `.cjs`（不做 CJS→ESM 转换，Electron 时代靠 vite build 的 rollup commonjs interop），首屏模块图报错、
   `#root` 空且控制台无异常。生产走 `frontendDist=../dist` 不受影响，故长期未暴露。修法二选一（待人工裁决）：

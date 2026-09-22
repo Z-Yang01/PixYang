@@ -5,6 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Search, Trash2, Tag } from 'lucide-react';
 import ConfirmDialog from '../Layout/ConfirmDialog';
 import { isEnterSubmit } from '@/lib/shortcuts';
+import { friendlyError } from '@/lib/errorText';
 import api from '@/lib/api';
 
 const TAG_COLORS = [
@@ -39,7 +40,7 @@ export default function TagManager({ onSelectTag, onRefresh }) {
     const tag = await api.createTag(newName.trim(), newColor);
     // 失败（重名/DB 异常）从静默变为可见：输入框保留原文供改名重试（审查批 8 Q-09）
     if (tag?.error) {
-      toast.error(tag.error);
+      toast.error(friendlyError(tag.error));
       return;
     }
     if (tag) {
@@ -57,7 +58,7 @@ export default function TagManager({ onSelectTag, onRefresh }) {
     if (!id || !api.isBridgeAvailable()) return;
     const result = await api.deleteTag(id);
     if (result?.error) {
-      toast.error(result.error);
+      toast.error(friendlyError(result.error));
       return;
     }
     await loadTags();

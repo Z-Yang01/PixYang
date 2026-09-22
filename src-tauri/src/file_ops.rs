@@ -4,6 +4,7 @@
 // thumbnail_path/thumbnail_small_path/width/height（Electron 版由渲染进程传 base64，仅 thumbnail 列）。
 
 use crate::db::{delete_image_record, PixError};
+use crate::err_cn;
 use crate::image_group;
 use crate::images_query::ImageRow;
 use crate::naming;
@@ -462,7 +463,7 @@ pub fn rename_image(conn: &Connection, id: i64, new_filename: &str) -> Result<Va
         Ok(()) => Ok(
             json!({ "success": true, "newFilename": new_filename, "newPath": new_path.to_string_lossy() }),
         ),
-        Err(e) => Ok(json!({ "error": format!("重命名失败: {}", e) })),
+        Err(e) => Ok(json!({ "error": format!("重命名失败：{}", err_cn::text(&e)) })),
     }
 }
 

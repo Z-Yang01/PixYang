@@ -7,3 +7,9 @@ Thumbs.db
 .zcode/
 
 coverage/
+
+# 旧 Electron 打包产物（R36 起不再产出，仅留盘待人工处置，勿删勿提交）
+# 本行同时是 Tailwind v4 自动内容扫描的排除源：注释掉后 `vite build` 的 CSS 从
+# index-D1t41p9t.css 96.75 kB 涨回 index-Czb4Wk9j.css 110.12 kB——release/win-unpacked 里的
+# 第三方 JS 与 LICENSES.chromium.html 被当作 class 源，多产出 13.37 kB 死 utility。勿删本行。
+release/

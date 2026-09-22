@@ -1,69 +1,49 @@
 import { describe, it, expect, vi } from 'vitest';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { errRaw, errText, friendlyError, rawErrorText } from '@/lib/errorText';
+import { errRaw, errText, errorLine, friendlyError, rawErrorText } from '@/lib/errorText';
 
-// 样本取自真实引擎输出：Rust 的 PixError/io::Error/ImageError、JS 内建 TypeError、WebView 的 WebGL 报错。
-// 左列=原文，右列=应上屏的中文（引擎自带中文前缀保留，英文正文一律换译）。
-const CORPUS = [
-  [
-    '文件操作失败: Os { code: 5, kind: PermissionDenied, message: "Access is denied" }',
-    '文件操作失败：文件被占用或权限不足',
-  ],
-  [
-    '文件操作失败: Os { code: 32, kind: WouldBlock, message: "sharing violation" }',
-    '文件操作失败：文件被占用或权限不足',
-  ],
-  [
-    '导出失败: The process cannot access the file because it is being used by another process. (os error 32)',
-    '导出失败：文件被占用或权限不足',
-  ],
-  [
-    '文件操作失败: Os { code: 2, kind: NotFound, message: "No such file or directory" }',
-    '文件操作失败：文件或路径不存在',
-  ],
-  [
-    '读取编辑产物失败: No such file or directory (os error 2)',
-    '读取编辑产物失败：文件或路径不存在',
-  ],
-  [
-    '文件操作失败: Os { code: 36, kind: InvalidFilename, message: "file name too long" }',
-    '文件操作失败：路径过长',
-  ],
-  [
-    '文件操作失败: There is not enough space on the disk. (os error 112)',
-    '文件操作失败：磁盘空间不足',
-  ],
-  ['数据库错误: database is locked', '数据库错误：数据库正被其他程序占用'],
-  ['数据库错误: no such table: edits', '数据库错误：数据库表缺失'],
-  ['数据库错误: no such column: images.edit_version', '数据库错误：数据库字段缺失'],
-  ['批量添加标签失败: UNIQUE constraint failed: tag.id', '批量添加标签失败：记录已存在'],
-  ['数据库错误: FOREIGN KEY constraint failed', '数据库错误：关联记录不存在'],
-  ['渲染失败: Image error: could not autodetect image format', '渲染失败：图片无法解码'],
-  ['相机同步失败: The image format could not be parsed', '相机同步失败：图片无法解码'],
-  ['Cannot read properties of undefined (reading "params")', '内部数据不完整'],
-  ['Failed to fetch', '本地文件读取失败'],
-  ['someBrandNewEngineFailure code=42', '操作未成功'],
-];
+// 语料与 Rust 侧共用：src-tauri/src/err_cn.rs 的 共享语料逐条对拍 用例读同一份 JSON，
+// 任一侧改规则而另一侧未同步即红。左列=引擎原文，右列=应上屏中文。
+const CORPUS = JSON.parse(
+  readFileSync(new URL('../../../shared/errorCorpus.json', import.meta.url), 'utf8')
+);
 
-describe('errorText：引擎英文原文 → 中文上屏', () => {
-  it('逐规则映射：命中即给对应中文', () => {
+describe('errorText：引擎英文原文 → 中文上屏（与 Rust err_cn 共用语料）', () => {
+  it('共享语料逐条对拍', () => {
+    expect(CORPUS.length).toBeGreaterThanOrEqual(20);
     for (const [raw, expected] of CORPUS) {
       expect(friendlyError(raw), raw).toBe(expected);
     }
   });
 
-  it('上屏文案一律不含 ASCII 字母（中英混排缺陷类锁）', () => {
-    for (const [raw] of CORPUS) {
-      expect(friendlyError(raw)).not.toMatch(/[A-Za-z]/);
-      expect(errText('保存失败', raw)).not.toMatch(/[A-Za-z]/);
-      expect(errText('保存失败', new Error(raw))).not.toMatch(/[A-Za-z]/);
+  it('凡发生过翻译，上屏文案即不含 ASCII 字母（中英混排缺陷类锁）', () => {
+    let swept = 0;
+    for (const [raw, expected] of CORPUS) {
+      if (expected === raw) continue; // 原样透传的中文文案保留 NEF/EXIF 等术语，不参与本项
+      swept += 1;
+      expect(friendlyError(raw), raw).not.toMatch(/[A-Za-z]/);
+      expect(errText('保存失败', raw), raw).not.toMatch(/[A-Za-z]/);
+      expect(errText('保存失败', new Error(raw)), raw).not.toMatch(/[A-Za-z]/);
     }
+    expect(swept).toBeGreaterThan(15);
+  });
+
+  it('Rust 已中文化的文案二次透传不变（幂等，不会二次加工）', () => {
+    const fromRust = friendlyError('文件操作失败: Os { code: 5, kind: PermissionDenied }');
+    expect(fromRust).toBe('文件操作失败：文件被占用或权限不足（错误码 5）');
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    expect(friendlyError(fromRust)).toBe(fromRust);
+    expect(errorLine(fromRust)).toBe(fromRust);
+    warn.mockRestore();
   });
 
   it('errText 用前端前缀取代引擎前缀，不产生双重前缀', () => {
     expect(errText('保存失败', '文件操作失败: Os { code: 5, kind: PermissionDenied }')).toBe(
-      '保存失败：文件被占用或权限不足'
+      '保存失败：文件被占用或权限不足（错误码 5）'
+    );
+    expect(errText('删除失败', '文件操作失败: 建目录失败: Os { code: 2, kind: NotFound }')).toBe(
+      '删除失败：文件或路径不存在（错误码 2）'
     );
   });
 
@@ -75,10 +55,13 @@ describe('errorText：引擎英文原文 → 中文上屏', () => {
     warn.mockRestore();
   });
 
-  it('改写过的原文降级到 console.warn（取证链不断）', () => {
+  it('改写过的原文降级到 console.warn，未收录的原文另有取证日志（双端不断链）', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     friendlyError('导出失败: os error 5');
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('os error 5'));
+    warn.mockClear();
+    expect(friendlyError('someBrandNewEngineFailure code=42')).toBe('操作未成功');
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('someBrandNewEngineFailure code=42'));
     warn.mockRestore();
   });
 
@@ -96,6 +79,7 @@ describe('errorText：引擎英文原文 → 中文上屏', () => {
     expect(errText('导出失败', 'IoError for E:\\PicX\\a.jpg: permission denied')).toBe(
       '导出失败：文件被占用或权限不足'
     );
+    expect(friendlyError('IoError for E:\\PicX\\a.nef')).toBe('操作未成功');
   });
 
   it('errRaw 保留英文全文（供 title 悬浮）', () => {
@@ -106,7 +90,7 @@ describe('errorText：引擎英文原文 → 中文上屏', () => {
 });
 
 describe('errorText：调用面对拍', () => {
-  it('组件与 hooks 层不再把异常原文直接插进中文句子', () => {
+  it('组件与 hooks 层不再把异常原文直接插进中文句子或直接上屏', () => {
     const roots = ['components', 'hooks'].map((d) =>
       fileURLToPath(new URL(`../../../src/${d}`, import.meta.url))
     );
@@ -123,6 +107,11 @@ describe('errorText：调用面对拍', () => {
       /\$\{\s*e\??\.message\s*\}|\$\{\s*e\?\.message \|\| e\s*\}/.test(readFileSync(f, 'utf8'))
     );
     expect(offenders).toEqual([]);
+    // API 返回的 {error} 必须经 friendlyError 才能上屏（toast / setState / return 三条路）
+    const raw =
+      /(?:toast\.error|setError|setMessage|showToast)\(\s*[A-Za-z_$][\w$]*\??\.error\s*\)/;
+    const leaks = files.filter((f) => raw.test(readFileSync(f, 'utf8')));
+    expect(leaks).toEqual([]);
     expect(files.length).toBeGreaterThan(30);
   });
 });

@@ -1,4 +1,5 @@
 use crate::db::PixError;
+use crate::err_cn;
 use crate::image_group;
 use crate::images_query::ImageRow;
 use crate::naming;
@@ -79,8 +80,8 @@ fn value_to_sql(v: &Value) -> Option<SqlValue> {
 
 fn err_message(e: &PixError) -> String {
     match e {
-        PixError::Db(e) => e.to_string(),
-        PixError::Io(msg) => msg.clone(),
+        PixError::Db(e) => err_cn::text(e),
+        PixError::Io(msg) => err_cn::line(msg),
     }
 }
 
@@ -334,7 +335,7 @@ pub fn update_image(
         // 日期移动已把文件落到新路径：UPDATE 失败必须把文件逆序移回，让记录与磁盘一起停在原地
         rollback_moves(&moved_files);
         eprintln!("[日期] 更新失败: {e}");
-        return Ok(json!({ "error": format!("更新失败：{e}") }));
+        return Ok(json!({ "error": format!("更新失败：{}", err_cn::text(&e)) }));
     }
     if date_moved {
         row_to_json(conn, id)
@@ -398,7 +399,7 @@ pub fn update_image_db(
     if let Err(e) = conn.execute(&sql, params_from_iter(params_sql)) {
         rollback_moves(&moved_files);
         eprintln!("[日期] 更新失败: {e}");
-        return Ok(json!({ "error": format!("更新失败：{e}") }));
+        return Ok(json!({ "error": format!("更新失败：{}", err_cn::text(&e)) }));
     }
     if date_moved {
         row_to_json(&conn, id)

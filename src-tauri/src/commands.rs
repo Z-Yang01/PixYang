@@ -3,6 +3,7 @@
 
 use crate::db::{self, AppPaths, Db};
 use crate::edit_session;
+use crate::err_cn;
 use crate::executor;
 use crate::file_ops;
 use crate::image_group::{self, ImportFile, PairGroup};
@@ -155,11 +156,15 @@ mod tests {
     fn 批量操作失败映射为错误返回值而非reject() {
         let ok = ok_or_error_value::<i64, String>("批量添加标签失败", Ok(3)).unwrap();
         assert_eq!(ok, serde_json::json!(3));
-        let err = ok_or_error_value::<i64, String>("批量添加标签失败", Err("boom".into())).unwrap();
-        assert_eq!(err["error"], "批量添加标签失败: boom");
+        let err = ok_or_error_value::<i64, String>(
+            "批量添加标签失败",
+            Err("no such column: images.tag_id".into()),
+        )
+        .unwrap();
+        assert_eq!(err["error"], "批量添加标签失败：数据库字段缺失");
         let del =
             ok_or_error_value::<Vec<i64>, String>("批量删除失败", Err("db断开".into())).unwrap();
-        assert_eq!(del["error"], "批量删除失败: db断开");
+        assert_eq!(del["error"], "批量删除失败：db断开");
         let rows = ok_or_error_value::<Vec<i64>, String>("批量删除失败", Ok(vec![1, 2])).unwrap();
         assert_eq!(rows, serde_json::json!([1, 2]));
     }
@@ -169,8 +174,8 @@ mod tests {
 
 #[tauri::command]
 pub fn get_setting(db: State<'_, Db>, key: String) -> Result<Option<String>, String> {
-    let conn = db.open_read().map_err(|e| e.to_string())?;
-    db::get_setting_raw(&conn, &key).map_err(|e| e.to_string())
+    let conn = db.open_read().map_err(|e| err_cn::text(&e))?;
+    db::get_setting_raw(&conn, &key).map_err(|e| err_cn::text(&e))
 }
 
 #[tauri::command]
@@ -181,13 +186,13 @@ pub fn set_setting(db: State<'_, Db>, key: String, value: String) -> Result<Valu
     }
     db.set_setting(&key, &value)
         .map(|_| Value::Null)
-        .map_err(|e| e.to_string())
+        .map_err(|e| err_cn::text(&e))
 }
 
 #[tauri::command]
 pub fn get_settings(db: State<'_, Db>) -> Result<Value, String> {
-    let conn = db.open_read().map_err(|e| e.to_string())?;
-    let map = db::all_settings_map(&conn).map_err(|e| e.to_string())?;
+    let conn = db.open_read().map_err(|e| err_cn::text(&e))?;
+    let map = db::all_settings_map(&conn).map_err(|e| err_cn::text(&e))?;
     Ok(Value::Object(
         map.into_iter()
             .map(|(k, v)| (k, Value::String(v)))
@@ -199,8 +204,8 @@ pub fn get_settings(db: State<'_, Db>) -> Result<Value, String> {
 
 #[tauri::command]
 pub fn get_tags(db: State<'_, Db>) -> Result<Vec<tags_albums::TagRow>, String> {
-    let conn = db.open_read().map_err(|e| e.to_string())?;
-    tags_albums::get_tags(&conn).map_err(|e| e.to_string())
+    let conn = db.open_read().map_err(|e| err_cn::text(&e))?;
+    tags_albums::get_tags(&conn).map_err(|e| err_cn::text(&e))
 }
 
 #[tauri::command]
@@ -208,8 +213,8 @@ pub fn get_image_tags(
     db: State<'_, Db>,
     image_id: i64,
 ) -> Result<Vec<tags_albums::TagLite>, String> {
-    let conn = db.open_read().map_err(|e| e.to_string())?;
-    tags_albums::get_image_tags(&conn, image_id).map_err(|e| e.to_string())
+    let conn = db.open_read().map_err(|e| err_cn::text(&e))?;
+    tags_albums::get_image_tags(&conn, image_id).map_err(|e| err_cn::text(&e))
 }
 
 #[tauri::command]
@@ -217,14 +222,14 @@ pub fn get_batch_image_tags(
     db: State<'_, Db>,
     image_ids: Vec<i64>,
 ) -> Result<std::collections::HashMap<i64, Vec<tags_albums::TagLite>>, String> {
-    let conn = db.open_read().map_err(|e| e.to_string())?;
-    tags_albums::get_batch_image_tags(&conn, &image_ids).map_err(|e| e.to_string())
+    let conn = db.open_read().map_err(|e| err_cn::text(&e))?;
+    tags_albums::get_batch_image_tags(&conn, &image_ids).map_err(|e| err_cn::text(&e))
 }
 
 #[tauri::command]
 pub fn get_albums(db: State<'_, Db>) -> Result<Vec<tags_albums::AlbumRow>, String> {
-    let conn = db.open_read().map_err(|e| e.to_string())?;
-    tags_albums::get_albums(&conn).map_err(|e| e.to_string())
+    let conn = db.open_read().map_err(|e| err_cn::text(&e))?;
+    tags_albums::get_albums(&conn).map_err(|e| err_cn::text(&e))
 }
 
 // ── 标签/相册写通道（迁移接缝 4a） ──
@@ -236,8 +241,8 @@ fn ok_or_error_value<T: Serialize, E: std::fmt::Display>(
     result: Result<T, E>,
 ) -> Result<Value, String> {
     match result {
-        Ok(v) => serde_json::to_value(v).map_err(|e| e.to_string()),
-        Err(e) => Ok(json!({ "error": format!("{label}: {e}") })),
+        Ok(v) => serde_json::to_value(v).map_err(|e| err_cn::text(&e)),
+        Err(e) => Ok(json!({ "error": format!("{label}：{}", err_cn::text(&e)) })),
     }
 }
 
@@ -247,9 +252,9 @@ fn create_tag_result(
     color: &str,
 ) -> Result<Value, String> {
     match tags_albums::create_tag(conn, name, color) {
-        Ok(Some(t)) => serde_json::to_value(t).map_err(|e| e.to_string()),
+        Ok(Some(t)) => serde_json::to_value(t).map_err(|e| err_cn::text(&e)),
         Ok(None) => Ok(json!({ "error": "创建标签失败：名称重复或无效" })),
-        Err(e) => Ok(json!({ "error": format!("创建标签失败: {e}") })),
+        Err(e) => Ok(json!({ "error": format!("创建标签失败：{}", err_cn::text(&e)) })),
     }
 }
 
@@ -259,9 +264,9 @@ fn create_album_result(
     description: &str,
 ) -> Result<Value, String> {
     match tags_albums::create_album(conn, name, description) {
-        Ok(Some(a)) => serde_json::to_value(a).map_err(|e| e.to_string()),
+        Ok(Some(a)) => serde_json::to_value(a).map_err(|e| err_cn::text(&e)),
         Ok(None) => Ok(json!({ "error": "创建相册失败：名称无效" })),
-        Err(e) => Ok(json!({ "error": format!("创建相册失败: {e}") })),
+        Err(e) => Ok(json!({ "error": format!("创建相册失败：{}", err_cn::text(&e)) })),
     }
 }
 
@@ -274,19 +279,19 @@ pub fn create_tag(db: State<'_, Db>, name: String, color: String) -> Result<Valu
 #[tauri::command]
 pub fn delete_tag(db: State<'_, Db>, id: i64) -> Result<(), String> {
     let conn = db.write_lock();
-    tags_albums::delete_tag(&conn, id).map_err(|e| e.to_string())
+    tags_albums::delete_tag(&conn, id).map_err(|e| err_cn::text(&e))
 }
 
 #[tauri::command]
 pub fn add_tag_to_image(db: State<'_, Db>, image_id: i64, tag_id: i64) -> Result<bool, String> {
     let conn = db.write_lock();
-    tags_albums::add_tag_to_image(&conn, image_id, tag_id).map_err(|e| e.to_string())
+    tags_albums::add_tag_to_image(&conn, image_id, tag_id).map_err(|e| err_cn::text(&e))
 }
 
 #[tauri::command]
 pub fn remove_tag_from_image(db: State<'_, Db>, image_id: i64, tag_id: i64) -> Result<(), String> {
     let conn = db.write_lock();
-    tags_albums::remove_tag_from_image(&conn, image_id, tag_id).map_err(|e| e.to_string())
+    tags_albums::remove_tag_from_image(&conn, image_id, tag_id).map_err(|e| err_cn::text(&e))
 }
 
 #[tauri::command]
@@ -315,25 +320,25 @@ pub fn rename_album(
     new_name: String,
 ) -> Result<serde_json::Value, String> {
     let conn = db.write_lock();
-    tags_albums::rename_album(&conn, id, &new_name).map_err(|e| e.to_string())
+    tags_albums::rename_album(&conn, id, &new_name).map_err(|e| err_cn::text(&e))
 }
 
 #[tauri::command]
 pub fn delete_album(db: State<'_, Db>, id: i64) -> Result<(), String> {
     let conn = db.write_lock();
-    tags_albums::delete_album(&conn, id).map_err(|e| e.to_string())
+    tags_albums::delete_album(&conn, id).map_err(|e| err_cn::text(&e))
 }
 
 #[tauri::command]
 pub fn add_to_album(db: State<'_, Db>, album_id: i64, image_ids: Vec<i64>) -> Result<(), String> {
     let conn = db.write_lock();
-    tags_albums::add_to_album(&conn, album_id, &image_ids).map_err(|e| e.to_string())
+    tags_albums::add_to_album(&conn, album_id, &image_ids).map_err(|e| err_cn::text(&e))
 }
 
 #[tauri::command]
 pub fn remove_from_album(db: State<'_, Db>, album_id: i64, image_id: i64) -> Result<(), String> {
     let conn = db.write_lock();
-    tags_albums::remove_from_album(&conn, album_id, image_id).map_err(|e| e.to_string())
+    tags_albums::remove_from_album(&conn, album_id, image_id).map_err(|e| err_cn::text(&e))
 }
 
 #[tauri::command]
@@ -341,16 +346,16 @@ pub fn get_album_images(
     db: State<'_, Db>,
     album_id: i64,
 ) -> Result<Vec<images_query::ImageRow>, String> {
-    let conn = db.open_read().map_err(|e| e.to_string())?;
-    tags_albums::get_album_images(&conn, album_id).map_err(|e| e.to_string())
+    let conn = db.open_read().map_err(|e| err_cn::text(&e))?;
+    tags_albums::get_album_images(&conn, album_id).map_err(|e| err_cn::text(&e))
 }
 
 // ── 预设通道（迁移接缝 4c：params 原样 JSON 存取，upgradeEdits 在前端桥接层） ──
 
 #[tauri::command]
 pub fn get_presets(db: State<'_, Db>) -> Result<Vec<tags_albums::PresetRow>, String> {
-    let conn = db.open_read().map_err(|e| e.to_string())?;
-    tags_albums::get_presets(&conn).map_err(|e| e.to_string())
+    let conn = db.open_read().map_err(|e| err_cn::text(&e))?;
+    tags_albums::get_presets(&conn).map_err(|e| err_cn::text(&e))
 }
 
 #[tauri::command]
@@ -360,13 +365,13 @@ pub fn create_preset(
     params: serde_json::Value,
 ) -> Result<serde_json::Value, String> {
     let conn = db.write_lock();
-    tags_albums::create_preset(&conn, &name, &params).map_err(|e| e.to_string())
+    tags_albums::create_preset(&conn, &name, &params).map_err(|e| err_cn::text(&e))
 }
 
 #[tauri::command]
 pub fn delete_preset(db: State<'_, Db>, id: i64) -> Result<(), String> {
     let conn = db.write_lock();
-    tags_albums::delete_preset(&conn, id).map_err(|e| e.to_string())
+    tags_albums::delete_preset(&conn, id).map_err(|e| err_cn::text(&e))
 }
 
 // ── 删除通道（迁移接缝 4b） ──
@@ -375,10 +380,10 @@ pub fn delete_preset(db: State<'_, Db>, id: i64) -> Result<(), String> {
 
 #[tauri::command]
 pub fn get_images_root(db: State<'_, Db>, paths: State<'_, AppPaths>) -> Result<String, String> {
-    let conn = db.open_read().map_err(|e| e.to_string())?;
+    let conn = db.open_read().map_err(|e| err_cn::text(&e))?;
     db::images_root(&conn, &paths.default_images_dir)
         .map(|p| p.to_string_lossy().into_owned())
-        .map_err(|e| e.to_string())
+        .map_err(|e| err_cn::text(&e))
 }
 
 #[tauri::command]
@@ -391,8 +396,8 @@ pub fn get_all_image_ids(
     db: State<'_, Db>,
     query: images_query::ImageQuery,
 ) -> Result<Vec<i64>, String> {
-    let conn = db.open_read().map_err(|e| e.to_string())?;
-    images_query::get_all_visible_ids(&conn, &query).map_err(|e| e.to_string())
+    let conn = db.open_read().map_err(|e| err_cn::text(&e))?;
+    images_query::get_all_visible_ids(&conn, &query).map_err(|e| err_cn::text(&e))
 }
 
 #[tauri::command]
@@ -401,8 +406,8 @@ pub fn file_exists(
     paths: State<'_, AppPaths>,
     filepath: String,
 ) -> Result<bool, String> {
-    let conn = db.open_read().map_err(|e| e.to_string())?;
-    db::managed_file_exists(&conn, &paths.default_images_dir, &filepath).map_err(|e| e.to_string())
+    let conn = db.open_read().map_err(|e| err_cn::text(&e))?;
+    db::managed_file_exists(&conn, &paths.default_images_dir, &filepath).map_err(|e| err_cn::text(&e))
 }
 
 // ── 缩略图内核命令（迁移接缝 5 阶段 1） ──
@@ -415,15 +420,15 @@ pub async fn make_thumbnail_tiers(
 ) -> Result<(u32, u32), String> {
     tauri::async_runtime::spawn_blocking(move || {
         let (small, medium, w, h) =
-            thumbs::generate_tiers(std::path::Path::new(&filepath)).map_err(|e| e.to_string())?;
+            thumbs::generate_tiers(std::path::Path::new(&filepath)).map_err(|e| err_cn::text(&e))?;
         let dir = std::path::Path::new(&thumbs_dir);
-        std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
-        std::fs::write(dir.join(format!("{id}.jpg")), small).map_err(|e| e.to_string())?;
-        std::fs::write(dir.join(format!("{id}_s.jpg")), medium).map_err(|e| e.to_string())?;
+        std::fs::create_dir_all(dir).map_err(|e| err_cn::text(&e))?;
+        std::fs::write(dir.join(format!("{id}.jpg")), small).map_err(|e| err_cn::text(&e))?;
+        std::fs::write(dir.join(format!("{id}_s.jpg")), medium).map_err(|e| err_cn::text(&e))?;
         Ok((w, h))
     })
     .await
-    .map_err(|e| format!("后台任务失败: {e}"))?
+    .map_err(|e| format!("后台任务失败：{}", err_cn::text(&e)))?
 }
 
 #[tauri::command]
@@ -436,19 +441,19 @@ pub async fn extract_nef_preview(
             std::path::Path::new(&nef_path),
             std::path::Path::new(&out_path),
         )
-        .map_err(|e| e.to_string())
+        .map_err(|e| err_cn::text(&e))
     })
     .await
-    .map_err(|e| format!("后台任务失败: {e}"))?
+    .map_err(|e| format!("后台任务失败：{}", err_cn::text(&e)))?
 }
 
 #[tauri::command]
 pub async fn image_meta(filepath: String) -> Result<(u32, u32, u32, bool), String> {
     tauri::async_runtime::spawn_blocking(move || {
-        thumbs::image_meta(std::path::Path::new(&filepath)).map_err(|e| e.to_string())
+        thumbs::image_meta(std::path::Path::new(&filepath)).map_err(|e| err_cn::text(&e))
     })
     .await
-    .map_err(|e| format!("后台任务失败: {e}"))?
+    .map_err(|e| format!("后台任务失败：{}", err_cn::text(&e)))?
 }
 
 // ── 导入/改名编排（迁移接缝 4c） ──
@@ -474,10 +479,10 @@ pub async fn import_images(
             &paths.thumbs_dir,
             Some(&app),
         )
-        .map_err(|e| e.to_string())
+        .map_err(|e| err_cn::text(&e))
     })
     .await
-    .map_err(|e| format!("后台任务失败: {e}"))?
+    .map_err(|e| format!("后台任务失败：{}", err_cn::text(&e)))?
 }
 
 #[tauri::command]
@@ -489,10 +494,10 @@ pub async fn rename_image(
     let db = db.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
         let conn = db.write_lock();
-        file_ops::rename_image(&conn, id, &new_filename).map_err(|e| e.to_string())
+        file_ops::rename_image(&conn, id, &new_filename).map_err(|e| err_cn::text(&e))
     })
     .await
-    .map_err(|e| format!("后台任务失败: {e}"))?
+    .map_err(|e| format!("后台任务失败：{}", err_cn::text(&e)))?
 }
 
 // ── 导出（契约镜像 fs:export-images / fs:export-album-images） ──
@@ -509,7 +514,7 @@ pub async fn export_images(
         let mut images = Vec::with_capacity(ids.len());
         for id in ids {
             if let Some(row) =
-                images_query::get_image_by_id(&conn, id).map_err(|e| e.to_string())?
+                images_query::get_image_by_id(&conn, id).map_err(|e| err_cn::text(&e))?
             {
                 images.push(row);
             }
@@ -517,7 +522,7 @@ pub async fn export_images(
         finish_export(&images, &dest_dir)
     })
     .await
-    .map_err(|e| format!("后台任务失败: {e}"))?
+    .map_err(|e| format!("后台任务失败：{}", err_cn::text(&e)))?
 }
 
 #[tauri::command]
@@ -529,11 +534,11 @@ pub async fn export_album_images(
     let db = db.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
         let conn = db.write_lock();
-        let images = tags_albums::get_album_images(&conn, album_id).map_err(|e| e.to_string())?;
+        let images = tags_albums::get_album_images(&conn, album_id).map_err(|e| err_cn::text(&e))?;
         finish_export(&images, &dest_dir)
     })
     .await
-    .map_err(|e| format!("后台任务失败: {e}"))?
+    .map_err(|e| format!("后台任务失败：{}", err_cn::text(&e)))?
 }
 
 fn finish_export(images: &[images_query::ImageRow], dest_dir: &str) -> Result<Value, String> {
@@ -545,7 +550,7 @@ fn finish_export(images: &[images_query::ImageRow], dest_dir: &str) -> Result<Va
             "nefCopied": o.nef_copied,
             "failed": o.failed,
         })),
-        Err(msg) => Ok(json!({ "error": format!("导出失败: {msg}") })),
+        Err(msg) => Ok(json!({ "error": format!("导出失败：{}", err_cn::line(&msg)) })),
     }
 }
 
@@ -564,10 +569,10 @@ pub async fn render_edit(
             std::path::Path::new(&output_path),
         )
         .map(|o| (o.width, o.height))
-        .map_err(|e| e.to_string())
+        .map_err(|e| err_cn::text(&e))
     })
     .await
-    .map_err(|e| format!("后台任务失败: {e}"))?
+    .map_err(|e| format!("后台任务失败：{}", err_cn::text(&e)))?
 }
 
 // ── 外围与编辑会话通道（多 agent 内核集成） ──
@@ -609,20 +614,20 @@ pub async fn get_exif(
 #[tauri::command]
 pub async fn scan_directory(dir: String) -> Result<Vec<scan::CollectedFile>, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        scan::scan_directory(Path::new(&dir)).map_err(|e| e.to_string())
+        scan::scan_directory(Path::new(&dir)).map_err(|e| err_cn::text(&e))
     })
     .await
-    .map_err(|e| format!("后台任务失败: {e}"))?
+    .map_err(|e| format!("后台任务失败：{}", err_cn::text(&e)))?
 }
 
 #[tauri::command]
 pub async fn collect_import_files(paths: Vec<String>) -> Result<Vec<scan::CollectedFile>, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let as_pathbuf: Vec<std::path::PathBuf> = paths.iter().map(PathBuf::from).collect();
-        scan::collect_import_files(&as_pathbuf).map_err(|e| e.to_string())
+        scan::collect_import_files(&as_pathbuf).map_err(|e| err_cn::text(&e))
     })
     .await
-    .map_err(|e| format!("后台任务失败: {e}"))?
+    .map_err(|e| format!("后台任务失败：{}", err_cn::text(&e)))?
 }
 
 #[tauri::command]
@@ -642,10 +647,10 @@ pub async fn update_image(
             &paths.default_images_dir,
             &paths.thumbs_dir,
         )
-        .map_err(|e| e.to_string())
+        .map_err(|e| err_cn::text(&e))
     })
     .await
-    .map_err(|e| format!("后台任务失败: {e}"))?
+    .map_err(|e| format!("后台任务失败：{}", err_cn::text(&e)))?
 }
 
 #[tauri::command]
@@ -657,10 +662,10 @@ pub async fn update_images(
     let db = db.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
         let conn = db.write_lock();
-        update_image::update_images(&conn, &image_ids, &updates).map_err(|e| e.to_string())
+        update_image::update_images(&conn, &image_ids, &updates).map_err(|e| err_cn::text(&e))
     })
     .await
-    .map_err(|e| format!("后台任务失败: {e}"))?
+    .map_err(|e| format!("后台任务失败：{}", err_cn::text(&e)))?
 }
 
 #[tauri::command]
@@ -675,10 +680,10 @@ pub async fn rebuild_thumbnails_with_events(
     let app = app.clone();
     tauri::async_runtime::spawn_blocking(move || {
         update_image::rebuild_thumbnails_unlocked(&db, &paths.thumbs_dir, all, Some(&app))
-            .map_err(|e| e.to_string())
+            .map_err(|e| err_cn::text(&e))
     })
     .await
-    .map_err(|e| format!("后台任务失败: {e}"))?
+    .map_err(|e| format!("后台任务失败：{}", err_cn::text(&e)))?
 }
 
 #[tauri::command]
@@ -689,12 +694,12 @@ pub async fn scan_broken_records(
     let db = db.inner().clone();
     let paths = paths.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
-        let conn = db.open_read().map_err(|e| e.to_string())?;
+        let conn = db.open_read().map_err(|e| err_cn::text(&e))?;
         update_image::scan_broken_records(&conn, &paths.default_images_dir)
-            .map_err(|e| e.to_string())
+            .map_err(|e| err_cn::text(&e))
     })
     .await
-    .map_err(|e| format!("后台任务失败: {e}"))?
+    .map_err(|e| format!("后台任务失败：{}", err_cn::text(&e)))?
 }
 
 #[tauri::command]
@@ -713,10 +718,10 @@ pub async fn delete_broken_records(
             &paths.default_images_dir,
             &paths.thumbs_dir,
         )
-        .map_err(|e| e.to_string())
+        .map_err(|e| err_cn::text(&e))
     })
     .await
-    .map_err(|e| format!("后台任务失败: {e}"))?
+    .map_err(|e| format!("后台任务失败：{}", err_cn::text(&e)))?
 }
 
 #[tauri::command]
@@ -727,17 +732,17 @@ pub async fn find_duplicates(
     let db = db.inner().clone();
     let paths = paths.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
-        let conn = db.open_read().map_err(|e| e.to_string())?;
-        update_image::find_duplicates(&conn, &paths.default_images_dir).map_err(|e| e.to_string())
+        let conn = db.open_read().map_err(|e| err_cn::text(&e))?;
+        update_image::find_duplicates(&conn, &paths.default_images_dir).map_err(|e| err_cn::text(&e))
     })
     .await
-    .map_err(|e| format!("后台任务失败: {e}"))?
+    .map_err(|e| format!("后台任务失败：{}", err_cn::text(&e)))?
 }
 
 #[tauri::command]
 pub fn get_edits(db: State<'_, Db>, id: i64) -> Result<Value, String> {
-    let conn = db.open_read().map_err(|e| e.to_string())?;
-    edit_session::get_edits(&conn, id).map_err(|e| e.to_string())
+    let conn = db.open_read().map_err(|e| err_cn::text(&e))?;
+    edit_session::get_edits(&conn, id).map_err(|e| err_cn::text(&e))
 }
 
 #[tauri::command]
@@ -748,13 +753,13 @@ pub fn save_edit_params(
     command: Value,
 ) -> Result<Value, String> {
     let conn = db.write_lock();
-    edit_session::save_edit_params(&conn, id, &params, Some(&command)).map_err(|e| e.to_string())
+    edit_session::save_edit_params(&conn, id, &params, Some(&command)).map_err(|e| err_cn::text(&e))
 }
 
 #[tauri::command]
 pub fn get_edit_history(db: State<'_, Db>, id: i64) -> Result<Vec<Value>, String> {
-    let conn = db.open_read().map_err(|e| e.to_string())?;
-    edit_session::get_edit_history(&conn, id).map_err(|e| e.to_string())
+    let conn = db.open_read().map_err(|e| err_cn::text(&e))?;
+    edit_session::get_edit_history(&conn, id).map_err(|e| err_cn::text(&e))
 }
 
 /// 镜像 ensureEditBase：base 解析顺序 ① raw_path 存在且可提取 → NEF 预览底图（source='nef'）；
@@ -767,7 +772,7 @@ fn ensure_edit_base(
     id: i64,
     src: &Path,
 ) -> Result<(PathBuf, u32, u32, &'static str), String> {
-    std::fs::create_dir_all(thumbs_dir).map_err(|e| e.to_string())?;
+    std::fs::create_dir_all(thumbs_dir).map_err(|e| err_cn::text(&e))?;
     let base_jpg = thumbs_dir.join(format!("edit-{id}-base.jpg"));
     let sidecar = PathBuf::from(format!("{}.meta.json", base_jpg.to_string_lossy()));
     if let Some(raw) = raw_path.filter(|s| !s.is_empty()) {
@@ -784,7 +789,7 @@ fn ensure_edit_base(
             }
         }
     }
-    let (sw, sh, orientation, has_alpha) = thumbs::image_meta(src).map_err(|e| e.to_string())?;
+    let (sw, sh, orientation, has_alpha) = thumbs::image_meta(src).map_err(|e| err_cn::text(&e))?;
     if orientation == 1 && !has_alpha {
         return Ok((src.to_path_buf(), sw, sh, "jpg"));
     }
@@ -796,17 +801,17 @@ fn ensure_edit_base(
         }
     }
     let img = image::ImageReader::open(src)
-        .map_err(|e| e.to_string())?
+        .map_err(|e| err_cn::text(&e))?
         .with_guessed_format()
-        .map_err(|e| e.to_string())?
+        .map_err(|e| err_cn::text(&e))?
         .decode()
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| err_cn::text(&e))?;
     let oriented = thumbs::apply_orientation(&img, orientation);
     let out = if has_alpha {
         let mut buf = std::io::Cursor::new(Vec::new());
         oriented
             .write_to(&mut buf, image::ImageFormat::Png)
-            .map_err(|e| e.to_string())?;
+            .map_err(|e| err_cn::text(&e))?;
         buf.into_inner()
     } else {
         let rgba = oriented.to_rgba8();
@@ -823,10 +828,10 @@ fn ensure_edit_base(
         let mut buf = std::io::Cursor::new(Vec::new());
         let encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut buf, 92);
         flat.write_with_encoder(encoder)
-            .map_err(|e| e.to_string())?;
+            .map_err(|e| err_cn::text(&e))?;
         buf.into_inner()
     };
-    std::fs::write(&base, out).map_err(|e| e.to_string())?;
+    std::fs::write(&base, out).map_err(|e| err_cn::text(&e))?;
     write_base_sidecar(&sidecar, "jpg", src);
     let (w, h) = if orientation >= 5 { (sh, sw) } else { (sw, sh) };
     Ok((base, w, h, "jpg"))
@@ -834,12 +839,12 @@ fn ensure_edit_base(
 
 fn image_dims(p: &Path) -> Result<(u32, u32), String> {
     image::ImageReader::open(p)
-        .map_err(|e| e.to_string())?
+        .map_err(|e| err_cn::text(&e))?
         .with_guessed_format()
-        .map_err(|e| e.to_string())?
+        .map_err(|e| err_cn::text(&e))?
         .into_dimensions()
         .map(|d| (d.0, d.1))
-        .map_err(|e| e.to_string())
+        .map_err(|e| err_cn::text(&e))
 }
 
 // 侧车 json 记录底图来源（nef|jpg）与源文件 mtime+size，复用前逐项校验
@@ -892,12 +897,12 @@ pub(crate) fn edit_session_snapshot(db: &Db, thumbs_dir: &Path, id: i64) -> Resu
     let (img, raw_opt, saved_edits) = {
         let conn = db.write_lock();
         let img = images_query::get_image_by_id(&conn, id)
-            .map_err(|e| e.to_string())?
+            .map_err(|e| err_cn::text(&e))?
             .ok_or_else(|| "图片不存在".to_string())?;
         if img.hidden.unwrap_or(0) != 0 {
             return Ok(serde_json::json!({ "error": "隐藏的 NEF 记录不支持编辑" }));
         }
-        let edits = edit_session::get_edits(&conn, id).map_err(|e| e.to_string())?;
+        let edits = edit_session::get_edits(&conn, id).map_err(|e| err_cn::text(&e))?;
         let raw = img.raw_path.clone().filter(|s| !s.is_empty());
         (img, raw, edits)
     };
@@ -958,7 +963,7 @@ pub async fn edit_open(
     let paths = paths.inner().clone();
     tauri::async_runtime::spawn_blocking(move || edit_session_snapshot(&db, &paths.thumbs_dir, id))
         .await
-        .map_err(|e| format!("后台任务失败: {e}"))?
+        .map_err(|e| format!("后台任务失败：{}", err_cn::text(&e)))?
 }
 
 // 编辑预览缩略图（镜像 Electron edit-preview-ready 链路）：spec 已由桥内按 400 长边构建代理，
@@ -975,13 +980,13 @@ pub(crate) fn render_edit_preview_kernel(
     let (raw_opt, version_before) = {
         let conn = db.write_lock();
         let img = images_query::get_image_by_id(&conn, id)
-            .map_err(|e| e.to_string())?
+            .map_err(|e| err_cn::text(&e))?
             .ok_or_else(|| "图片不存在".to_string())?;
         if img.hidden.unwrap_or(0) != 0 {
             return Ok(serde_json::json!({ "error": "隐藏的 NEF 记录不支持编辑预览" }));
         }
         let version_before = edit_session::get_edits(&conn, id)
-            .map_err(|e| e.to_string())?
+            .map_err(|e| err_cn::text(&e))?
             .get("version")
             .and_then(|v| v.as_i64())
             .unwrap_or(0);
@@ -1004,11 +1009,11 @@ pub(crate) fn render_edit_preview_kernel(
         }
     }
     if let Err(e) = executor::render_spec_to_file(spec, &base, &preview) {
-        return Ok(serde_json::json!({ "error": format!("渲染失败：{e}") }));
+        return Ok(serde_json::json!({ "error": format!("渲染失败：{}", err_cn::text(&e)) }));
     }
     let conn = db.write_lock();
     let version_unchanged = edit_session::get_edits(&conn, id)
-        .map_err(|e| e.to_string())?
+        .map_err(|e| err_cn::text(&e))?
         .get("version")
         .and_then(|v| v.as_i64())
         .unwrap_or(0)
@@ -1065,7 +1070,7 @@ pub async fn edit_render_preview(
         result
     })
     .await
-    .map_err(|e| format!("后台任务失败: {e}"))?
+    .map_err(|e| format!("后台任务失败：{}", err_cn::text(&e)))?
 }
 
 #[tauri::command]
@@ -1085,7 +1090,7 @@ pub async fn edit_bake(
         let raw_opt = {
             let conn = db.write_lock();
             images_query::get_image_by_id(&conn, id)
-                .map_err(|e| e.to_string())?
+                .map_err(|e| err_cn::text(&e))?
                 .map(|i| i.raw_path)
                 .unwrap_or(None)
         };
@@ -1098,7 +1103,7 @@ pub async fn edit_bake(
         let result = {
             let conn = db.write_lock();
             edit_session::edit_bake(&conn, id, &edits, &spec, &base, &paths.thumbs_dir)
-                .map_err(|e| e.to_string())
+                .map_err(|e| err_cn::text(&e))
         };
         // 镜像 Electron：烘焙后缩略图由 rebuild 重生成（仅缺失者，后台跑，完成发 thumbnails-ready）
         if let Ok(v) = &result {
@@ -1119,7 +1124,7 @@ pub async fn edit_bake(
         result
     })
     .await
-    .map_err(|e| format!("后台任务失败: {e}"))?
+    .map_err(|e| format!("后台任务失败：{}", err_cn::text(&e)))?
 }
 
 #[tauri::command]
@@ -1141,7 +1146,7 @@ pub async fn edit_export(
         let raw_opt = {
             let conn = db.write_lock();
             images_query::get_image_by_id(&conn, id)
-                .map_err(|e| e.to_string())?
+                .map_err(|e| err_cn::text(&e))?
                 .map(|i| i.raw_path)
                 .unwrap_or(None)
         };
@@ -1181,11 +1186,11 @@ pub async fn edit_export(
             .filter(|v| *v > 0.0)
             .map(|v| v as u32);
         let dims = image::ImageReader::open(&base)
-            .map_err(|e| e.to_string())?
+            .map_err(|e| err_cn::text(&e))?
             .with_guessed_format()
-            .map_err(|e| e.to_string())?
+            .map_err(|e| err_cn::text(&e))?
             .into_dimensions()
-            .map_err(|e| e.to_string())?;
+            .map_err(|e| err_cn::text(&e))?;
         let resize = max_edge
             .filter(|m| dims.0.max(dims.1) > *m)
             .map(|m| serde_json::json!({ "width": m, "height": m }));
@@ -1248,11 +1253,11 @@ pub async fn edit_export(
                     "height": out.height,
                 }))
             }
-            Err(e) => Ok(serde_json::json!({ "error": format!("导出失败：{}", e) })),
+            Err(e) => Ok(serde_json::json!({ "error": format!("导出失败：{}", err_cn::text(&e)) })),
         }
     })
     .await
-    .map_err(|e| format!("后台任务失败: {e}"))?
+    .map_err(|e| format!("后台任务失败：{}", err_cn::text(&e)))?
 }
 
 #[tauri::command]
@@ -1265,10 +1270,10 @@ pub async fn delete_image(
     let paths = paths.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
         let conn = db.write_lock();
-        db::delete_image(&conn, id, &paths.thumbs_dir).map_err(|e| e.to_string())
+        db::delete_image(&conn, id, &paths.thumbs_dir).map_err(|e| err_cn::text(&e))
     })
     .await
-    .map_err(|e| format!("后台任务失败: {e}"))?
+    .map_err(|e| format!("后台任务失败：{}", err_cn::text(&e)))?
 }
 
 #[tauri::command]
@@ -1287,34 +1292,34 @@ pub async fn batch_delete_images(
         )
     })
     .await
-    .map_err(|e| format!("后台任务失败: {e}"))?
+    .map_err(|e| format!("后台任务失败：{}", err_cn::text(&e)))?
 }
 
 // ── 图片列表查询通道（迁移接缝 3） ──
 
 #[tauri::command]
 pub fn get_images(db: State<'_, Db>, query: images_query::ImageQuery) -> Result<Value, String> {
-    let conn = db.open_read().map_err(|e| e.to_string())?;
-    let (rows, total) = images_query::get_images(&conn, &query).map_err(|e| e.to_string())?;
+    let conn = db.open_read().map_err(|e| err_cn::text(&e))?;
+    let (rows, total) = images_query::get_images(&conn, &query).map_err(|e| err_cn::text(&e))?;
     Ok(json!({ "images": rows, "total": total }))
 }
 
 #[tauri::command]
 pub fn get_image(db: State<'_, Db>, id: i64) -> Result<Option<images_query::ImageRow>, String> {
-    let conn = db.open_read().map_err(|e| e.to_string())?;
-    images_query::get_image_by_id(&conn, id).map_err(|e| e.to_string())
+    let conn = db.open_read().map_err(|e| err_cn::text(&e))?;
+    images_query::get_image_by_id(&conn, id).map_err(|e| err_cn::text(&e))
 }
 
 #[tauri::command]
 pub fn get_import_dates(db: State<'_, Db>) -> Result<Vec<images_query::ImportDateRow>, String> {
-    let conn = db.open_read().map_err(|e| e.to_string())?;
-    images_query::get_import_dates(&conn).map_err(|e| e.to_string())
+    let conn = db.open_read().map_err(|e| err_cn::text(&e))?;
+    images_query::get_import_dates(&conn).map_err(|e| err_cn::text(&e))
 }
 
 #[tauri::command]
 pub fn get_stats(db: State<'_, Db>) -> Result<images_query::StatsRow, String> {
-    let conn = db.open_read().map_err(|e| e.to_string())?;
-    images_query::get_stats(&conn).map_err(|e| e.to_string())
+    let conn = db.open_read().map_err(|e| err_cn::text(&e))?;
+    images_query::get_stats(&conn).map_err(|e| err_cn::text(&e))
 }
 
 #[cfg(test)]

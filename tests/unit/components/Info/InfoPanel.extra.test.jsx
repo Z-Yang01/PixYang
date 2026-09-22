@@ -304,7 +304,7 @@ describe('InfoPanel（补充：EXIF 全分支/标签操作/删除/评分收藏�
       const dialog2 = await deleteDialog();
       fireEvent.click(within(dialog2).getByText('删除'));
       await vi.waitFor(() => {
-        expect(errSpy).toHaveBeenCalledWith('删除失败：文件被占用或权限不足');
+        expect(errSpy).toHaveBeenCalledWith('删除失败：文件被占用或权限不足（错误码 5）');
       });
       expect(onClose).not.toHaveBeenCalled();
     } finally {

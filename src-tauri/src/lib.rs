@@ -5,6 +5,7 @@ pub mod interact;
 pub mod db;
 pub mod edit_session;
 pub mod error;
+pub mod err_cn;
 pub mod executor;
 pub mod exif_read;
 pub mod exif_relay;

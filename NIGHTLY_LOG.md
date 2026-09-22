@@ -931,4 +931,61 @@
     7 条零调用 `api.js` 通道、6 个仅单测触达的桥包装、`release/`（98MB）删否、shader vs golden 实机像素对拍、
     R27 保存后缩略图真机复核、曲线用例全量偶发超时（本轮 13.6s 未复现）、R51 ⑪ 主题命名、R52 ⑬⑭⑮、R53 ②④⑤。
 
+- 2026-09-22 23:17 R55 错误中文化下沉 Rust 侧（新 `src-tauri/src/err_cn.rs` 唯一出口 + 双端共享语料锁）：
+  ① 需求：用户对 R54 待复核 ①「是否改为 Rust 侧直接输出中文」裁决 **1B**（是）。同批裁决一并入账：2A（编辑退出后不自动恢复详情，
+    维持现状）、3「继续测试」（vite dev 不修，沿用 `vite build` + `vite preview` 真机通道）、5「保留」（6 个仅单测触达的桥包装不删）、
+    6B（`release/` 登记 `.gitignore`、留盘不删）、7「补」（shader vs golden 实机像素对拍另起轮）、8「优化」（主题命名/配色与 chips 口味另起轮）、
+    9「现在能看清」（R53 待复核 ③ 关闭）。
+  ② 根因：R54 的前端映射层是「事后补救」，英文仍在源头生成。Rust 侧三条泄漏路径——`commands.rs` 92 处
+    `.map_err(|e| e.to_string())` 把 `PixError::Display`（`数据库错误: {rusqlite原文}` / `文件操作失败: {io原文}`）原样送过 IPC；
+    36 处 `PixError::Io(format!("中文: {engine}"))` 与 33 处 `json!({"error": …})` 在源头就把英文拼进中文句子；
+    `update_image.rs::err_message` 还会剥掉外层前缀。前端只能按「中文前缀 + 英文正文」猜译，未入表的新原文一律落到 `操作未成功`，
+    取证信息只活在控制台。
+  ③ 修法：新增 `src-tauri/src/err_cn.rs` 为 Rust 侧唯一中文化出口。`text(&e)` 取 Display 结果、`line(raw)` 做映射：
+    沿「中文前缀链」逐层剥离（首个 `:`/`：` 且左侧含汉字才判为前缀，故 `E:\PicX\a.jpg` 不误判；嵌套
+    `文件操作失败: 建目录失败: Os{…}` 的两层前缀都保留），最深正文过 24 条有序规则；命中 io 家族时追加 **`（错误码 N）`**
+    ——英文原文不再上屏，错误码补回可定位信息，未命中仍 `eprintln!` 留档；含汉字的正文一律原样透传，
+    故「隐藏的 NEF 记录不支持编辑」这类既有中文句子与术语不会被覆写。`PixError::Display` 刻意保持英文，日志/取证链不变。
+    接线：`commands.rs`（92 map_err + 22 处「后台任务失败」+ `ok_or_error_value` + 5 处 `json!` 站点）、`camera.rs`、`edit_session.rs`、
+    `file_ops.rs`、`update_image.rs`（`err_message` 改走 err_cn）、`interact.rs`。前端 `errorText.js` 重写为 err_cn 的镜像
+    （同规则顺序、同错误码口径、**CJK 优先守卫** → 幂等，Rust 已译的中文不会被二次覆写），继续兜 JS/WebView 侧错误
+    （WebGL `texImage2D` SecurityError、`TypeError`、`Failed to fetch`、`net::ERR_*`）。
+  ④ 回归锁（cargo 149 → 154、vitest 794 → 795）：新增 **`shared/errorCorpus.json` 26 对 `[原文, 上屏]` 双端共享语料**——
+    Rust 侧 `include_str!` 逐条对拍（`err_cn::tests::共享语料逐条对拍`）、JS 侧 `readFileSync` 逐条对拍，两张规则表由此被同一事实源钉住。
+    另有 Rust 真实 rusqlite 端到端例（不存在的表 → `数据库表缺失`、`no such column` → `数据库字段缺失`、
+    `io::Error::from(NotFound)` → `文件或路径不存在`）、上屏不含英文且保留错误码例、嵌套前缀不被覆写例、盘符不误判例；
+    JS 侧 10 例含 ASCII 不变式、**幂等例**（`friendlyError(friendlyError(x)) === friendlyError(x)` 且不再 warn）、双重前缀、`errRaw` 留档，
+    以及新增的「`toast.error(x.error)` / `setError` / `setMessage` / `showToast` 裸上屏」全仓扫描（本轮据此补掉 ImageGrid 3 处、
+    TagManager 2 处、ImageViewer 1 处）。变异验证三组：① JS 表改字 → 语料 + ASCII 两例红；② `err_cn.rs` 表改字 →
+    Rust 语料例 + rusqlite 端到端例两例红；③ **只改语料**（`数据库表缺失` → `…MUT`）→ JS 与 Rust 同时红，
+    证明语料是双端唯一事实源、任一侧单独漂移必被拦。三组均回退复绿。
+  ⑤ 真机取证（Chromium + `vite preview` + `window.pixyang` 注入，非 dev server）：`#/settings`「查找重复图片」四场景——
+    A Rust 直出中文 `数据库错误：数据库正被其他程序占用` 原样上屏（幂等）；B 泄漏英文
+    `检测失败:Os { code: 5, kind: PermissionDenied, message: "Access is denied" }` → `检测失败：文件被占用或权限不足（错误码 5）`；
+    C 未收录 `brandNewEngineThing code=42` → `检测失败：操作未成功`；D 嵌套链
+    `文件操作失败：建目录失败：文件被占用或权限不足（错误码 5）` 原样。四例上屏文本 `[A-Za-z]{4,}` 命中均为 `[]`、
+    `bodyHasEnglishError false`，截图 `%TEMP%\r55-qa-errorcopy.png`。取证后页签已关，仓库无残留。
+  ⑥ 附带发现（用户裁决 6B 的副作用，已作为注释写进 `.gitignore`）：`release/` 登记忽略后，Tailwind v4 的自动内容扫描随之排除该目录，
+    CSS 从 `index-Czb4Wk9j.css` 110.12 kB 降到 `index-D1t41p9t.css` 96.75 kB——`release/win-unpacked` 里的第三方 JS 与
+    `LICENSES.chromium.html` 此前一直被当作 class 源，多产出 13.37 kB 死 utility。对照实验：注释掉该行重建，哈希精确回到 R54 的
+    `index-Czb4Wk9j.css`。故 R54 的「CSS 与 R53 同哈希」在 R55 起不再成立，特此勘正。
+  - 验证：vitest 795/795（58 文件）✅；lint 0 error / 8 warning（基线不变）；typecheck ✅；format:check ✅；
+    cargo 154 lib + 1 golden_audit ✅（Rust 侧 10 条 warning 全为既有中文测试函数命名，无新增）；
+    `npx vite build` ✅（`index-DBxhVE6f.js` 1,050.18 kB / `index-D1t41p9t.css` 96.75 kB，二次构建哈希一致=确定性）。
+    安装包 23:14 重打（`PixYang_0.1.0_x64-setup.exe` 4,109,506 B），核对链：`pixyang.exe`（16,236,032 B）内嵌资源二进制扫描
+    `index-DBxhVE6f.js` / `index-D1t41p9t.css` 各命中 1 次，实验产物 `index-Czb4Wk9j.css` / `index-D4gL22F_.js` 与 R54 的
+    `index-1UnbPTol.js` 均 0 命中。
+    提交范围：`src-tauri/src/{err_cn.rs(新),lib.rs,commands.rs,camera.rs,edit_session.rs,file_ops.rs,update_image.rs,interact.rs}`、
+    `shared/errorCorpus.json`(新)、`src/lib/errorText.js`、`src/components/Browser/{ImageGrid.jsx,ImageViewer.jsx}`、
+    `src/components/Tags/TagManager.jsx`、`tests/unit/lib/errorText.test.js` + `hooks.test.jsx` / `InfoPanel.extra.test.jsx` /
+    `TagManager.test.jsx`、`.gitignore`、`AGENTS.md`、`NIGHTLY_LOG.md`。
+  待人工复核：① `（错误码 N）` 后缀是否合意——英文不再上屏后它是唯一可定位信息，去掉则排障须回控制台；
+    ② 双端两张规则表由共享语料钉住，但新增错误类型仍要同时补 `err_cn.rs` 与 `errorText.js`；是否接受这份成本，
+    或把 JS 表退化为只兜 JS/WebView 错误（删掉重复的 io/sqlite 规则）；③ Rust 侧改动无法在 App 内实测
+    （`tauri-plugin-single-instance` 挡住，用户安装版在跑），须用户装 23:14 包后复验真机错误条；
+    ④ 口径旧账更新：6 个仅单测桥包装（裁决保留，销账）、`release/`（裁决 6B 留盘 + 登记忽略，销账；实际 466MB 而非 98MB，
+    且其存在会污染 Tailwind 扫描，勿删勿提交）、vite dev（裁决继续测试 → 维持不修）、7 条零调用 `api.js` 通道
+    （用户问「是什么」，本轮已答，待裁决删否）、shader vs golden 实机像素对拍（裁决「补」→ 待排轮）、
+    主题命名/配色与 chips 口味（裁决「优化」→ 待排轮）、R27 保存后缩略图真机复核、曲线用例全量偶发超时。
+
 

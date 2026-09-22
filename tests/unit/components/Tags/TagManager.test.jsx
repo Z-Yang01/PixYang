@@ -103,14 +103,14 @@ describe('TagManager', () => {
     const errSpy = vi.spyOn(toast, 'error').mockImplementation(() => {});
     try {
       const onRefresh = vi.fn();
-      window.pixyang.deleteTag.mockResolvedValueOnce({ error: '删除标签失败: locked' });
+      window.pixyang.deleteTag.mockResolvedValueOnce({ error: '删除标签失败: database is locked' });
       render(<TagManager onSelectTag={vi.fn()} onRefresh={onRefresh} />);
       await screen.findByText('风景');
       fireEvent.click(screen.getAllByTitle('删除标签')[0]);
       await screen.findByText(/确定要删除标签/);
       fireEvent.click(screen.getByText('删除', { selector: 'button' }));
       await vi.waitFor(() => {
-        expect(errSpy).toHaveBeenCalledWith('删除标签失败: locked');
+        expect(errSpy).toHaveBeenCalledWith('删除标签失败：数据库正被其他程序占用');
       });
       expect(onRefresh).not.toHaveBeenCalled();
     } finally {

@@ -682,7 +682,7 @@ export default function ImageViewer({
     if (!name) return;
     const result = await api.createPreset(name, toEditParams(composeOps()));
     if (result?.error) {
-      toast.error(result.error);
+      toast.error(friendlyError(result.error));
       return;
     }
     setPresetName('');

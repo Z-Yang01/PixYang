@@ -4,6 +4,7 @@ use tauri::{State, Window};
 use tauri_plugin_dialog::DialogExt;
 
 use crate::db::{self, AppPaths, Db};
+use crate::err_cn;
 
 // 托管边界同 Electron isManagedPath：图库根 + 数据库所在目录，Path::starts_with 按组件比较等价于 r + path.sep 前缀
 pub(crate) fn is_managed_path(
@@ -26,8 +27,8 @@ pub async fn open_path(
     }
     let target = std::path::PathBuf::from(&path);
     let images_root = {
-        let conn = db.open_read().map_err(|e| e.to_string())?;
-        db::images_root(&conn, &paths.default_images_dir).map_err(|e| e.to_string())?
+        let conn = db.open_read().map_err(|e| err_cn::text(&e))?;
+        db::images_root(&conn, &paths.default_images_dir).map_err(|e| err_cn::text(&e))?
     };
     let database_dir = db::default_db_path()
         .parent()
@@ -42,11 +43,11 @@ pub async fn open_path(
                 return Ok("目标不是目录".into());
             }
         }
-        Err(e) => return Ok(e.to_string()),
+        Err(e) => return Ok(err_cn::text(&e)),
     }
     match tauri_plugin_opener::open_path(&target, None::<&str>) {
         Ok(()) => Ok(String::new()),
-        Err(e) => Ok(e.to_string()),
+        Err(e) => Ok(err_cn::text(&e)),
     }
 }
 
@@ -124,7 +125,7 @@ pub async fn backup_database(db: State<'_, Db>, window: Window) -> Result<Backup
     // VACUUM INTO 拒绝写入已存在文件，先删以对齐 better-sqlite3 db.backup 的覆盖语义
     if let Err(e) = std::fs::remove_file(&dest) {
         if e.kind() != std::io::ErrorKind::NotFound {
-            return Ok(backup_failure(Some(e.to_string())));
+            return Ok(backup_failure(Some(err_cn::text(&e))));
         }
     }
     let conn = db.write_lock();
@@ -134,6 +135,6 @@ pub async fn backup_database(db: State<'_, Db>, window: Window) -> Result<Backup
             path: Some(dest),
             error: None,
         }),
-        Err(e) => Ok(backup_failure(Some(e.to_string()))),
+        Err(e) => Ok(backup_failure(Some(err_cn::text(&e)))),
     }
 }

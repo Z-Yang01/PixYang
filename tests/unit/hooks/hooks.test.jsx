@@ -345,7 +345,10 @@ describe('useBatchActions 异步收尾守卫', () => {
       await out.current.executeBatchDelete();
     });
     // R54：引擎英文原文不上屏，映射为中文（原文进 console 取证）
-    expect(showToast).toHaveBeenCalledWith('批量删除失败：文件被占用或权限不足', 'error');
+    expect(showToast).toHaveBeenCalledWith(
+      '批量删除失败：文件被占用或权限不足（错误码 5）',
+      'error'
+    );
     expect(useGalleryStore.getState().selectedIds.size).toBe(0);
   });
 

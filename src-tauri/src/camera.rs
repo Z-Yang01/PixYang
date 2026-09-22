@@ -6,6 +6,7 @@
 // 串行锁由命令层经 Db(Mutex<Connection>) 持有，内核不做并发处理。
 
 use crate::db::{delete_image_record, images_root, AppPaths, Db, PixError};
+use crate::err_cn;
 use crate::file_ops::EXIF_BATCH;
 use crate::image_group;
 use crate::images_query::{row_from, ImageRow};
@@ -697,7 +698,7 @@ pub fn migrate_images_root(
     })();
     if let Err(e) = planned {
         rollback_moves(&moves);
-        return Ok(json!({ "error": format!("移动失败：{e}") }));
+        return Ok(json!({ "error": format!("移动失败：{}", err_cn::text(&e)) }));
     }
 
     let tx = conn.unchecked_transaction()?;
@@ -715,12 +716,12 @@ pub fn migrate_images_root(
         drop(tx);
         rollback_moves(&moves);
         eprintln!("[迁移] 事务写入失败: {e}");
-        return Ok(json!({ "error": format!("迁移写库失败：{e}") }));
+        return Ok(json!({ "error": format!("迁移写库失败：{}", err_cn::text(&e)) }));
     }
     if let Err(e) = tx.commit() {
         rollback_moves(&moves);
         eprintln!("[迁移] 事务写入失败: {e}");
-        return Ok(json!({ "error": format!("迁移写库失败：{e}") }));
+        return Ok(json!({ "error": format!("迁移写库失败：{}", err_cn::text(&e)) }));
     }
 
     let moved = plans.iter().filter(|p| p.moved_file).count();
@@ -752,7 +753,7 @@ pub async fn sync_camera_folder(
                 |r| r.get(0),
             )
             .optional()
-            .map_err(|e| e.to_string())?
+            .map_err(|e| err_cn::text(&e))?
             .unwrap_or_default();
         if camera_dir.is_empty() {
             return Ok(json!({ "error": "未设置相机文件夹" }));
@@ -770,12 +771,12 @@ pub async fn sync_camera_folder(
             Ok(v) => Ok(v),
             Err(e) => {
                 eprintln!("[ipc] 相机同步失败: {e}");
-                Ok(json!({ "error": format!("相机同步失败: {e}") }))
+                Ok(json!({ "error": format!("相机同步失败：{}", err_cn::text(&e)) }))
             }
         }
     })
     .await
-    .map_err(|e| format!("后台任务失败: {e}"))?
+    .map_err(|e| format!("后台任务失败：{}", err_cn::text(&e)))?
 }
 
 #[tauri::command]
@@ -797,12 +798,12 @@ pub async fn set_images_root(
             Ok(v) => Ok(v),
             Err(e) => {
                 eprintln!("[ipc] 迁移图片目录失败: {e}");
-                Ok(json!({ "error": format!("迁移失败: {e}") }))
+                Ok(json!({ "error": format!("迁移失败：{}", err_cn::text(&e)) }))
             }
         }
     })
     .await
-    .map_err(|e| format!("后台任务失败: {e}"))?
+    .map_err(|e| format!("后台任务失败：{}", err_cn::text(&e)))?
 }
 
 #[cfg(test)]

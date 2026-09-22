@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { ImageOff } from 'lucide-react';
+import { friendlyError } from '@/lib/errorText';
 import {
   groupImagesByDate,
   pageSizeOf,
@@ -409,7 +410,7 @@ export default function ImageGrid({
   const submitRename = async (name) => {
     if (!api.isBridgeAvailable() || !renameImage) return;
     const result = await api.renameImage(renameImage.id, name);
-    if (result?.error) return result.error;
+    if (result?.error) return friendlyError(result.error);
     setRenameImage(null);
     setFileUrls((prev) => {
       const next = { ...prev };
@@ -469,7 +470,7 @@ export default function ImageGrid({
     const album = await api.createAlbum(name.trim());
     // 失败返回 {error}：无 id 不能继续 addToAlbum(undefined)（审查批 8 Q-09）
     if (album?.error) {
-      toast.error(album.error);
+      toast.error(friendlyError(album.error));
       return;
     }
     if (album) await api.addToAlbum(album.id, [imageId]);

@@ -3,6 +3,7 @@
 // 会话状态（editSessions 表、底图缓存、预览世代令牌）留在命令层，此处以 input 参数承接已就绪底图。
 
 use crate::error::PixError;
+use crate::err_cn;
 use crate::executor;
 use crate::images_query;
 use crate::naming::{basename_no_ext, extname};
@@ -294,7 +295,7 @@ pub fn save_edits(
         if let Err(e) = fallback {
             let _ = std::fs::remove_file(&side_path);
             return Ok(
-                json!({ "error": format!("替代原文件失败：{e}（原文件未受影响，请稍后重试）") }),
+                json!({ "error": format!("替代原文件失败：{}（原文件未受影响，请稍后重试）", err_cn::text(&e)) }),
             );
         }
     }
@@ -448,7 +449,7 @@ pub fn edit_bake(
     let forced = force_encode_format(spec, out_format);
     let dims = match executor::render_spec_to_file(&forced, input, &temp_path) {
         Ok(d) => d,
-        Err(e) => return Ok(json!({ "error": format!("渲染失败：{e}") })),
+        Err(e) => return Ok(json!({ "error": format!("渲染失败：{}", err_cn::text(&e)) })),
     };
 
     let product = image::ImageReader::open(&temp_path)
@@ -489,7 +490,7 @@ pub fn edit_bake(
         Ok(v) => v,
         Err(e) => {
             return Ok(
-                json!({ "error": format!("保存失败：{e}（像素可能已替换，请重新进入编辑确认）") }),
+                json!({ "error": format!("保存失败：{}（像素可能已替换，请重新进入编辑确认）", err_cn::text(&e)) }),
             )
         }
     };
@@ -543,7 +544,7 @@ pub fn edit_export(
                 "height": dims.height,
             }))
         }
-        Err(e) => Ok(json!({ "error": format!("导出失败：{e}") })),
+        Err(e) => Ok(json!({ "error": format!("导出失败：{}", err_cn::text(&e)) })),
     }
 }
 
