@@ -179,6 +179,87 @@ describe('themes 与 index.css 对拍', () => {
   });
 });
 
+describe('主题双事实源对拍（:root 基线 ↔ [data-theme] 块 ↔ @theme inline ↔ themes.ts 色卡）', () => {
+  const rootVars = declaredIn(rootBlock);
+  const blockEntries = [...css.matchAll(/\[data-theme='([\w-]+)'\]\s*\{([^}]*)\}/g)].map((m) => [
+    m[1],
+    m[2],
+  ]);
+
+  const themeInline = css.match(/@theme inline\s*\{([^}]*)\}/)?.[1] ?? '';
+  const inlineRefs = [...themeInline.matchAll(/var\(\s*(--[\w-]+)\s*\)/g)].map((m) => m[1]);
+  const colorRefs = [...themeInline.matchAll(/--color-[\w-]+\s*:\s*var\(\s*(--[\w-]+)\s*\)/g)].map(
+    (m) => m[1]
+  );
+
+  // 有意只留在 :root 的全局共用 token（图片覆盖层/结构量），不随主题覆写
+  const GLOBAL_ONLY = new Set([
+    '--card-checkbox-border',
+    '--card-checkbox-shadow',
+    '--card-date',
+    '--card-tag-add-border',
+    '--card-tag-bg',
+    '--radius',
+    '--star-empty',
+    '--transition',
+    '--transition-fast',
+    '--viewer-control-bg',
+    '--viewer-control-bg-hover',
+  ]);
+
+  it('哨兵：解析未空转（≥13 主题 / ≥12 块 / :root ≥60 变量 / ≥19 条 --color-* 映射）', () => {
+    expect(THEME_IDS.length).toBeGreaterThanOrEqual(13);
+    expect(blockEntries.length).toBeGreaterThanOrEqual(12);
+    expect(rootVars.size).toBeGreaterThanOrEqual(60);
+    expect(new Set(colorRefs).size).toBeGreaterThanOrEqual(19);
+  });
+
+  it('主题块声明的变量名都必须在 :root 基线中（块侧改名/typo 单侧漂移 = 红）', () => {
+    for (const [id, block] of blockEntries) {
+      const orphan = [...declaredIn(block)].filter((v) => !rootVars.has(v));
+      expect(orphan, `[data-theme='${id}'] 声明了 :root 未定义的变量`).toEqual([]);
+    }
+  });
+
+  it(':root 白名单外的主题变量必须被每套主题块覆写（root 侧新增只写一处 = 其余主题静默串色）', () => {
+    const unrooted = [...GLOBAL_ONLY].filter((v) => !rootVars.has(v));
+    expect(unrooted, 'GLOBAL_ONLY 白名单含 :root 未声明的变量').toEqual([]);
+    for (const [id, block] of blockEntries) {
+      const have = declaredIn(block);
+      const missing = [...rootVars].filter((v) => !GLOBAL_ONLY.has(v) && !have.has(v));
+      expect(missing, `[data-theme='${id}'] 未覆写 :root 的主题变量`).toEqual([]);
+    }
+  });
+
+  it('@theme inline 引用的每个 --* 在 :root 有定义（悬空引用 = Tailwind 工具类静默失色）', () => {
+    for (const v of new Set(inlineRefs)) {
+      expect(rootVars.has(v), `@theme inline 引用的 ${v} 未在 :root 声明`).toBe(true);
+    }
+  });
+
+  it('--color-* 映射引用的 shadcn token 在每套主题块都有定义（缺一套 = 该主题下工具类吃到深色默认值）', () => {
+    for (const [id, block] of blockEntries) {
+      const have = declaredIn(block);
+      const missing = [...new Set(colorRefs)].filter((v) => !have.has(v));
+      expect(missing, `[data-theme='${id}'] 缺 @theme inline 映射引用的 token`).toEqual([]);
+    }
+  });
+
+  it('themes.ts 色卡与对应块的 --bg-primary / --accent-color 逐值一致（调色只改一侧 = 选择器色卡失真）', () => {
+    for (const t of THEMES) {
+      const block = blockOf(t.id);
+      const bg = tokenValue(block, '--bg-primary');
+      const accent = tokenValue(block, '--accent-color');
+      expect(bg?.toLowerCase(), `${t.id} swatch 底色 ≠ --bg-primary`).toBe(
+        t.swatch[0].toLowerCase()
+      );
+      expect(accent?.toLowerCase(), `${t.id} swatch 强调色 ≠ --accent-color`).toBe(
+        t.swatch[1].toLowerCase()
+      );
+    }
+  });
+});
+
 describe('编辑面板跟随主题（历史缺陷：--bg-panel/--border-color 从未声明，面板恒为深色而文字随主题变深 → 1.5:1）', () => {
   const opaqueOf = (value) => {
     if (!value) return null;

@@ -1023,3 +1023,42 @@
     LF 噪声。提交范围：tests/unit/lib/apiTauriContract.test.js、AGENTS.md、NIGHTLY_LOG.md。
   待人工复核：① 未来 Rust 新增/改名命令或事件，红锁会强制同步桥包装与监听器（刻意设计，无豁免通道）；
     ② R55 待复核④「7 条零调用 api.js 通道」仍待裁决，本轮锁不含该层。
+
+- 2026-09-23 01:45 R57 主题双事实源对拍锁（:root 基线 ↔ [data-theme] 块 ↔ @theme inline ↔ themes.ts 色卡）：
+  ① 需求来源：池子 §3-② 口径/契约漂移补锁（R56 纯分析轮指认「themes.ts ↔ index.css 主题变量块缺自动化锁，
+    一侧加主题/改名/漏变量另一侧不会红」）。
+  ② 根因（取证）：任务背景「完全缺锁」不准（勘正）——R51/R52 已落 id↔块双向完备、静态 REQUIRED_TOKENS
+    漏声明单红、color-scheme/明度/对比度门槛。真实缺口三个：(a) REQUIRED_TOKENS 是测试内手抄静态清单，
+    变量「双向集对拍」缺失——:root 新增主题相关变量只写一处、或某块变量改名 typo，现有测试恒绿
+    （程序化普查：:root 70 变量 / 12 块 / 块声明⊆:root 成立 / 不被每块覆写的恰好 11 个=有意全局共用的
+    覆盖层与结构 token）；(b) @theme inline 的 19 条 --color-*: var(--*) 引用无闭环校验（另 4 条 radius
+    calc 引用 --radius，仅 :root 声明，属结构量）；(c) themes.ts 侧唯一的变量类事实 swatch 双值与对应块
+    --bg-primary/--accent-color 无对拍（13 套实测逐值一致，现状成立但零锁定）。
+  ③ 修法：tests/unit/lib/themes.test.js 追加 describe「主题双事实源对拍」+6 例（+81 行，零生产源改动）：
+    哨兵（≥13 主题 / ≥12 块 / :root ≥60 变量 / ≥19 条 --color-* 映射，防正则失配空转）、块声明⊆:root
+    （改名/typo 单侧漂移即红）、:root\GLOBAL_ONLY⊆每块（GLOBAL_ONLY 白名单即普查出的 11 个全局 token，
+    白名单自检含「须确在 :root 声明」）、@theme inline 全部 var 引用⊆:root、--color-* 映射引用⊆每块、
+    swatch↔--bg-primary/--accent-color 逐值一致（大小写归一）。
+  ④ 回归锁 + 变异验证（单文件实跑，各红后回退；回退后 git diff --numstat 仅测试文件 +81/-0）：
+    M1 themes.ts 删 sepia（union+条目）→ 4 红：清单完整性、isLightTheme、「CSS 中无孤儿块」（双向）、
+      新哨兵；M2 celadon 块删 --warning → 3 红且全部点名 [data-theme='celadon'] + '--warning'
+      （既有必需集锁 + 新 root 对拍锁 + chip 幽灵 token 解析器三重命中）；M2b :root 加 --bg-ghost
+      只写一处 → 新锁 1 红点名变量与漏覆写块（旧静态清单对该类漂移恒绿，证明确为缺口）；
+    M3a CSS 单侧加 [data-theme='ghost'] 块 → 3 红（孤儿块 + 两条新块级锁）；M3b themes.ts 单侧加
+      ghost id → 红点名「缺少 'ghost' 主题变量块」；M4 @theme inline 加 --color-ghost: var(--ghost-color)
+      → 2 红点名 --ghost-color；M5 sepia swatch 只改一侧 → 红点名「sepia swatch 底色 ≠ --bg-primary」
+      并给出两侧值。
+  ⑤ 真机取证：不适用——纯测试锁零生产源改动；交付物一致性以重打包哈希链证明（见下）。
+  ⑥ 附带发现/勘正：任务背景「themes.ts 每套一个 id 与变量组」与实码不符——themes.ts 只有
+    id/name/desc/swatch/light，变量唯一事实源在 index.css 块内，故 ② 按其括号备选口径落锁并补 swatch 对拍；
+    「13 套（3 深 10 浅）」实数无误。AGENTS §UI 主题锁清单与 §验证基线已同步。
+  - 验证：vitest 806/806（58 文件，800+6）；lint 0 error / 8 warning（基线不变）；typecheck ✓；
+    format:check ✓；cargo 154 lib + 1 golden_audit ✓；FreeGB 起点 7.38；安装包 01:43 重打
+    （PixYang_0.1.0_x64-setup.exe 4,107,781 B，pixyang.exe 16,236,032 B），哈希链：dist 引用
+    index-DBxhVE6f.js / index-D1t41p9t.css 与 R56 同哈希（零生产改动→确定性复现），二进制 latin1 扫描
+    各命中 1 次，R54 旧哈希 index-1UnbPTol.js / index-Czb4Wk9j.css 均 0 命中；本轮无 Cargo.toml/gen-schemas
+    LF 噪声。提交范围：tests/unit/lib/themes.test.js、AGENTS.md、NIGHTLY_LOG.md。
+  待人工复核：① 新锁把「合法新增主题变量」变红并强制 13 处同步（刻意设计，无豁免通道）；
+    GLOBAL_ONLY 白名单 11 项是「有意全局」的唯一豁免面，未来某全局 token 若改随主题必须同步移出白名单；
+    ② 覆盖层 token（--star-empty/--card-date/--viewer-control-* 等）将来是否随主题配色属产品口味，
+    维持现状未动。
