@@ -589,3 +589,22 @@
   format:check ✅；NSIS 重打 12:01（4,113,546 B，内嵌当前 dist）。本轮未跑 cargo（零 Rust 改动）。
   注意：安装包按工作树原样打包，含用户未提交的 themes.ts / index.css 主题微调；该两文件与
   release/ 本轮均未提交、未改动。
+- 2026-09-22 12:20 R48 口径轮（npm run dev 不可用取证 + 重复 key 全仓审计）：
+  ① R47 真机 QA 时发现 `npm run dev` 起不来，本轮定性：根因不是某个文件的写法问题，而是
+  `shared/*.cjs` 全部（13 个模块、13 处前端默认导入）依赖 vite build 的 rollup commonjs interop；
+  curl dev server 的 `/shared/curves.cjs?import` 实测原样直出 CJS 源码（非 ESM、无 default），
+  故首屏模块图报错、#root 全空且控制台无异常。生产走 frontendDist=../dist 不受影响，Electron 层
+  删除后 dev 通道再无人走过。取证补一条：全仓 grep `require(...shared/)` 零命中——shared/ 当初
+  做成 CJS 的唯一非打包消费者（主进程/worker）已随 R36 退役，所以「转 ESM 修 dev」没有外部约束，
+  只是 13 源文件 + 13 消费点 + 14 测试的机械改动，且 AGENTS 明文规定 shared/ 用 CommonJS，
+  属约定级决策 → 记入 AGENTS 验证节交人工裁决，本轮不擅自动手（二选一：dev-only commonjs 插件
+  =新依赖，或 shared/ 转 ESM）。
+  ② 顺着 R47 的「重复 key 丢卡片」根因做同类面审计：全仓模板字面 key 仅 3 处，CurveEditor 的
+  `h${v}`/`v${v}` 来自硬编码 [25,50,75] 且两组前缀互斥，ImageGrid 表头 `h-${item.date}` 由聚合
+  分组保证唯一（无日期项 date='' 直接不出表头，不会撞 key）→ 无第二处同类隐患。
+  ③ 顺带纠正 memory 过期口径：「format:check 有 ~1245 文件不过」是 R40 前的旧基线，现为真门禁。
+- 验证：vitest 765/765 ✅；lint 0 error/8 warning；typecheck ✅；format:check ✅。
+  本轮零代码/零 Rust 改动，dist 与 R47 一致 → 安装包不重打（R47 的 12:01 包即当前可装版本）。
+  提交仅 AGENTS.md + NIGHTLY_LOG.md；用户未提交的 themes.ts / index.css / release/ 原样未动。
+  需人工复核：dev 通道修不修（选 ① 插件 ② 转 ESM ③ 维持现状）。
+

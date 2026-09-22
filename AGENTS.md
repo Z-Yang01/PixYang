@@ -118,6 +118,13 @@ tests/            vitest（node 环境 + per-file happy-dom pragma）
 - CI：GitHub Actions（`.github/workflows/ci.yml`），push/PR 时在 Windows + Ubuntu 跑 lint/typecheck/test。
 - better-sqlite3 原生二进制双 ABI 与 electron-builder 打包已随 Electron 层删除；安装包走 `npm run tauri:build`（vite build + `@tauri-apps/cli build --bundles nsis`，产物 `src-tauri/target/release/bundle/nsis/`）。
 - 前端编译验证：`npx vite build`。
+- **`npm run dev`（vite dev）当前不可用**：`shared/*.cjs` 被前端以默认导入消费，而 vite dev 原样直出
+  `.cjs`（不做 CJS→ESM 转换，Electron 时代靠 vite build 的 rollup commonjs interop），首屏模块图报错、
+  `#root` 空且控制台无异常。生产走 `frontendDist=../dist` 不受影响，故长期未暴露。修法二选一（待人工裁决）：
+  引入 dev-only commonjs 插件（新依赖），或 `shared/` 全量转 ESM（约 13 源文件 + 13 消费点 + 14 测试；
+  全仓已无任何 Node `require()` 消费 shared/，Electron 主进程/worker 是它当初唯一非打包消费者，R36 已删）。
+- 真机浏览器 QA 口径：`npx vite build` 出包后用 `npx vite preview` 起静态服务，假数据经 `window.pixyang`
+  注入（`api.js` 的 `px()` 每次调用现读桥，故可先注入再挂载）；不要指望 dev server。
 - 修改 Rust/前端后跑 `npm run tauri:dev` 手动验证实机窗口（release 验证走 NSIS 安装包）。
 - 修改 opencode 配置后需重启 opencode 生效。
 
