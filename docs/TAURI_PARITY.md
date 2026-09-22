@@ -121,11 +121,12 @@ getSettings / getSetting / setSetting ✅（db.rs 同库读写，get_settings �
 Electron 启动消耗过标记）、导入中逐文件 import-progress 事件（Tauri 导入为同步命令，
 进度条语义不同属 UX 层差异）。
 
-## 验证口径基线（2026-09-22 R49 复核）
+## 验证口径基线（2026-09-23 R61 复核）
 
-vitest 56 文件 / 765 例；cargo 单测 149 例 + golden 门禁；typecheck / lint 0 error；
-覆盖率 stmts 92.24% / branch 86.99% / funcs 82.25%（门槛 75/70/50）。
-（旧版记录的 969/129 与 91.73/85.25/80.37 为 R36 时点快照，已随 R37-R49 增删漂移。）
+vitest 58 文件 / 807 例；cargo 单测 154 例 + golden 门禁 1 例；typecheck / lint 0 error
+（8 warning 既有基线）；覆盖率 stmts 92.4% / branch 87.21% / funcs 83.12%（门槛 75/70/50）。
+（旧版记录的 56/765 + 149 与 92.24/86.99/82.25 为 R49 时点快照，969/129 与
+91.73/85.25/80.37 为 R36 时点快照，均已随轮次增删漂移。）
 
 ## 无生产调用方的通道（R49 扫描，待裁决）
 

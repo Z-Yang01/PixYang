@@ -1217,3 +1217,23 @@
     C：维持现状（对拍如实红、理由在案）。推荐 A。② 缺陷②（负阴影指数反转，03-tone 16.61）维持 R59
     待裁决状态，本轮未动（任务书明令）。③ 残差逐像素机理（尤其 dD 暗角叠加段 0.91→1.92 的放大路径）
     未逐项解释，若走选项 B 需先补此取证。④ 对拍升级 CI 门禁事宜仍如 R59 待复核④（未动）。
+- 2026-09-23 06:04 R61 勘正门禁基线数字（UNATTENDED §4 vitest 795→807 + TAURI_PARITY R49 快照→R61 实测；纯文档零代码）：
+  ① 需求/裁决来源：用户任务书点名（UNATTENDED §4 基线过时，以实跑勘正）；R60 ⑥③已挂账「§4 仍写 795 例」。
+  ② 根因：§4 vitest 行停在 795，而日志显示 R57/R58/R60 已分别 800/806/807（逐轮递增未同步回写）；
+    docs/TAURI_PARITY.md「验证口径基线」停在 R49 快照（56 文件/765 例 + cargo 149）。
+  ③ 修法：UNATTENDED.md §4 一行（795→807）；TAURI_PARITY「验证口径基线」节改为 R61 实测
+    （58/807、cargo 154+1、覆盖率 92.4/87.21/83.12），R49 旧值按该文件自身惯例移入「已漂移」括注。
+    §4 其余行实跑核对仍准（cargo 154 lib + 1 golden_audit、lint 8 warning、覆盖率门槛 75/70/50
+    =vitest.config.js），未动；AGENTS.md「验证」节已与实测一致，未动。
+  ④ 回归锁 + 变异验证：不适用（零代码纯文档轮）。
+  ⑤ 真机取证：不适用。
+  ⑥ 附带发现/勘正：①PROGRESS.md 各批次「当前状态」仍记 785/798 passed 等时点值——历史条目按
+    「勘正另起条」规范不改写（本轮即另起条）；②NIGHTLY_PROGRESS 已收官且无门禁数字，无需勘正；
+    ③README「校验门禁」节只有命令无数字，无需勘正；④AGENTS.md「61 命令」实测 generate_handler
+    仍为 61，仍准。
+  - 验证（全部门禁本机实跑）：vitest 58 文件 / 807 例 ✓；lint 0 error/8 warning（既有基线）✓；
+    typecheck 净 ✓；format:check 净 ✓；cargo 154 lib + 1 golden_audit ✓；覆盖率 stmts 92.4 /
+    branch 87.21 / funcs 83.12（门槛 75/70/50 全过）✓；零代码改动 → 未跑 vite build / NSIS
+    重打包（R60 哈希链仍有效；dist 未删未动，cargo 复用既有 dist 通过）。安装包不适用。
+    提交范围：UNATTENDED.md、docs/TAURI_PARITY.md、NIGHTLY_LOG.md。
+  待人工复核：无新增（纯勘正轮；R59/R60 既有裁决项维持原状）。
