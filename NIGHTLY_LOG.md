@@ -820,3 +820,55 @@
     ⑦ R49 ⑧ 挂账的两条 index.css 死规则（`.pagination-total`、`.editor-temp-overlay`）——用户 WIP 已随 R51 入库，
     当年「删了会卷入 WIP」的顾虑已消除，是否删除待裁决（同轮另有 ④ 三项死 token/死规则同源）。
 
+- 2026-09-22 21:40 R53 详情面板遮挡编辑面板根治（`body:has(.info-panel)` 右栏让位）+ 编辑面板 chips 去字面深色（同「看不清」缺陷类）+ index.css 死面结清：
+  ① 需求：用户报「打开信息再打开编辑有冲突，编辑时看不清功能名称」（附截图，面板内标签几乎不可辨）。
+  ② 症状 (a) 根因＝层叠上下文：`.info-panel` 是 `position: fixed; z-index: 1600` 的右栏，而 `.viewer-overlay` 是
+    `z-index: 1000` 的**层叠上下文**——其内部无论写多大 z-index（`.viewer-close` 1001、`.editor-panel` 30）都出不去，
+    详情面板一开就把查看器右栏三构件整个盖住（编辑面板 100% 被遮）。真机 Chromium 命中测试取证：面板在场时
+    `.editor-panel` 中心点 `elementFromPoint` 返回 `.info-panel`。
+    修法一条纯 CSS：`body:has(.info-panel) .viewer-close / .viewer-nav:last-of-type / .editor-panel { right: 356px }`
+    （320 栏宽 + 20 原间距 + 16 呼吸），特异性 (0,2,1) 压过基础 (0,1,0) 与 `.viewer-nav:last-of-type` (0,2,0)；
+    本 stylesheet 首次使用 `:has()`（WebView2/Chromium ≥105 支持）。顺带治掉长期存在却从未被报的「详情面板挡住关闭键/下一张」。
+    复测：13 套主题 × 3 构件命中全为 `self`，无详情面板时仍贴边 20px。
+    取舍：不动 `infoFromViewerRef` 等 JS 联动——这是纯几何遮挡而非状态冲突，编辑态隐藏「查看详情」、`I` 快捷键守卫等既有语义全保留。
+  ③ 症状 (b)「看不清功能名称」＝R52 已根治的**幽灵 token** 缺陷（`--bg-panel`/`--border-color` 全仓从未声明 → 面板钉死深色、
+    文字却随浅色主题变深，实测 1.53:1）。用户手上的安装包早于 R52，故本轮不重复修，改为把同类残留在编辑面板内一次扫清（④）。
+  ④ chips 去字面深色：`.editor-source-tag`/`.editor-phase-tag` 全系（含 `.is-nef`/`.phase-dirty`/`.phase-error`/
+    `.phase-saving`/`.phase-exporting`/`.phase-baking`）与 `.editor-error`/`.editor-preset-name:hover`/`.editor-history-item:hover`
+    原写 `rgba(255,255,255,.12)` 底 + `#a5b4fc`/`#fde047`/`#f87171` 字面字，在浅色面板上等于隐形。改为：
+    中性底 `var(--bg-hover)` + 字 `var(--text-secondary)`；彩色底 `color-mix(in srgb, var(--语义色) 18%, transparent)`、
+    字 `color-mix(in srgb, var(--语义色) 45%, var(--text-primary))`（`.editor-error` 14px 用 70%），明暗两向自动同向。
+    叠加在图片上的构件（裁剪框、蒙版手柄、分屏标签、spinner、色相滑条）保留白/黑不动。
+    真机 Chromium 按构建产物 CSS 逐主题实测：中性 4.95~6.83、强调 5.43~8.38、警告 5.11~9.20、危险 6.18~8.35、
+    报错文字 5.61~8.62、面板内正文 10.70~16.53，全部 ≥4.5。
+  ⑤ 回归锁两处（775 → 781 例）：
+    - 新文件 `tests/unit/styles/viewerInfoRail.test.js` 3 例：三条右栏选择器共用同一条让位规则、让位值 ≥ 面板宽 + 基础右距、
+      无面板时右栏仍贴边 20px。变异验证：抽掉一条选择器 → 「缺少 … 让位规则」；356 改 300 → 「expected 300 ≥ 340」。
+    - `tests/unit/lib/themes.test.js` 11 → 14 例：「chip 规则只用主题 token」（字面色与 `var(--x, 兜底)` 一律判失败——
+      兜底正是幽灵 token 的温床）、「彩色标签按语义取色」、「按 CSS 实际表达式算对比度」。最后一例不写死权重，
+      而是解析规则里的 `var()`/`color-mix()`、在 13 套主题上逐步求值（含半透明沿祖先链拍平），故调色或改权重都会被咬。
+      变异验证：`.phase-dirty` 权重 45%→92% → light 主题立刻报 1.97:1；`--text-secondary` 换成 `var(--text-ghost, #aaa)`
+      → 两条锁同时命中（字面色 + 幽灵 token）。另把 `.viewer-counter` 的「至少一条」收紧为「恰好一条」以锁死重复规则。
+    - 配套取证脚本口径补记：探针的 alpha 合成必须自下而上拍平（先把祖先涂在顶上会把深色信息条算成浅底，
+      量出 1.94:1 的假阳性；改对后同一元素实测 9.68/7.97/7.20/8.11/7.17）。
+  ⑥ 死面结清（R49 ⑧ 与 R52 待复核 ④⑦ 同源，用户主题 WIP 已随 R51 入库，「删了会卷入 WIP」的顾虑消除）：
+    删零消费者规则 `.pagination-total`、`.editor-temp-overlay`，删零消费 token `--viewer-info-bg`、`--filter-chip-bg`
+    （`.viewer-info` 自有 `rgba(30,30,34,.7)` 深底 + `color: white`，属图片覆盖层构件，不需要 token），
+    删 999 行被同名规则整条覆盖的重复 `.viewer-counter`。四处均经全仓 grep（含 src/tests/docs/NIGHTLY_LOG）复核零命中后才动。
+  ⑦ 本轮 R52 挂账的曲线用例偶发超时未复现：`npm test` 首跑即 781/781 全绿（57 文件），未据此放宽超时（口径项不变）。
+- 验证：vitest 781/781 ✅；lint 0 error / 8 warning（基线不变）；typecheck ✅；format:check ✅；`npx vite build` ✅；
+  本轮 Rust 侧零改动，cargo 门禁未重跑。安装包 21:20 重打
+  （`PixYang_0.1.0_x64-setup.exe` 4,112,228 B；R52 版 20:35 为 4,116,675 B），核对链：
+  `dist` 21:18 产物 `index-BwQye__Q.js` / `index-Czb4Wk9j.css` → 同分钟 `pixyang.exe` 内嵌资源二进制扫描
+  仅命中这一组（R52 的 `index-DEKZHF_U.js`/`index-CRLkmPTH.css` 与本轮中间产物 `index-Ab07tfqU.js`/
+  `index-gzBDQiqM.css` 全部 0 命中）→ setup 由该 exe 打出（NSIS 压缩后安装包内查不到明文 hash，故以 exe 侧取证）。
+  提交范围：`src/styles/index.css`、`tests/unit/lib/themes.test.js`、`tests/unit/styles/viewerInfoRail.test.js`、
+  `AGENTS.md`、`NIGHTLY_LOG.md`。
+  待人工复核：① 详情面板与编辑面板并排时查看器画面被压窄（右栏整体左移 336px），是否需要改成「二者互斥」的产品口径
+  （现设计允许并存，本轮只修遮挡）；② chips 的 18%/45% 权重是为过 4.5 门槛挑的，彩色标签比旧深色版淡一档，是否合意；
+  ③ 「编辑时看不清功能名称」须用户安装本轮重打包后复验（R52 的根治未进旧包）；④ 实机 App 内复测仍被
+  `tauri-plugin-single-instance` 挡住（用户安装版 `E:\Software\PixYang\pixyang.exe` 在跑），本轮继续用真机 Chromium +
+  构建产物 CSS 取证；⑤ 其余口径项原样沿用（vite dev 修法二选一、7 条零调用 `api.js` 通道、6 个仅单测触达的桥包装、
+  `release/` 98MB、shader vs golden 实机像素对拍、R27 保存后缩略图、曲线用例全量偶发超时）。
+
+

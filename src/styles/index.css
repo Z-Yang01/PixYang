@@ -89,9 +89,7 @@
   --viewer-overlay: rgba(24, 25, 30, 0.93);
   --viewer-control-bg: rgba(255, 255, 255, 0.1);
   --viewer-control-bg-hover: rgba(255, 255, 255, 0.22);
-  --viewer-info-bg: rgba(20, 20, 24, 0.78);
   --dialog-backdrop: rgba(10, 10, 12, 0.55);
-  --filter-chip-bg: var(--bg-hover);
 
   /* shadcn/ui tokens (dark, default) */
   --background: #1a1b1f;
@@ -898,10 +896,6 @@ body {
   border-color: var(--accent-color);
 }
 
-.pagination-total {
-  color: var(--text-muted);
-}
-
 .pagination-input::-webkit-outer-spin-button,
 .pagination-input::-webkit-inner-spin-button {
   -webkit-appearance: none;
@@ -996,12 +990,6 @@ body {
   }
 }
 
-.viewer-counter {
-  font-weight: 600;
-  color: var(--accent-color);
-  white-space: nowrap;
-}
-
 .viewer-close {
   position: absolute;
   top: 20px;
@@ -1060,6 +1048,15 @@ body {
 }
 .viewer-nav:last-of-type {
   right: 20px;
+}
+
+/* 详情面板是 fixed 右栏（320px，z-index 1600），而 .viewer-overlay 是 z-index 1000 的层叠上下文，
+   其内部任何 z-index 都出不了这个上下文 → 面板一开就把查看器右栏（关闭/下一张/编辑面板）整个盖住。
+   故详情面板在场时右栏整体让位（320 栏宽 + 20 原间距 + 16 呼吸）。 */
+body:has(.info-panel) .viewer-close,
+body:has(.info-panel) .viewer-nav:last-of-type,
+body:has(.info-panel) .editor-panel {
+  right: 356px;
 }
 
 .viewer-info {
@@ -3051,12 +3048,12 @@ body {
   padding: 2px 8px;
   font-size: 11px;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.12);
-  color: var(--text-muted, #aaa);
+  background: var(--bg-hover);
+  color: var(--text-secondary);
 }
 .editor-source-tag.is-nef {
-  background: rgba(99, 102, 241, 0.25);
-  color: #a5b4fc;
+  background: color-mix(in srgb, var(--accent-color) 18%, transparent);
+  color: color-mix(in srgb, var(--accent-color) 45%, var(--text-primary));
 }
 
 .editor-slider-row {
@@ -3209,15 +3206,8 @@ body {
   font-size: 10px;
 }
 
-.editor-temp-overlay {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  mix-blend-mode: soft-light;
-}
-
 .editor-error {
-  color: #f87171;
+  color: color-mix(in srgb, var(--danger) 70%, var(--text-primary));
   font-size: 14px;
 }
 
@@ -3404,7 +3394,7 @@ body {
   cursor: pointer;
 }
 .editor-preset-name:hover {
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--bg-hover);
 }
 
 /* 分屏对比（CompareView） */
@@ -3455,22 +3445,22 @@ body {
   padding: 2px 8px;
   font-size: 11px;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.08);
-  color: var(--text-muted, #aaa);
+  background: var(--bg-hover);
+  color: var(--text-secondary);
 }
 .editor-phase-tag.phase-dirty {
-  background: rgba(250, 204, 21, 0.2);
-  color: #fde047;
+  background: color-mix(in srgb, var(--warning) 18%, transparent);
+  color: color-mix(in srgb, var(--warning) 45%, var(--text-primary));
 }
 .editor-phase-tag.phase-error {
-  background: rgba(248, 113, 113, 0.25);
-  color: #f87171;
+  background: color-mix(in srgb, var(--danger) 18%, transparent);
+  color: color-mix(in srgb, var(--danger) 45%, var(--text-primary));
 }
 .editor-phase-tag.phase-saving,
 .editor-phase-tag.phase-exporting,
 .editor-phase-tag.phase-baking {
-  background: rgba(99, 102, 241, 0.25);
-  color: #a5b4fc;
+  background: color-mix(in srgb, var(--accent-color) 18%, transparent);
+  color: color-mix(in srgb, var(--accent-color) 45%, var(--text-primary));
 }
 
 /* 内置风格预设 chips */
@@ -3553,7 +3543,7 @@ body {
   text-align: left;
 }
 .editor-history-item:hover {
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--bg-hover);
 }
 .editor-history-item.active {
   background: var(--accent-color, #6366f1);

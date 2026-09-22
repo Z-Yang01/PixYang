@@ -83,6 +83,8 @@ tests/            vitest（node 环境 + per-file happy-dom pragma）
 - 通用组件优先使用 `src/components/ui/*`（shadcn/ui 生成的 `.tsx` 组件，如 `Button`/`Input`/`Dialog`/`DropdownMenu`/`ContextMenu`/`Sonner`/`Select`/`Tooltip`），不要手写重复的按钮/表单/弹层。
 - 样式使用 Tailwind utilities；自定义视觉走 `src/styles/index.css` 的 CSS 变量（现有 `--bg-*`、`--accent-color` 等）或 `.tsx` 内的 tailwind class。
 - 主题变量两套并存且映射一致：`--bg-*`（现有组件）与 shadcn token（`--background`/`--foreground`/`--primary`/`--border`/`--radius` 等）。全局主题 13 套（深色/午夜蓝/森林夜 3 套深色，浅色/月白/晨雾/湖光/青瓷/竹露/樱落/暮山紫/落霞/羊皮纸 10 套浅色系，浅色系按中性→冷→暖排布），单一事实源 `src/lib/themes.ts`，除 `dark`（即 `:root` 默认值）外每套主题一个 `[data-theme=id]` 变量块；新增主题须在 `src/styles/index.css` 补齐同名块的全量 token，`tests/unit/lib/themes.test.js` 会对拍：id↔块双向完备、必需 token 全覆盖、`color-scheme` 与 `light` 标记一致、底色明度与对比度门槛；新增 token 需同时补 `@theme inline` 映射。
+- **面板内配色一律走 token**：落在 `.editor-panel` 等带 `--bg-panel` 底色之内的文字/标签（`--source-tag`/`--phase-tag`/`--error` 等）不得写字面色，也不得用 `var(--x, 字面值)` 兜底——token 未声明时兜底会全局静默生效（R52 的 1.53:1 即此「幽灵 token」缺陷类）。彩色状态用 `color-mix(in srgb, var(--语义色) w%, transparent)` 取底、`color-mix(... var(--语义色) 45%, var(--text-primary))` 取字，明暗两向自动同向；门禁会按 CSS 实际表达式逐主题算对比度（门槛 4.5）。叠加在图片上的构件（裁剪框、蒙版手柄、分屏标签、spinner）保留白/黑，不受此约束。
+- 查看器与详情面板同为 fixed 兄弟且 `.viewer-overlay` 自成层叠上下文（`z-index: 1000`，内部 z-index 出不去），故右栏构件（`.viewer-close`/`.viewer-nav:last-of-type`/`.editor-panel`）靠 `body:has(.info-panel) { right: 356px }` 让位，勿改回 z-index 方案；契约见 `tests/unit/styles/viewerInfoRail.test.js`。
 - 应用特有 UI（图片网格、全屏查看器、星级、缩略图、侧边栏）保持手写 CSS，不要用 UI 库强行替换。
 - `vite.config.js` 使用 async 配置 + 动态 `import('@tailwindcss/vite')`（ESM-only 插件）；`@` alias 指向 `src`。
 - 修改 shadcn 组件（`src/components/ui/*`）需谨慎：它们由 `npx shadcn@latest add` 生成，保持结构稳定。
@@ -115,7 +117,7 @@ tests/            vitest（node 环境 + per-file happy-dom pragma）
 
 ## 验证
 
-- 测试：`npm test`（vitest，56 个文件 / 775 例；像素 golden 门禁在 cargo 侧 `golden_audit`，Rust 单测 149 例）；覆盖率：`npm run test:coverage`，门槛配置在 `vitest.config.js`（statements/lines 75、branches 70、functions 50）。
+- 测试：`npm test`（vitest，57 个文件 / 781 例；像素 golden 门禁在 cargo 侧 `golden_audit`，Rust 单测 149 例）；覆盖率：`npm run test:coverage`，门槛配置在 `vitest.config.js`（statements/lines 75、branches 70、functions 50）。
 - Lint：`npm run lint`（ESLint flat config，`eslint.config.mjs`）；0 error 为准，warning 不阻塞。
 - 类型检查：`npm run typecheck`（tsc --noEmit，覆盖 src 下 TS/TSX）。
 - 格式检查：`npm run format:check`（Prettier 基线已于 R40 全仓落库，改动后的文件须保持 prettier 合规；历史 `*.md` 与 `src-tauri/gen/` 在 `.prettierignore` 豁免）。
