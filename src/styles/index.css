@@ -30,16 +30,16 @@
 :root {
   color-scheme: dark;
   /* 中性石墨色系：偏亮中灰减少压抑感，层次靠明度递进 */
-  --bg-primary: #1a1b1f;
-  --bg-secondary: #222328;
-  --bg-card: #2a2b31;
-  --bg-hover: #35363d;
-  --bg-input: #1f2025;
-  --border: #34353c;
-  --border-light: #4a4b54;
-  --text-primary: #f0f1f4;
-  --text-secondary: #b0b1bb;
-  --text-muted: #7c7d88;
+  --bg-primary: #202128;
+  --bg-secondary: #2a2c35;
+  --bg-card: #333540;
+  --bg-hover: #41434f;
+  --bg-input: #26272f;
+  --border: #40424f;
+  --border-light: #585b6b;
+  --text-primary: #f2f3f7;
+  --text-secondary: #bcbfc9;
+  --text-muted: #8b8d9c;
   --accent-color: #818cf8;
   --accent-color-hover: #a5b4fc;
   --accent-color-glow: rgba(129, 140, 248, 0.18);
@@ -84,7 +84,7 @@
   --card-date: rgba(255, 255, 255, 0.55);
   --card-tag-bg: rgba(255, 255, 255, 0.1);
   --card-tag-add-border: rgba(255, 255, 255, 0.3);
-  --viewer-overlay: rgba(18, 18, 20, 0.96);
+  --viewer-overlay: rgba(24, 25, 30, 0.93);
   --viewer-control-bg: rgba(255, 255, 255, 0.1);
   --viewer-control-bg-hover: rgba(255, 255, 255, 0.22);
   --viewer-info-bg: rgba(20, 20, 24, 0.78);
@@ -1947,16 +1947,16 @@ body {
 /* ── 午夜蓝（冷调靛蓝夜色） ── */
 [data-theme='midnight'] {
   color-scheme: dark;
-  --bg-primary: #0b1220;
-  --bg-secondary: #101a2b;
-  --bg-card: #121d31;
-  --bg-hover: #1a2740;
-  --bg-input: #0e1727;
-  --border: #223049;
-  --border-light: #2e3f5c;
-  --text-primary: #e6edf7;
-  --text-secondary: #9fb0c8;
-  --text-muted: #6b7d99;
+  --bg-primary: #101b30;
+  --bg-secondary: #16233e;
+  --bg-card: #1c2b4a;
+  --bg-hover: #2a3a5f;
+  --bg-input: #142040;
+  --border: #2e4066;
+  --border-light: #3c5280;
+  --text-primary: #eaf1fb;
+  --text-secondary: #a9b9d4;
+  --text-muted: #7388a8;
   --accent-color: #38bdf8;
   --accent-color-hover: #7dd3fc;
   --accent-color-glow: rgba(56, 189, 248, 0.16);
@@ -1980,8 +1980,8 @@ body {
   --btn-danger-border-hover: #ef4444;
   --btn-danger-text: #fca5a5;
   --btn-danger-text-hover: #ffffff;
-  --btn-secondary-bg: #131f35;
-  --btn-secondary-bg-hover: #1b2a45;
+  --btn-secondary-bg: #1b2a45;
+  --btn-secondary-bg-hover: #24355a;
 
   --overlay-gradient: linear-gradient(
     to top,
@@ -1992,43 +1992,43 @@ body {
   --card-stars-bg: rgba(10, 16, 28, 0.6);
   --card-checkbox-bg: rgba(10, 16, 28, 0.4);
   --dialog-backdrop: rgba(4, 8, 18, 0.6);
-  --viewer-overlay: rgba(7, 11, 22, 0.96);
+  --viewer-overlay: rgba(12, 19, 36, 0.93);
 
   /* shadcn/ui tokens (midnight) */
-  --background: #0b1220;
-  --foreground: #e6edf7;
-  --card: #121d31;
-  --card-foreground: #e6edf7;
-  --popover: #101a2b;
-  --popover-foreground: #e6edf7;
+  --background: #101b30;
+  --foreground: #eaf1fb;
+  --card: #1c2b4a;
+  --card-foreground: #eaf1fb;
+  --popover: #16233e;
+  --popover-foreground: #eaf1fb;
   --primary: #38bdf8;
-  --primary-foreground: #0b1220;
-  --secondary: #1a2740;
-  --secondary-foreground: #e6edf7;
-  --muted: #1a2740;
-  --muted-foreground: #9fb0c8;
-  --accent: #1a2740;
-  --accent-foreground: #e6edf7;
+  --primary-foreground: #101b30;
+  --secondary: #2a3a5f;
+  --secondary-foreground: #eaf1fb;
+  --muted: #2a3a5f;
+  --muted-foreground: #a9b9d4;
+  --accent: #2a3a5f;
+  --accent-foreground: #eaf1fb;
   --destructive: #f87171;
-  --destructive-foreground: #0b1220;
-  --border: #223049;
-  --input: #0e1727;
+  --destructive-foreground: #101b30;
+  --border: #2e4066;
+  --input: #142040;
   --ring: #38bdf8;
 }
 
 /* ── 森林夜（沉静墨绿） ── */
 [data-theme='forest'] {
   color-scheme: dark;
-  --bg-primary: #0e1713;
-  --bg-secondary: #121e18;
-  --bg-card: #15241c;
-  --bg-hover: #1c2f25;
-  --bg-input: #101d16;
-  --border: #24382c;
-  --border-light: #31493a;
-  --text-primary: #e7f0e9;
-  --text-secondary: #a3b8a9;
-  --text-muted: #6e8577;
+  --bg-primary: #12211a;
+  --bg-secondary: #182a20;
+  --bg-card: #1d3527;
+  --bg-hover: #27422f;
+  --bg-input: #16281e;
+  --border: #2f4a37;
+  --border-light: #3f5f49;
+  --text-primary: #ebf2ec;
+  --text-secondary: #aabfb1;
+  --text-muted: #758f80;
   --accent-color: #34d399;
   --accent-color-hover: #6ee7b7;
   --accent-color-glow: rgba(52, 211, 153, 0.15);
@@ -2064,15 +2064,15 @@ body {
   --card-stars-bg: rgba(8, 18, 12, 0.6);
   --card-checkbox-bg: rgba(8, 18, 12, 0.4);
   --dialog-backdrop: rgba(3, 10, 6, 0.6);
-  --viewer-overlay: rgba(6, 13, 9, 0.96);
+  --viewer-overlay: rgba(11, 22, 16, 0.93);
 
   /* shadcn/ui tokens (forest) */
-  --background: #0e1713;
-  --foreground: #e7f0e9;
-  --card: #15241c;
-  --card-foreground: #e7f0e9;
-  --popover: #121e18;
-  --popover-foreground: #e7f0e9;
+  --background: #12211a;
+  --foreground: #ebf2ec;
+  --card: #1d3527;
+  --card-foreground: #ebf2ec;
+  --popover: #182a20;
+  --popover-foreground: #ebf2ec;
   --primary: #34d399;
   --primary-foreground: #0e1713;
   --secondary: #1c2f25;
@@ -2158,6 +2158,294 @@ body {
   --border: #ddd2ba;
   --input: #f2ead8;
   --ring: #b45309;
+}
+
+/* ── 晨雾（清冷的雾蓝灰） ── */
+[data-theme='mist'] {
+  color-scheme: light;
+  --bg-primary: #eef1f6;
+  --bg-secondary: #f7f9fc;
+  --bg-card: #ffffff;
+  --bg-hover: #e1e7f0;
+  --bg-input: #f4f6fa;
+  --border: #d5dce6;
+  --border-light: #bcc7d6;
+  --text-primary: #232c38;
+  --text-secondary: #4f5c6d;
+  --text-muted: #8494a6;
+  --accent-color: #3b7fa6;
+  --accent-color-hover: #2c6485;
+  --accent-color-glow: rgba(59, 127, 166, 0.13);
+  --shadow: 0 1px 3px rgba(31, 45, 61, 0.07);
+  --shadow-lg: 0 8px 24px rgba(31, 45, 61, 0.12);
+  --danger: #d33c42;
+  --danger-hover: #e8636a;
+  --success: #2f8f5b;
+  --warning: #c07a17;
+  --star: #e0a422;
+
+  --btn-primary-bg: rgba(59, 127, 166, 0.1);
+  --btn-primary-bg-hover: rgba(59, 127, 166, 0.18);
+  --btn-primary-border: rgba(59, 127, 166, 0.32);
+  --btn-primary-border-hover: rgba(44, 100, 133, 0.5);
+  --btn-primary-text: #2c6485;
+  --btn-primary-text-hover: #1e4d68;
+  --btn-danger-bg: rgba(211, 60, 66, 0.08);
+  --btn-danger-bg-hover: #d33c42;
+  --btn-danger-border: rgba(211, 60, 66, 0.32);
+  --btn-danger-border-hover: #d33c42;
+  --btn-danger-text: #d33c42;
+  --btn-danger-text-hover: #ffffff;
+  --btn-secondary-bg: #ffffff;
+  --btn-secondary-bg-hover: #e7ecf3;
+
+  --overlay-gradient: linear-gradient(
+    to top,
+    rgba(0, 0, 0, 0.72) 0%,
+    rgba(0, 0, 0, 0.3) 45%,
+    transparent 100%
+  );
+  --card-stars-bg: rgba(20, 24, 30, 0.55);
+  --card-checkbox-bg: rgba(20, 24, 30, 0.35);
+  --dialog-backdrop: rgba(24, 36, 50, 0.4);
+  --viewer-overlay: rgba(20, 24, 30, 0.96);
+
+  /* shadcn/ui tokens (mist) */
+  --background: #eef1f6;
+  --foreground: #232c38;
+  --card: #ffffff;
+  --card-foreground: #232c38;
+  --popover: #f7f9fc;
+  --popover-foreground: #232c38;
+  --primary: #3b7fa6;
+  --primary-foreground: #ffffff;
+  --secondary: #e1e7f0;
+  --secondary-foreground: #232c38;
+  --muted: #e1e7f0;
+  --muted-foreground: #4f5c6d;
+  --accent: #e1e7f0;
+  --accent-foreground: #232c38;
+  --destructive: #d33c42;
+  --destructive-foreground: #ffffff;
+  --border: #d5dce6;
+  --input: #f4f6fa;
+  --ring: #3b7fa6;
+}
+
+/* ── 青瓷（淡雅青釉色） ── */
+[data-theme='celadon'] {
+  color-scheme: light;
+  --bg-primary: #ecf3ef;
+  --bg-secondary: #f7fbf8;
+  --bg-card: #ffffff;
+  --bg-hover: #dfeae2;
+  --bg-input: #f1f7f3;
+  --border: #cfe0d4;
+  --border-light: #b3cbbd;
+  --text-primary: #1e3a30;
+  --text-secondary: #47695a;
+  --text-muted: #7b9a8a;
+  --accent-color: #2f8f6f;
+  --accent-color-hover: #227155;
+  --accent-color-glow: rgba(47, 143, 111, 0.13);
+  --shadow: 0 1px 3px rgba(24, 54, 42, 0.07);
+  --shadow-lg: 0 8px 24px rgba(24, 54, 42, 0.12);
+  --danger: #d0453f;
+  --danger-hover: #e5665f;
+  --success: #2f8f6f;
+  --warning: #b8801d;
+  --star: #d9a520;
+
+  --btn-primary-bg: rgba(47, 143, 111, 0.1);
+  --btn-primary-bg-hover: rgba(47, 143, 111, 0.18);
+  --btn-primary-border: rgba(47, 143, 111, 0.32);
+  --btn-primary-border-hover: rgba(34, 113, 85, 0.5);
+  --btn-primary-text: #227155;
+  --btn-primary-text-hover: #155a41;
+  --btn-danger-bg: rgba(208, 69, 63, 0.08);
+  --btn-danger-bg-hover: #d0453f;
+  --btn-danger-border: rgba(208, 69, 63, 0.32);
+  --btn-danger-border-hover: #d0453f;
+  --btn-danger-text: #d0453f;
+  --btn-danger-text-hover: #ffffff;
+  --btn-secondary-bg: #ffffff;
+  --btn-secondary-bg-hover: #e6f0e9;
+
+  --overlay-gradient: linear-gradient(
+    to top,
+    rgba(0, 0, 0, 0.72) 0%,
+    rgba(0, 0, 0, 0.3) 45%,
+    transparent 100%
+  );
+  --card-stars-bg: rgba(16, 32, 26, 0.55);
+  --card-checkbox-bg: rgba(16, 32, 26, 0.35);
+  --dialog-backdrop: rgba(20, 42, 33, 0.4);
+  --viewer-overlay: rgba(16, 28, 23, 0.96);
+
+  /* shadcn/ui tokens (celadon) */
+  --background: #ecf3ef;
+  --foreground: #1e3a30;
+  --card: #ffffff;
+  --card-foreground: #1e3a30;
+  --popover: #f7fbf8;
+  --popover-foreground: #1e3a30;
+  --primary: #2f8f6f;
+  --primary-foreground: #ffffff;
+  --secondary: #dfeae2;
+  --secondary-foreground: #1e3a30;
+  --muted: #dfeae2;
+  --muted-foreground: #47695a;
+  --accent: #dfeae2;
+  --accent-foreground: #1e3a30;
+  --destructive: #d0453f;
+  --destructive-foreground: #ffffff;
+  --border: #cfe0d4;
+  --input: #f1f7f3;
+  --ring: #2f8f6f;
+}
+
+/* ── 樱落（柔软的粉藕荷） ── */
+[data-theme='sakura'] {
+  color-scheme: light;
+  --bg-primary: #f9eff2;
+  --bg-secondary: #fdf6f8;
+  --bg-card: #fffafb;
+  --bg-hover: #f2e0e6;
+  --bg-input: #f8e9ee;
+  --border: #e9d2d9;
+  --border-light: #d8b3c0;
+  --text-primary: #3d2830;
+  --text-secondary: #6d4c57;
+  --text-muted: #a2818b;
+  --accent-color: #c2658a;
+  --accent-color-hover: #a95577;
+  --accent-color-glow: rgba(194, 101, 138, 0.14);
+  --shadow: 0 1px 3px rgba(74, 40, 53, 0.07);
+  --shadow-lg: 0 8px 24px rgba(74, 40, 53, 0.12);
+  --danger: #d1435a;
+  --danger-hover: #e56b7f;
+  --success: #2f8f6f;
+  --warning: #c47d20;
+  --star: #e0a422;
+
+  --btn-primary-bg: rgba(194, 101, 138, 0.12);
+  --btn-primary-bg-hover: rgba(194, 101, 138, 0.2);
+  --btn-primary-border: rgba(194, 101, 138, 0.34);
+  --btn-primary-border-hover: rgba(169, 85, 119, 0.52);
+  --btn-primary-text: #a95577;
+  --btn-primary-text-hover: #8c4060;
+  --btn-danger-bg: rgba(209, 67, 90, 0.08);
+  --btn-danger-bg-hover: #d1435a;
+  --btn-danger-border: rgba(209, 67, 90, 0.32);
+  --btn-danger-border-hover: #d1435a;
+  --btn-danger-text: #d1435a;
+  --btn-danger-text-hover: #ffffff;
+  --btn-secondary-bg: #fffafb;
+  --btn-secondary-bg-hover: #f4e4e9;
+
+  --overlay-gradient: linear-gradient(
+    to top,
+    rgba(0, 0, 0, 0.72) 0%,
+    rgba(0, 0, 0, 0.3) 45%,
+    transparent 100%
+  );
+  --card-stars-bg: rgba(32, 18, 24, 0.55);
+  --card-checkbox-bg: rgba(32, 18, 24, 0.35);
+  --dialog-backdrop: rgba(60, 32, 44, 0.38);
+  --viewer-overlay: rgba(30, 20, 24, 0.96);
+
+  /* shadcn/ui tokens (sakura) */
+  --background: #f9eff2;
+  --foreground: #3d2830;
+  --card: #fffafb;
+  --card-foreground: #3d2830;
+  --popover: #fdf6f8;
+  --popover-foreground: #3d2830;
+  --primary: #c2658a;
+  --primary-foreground: #ffffff;
+  --secondary: #f2e0e6;
+  --secondary-foreground: #3d2830;
+  --muted: #f2e0e6;
+  --muted-foreground: #6d4c57;
+  --accent: #f2e0e6;
+  --accent-foreground: #3d2830;
+  --destructive: #d1435a;
+  --destructive-foreground: #ffffff;
+  --border: #e9d2d9;
+  --input: #f8e9ee;
+  --ring: #c2658a;
+}
+
+/* ── 暮山紫（薄暮紫霭） ── */
+[data-theme='twilight'] {
+  color-scheme: light;
+  --bg-primary: #f1eef8;
+  --bg-secondary: #f9f7fd;
+  --bg-card: #fdfcff;
+  --bg-hover: #e5e0f1;
+  --bg-input: #eeeaf7;
+  --border: #d9d2e8;
+  --border-light: #c3b8dc;
+  --text-primary: #2b2540;
+  --text-secondary: #574f6e;
+  --text-muted: #8b82a2;
+  --accent-color: #7c5cc4;
+  --accent-color-hover: #644aa6;
+  --accent-color-glow: rgba(124, 92, 196, 0.13);
+  --shadow: 0 1px 3px rgba(43, 37, 66, 0.07);
+  --shadow-lg: 0 8px 24px rgba(43, 37, 66, 0.12);
+  --danger: #cc3f57;
+  --danger-hover: #e2687c;
+  --success: #2f8f6f;
+  --warning: #b8791d;
+  --star: #d9a520;
+
+  --btn-primary-bg: rgba(124, 92, 196, 0.1);
+  --btn-primary-bg-hover: rgba(124, 92, 196, 0.18);
+  --btn-primary-border: rgba(124, 92, 196, 0.32);
+  --btn-primary-border-hover: rgba(100, 74, 166, 0.5);
+  --btn-primary-text: #644aa6;
+  --btn-primary-text-hover: #4f3885;
+  --btn-danger-bg: rgba(204, 63, 87, 0.08);
+  --btn-danger-bg-hover: #cc3f57;
+  --btn-danger-border: rgba(204, 63, 87, 0.32);
+  --btn-danger-border-hover: #cc3f57;
+  --btn-danger-text: #cc3f57;
+  --btn-danger-text-hover: #ffffff;
+  --btn-secondary-bg: #fdfcff;
+  --btn-secondary-bg-hover: #e9e4f4;
+
+  --overlay-gradient: linear-gradient(
+    to top,
+    rgba(0, 0, 0, 0.72) 0%,
+    rgba(0, 0, 0, 0.3) 45%,
+    transparent 100%
+  );
+  --card-stars-bg: rgba(24, 20, 36, 0.55);
+  --card-checkbox-bg: rgba(24, 20, 36, 0.35);
+  --dialog-backdrop: rgba(45, 36, 72, 0.4);
+  --viewer-overlay: rgba(24, 20, 34, 0.96);
+
+  /* shadcn/ui tokens (twilight) */
+  --background: #f1eef8;
+  --foreground: #2b2540;
+  --card: #fdfcff;
+  --card-foreground: #2b2540;
+  --popover: #f9f7fd;
+  --popover-foreground: #2b2540;
+  --primary: #7c5cc4;
+  --primary-foreground: #ffffff;
+  --secondary: #e5e0f1;
+  --secondary-foreground: #2b2540;
+  --muted: #e5e0f1;
+  --muted-foreground: #574f6e;
+  --accent: #e5e0f1;
+  --accent-foreground: #2b2540;
+  --destructive: #cc3f57;
+  --destructive-foreground: #ffffff;
+  --border: #d9d2e8;
+  --input: #eeeaf7;
+  --ring: #7c5cc4;
 }
 
 body {

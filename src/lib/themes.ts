@@ -1,4 +1,5 @@
-export type ThemeId = 'dark' | 'midnight' | 'forest' | 'light' | 'sepia';
+export type ThemeId =
+  'dark' | 'midnight' | 'forest' | 'light' | 'mist' | 'celadon' | 'sakura' | 'twilight' | 'sepia';
 
 export interface ThemeDef {
   id: ThemeId;
@@ -9,22 +10,38 @@ export interface ThemeDef {
 }
 
 export const THEMES: ThemeDef[] = [
-  { id: 'dark', name: '深色', desc: '经典深空灰', swatch: ['#14151a', '#818cf8'], light: false },
+  { id: 'dark', name: '深色', desc: '经典深空灰', swatch: ['#202128', '#818cf8'], light: false },
   {
     id: 'midnight',
     name: '午夜蓝',
     desc: '冷调靛蓝夜色',
-    swatch: ['#0b1220', '#38bdf8'],
+    swatch: ['#101b30', '#38bdf8'],
     light: false,
   },
   {
     id: 'forest',
     name: '森林夜',
     desc: '沉静的墨绿',
-    swatch: ['#0e1713', '#34d399'],
+    swatch: ['#12211a', '#34d399'],
     light: false,
   },
   { id: 'light', name: '浅色', desc: '明亮的灰白', swatch: ['#f6f7f9', '#5b6ef5'], light: true },
+  { id: 'mist', name: '晨雾', desc: '清冷的雾蓝灰', swatch: ['#eef1f6', '#3b7fa6'], light: true },
+  { id: 'celadon', name: '青瓷', desc: '淡雅青釉色', swatch: ['#ecf3ef', '#2f8f6f'], light: true },
+  {
+    id: 'sakura',
+    name: '樱落',
+    desc: '柔软的粉藕荷',
+    swatch: ['#f9eff2', '#c2658a'],
+    light: true,
+  },
+  {
+    id: 'twilight',
+    name: '暮山紫',
+    desc: '薄暮紫霭',
+    swatch: ['#f1eef8', '#7c5cc4'],
+    light: true,
+  },
   { id: 'sepia', name: '羊皮纸', desc: '暖调纸张色', swatch: ['#f5efe2', '#b45309'], light: true },
 ];
 

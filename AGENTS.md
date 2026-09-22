@@ -82,7 +82,7 @@ tests/            vitest（node 环境 + per-file happy-dom pragma）
 
 - 通用组件优先使用 `src/components/ui/*`（shadcn/ui 生成的 `.tsx` 组件，如 `Button`/`Input`/`Dialog`/`DropdownMenu`/`ContextMenu`/`Sonner`/`Select`/`Tooltip`），不要手写重复的按钮/表单/弹层。
 - 样式使用 Tailwind utilities；自定义视觉走 `src/styles/index.css` 的 CSS 变量（现有 `--bg-*`、`--accent-color` 等）或 `.tsx` 内的 tailwind class。
-- 主题变量两套并存且映射一致：`--bg-*`（现有组件）与 shadcn token（`--background`/`--foreground`/`--primary`/`--border`/`--radius` 等）。全局主题 5 套（深色/午夜蓝/森林夜/浅色/羊皮纸），单一事实源 `src/lib/themes.ts`，每套一个 `[data-theme=id]` 变量块；新增 token 需同时补 `@theme inline` 映射。
+- 主题变量两套并存且映射一致：`--bg-*`（现有组件）与 shadcn token（`--background`/`--foreground`/`--primary`/`--border`/`--radius` 等）。全局主题 9 套（深色/午夜蓝/森林夜/浅色/晨雾/青瓷/樱落/暮山紫/羊皮纸，后四套为浅色系），单一事实源 `src/lib/themes.ts`，除 `dark`（即 `:root` 默认值）外每套主题一个 `[data-theme=id]` 变量块；新增主题须在 `src/styles/index.css` 补齐同名块的全量 token，`tests/unit/lib/themes.test.js` 会对拍：id↔块双向完备、必需 token 全覆盖、`color-scheme` 与 `light` 标记一致、底色明度与对比度门槛；新增 token 需同时补 `@theme inline` 映射。
 - 应用特有 UI（图片网格、全屏查看器、星级、缩略图、侧边栏）保持手写 CSS，不要用 UI 库强行替换。
 - `vite.config.js` 使用 async 配置 + 动态 `import('@tailwindcss/vite')`（ESM-only 插件）；`@` alias 指向 `src`。
 - 修改 shadcn 组件（`src/components/ui/*`）需谨慎：它们由 `npx shadcn@latest add` 生成，保持结构稳定。
@@ -132,11 +132,14 @@ tests/            vitest（node 环境 + per-file happy-dom pragma）
 - `npm run tauri:dev` 可用且与 `npm run dev` 无关：`tauri.conf.json` 的 `build` 只有 `frontendDist: "../dist"`
   （无 `devUrl`/`beforeDevCommand`），dev 窗口加载磁盘上的 `../dist`。因此改前端后必须先 `npx vite build`
   再重载窗口（`Page.reload` 或 Ctrl+R），否则验的是旧包；Rust 改动才需要 cargo 重编。
-- 实机点击级冒烟（R50 起可用）：以 `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS="--remote-debugging-port=9222"`
-  启动 `target/debug/pixyang.exe`，读 `http://127.0.0.1:9222/json` 取 page 目标的 `webSocketDebuggerUrl`，
+- 实机点击级冒烟（R50 起可用，R51 勘正启动方式）：以 `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS="--remote-debugging-port=9222"`
+  前缀跑 **`npm run tauri:dev`**（不是裸起 `target/debug/pixyang.exe`：R51 实测裸起时页面源
+  `http://127.0.0.1:1430` 无人监听，WebView2 直接落在 `chrome-error://chromewebdata/` + `ERR_CONNECTION_REFUSED`，
+  1430 的静态服务由 tauri dev 这条链提供），读 `http://127.0.0.1:9222/json` 取 page 目标的 `webSocketDebuggerUrl`，
   用 Node 原生 WebSocket 发 CDP `Runtime.enable` + `Runtime.evaluate`（`returnByValue`）直接驱动真实 DOM
-  查询/点击，并回收 `Runtime.consoleAPICalled` 日志。单测/构建看不到的只在 WebView 生效的问题（纹理污染、
-  协议 CORS、原生层降级）靠这条通道取证。
+  查询/点击，并回收 `Runtime.consoleAPICalled` 日志与 `Page.captureScreenshot` 截图。单测/构建看不到的只在
+  WebView 生效的问题（纹理污染、协议 CORS、原生层降级、主题变量落不到组件）靠这条通道取证。
+  注意路由是 HashRouter：导航选择器须写 `a[href="#/settings"]`。
 - WebGL2 编辑预览的底图 `<img>` 必须带 `crossOrigin="anonymous"`：图片经 `asset://`（`http://asset.localhost`）
   加载属跨域，无 CORS 模式时 `texImage2D` 抛 SecurityError → `webglFailed` 静默降级到 CSS/SVG 回退，
   而 happy-dom 无 WebGL2，单测永远绿。同一 URL 的预解码 `new Image()`、CompareView 的 Before 层须与

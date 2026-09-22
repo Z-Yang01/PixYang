@@ -716,3 +716,47 @@
   新增 ⑦——既然 WebGL 预览此前从未在真机跑过，历史轮次所有「WebGL2 shader 与 Rust 执行器同公式」
   的对拍实际只覆盖到 JS/CSS 侧，是否需要一轮 shader 输出 vs golden 的实机像素对拍（现已有自动化通道）。
 
+- 2026-09-22 19:53 R51 浅色系主题扩容（5 套 → 9 套）+ 主题↔CSS 对拍门禁 + 真机逐主题冒烟：
+  ① 需求：用户「主题太黑深，多来几个符合审美的唯美主题」。既有 5 套里仅 2 套浅色，故本轮纯增量补
+    4 套浅色系（插在 `light` 与 `sepia` 之间，深色三套不动）：晨雾 `mist`（清冷雾蓝灰 `#eef1f6`/`#3b7fa6`）、
+    青瓷 `celadon`（淡雅青釉 `#ecf3ef`/`#2f8f6f`）、樱落 `sakura`（柔软粉藕荷 `#f9eff2`/`#c2658a`）、
+    暮山紫 `twilight`（薄暮紫霭 `#f1eef8`/`#7c5cc4`）。浅色主题由 2 套增至 6 套。
+  ② 契约面只有两处：`src/lib/themes.ts`（`ThemeId` 联合 + `THEMES` 条目）与 `src/styles/index.css`
+    （每套一个 `[data-theme=id]` 全量 token 块，`dark` 例外走 `:root` 基线）。设置页 `theme-grid`、
+    `normalizeTheme`、`isLightTheme`（sonner 亮暗）全部按清单泛化，零改动；`@theme inline` 是 var 间接
+    映射，新增主题无需补。本轮 index.css 为纯 +288 行插入（`git diff` 的 57 行删除全部属于用户 WIP，见 ⑦）。
+  ③ 新增回归锁（把「清单 ↔ 变量块」对拍升级为门禁，`tests/unit/lib/themes.test.js` 3 例 → 8 例）：
+    每个 ThemeId 恰有一个块且 CSS 无孤儿块、每块覆盖 58 项必需 token（漏一项 = 静默沿用深色默认值而串色）、
+    `color-scheme` 与 `light` 标记一致（否则原生滚动条/表单控件反向）、底色明度与 `light` 标记一致
+    （浅 ≥0.6 / 深 <0.25）、正文对比度 ≥4.5 且强调色 ≥3。
+    变异验证三处各自会咬（均已复原）：删 mist 的 `--viewer-overlay` → `[data-theme='mist'] 未声明: ['--viewer-overlay']`；
+    块名改成 `mistt` → `缺少 'mist' 主题变量块`；celadon 的 `color-scheme` 改 dark → `expected 'dark' to be 'light'`。
+  ④ 对比度门禁立刻反咬一处设计：樱落强调色初稿 `#c96f8f` 在 `#f9eff2` 上仅 3.03（贴 3.0 门槛），
+    下压一档到 `#c2658a` → 3.38，与其余浅色主题同档（3.53~4.38，既有浅色 3.92）；
+    同步改 `swatch`/`--primary`/`--ring`/`--btn-primary-*` 共 6 处引用，保持单一强调色不分裂。
+  ⑤ 真机逐主题冒烟（CDP，全程只读）：9 套主题 × 图库页读回 `body`/`.sidebar`/`.topbar`/`.image-card`
+    计算样式并截图，逐套按块生效、broken img=0、控制台 error=0；暮山紫下查看器 `overlay=rgba(24,20,34,.96)`
+    （证明新 token 真被组件消费）、关闭按钮白字、原图 `naturalWidth=5568` 且 `crossorigin=anonymous`
+    （R50 修复在真机仍成立）；设置页 9 张主题卡按序渲染（深色/午夜蓝/森林夜/浅色/晨雾/青瓷/樱落/暮山紫/羊皮纸），
+    逐张点击预览即时换肤且 `.theme-card.active` 跟随，点「撤回」回到深色并复原 body 底色（未点保存 → 零 DB 写入）；
+    樱落下「快捷键」弹层取到 `--bg-card #fffafb` / `--dialog-backdrop #3c202c61`。
+  ⑥ 口径勘正（R50 的 CDP 接法写漏了前置条件，已改 AGENTS.md）：**裸起 `target/debug/pixyang.exe` 不可用**——
+    探针实测页面落在 `chrome-error://chromewebdata/` + `ERR_CONNECTION_REFUSED`，页面源
+    `http://127.0.0.1:1430` 的静态服务由 `npm run tauri:dev` 这条链提供，故须
+    `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS="--remote-debugging-port=9222" npm run tauri:dev`；
+    另本应用是 HashRouter，导航选择器必须写 `a[href="#/settings"]`（`a[href="/settings"]` 静默点不到，
+    本轮首版脚本因此误判「主题卡数=0」）。
+  ⑦ 与用户 WIP 的关系：本轮开工前 `themes.ts` / `index.css` 已带用户未提交的「深色三套提亮」改动
+    （`:root` `#1a1b1f→#202128`、午夜蓝/森林夜整块提亮、三处 swatch 色），方向与本轮一致（都在治「太黑深」），
+    真机 dark 主题实测 body=rgb(32,33,40) 即其提亮值 → 两套改动同向不冲突，本轮全程未回退、未暂存。
+  ⑧ 安全边界：调试实例 `images_root` 仍是真实图库 `E:\PicX`，本轮只切主题/开查看器/开弹层/点撤回，
+    未触发删除、改名、日期移动、导入、相机同步、烘焙、导出，也未点「保存」写设置。
+- 验证：vitest 772/772 ✅（56 文件；767→772 为本轮新增 5 例）；lint 0 error / 8 warning（基线不变）；
+  typecheck ✅；format:check ✅（新文件经 `npx prettier --write` 落齐）；`npx vite build` ✅
+  （`index-BhW9a_Pk.js` / `index-CP6mv7NJ.css` 101.84 kB）；本轮零 Rust 逻辑改动（仅 release 重编）。
+  安装包 19:53 重打（4,112,380 B；上版 19:07 为 4,115,279 B），按二进制内嵌资源指纹核对
+  `index-BhW9a_Pk.js` / `index-CP6mv7NJ.css` 与 `dist/index.html` 一致 → 安装包与当前工作树等价。
+  待人工复核：① 4 套新主题的中文命名与配色是否合口味（可继续调或再加套数）；② 用户未提交的深色提亮
+  WIP 与本轮同处 `themes.ts` / `index.css`，是否随 R51 一并入库（默认不动、等明示）；③ R50 的 ⑦
+  「shader 输出 vs golden 实机像素对拍」仍待决；④ `release/`（98MB）删否；⑤ R49 其余口径项原样沿用。
+
