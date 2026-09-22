@@ -37,6 +37,8 @@
   --bg-input: #26272f;
   --border: #40424f;
   --border-light: #585b6b;
+  --bg-panel: rgba(20, 20, 24, 0.95);
+  --border-color: rgba(255, 255, 255, 0.12);
   --text-primary: #f2f3f7;
   --text-secondary: #bcbfc9;
   --text-muted: #8b8d9c;
@@ -1089,7 +1091,8 @@ body {
 
 .viewer-counter {
   font-weight: 600;
-  color: var(--accent-color-hover);
+  /* 信息条恒为深色底，浅色主题的强调色压上去只有 2.7:1，提亮一档保住色相 */
+  color: color-mix(in srgb, var(--accent-color) 55%, #ffffff);
   white-space: nowrap;
 }
 
@@ -1879,6 +1882,8 @@ body {
   --bg-input: #f1f3f5;
   --border: #e2e5ea;
   --border-light: #cfd4dc;
+  --bg-panel: rgba(255, 255, 255, 0.95);
+  --border-color: rgba(28, 31, 38, 0.12);
   --text-primary: #1c1f26;
   --text-secondary: #4b5160;
   --text-muted: #8b919e;
@@ -1954,6 +1959,8 @@ body {
   --bg-input: #142040;
   --border: #2e4066;
   --border-light: #3c5280;
+  --bg-panel: rgba(18, 29, 52, 0.95);
+  --border-color: rgba(255, 255, 255, 0.12);
   --text-primary: #eaf1fb;
   --text-secondary: #a9b9d4;
   --text-muted: #7388a8;
@@ -2026,6 +2033,8 @@ body {
   --bg-input: #16281e;
   --border: #2f4a37;
   --border-light: #3f5f49;
+  --bg-panel: rgba(16, 32, 23, 0.95);
+  --border-color: rgba(255, 255, 255, 0.12);
   --text-primary: #ebf2ec;
   --text-secondary: #aabfb1;
   --text-muted: #758f80;
@@ -2098,6 +2107,8 @@ body {
   --bg-input: #f2ead8;
   --border: #ddd2ba;
   --border-light: #cabc9c;
+  --bg-panel: rgba(253, 249, 239, 0.95);
+  --border-color: rgba(61, 51, 36, 0.14);
   --text-primary: #3d3324;
   --text-secondary: #6b5d47;
   --text-muted: #9a8a70;
@@ -2170,6 +2181,8 @@ body {
   --bg-input: #f4f6fa;
   --border: #d5dce6;
   --border-light: #bcc7d6;
+  --bg-panel: rgba(255, 255, 255, 0.95);
+  --border-color: rgba(35, 44, 56, 0.12);
   --text-primary: #232c38;
   --text-secondary: #4f5c6d;
   --text-muted: #8494a6;
@@ -2242,6 +2255,8 @@ body {
   --bg-input: #f1f7f3;
   --border: #cfe0d4;
   --border-light: #b3cbbd;
+  --bg-panel: rgba(255, 255, 255, 0.95);
+  --border-color: rgba(30, 58, 48, 0.12);
   --text-primary: #1e3a30;
   --text-secondary: #47695a;
   --text-muted: #7b9a8a;
@@ -2314,6 +2329,8 @@ body {
   --bg-input: #f8e9ee;
   --border: #e9d2d9;
   --border-light: #d8b3c0;
+  --bg-panel: rgba(255, 250, 251, 0.95);
+  --border-color: rgba(61, 40, 48, 0.13);
   --text-primary: #3d2830;
   --text-secondary: #6d4c57;
   --text-muted: #a2818b;
@@ -2386,6 +2403,8 @@ body {
   --bg-input: #eeeaf7;
   --border: #d9d2e8;
   --border-light: #c3b8dc;
+  --bg-panel: rgba(253, 252, 255, 0.95);
+  --border-color: rgba(43, 37, 64, 0.12);
   --text-primary: #2b2540;
   --text-secondary: #574f6e;
   --text-muted: #8b82a2;
@@ -2446,6 +2465,302 @@ body {
   --border: #d9d2e8;
   --input: #eeeaf7;
   --ring: #7c5cc4;
+}
+
+/* ── 月白（素净的冷月白） ── */
+[data-theme='yuebai'] {
+  color-scheme: light;
+  --bg-primary: #eef3f5;
+  --bg-secondary: #f9fbfc;
+  --bg-card: #ffffff;
+  --bg-hover: #e2eaee;
+  --bg-input: #f3f7f8;
+  --border: #d3dee3;
+  --border-light: #bacbd2;
+  --bg-panel: rgba(255, 255, 255, 0.95);
+  --border-color: rgba(37, 49, 56, 0.12);
+  --text-primary: #253138;
+  --text-secondary: #4f5f68;
+  --text-muted: #74868f;
+  --accent-color: #3a5561;
+  --accent-color-hover: #2c3b42;
+  --accent-color-glow: rgba(58, 85, 97, 0.13);
+  --shadow: 0 1px 3px rgba(20, 30, 36, 0.07);
+  --shadow-lg: 0 8px 24px rgba(20, 30, 36, 0.12);
+  --danger: #cf3f45;
+  --danger-hover: #e5666c;
+  --success: #2f8f5b;
+  --warning: #b8801d;
+  --star: #d9a520;
+
+  --btn-primary-bg: rgba(58, 85, 97, 0.1);
+  --btn-primary-bg-hover: rgba(58, 85, 97, 0.18);
+  --btn-primary-border: rgba(58, 85, 97, 0.32);
+  --btn-primary-border-hover: rgba(44, 59, 66, 0.5);
+  --btn-primary-text: #2c3b42;
+  --btn-primary-text-hover: #1b262c;
+  --btn-danger-bg: rgba(207, 63, 69, 0.08);
+  --btn-danger-bg-hover: #cf3f45;
+  --btn-danger-border: rgba(207, 63, 69, 0.32);
+  --btn-danger-border-hover: #cf3f45;
+  --btn-danger-text: #cf3f45;
+  --btn-danger-text-hover: #ffffff;
+  --btn-secondary-bg: #ffffff;
+  --btn-secondary-bg-hover: #eaf0f3;
+
+  --overlay-gradient: linear-gradient(
+    to top,
+    rgba(0, 0, 0, 0.72) 0%,
+    rgba(0, 0, 0, 0.3) 45%,
+    transparent 100%
+  );
+  --card-stars-bg: rgba(18, 26, 32, 0.55);
+  --card-checkbox-bg: rgba(18, 26, 32, 0.35);
+  --dialog-backdrop: rgba(22, 32, 38, 0.4);
+  --viewer-overlay: rgba(18, 24, 30, 0.96);
+
+  /* shadcn/ui tokens (yuebai) */
+  --background: #eef3f5;
+  --foreground: #253138;
+  --card: #ffffff;
+  --card-foreground: #253138;
+  --popover: #f9fbfc;
+  --popover-foreground: #253138;
+  --primary: #3a5561;
+  --primary-foreground: #ffffff;
+  --secondary: #e2eaee;
+  --secondary-foreground: #253138;
+  --muted: #e2eaee;
+  --muted-foreground: #4f5f68;
+  --accent: #e2eaee;
+  --accent-foreground: #253138;
+  --destructive: #cf3f45;
+  --destructive-foreground: #ffffff;
+  --border: #d3dee3;
+  --input: #f3f7f8;
+  --ring: #3a5561;
+}
+
+/* ── 湖光（澄澈的湖光碧） ── */
+[data-theme='huguang'] {
+  color-scheme: light;
+  --bg-primary: #e6f1f3;
+  --bg-secondary: #f4fafb;
+  --bg-card: #ffffff;
+  --bg-hover: #d7e8eb;
+  --bg-input: #eef7f8;
+  --border: #c8dde1;
+  --border-light: #a9c7cd;
+  --bg-panel: rgba(255, 255, 255, 0.95);
+  --border-color: rgba(23, 56, 62, 0.12);
+  --text-primary: #17383e;
+  --text-secondary: #40666d;
+  --text-muted: #6d8d93;
+  --accent-color: #16788c;
+  --accent-color-hover: #0f5f70;
+  --accent-color-glow: rgba(22, 120, 140, 0.13);
+  --shadow: 0 1px 3px rgba(12, 42, 48, 0.07);
+  --shadow-lg: 0 8px 24px rgba(12, 42, 48, 0.12);
+  --danger: #cf3f45;
+  --danger-hover: #e5666c;
+  --success: #2f8f6f;
+  --warning: #b8801d;
+  --star: #dc9a1f;
+
+  --btn-primary-bg: rgba(22, 120, 140, 0.1);
+  --btn-primary-bg-hover: rgba(22, 120, 140, 0.18);
+  --btn-primary-border: rgba(22, 120, 140, 0.32);
+  --btn-primary-border-hover: rgba(15, 95, 112, 0.5);
+  --btn-primary-text: #0f5f70;
+  --btn-primary-text-hover: #08414e;
+  --btn-danger-bg: rgba(207, 63, 69, 0.08);
+  --btn-danger-bg-hover: #cf3f45;
+  --btn-danger-border: rgba(207, 63, 69, 0.32);
+  --btn-danger-border-hover: #cf3f45;
+  --btn-danger-text: #cf3f45;
+  --btn-danger-text-hover: #ffffff;
+  --btn-secondary-bg: #ffffff;
+  --btn-secondary-bg-hover: #e2eff1;
+
+  --overlay-gradient: linear-gradient(
+    to top,
+    rgba(0, 0, 0, 0.72) 0%,
+    rgba(0, 0, 0, 0.3) 45%,
+    transparent 100%
+  );
+  --card-stars-bg: rgba(10, 30, 34, 0.55);
+  --card-checkbox-bg: rgba(10, 30, 34, 0.35);
+  --dialog-backdrop: rgba(14, 40, 46, 0.4);
+  --viewer-overlay: rgba(12, 28, 32, 0.96);
+
+  /* shadcn/ui tokens (huguang) */
+  --background: #e6f1f3;
+  --foreground: #17383e;
+  --card: #ffffff;
+  --card-foreground: #17383e;
+  --popover: #f4fafb;
+  --popover-foreground: #17383e;
+  --primary: #16788c;
+  --primary-foreground: #ffffff;
+  --secondary: #d7e8eb;
+  --secondary-foreground: #17383e;
+  --muted: #d7e8eb;
+  --muted-foreground: #40666d;
+  --accent: #d7e8eb;
+  --accent-foreground: #17383e;
+  --destructive: #cf3f45;
+  --destructive-foreground: #ffffff;
+  --border: #c8dde1;
+  --input: #eef7f8;
+  --ring: #16788c;
+}
+
+/* ── 竹露（嫩青的竹露绿） ── */
+[data-theme='zhulu'] {
+  color-scheme: light;
+  --bg-primary: #eff4e4;
+  --bg-secondary: #f8fbf1;
+  --bg-card: #fdfef8;
+  --bg-hover: #e3ecd2;
+  --bg-input: #f3f7e9;
+  --border: #d7e2c2;
+  --border-light: #c0d0a4;
+  --bg-panel: rgba(253, 254, 248, 0.95);
+  --border-color: rgba(47, 58, 31, 0.13);
+  --text-primary: #2f3a1f;
+  --text-secondary: #5a6644;
+  --text-muted: #7d8a63;
+  --accent-color: #5f8335;
+  --accent-color-hover: #4a6a27;
+  --accent-color-glow: rgba(95, 131, 53, 0.13);
+  --shadow: 0 1px 3px rgba(38, 52, 20, 0.07);
+  --shadow-lg: 0 8px 24px rgba(38, 52, 20, 0.12);
+  --danger: #c94a3c;
+  --danger-hover: #e06a5c;
+  --success: #3f8f57;
+  --warning: #b8801d;
+  --star: #d9a520;
+
+  --btn-primary-bg: rgba(95, 131, 53, 0.1);
+  --btn-primary-bg-hover: rgba(95, 131, 53, 0.18);
+  --btn-primary-border: rgba(95, 131, 53, 0.32);
+  --btn-primary-border-hover: rgba(74, 106, 39, 0.5);
+  --btn-primary-text: #4a6a27;
+  --btn-primary-text-hover: #354d1a;
+  --btn-danger-bg: rgba(201, 74, 60, 0.08);
+  --btn-danger-bg-hover: #c94a3c;
+  --btn-danger-border: rgba(201, 74, 60, 0.32);
+  --btn-danger-border-hover: #c94a3c;
+  --btn-danger-text: #c94a3c;
+  --btn-danger-text-hover: #ffffff;
+  --btn-secondary-bg: #fdfef8;
+  --btn-secondary-bg-hover: #e8efd8;
+
+  --overlay-gradient: linear-gradient(
+    to top,
+    rgba(0, 0, 0, 0.72) 0%,
+    rgba(0, 0, 0, 0.3) 45%,
+    transparent 100%
+  );
+  --card-stars-bg: rgba(26, 36, 14, 0.55);
+  --card-checkbox-bg: rgba(26, 36, 14, 0.35);
+  --dialog-backdrop: rgba(36, 48, 22, 0.4);
+  --viewer-overlay: rgba(22, 30, 16, 0.96);
+
+  /* shadcn/ui tokens (zhulu) */
+  --background: #eff4e4;
+  --foreground: #2f3a1f;
+  --card: #fdfef8;
+  --card-foreground: #2f3a1f;
+  --popover: #f8fbf1;
+  --popover-foreground: #2f3a1f;
+  --primary: #5f8335;
+  --primary-foreground: #ffffff;
+  --secondary: #e3ecd2;
+  --secondary-foreground: #2f3a1f;
+  --muted: #e3ecd2;
+  --muted-foreground: #5a6644;
+  --accent: #e3ecd2;
+  --accent-foreground: #2f3a1f;
+  --destructive: #c94a3c;
+  --destructive-foreground: #ffffff;
+  --border: #d7e2c2;
+  --input: #f3f7e9;
+  --ring: #5f8335;
+}
+
+/* ── 落霞（明丽的落霞橙） ── */
+[data-theme='luoxia'] {
+  color-scheme: light;
+  --bg-primary: #fdf0e9;
+  --bg-secondary: #fef8f4;
+  --bg-card: #fffaf7;
+  --bg-hover: #f8e0d2;
+  --bg-input: #fcefe6;
+  --border: #f0d5c6;
+  --border-light: #ddb49f;
+  --bg-panel: rgba(255, 250, 247, 0.95);
+  --border-color: rgba(70, 41, 29, 0.13);
+  --text-primary: #46291d;
+  --text-secondary: #7a5343;
+  --text-muted: #9c7565;
+  --accent-color: #c85f3f;
+  --accent-color-hover: #a94a2d;
+  --accent-color-glow: rgba(200, 95, 63, 0.13);
+  --shadow: 0 1px 3px rgba(64, 32, 18, 0.07);
+  --shadow-lg: 0 8px 24px rgba(64, 32, 18, 0.12);
+  --danger: #cf3f36;
+  --danger-hover: #e5665c;
+  --success: #2f8f5b;
+  --warning: #b07314;
+  --star: #e0a422;
+
+  --btn-primary-bg: rgba(200, 95, 63, 0.1);
+  --btn-primary-bg-hover: rgba(200, 95, 63, 0.18);
+  --btn-primary-border: rgba(200, 95, 63, 0.32);
+  --btn-primary-border-hover: rgba(169, 74, 45, 0.5);
+  --btn-primary-text: #a94a2d;
+  --btn-primary-text-hover: #82351f;
+  --btn-danger-bg: rgba(207, 63, 54, 0.08);
+  --btn-danger-bg-hover: #cf3f36;
+  --btn-danger-border: rgba(207, 63, 54, 0.32);
+  --btn-danger-border-hover: #cf3f36;
+  --btn-danger-text: #cf3f36;
+  --btn-danger-text-hover: #ffffff;
+  --btn-secondary-bg: #fffaf7;
+  --btn-secondary-bg-hover: #fae5da;
+
+  --overlay-gradient: linear-gradient(
+    to top,
+    rgba(0, 0, 0, 0.72) 0%,
+    rgba(0, 0, 0, 0.3) 45%,
+    transparent 100%
+  );
+  --card-stars-bg: rgba(44, 22, 14, 0.55);
+  --card-checkbox-bg: rgba(44, 22, 14, 0.35);
+  --dialog-backdrop: rgba(70, 40, 26, 0.4);
+  --viewer-overlay: rgba(32, 20, 15, 0.96);
+
+  /* shadcn/ui tokens (luoxia) */
+  --background: #fdf0e9;
+  --foreground: #46291d;
+  --card: #fffaf7;
+  --card-foreground: #46291d;
+  --popover: #fef8f4;
+  --popover-foreground: #46291d;
+  --primary: #c85f3f;
+  --primary-foreground: #ffffff;
+  --secondary: #f8e0d2;
+  --secondary-foreground: #46291d;
+  --muted: #f8e0d2;
+  --muted-foreground: #7a5343;
+  --accent: #f8e0d2;
+  --accent-foreground: #46291d;
+  --destructive: #cf3f36;
+  --destructive-foreground: #ffffff;
+  --border: #f0d5c6;
+  --input: #fcefe6;
+  --ring: #c85f3f;
 }
 
 body {

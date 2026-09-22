@@ -21,6 +21,8 @@ const REQUIRED_TOKENS = [
   '--bg-input',
   '--border',
   '--border-light',
+  '--bg-panel',
+  '--border-color',
   '--text-primary',
   '--text-secondary',
   '--text-muted',
@@ -101,10 +103,14 @@ describe('themes 工具', () => {
       'midnight',
       'forest',
       'light',
+      'yuebai',
       'mist',
+      'huguang',
       'celadon',
+      'zhulu',
       'sakura',
       'twilight',
+      'luoxia',
       'sepia',
     ]);
     expect(new Set(THEME_IDS).size).toBe(THEMES.length);
@@ -170,5 +176,45 @@ describe('themes 与 index.css 对拍', () => {
       expect(contrast(text, bg), `${t.id} 正文对比度`).toBeGreaterThanOrEqual(4.5);
       expect(contrast(accent, bg), `${t.id} 强调色对比度`).toBeGreaterThanOrEqual(3);
     }
+  });
+});
+
+describe('编辑面板跟随主题（历史缺陷：--bg-panel/--border-color 从未声明，面板恒为深色而文字随主题变深 → 1.5:1）', () => {
+  const opaqueOf = (value) => {
+    if (!value) return null;
+    const hex = value.match(/^#([0-9a-f]{6})/i);
+    if (hex) return `#${hex[1]}`;
+    const rgb = value.match(/rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/);
+    if (!rgb) return null;
+    return `#${rgb
+      .slice(1, 4)
+      .map((n) => (+n).toString(16).padStart(2, '0'))
+      .join('')}`;
+  };
+
+  it('.editor-panel 消费 --bg-panel/--border-color（改回硬编码深色 = 重新串色）', () => {
+    const rule = css.match(/\n\.editor-panel\s*\{([^}]*)\}/)?.[1] ?? null;
+    expect(rule, '.editor-panel 规则丢失').toBeTruthy();
+    expect(rule).toMatch(/background:\s*var\(--bg-panel/);
+    expect(rule).toMatch(/border:\s*1px solid var\(--border-color/);
+  });
+
+  it('每套主题的面板底色与其正文色对比度达标，且明暗跟随 light 标记', () => {
+    for (const t of THEMES) {
+      const block = blockOf(t.id);
+      const panel = opaqueOf(tokenValue(block, '--bg-panel'));
+      const text = tokenValue(block, '--text-primary');
+      expect(panel, `${t.id} 的 --bg-panel 不是可解析颜色`).toBeTruthy();
+      expect(contrast(text, panel), `${t.id} 面板正文对比度`).toBeGreaterThanOrEqual(4.5);
+      const l = luminance(panel);
+      if (t.light) expect(l, `${t.id} 浅色主题的面板底色偏暗`).toBeGreaterThan(0.6);
+      else expect(l, `${t.id} 深色主题的面板底色偏亮`).toBeLessThan(0.25);
+    }
+  });
+
+  it('.viewer-counter 不用浅色主题的深色强调色（信息条恒为深色底）', () => {
+    const rules = [...css.matchAll(/\.viewer-counter\s*\{([^}]*)\}/g)].map((m) => m[1]);
+    expect(rules.length).toBeGreaterThan(0);
+    for (const r of rules) expect(r).not.toMatch(/--accent-color-hover/);
   });
 });

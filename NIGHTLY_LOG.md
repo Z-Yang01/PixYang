@@ -760,3 +760,63 @@
   WIP 与本轮同处 `themes.ts` / `index.css`，是否随 R51 一并入库（默认不动、等明示）；③ R50 的 ⑦
   「shader 输出 vs golden 实机像素对拍」仍待决；④ `release/`（98MB）删否；⑤ R49 其余口径项原样沿用。
 
+- 2026-09-22 20:40 R52 浅色系再扩容（9 套 → 13 套）+ 编辑面板串色 P1 根治（补 `--bg-panel`/`--border-color`）+ 面板对比度门禁：
+  ① 需求：用户「再加几套唯美主题」。在 R51 的 9 套上再补 4 套浅色系，插在 `light`/`mist` 之后按「中性 → 冷 → 暖」排布：
+    月白 `yuebai`（素净冷月白 `#eef3f5`/`#3a5561`）、湖光 `huguang`（澄澈湖光碧 `#e6f1f3`/`#16788c`）、
+    竹露 `zhulu`（嫩青竹露绿 `#eff4e4`/`#5f8335`）、落霞 `luoxia`（明丽落霞橙 `#fdf0e9`/`#c85f3f`）。
+    浅色系由 6 套增至 10 套，深色仍 3 套。落笔前先算四套配色（正文 10.73~11.92、次级 5.46~5.98、弱化 3.10~3.66、
+    强调 3.64~7.08），四套一次过 4.5/3.0 双门槛，未出现 R51 樱落那种回压一档的返工。
+  ② 契约面仍是两处：`src/lib/themes.ts`（`ThemeId` 联合 + `THEMES` 条目，两者顺序一致）与 `src/styles/index.css`
+    （四个 74 行 token 块，2471/2545/2619/2693 行）。设置页 `theme-grid`、`normalizeTheme`、`isLightTheme`、
+    `@theme inline` 依旧零改动。index.css 本轮净 +316/−1；过程中把四块选择器误写成双引号（契约要求单引号），
+    用 `sed -i` 就地改了 4 行并 grep 复核——属「禁止脚本批量改源」的例外，记下戒（下次直接 Edit 重写该行）。
+  ③ 必需 token 集 58 → 60：新增 `--bg-panel`、`--border-color`（成因见 ④），门禁对 13 套逐块校验新集合。
+  ④ P1 根治（真机冒烟撞见的历史缺陷，非本轮引入）：`.editor-panel` 的底色/边框写的是
+    `var(--bg-panel, rgba(20,20,24,.94))` 与 `var(--border-color, rgba(255,255,255,.1))`，而这两个 token
+    全仓从未声明（0 处定义）→ 兜底值在每套主题下恒生效，面板钉死为深色；面板内文字却走 `--text-primary`
+    （浅色主题为深字）→ 竹露真机实测 1.53:1，R51 的 6 套浅色系同样中招。属「幻影 token」缺陷类：
+    声明缺失 + 兜底静默生效，症状只表现为「编辑面板颜色不对」，很难顺藤摸到根因。
+    修法落在 token 层：13 个作用域各补 `--bg-panel`（浅色系近白 `.95`，深色系按各自主色相压暗）与
+    `--border-color`，`.editor-panel` 规则本身一行未改（兜底从此只作兜底，真值由门禁保证）。
+    中途第一版曾试图在面板上钉死 `--text-*`/`--foreground`/`color`，结果面板内按钮变成浅字浅底 1.09:1
+    （治一处串色造出另一处），已回退。真机 Chromium 按构建产物 CSS（与 `dist/assets/index-CRLkmPTH.css`
+    逐字节一致）复测 13 套：面板内文字 10.70~16.53，且底色明暗跟随主题（浅色 `rgba(255,255,255,.95)`、
+    午夜蓝 `rgba(18,29,52,.95)`、森林夜 `rgba(16,32,23,.95)`）。
+  ⑤ 同轮修掉 `.viewer-counter`：原写 `var(--accent-color-hover)`，而信息条恒为深色底 → 浅色主题深色强调字
+    真机实测 2.71:1；改为 `color-mix(in srgb, var(--accent-color) 55%, #ffffff)`（保色相提亮一档）→
+    13 套 6.21~11.93。该 stylesheet 早已在用 `color-mix`（620/1690 行），WebView2 支持无虞。
+  ⑥ 真机逐主题冒烟（WebView2 CDP，全程只读）：13 套 × 图库页读回 `body`/`.sidebar`/`.topbar`/`.image-card`
+    计算样式并截图，逐套按块生效、broken img=0、控制台 error=0；设置页 13 张主题卡按序渲染、逐张点击预览即时
+    换肤且 `.theme-card.active` 跟随，点「撤回」复原（未点保存 → 零 DB 写入）；竹露下开查看器并进入编辑面板取证，
+    顺带复核 R50 修复仍在（`.editor-webgl-canvas` 2048×1151 且 WebGL2 上下文活跃、底图 5568×3128 `crossorigin=anonymous`）。
+  ⑦ 测量教训两条（都是假阳性）：改 `data-theme` 后必须 sleep ≥450ms 再读计算样式（`body` 带 `.3s` 颜色过渡，
+    同步读会读到旧值 → 误判 1.0:1）；`color-mix()` 的计算值是 `color(srgb 0.65 0.73 0.56)`（0~1 通道），
+    拿 `[\d.]+` 当 0~255 解析会算出 1.2:1 的假结果 → 探针解析器须同时支持 `rgb()/rgba()/color(srgb)/#hex`，
+    且半透明背景要先沿祖先链拍平再算对比度。
+  ⑧ 回归锁（`tests/unit/lib/themes.test.js` 8 例 → 11 例）：`THEME_IDS` 13 个顺序锁定；`REQUIRED_TOKENS` 补两项；
+    新增「编辑面板跟随主题」describe 三例——`.editor-panel` 确实消费 `--bg-panel`/`--border-color`（改回硬编码深色即失败）、
+    每套面板底与正文对比度 ≥4.5 且面板明度跟随 `light` 标记（浅 >0.6 / 深 <0.25）、`.viewer-counter` 不得使用
+    `--accent-color-hover`。变异验证：把面板底色改成字面量深色 → 立刻咬。
+- 验证：vitest 775/775 ✅（56 文件；772→775 为本轮新增 3 例）；lint 0 error / 8 warning（基线不变）；typecheck ✅；
+  format:check ✅（`themes.test.js` 经 `npx prettier --write` 落齐）；`npx vite build` ✅
+  （`index-DEKZHF_U.js` / `index-CRLkmPTH.css` 108,629 B）；本轮零 Rust 逻辑改动。安装包 20:35 重打
+  （4,116,675 B；R51 版 19:53 为 4,112,380 B），按二进制内嵌资源指纹核对 `index-DEKZHF_U.js` /
+  `index-CRLkmPTH.css` 与 `dist/index.html` 一致，且 `pixyang.exe` 内仅此一组 hash → 安装包与当前工作树等价。
+  提交范围：`src/lib/themes.ts`、`src/styles/index.css`、`tests/unit/lib/themes.test.js`、`AGENTS.md`、`NIGHTLY_LOG.md`；
+  `release/` 仍未跟踪、未暂存。
+  门禁复跑记录：`npm test` 首跑 1 红（`ImageViewer.test.jsx`「编辑模式：曲线编辑器渲染、加点出现清除、清除复位」
+  在 `it(` 声明行报失败＝用例级 5s 超时，非断言不符），随后单文件 3 跑 + 全量 5 跑共 775/775 全绿；
+  该文件不import CSS 且 vitest 未开 `css` 处理（默认不解析样式表），与本轮纯 token/主题改动无因果，
+  定性为 R49 已知「全量并发负载 → effect/定时器时序滞后」同类偶发（该用例 395 行注释已在治这条）。
+  未擅自改超时（口径项 ⑥），候选修法：给该 `it` 显式放宽 timeout 或将 `findByText('编辑')` 换成带 timeout 的 `waitFor`。
+  附带勘正：`AGENTS.md` 验证节测试基线 765 → 775 例（R51/R52 增量后未同步，本轮一并补）。
+  待人工复核：① 四套新主题的中文命名与配色是否合口味（可继续调或增删）；② 午夜蓝/森林夜两套深色的面板底由
+    通用深灰改为各自主色相（`rgba(18,29,52,.95)`/`rgba(16,32,23,.95)`），观感是否合意；③ **实机 App 内的面板复测未完成**——
+    `tauri-plugin-single-instance` 与用户正在运行的安装版（PID 22056，`E:\Software\PixYang\pixyang.exe`）抢锁，
+    `npm run tauri:dev` 立即退出 0；本轮未动用户进程，改用真机 Chromium + 构建产物 CSS 复测，需用户关闭安装版后补跑一轮；
+    ④ 记下未动的死面：`--viewer-info-bg`、`--filter-chip-bg`（各 0 处消费）与 999 行 `.viewer-counter`（被 1092 行同名规则整条覆盖）；
+    ⑤ R51 的 ①（命名口味）随本轮合并、②（用户深色提亮 WIP）已随 R51 入库，其余口径项原样沿用
+    （vite dev 修法二选一、7 条无调用 `api.js` 通道、6 个仅单测触达的桥包装、`release/` 98MB、shader vs golden 实机像素对拍、R27 保存后缩略图）；
+    ⑦ R49 ⑧ 挂账的两条 index.css 死规则（`.pagination-total`、`.editor-temp-overlay`）——用户 WIP 已随 R51 入库，
+    当年「删了会卷入 WIP」的顾虑已消除，是否删除待裁决（同轮另有 ④ 三项死 token/死规则同源）。
+
