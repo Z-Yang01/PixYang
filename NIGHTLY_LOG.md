@@ -1062,3 +1062,50 @@
     GLOBAL_ONLY 白名单 11 项是「有意全局」的唯一豁免面，未来某全局 token 若改随主题必须同步移出白名单；
     ② 覆盖层 token（--star-empty/--card-date/--viewer-control-* 等）将来是否随主题配色属产品口味，
     维持现状未动。
+- 2026-09-23 03:10 R58 WebGL shader 输出 vs Rust golden 的实机像素对拍（取证轮，发现真差异）：
+  ① 需求来源：用户裁决「补」的池子①（任务书：证明「前端 WebGL2 shader 管线渲染的像素 == Rust 执行器
+    对同一 RenderSpec 的输出」在代表性参数下一致，或量化差异并定位根因）。
+  ② 根因（取证所得）：**非零差异，且不是浮点量化级**。可复现实机对拍显示：单阶段用例
+    （02-exposure/04-wb/05-curves/06-hsl/07-mono/08-mask）一致呈现 maxΔ 13~38、meanΔ 1.9~2.5 的
+    系统性底噪；多阶段用例被逐级放大（03-tone meanΔ 16.6；01-full-combo meanΔ 66.9、maxΔ≈230）。
+    对 02-exposure 的差值结构分析（按局部梯度分桶 + 按值分桶）：平坦区 meanAbsΔ≈2.0、边缘区≈3.0
+    （差值不以边缘为主 → 排除几何/重采样为主因），web 侧对 rust 侧平均偏亮 +1.10（值域系统性偏移）。
+    与 GPU 浮点量化（预期 ±1 内）不符，与「浏览器色彩管理路径（纹理上传/帧回读的 sRGB 处理）」假设
+    相容；**确切根因本轮未定案**（历史「JS 对拍 8/8 零偏差」系旧验证体系产物，不可迁移到本实机口径）。
+  ③ 修法：零生产源码改动。交付可重复取证工具链并入库：tests/webgl-parity/run.cjs（CDP 驱动：
+    vite preview --host 127.0.0.1 + 无头 Edge/Chrome + 假桥注入 → 图库 → 查看器 → 编辑模式
+    （savedEdits 载入用例参数）→ 真实 WebGL canvas 出帧 → 页内逐通道 diff + raw RGBA 落盘）+
+    tests/webgl-parity/cases.json（8 组代表性 EditParams：全组合/单阶段曝光/影调/白平衡/曲线/HSL+分级/
+    黑白+暗角/径向蒙版）+ src-tauri/examples/webgl_parity.rs（gen 确定性底图 800×1000 PNG｜render
+    对同 spec 跑 render_spec_to_file 出 PNG｜diff 以 image-rs 解码独立复核页内 diff）。spec 由前端
+    同一套模块（src/lib/editParams.js + shared/renderSpec.cjs）在 Node 内计算，与页面内
+    editParamsToRenderSpec(toEditParams(composeOps())) 模块同源，消除「对拍两端 spec 不一致」的
+    取证污染。examples 不被 cargo test 运行，门禁数字不变。
+  ④ 回归锁 + 变异验证：不适用（无生产行为改动；对拍结论为「超容差 FAIL」，工具本身以
+    01-full-combo 的页内 diff 与 Rust 独立复核互证：nΔ≥1 2,297,430 vs 2,297,386，两套实现独立解码
+    同帧互差 44/2.4M 通道样本，工具可信）。
+  ⑤ 真机取证：实机 GPU（UNMASKED_RENDERER = ANGLE Intel(R) UHD Graphics Direct3D11），无头 Edge
+    153 驱动真实 dist 产物；8/8 用例超容差（报告 %TEMP%/pixyang_parity/report.json，帧底图
+    web/*.rgba 与 rust/*.png 留 %TEMP% 可复核）。取证环境坑已实修并写进 §6.4：vite preview 默认只绑
+    [::1]（Edge 走 127.0.0.1 必落 chrome-error://）；启动器 msedge.exe 秒退 0、真身进程脱离进程树
+    （Browser.close + 按端口定位兜底清理）；假桥必须 Proxy 兜底（ImageViewer 挂载即
+    api.getImageTags(...).then，undefined 直接触发 ErrorBoundary 白屏）。
+  ⑥ 附带发现/勘正：①diff 工具链里 PNG 解码字节序（System.Drawing Format32bppArgb = BGRA）曾造成
+    「通道交换」假象，已以 image-rs 解码的 Rust diff 为准（教训：跨栈字节序先对表）；②03-tone
+    （shadows -25 反向 gamma 镜像域）把底噪放大约 7 倍，提示未来若修色彩管理，tone/curve 类阶段
+    是最灵敏的回归探针；③tauriBridgeMedia.toFileUrl 在无 Tauri 环境返回 Promise.resolve('')，
+    假桥需保持 Promise 语义。
+  - 验证：vitest 806/806（58 文件）✓；cargo 154 lib + 1 golden_audit ✓（examples 不计入，基线不变）；
+    纯取证轮未跑 NSIS 重打包（零生产改动，R57 哈希链仍有效）；FreeGB 起点 7.35、过程中最低 ~6.1；
+    对拍驱动与自起进程（vite preview/无头 Edge）已全部清杀，dist/parity 与 %TEMP% 探针已清理
+    （对拍原始帧按取证留存在 %TEMP%/pixyang_parity/，可整目录删除）。
+    提交范围：tests/webgl-parity/run.cjs、tests/webgl-parity/cases.json、src-tauri/examples/webgl_parity.rs、
+    AGENTS.md、NIGHTLY_LOG.md。
+  待人工复核：① 差异根因定案方向：优先在真机带 GUI 的 Edge/Chrome（--headed）复跑对拍，排除无头
+    合成器色彩配置因素；再以 disableDirectComposition/force-color-profile=sRGB 启动参数做对照
+    （两条启动参数对照即可分辨「浏览器色彩管理」vs「shader 数学」）；② 若确认是色彩管理路径，
+    生产侧无 bug——「预览≈导出」的像素级契约需要改口径（如允许 ±2 的显示级容差，或对拍时绕开
+    canvas 2D 回读改用 gl.readPixels——run.cjs 当前用 drawImage+getImageData，readPixels 变体
+    留给下轮验证）；③ 若对照实验显示 shader 数学确有偏离（如曲线 LUT texelFetch 取整），再走
+    完整 §2 修码流程；④ 历史文档「JS 对拍 8/8 零偏差」建议补注「旧验证体系（非实机 GPU）口径」，
+    未动（涉及历史表述改写，留给用户裁决）。

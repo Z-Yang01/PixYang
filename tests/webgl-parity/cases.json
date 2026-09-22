@@ -1,0 +1,137 @@
+[
+  {
+    "name": "01-full-combo",
+    "params": {
+      "basic": {
+        "exposure": 0.3,
+        "contrast": 15,
+        "highlights": -20,
+        "shadows": 25,
+        "whites": 8,
+        "blacks": -6,
+        "saturation": 10,
+        "temperature": 12,
+        "tint": 4
+      },
+      "curves": { "rgb": [0, 0, 0.25, 0.18, 0.75, 0.82, 1, 1], "r": [], "g": [], "b": [] },
+      "colorGrading": { "shadows": [215, 35], "midtones": [], "highlights": [40, 25] },
+      "lens": { "profile": "", "distortion": 0, "vignette": -35, "chromatic": 0 },
+      "masks": [
+        {
+          "type": "radial",
+          "cx": 400,
+          "cy": 320,
+          "rx": 220,
+          "ry": 180,
+          "rotation": 0,
+          "feather": 0.4,
+          "invert": false,
+          "adjustments": {
+            "exposure": 0.35,
+            "contrast": 12,
+            "saturation": 18,
+            "temperature": 8,
+            "tint": -5
+          }
+        },
+        {
+          "type": "linear",
+          "x0": 0,
+          "y0": 950,
+          "x1": 120,
+          "y1": 500,
+          "feather": 0.5,
+          "invert": false,
+          "adjustments": {
+            "exposure": -0.3,
+            "contrast": -8,
+            "saturation": -12,
+            "temperature": -10,
+            "tint": 0
+          }
+        },
+        {
+          "type": "range",
+          "center": 0.72,
+          "range": 0.15,
+          "feather": 0.2,
+          "invert": true,
+          "adjustments": {
+            "exposure": 0.2,
+            "contrast": 6,
+            "saturation": 25,
+            "temperature": 0,
+            "tint": 10
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "02-exposure",
+    "params": { "basic": { "exposure": 0.7 } }
+  },
+  {
+    "name": "03-tone",
+    "params": {
+      "basic": { "contrast": -20, "highlights": 30, "shadows": -25, "whites": -15, "blacks": 20 }
+    }
+  },
+  {
+    "name": "04-white-balance",
+    "params": { "basic": { "temperature": -40, "tint": 25 } }
+  },
+  {
+    "name": "05-curves",
+    "params": {
+      "curves": {
+        "rgb": [0, 0.05, 0.5, 0.5, 1, 0.95],
+        "r": [0, 0, 1, 0.08],
+        "g": [],
+        "b": [0, 0.06, 1, 1]
+      }
+    }
+  },
+  {
+    "name": "06-hsl-grading",
+    "params": {
+      "hsl": {
+        "hue": [0, -20, 3, 15, 5, 25],
+        "sat": [0, 30, 5, -20],
+        "lum": [3, 15, 5, 10]
+      },
+      "colorGrading": { "shadows": [], "midtones": [90, 40], "highlights": [] }
+    }
+  },
+  {
+    "name": "07-mono-vignette",
+    "params": {
+      "basic": { "saturation": -100 },
+      "lens": { "profile": "", "distortion": 0, "vignette": 40, "chromatic": 0 }
+    }
+  },
+  {
+    "name": "08-radial-mask",
+    "params": {
+      "masks": [
+        {
+          "type": "radial",
+          "cx": 560,
+          "cy": 700,
+          "rx": 260,
+          "ry": 200,
+          "rotation": 18,
+          "feather": 0.25,
+          "invert": true,
+          "adjustments": {
+            "exposure": -0.45,
+            "contrast": 18,
+            "saturation": -30,
+            "temperature": 15,
+            "tint": 12
+          }
+        }
+      ]
+    }
+  }
+]

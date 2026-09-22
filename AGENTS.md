@@ -128,6 +128,17 @@ tests/            vitest（node 环境 + per-file happy-dom pragma）
 - CI：`.github/workflows/ci.yml` 的 `rust` job（windows）先 `vite build` 再 `cargo test`。
 - 像素 golden 门禁：`cargo test --test golden_audit`（基线 2026-09-20 重锁为 Rust 执行器产物，
   Δ 审计归档 tests/golden/rust-relock-audit.md；重锁用 GOLDEN_RELOCK=1）。
+- WebGL 实机像素对拍（取证工具，非门禁）：`node tests/webgl-parity/run.cjs [--case <名>|--headed|--keep]`。
+  无头 Edge/Chrome（CDP，Node 22 原生 WebSocket，无新依赖）驱动 dist 产物：假桥注入 → 真实 App 编辑
+  模式（savedEdits 载入 tests/webgl-parity/cases.json 的 8 组参数）→ 真实 WebGL2 canvas 出帧，与
+  `cargo run --example webgl_parity -- gen|render|diff`（确定性底图 + render_spec_to_file + 独立复核）
+  对拍；spec 由前端同一套模块（src/lib/editParams.js + shared/renderSpec.cjs）计算，两端同源。
+  examples 不被 cargo test 运行，门禁数字不受影响。R58 基线结论：**非零差异**——单阶段用例
+  maxΔ 13~38 / meanΔ 1.9~2.5（web 侧系统性偏亮 ~+1，值域型非边缘型，指向浏览器色彩管理路径），
+  多阶段被放大（03-tone meanΔ 16.6、01-full-combo meanΔ 66.9）；历史「JS 对拍 8/8 零偏差」是旧
+  验证体系口径，不可与本实机口径混用。运行注意：vite preview 须 `--host 127.0.0.1`（默认只绑
+  [::1]，浏览器走 127.0.0.1 必落 chrome-error://）；假桥需 Proxy 兜底全部通道（ImageViewer 挂载即
+  调 api.getImageTags().then）；启动器 msedge.exe 秒退 0、真身按 CDP 端口定位清理。
 
 ## 验证
 
