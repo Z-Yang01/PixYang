@@ -1,9 +1,24 @@
+// 对拍口径（R59 定案）：
+//   对象 = 「shader 像素数学 vs 执行器像素数学」编码前对比。spec 的 encode 段强制 format:'png'
+//   （默认 jpeg q92 会把 Rust 参考帧变有损，R58 全部「超容差」的量级来源即此工具链缺陷）。
+//   帧回读默认 drawImage→2D canvas（R59 实测与 gl.readPixels/--headed/--force-color-profile=srgb
+//   四条路径逐位同值，回读非差异源；--read-pixels 仅作对照开关保留）。
+//   容差 TOL 依据（R59 取证）：执行器按 libvips 语义做逐阶段 u8 trunc 量化，shader 全程 float，
+//   系统性偏差实测 meanΔ 0.14~0.52 / maxΔ≤2（GPU 舍入 +1 与 trunc −1 对冲），故 max 2 / mean 0.6。
+//   已知真偏离（工具如实判红，勿调容差掩盖，见 NIGHTLY_LOG R59 待人工复核）：
+//   ① 01-full-combo（meanΔ≈66）：shader uHighlightsSlope 相乘后缺 clamp，c>1 时曲线 LUT
+//      texelFetch 索引越界（int(c*255+0.5)≤268）返回黑 → 单通道全黑；
+//   ② 03-tone（meanΔ≈16.6）：负阴影指数反转——执行器 gamma_byte(g)=x^(1/g) 实际施加 1/e（变暗），
+//      shader/previewUniforms 施加 e（变亮）。
+//   两处临时修复的因果变异验证（clamp + 指数 1/e）分别使 66.19→1.39 / 16.61→0.52，修复后预期 8/8 全绿。
 // WebGL shader 输出 vs Rust 执行器 实机像素对拍（取证驱动脚本；纯取证工具，不进 CI）。
 // 前置：npx vite build（dist/index.html 缺失时本脚本自动补跑）。
-// 用法：node tests/webgl-parity/run.cjs [--keep] [--headed] [--case <name>]
-//   --keep    跑完不清理临时进程/文件（排障用）
-//   --headed  无头 Edge/Chrome 无 WebGL2 时改有头重试
-//   --case    只跑指定用例
+// 用法：node tests/webgl-parity/run.cjs [--keep] [--headed] [--read-pixels] [--force-srgb] [--case <name>]
+//   --keep         跑完不清理临时进程/文件（排障用）
+//   --headed       无头 Edge/Chrome 无 WebGL2 时改有头重试
+//   --read-pixels  帧回读走 gl.readPixels（绕开 drawImage→2D canvas 合成路径；R59 契约口径，见报告 mode 字段）
+//   --force-srgb   浏览器加 --force-color-profile=srgb 启动参数（色彩管理对照实验）
+//   --case         只跑指定用例
 // 流程（详见 UNATTENDED.md §6.4 / AGENTS.md 验证节）：
 //   1. cargo run --example webgl_parity -- gen      生成确定性底图 fixture.png（%TEMP%/pixyang_parity）
 //   2. 由 cases.json 经前端同一套模块（src/lib/editParams.js + shared/renderSpec.cjs）计算 RenderSpec
@@ -26,11 +41,13 @@ const { pathToFileURL } = require('url');
 const REPO = path.resolve(__dirname, '..', '..');
 const TMP = path.join(os.tmpdir(), 'pixyang_parity');
 
-const TOL = { maxDelta: 2, meanDelta: 0.05 };
+const TOL = { maxDelta: 2, meanDelta: 0.6 };
 
 const argv = process.argv.slice(2);
 const KEEP = argv.includes('--keep');
 const HEADED = argv.includes('--headed');
+const READPIX = argv.includes('--read-pixels');
+const FORCE_SRGB = argv.includes('--force-srgb');
 const caseIdx = argv.indexOf('--case');
 const ONLY_CASE = caseIdx >= 0 ? argv[caseIdx + 1] : null;
 
@@ -235,6 +252,14 @@ async function genSpecs(cases) {
     });
     const edp = toEditParams(composed);
     const spec = renderSpec.editParamsToRenderSpec(edp, { sourceHash: 'webgl-parity' });
+    // 对拍口径：把「导出编码」排除出比对对象——encode 段默认 jpeg q92，会把 Rust 参考帧
+    // 变成有损 JPEG（R58 全部「超容差差异」的根因：底图满幅 1px 哈希噪声恰是 DCT 量化
+    // 歼灭对象，tone/gamma 类阶段再放大 7 倍）。对拍对象是「shader 像素数学 vs 执行器
+    // 像素数学」，预览侧本就不过 JPEG，故这里强制 encode=png（执行器支持，见其单测），
+    // 两端 spec 仍由同一套模块同源生成。
+    spec.stages = spec.stages.map((s) =>
+      s.kind === 'encode' ? { ...s, params: { ...s.params, format: 'png' } } : s
+    );
     fs.writeFileSync(path.join(dir, `${c.name}.json`), JSON.stringify(spec));
     log(`spec: ${c.name}（${spec.stages.length} stages）`);
   }
@@ -277,6 +302,7 @@ const INJECT_FN = `(() => {
 })()`;
 
 const DIFF_FN = `(async () => {
+  const USE_READPIXELS = ${READPIX};
   const canvas = document.querySelector('.editor-webgl-canvas');
   if (!canvas) return { error: 'editor-webgl-canvas 不存在（WebGL 回退或编辑未进入）' };
   const gl = canvas.getContext('webgl2');
@@ -285,14 +311,26 @@ const DIFF_FN = `(async () => {
   const resp = await fetch('/parity/' + window.__parityCase + '.png');
   if (!resp.ok) return { error: 'rust png fetch ' + resp.status };
   const bmp = await createImageBitmap(await resp.blob(), { colorSpaceConversion: 'none' });
-  const grab = (src, w, h) => {
+  const grab2d = (src, w, h) => {
     const t = document.createElement('canvas'); t.width = w; t.height = h;
     const ctx = t.getContext('2d', { willReadFrequently: true });
     ctx.drawImage(src, 0, 0);
     return ctx.getImageData(0, 0, w, h);
   };
-  const web = grab(canvas, canvas.width, canvas.height);
-  const rust = grab(bmp, bmp.width, bmp.height);
+  // gl.readPixels：绕开 drawImage→2D canvas 的合成/色彩管理路径，直读 GL 帧缓冲。
+  // readPixels 原点在左下角，翻回左上行序与 rust PNG 对齐；上下文自带
+  // preserveDrawingBuffer:true（webglPreview.js），合成后读仍有效。
+  const grabGL = () => {
+    const w = canvas.width, h = canvas.height;
+    const px = new Uint8Array(w * h * 4);
+    gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, px);
+    const row = w * 4;
+    const out = new Uint8ClampedArray(w * h * 4);
+    for (let y = 0; y < h; y++) out.set(px.subarray((h - 1 - y) * row, (h - y) * row), y * row);
+    return { data: out, width: w, height: h };
+  };
+  const web = USE_READPIXELS ? grabGL() : grab2d(canvas, canvas.width, canvas.height);
+  const rust = grab2d(bmp, bmp.width, bmp.height);
   if (web.width !== rust.width || web.height !== rust.height) {
     return { error: 'dims', web: [web.width, web.height], rust: [rust.width, rust.height] };
   }
@@ -450,12 +488,15 @@ async function main() {
       );
     }
     const exe = findBrowser();
-    log(`浏览器: ${exe}${HEADED ? '（有头）' : '（无头）'}`);
+    log(
+      `浏览器: ${exe}${HEADED ? '（有头）' : '（无头）'}${FORCE_SRGB ? ' +force-color-profile=srgb' : ''}，回读=${READPIX ? 'readPixels' : '2d-drawImage'}`
+    );
     const profileDir = path.join(os.tmpdir(), `pixyang_parity_profile_${Date.now()}`);
     browser = spawn(
       exe,
       [
         ...(HEADED ? [] : ['--headless=new']),
+        ...(FORCE_SRGB ? ['--force-color-profile=srgb'] : []),
         `--remote-debugging-port=${cdpPort}`,
         `--user-data-dir=${profileDir}`,
         '--no-first-run',
@@ -478,7 +519,12 @@ async function main() {
     const recentPageLog = attachPageLog(cdp, sessionId);
     const baseUrl = `http://127.0.0.1:${previewPort}`;
 
-    const report = { cases: {}, tol: TOL, pass: true };
+    const report = {
+      cases: {},
+      tol: TOL,
+      pass: true,
+      mode: { headless: !HEADED, forceColorProfileSrgb: FORCE_SRGB, readPixels: READPIX },
+    };
     for (const c of cases) {
       log(`用例 ${c.name}: 驱动真实 App + WebGL 出帧 …`);
       let stats;
@@ -534,7 +580,9 @@ async function main() {
     if (!KEEP) {
       if (cdp) {
         try {
-          await cdp.send('Browser.close');
+          // Browser.close 无响应会挂死清理段（R58与本轮各实证一次，进程树整体残留），
+          // 限时 5s 后交给 killTree/端口定位兜底
+          await Promise.race([cdp.send('Browser.close'), sleep(5000)]);
         } catch {
           /* 浏览器可能已退出 */
         }

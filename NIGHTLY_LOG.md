@@ -1109,3 +1109,67 @@
     留给下轮验证）；③ 若对照实验显示 shader 数学确有偏离（如曲线 LUT texelFetch 取整），再走
     完整 §2 修码流程；④ 历史文档「JS 对拍 8/8 零偏差」建议补注「旧验证体系（非实机 GPU）口径」，
     未动（涉及历史表述改写，留给用户裁决）。
+- 2026-09-23 05:40 R59 WebGL 对拍根因定案（对照实验矩阵 + 因果变异；R58「色彩管理」假设被排除）：
+  ① 需求/裁决来源：R58 待人工复核①②③（用户任务书：实验 A --headed / B force-color-profile=srgb /
+    C gl.readPixels 定案根因，并把对拍口径收敛为可判绿的稳定契约）。
+  ② 根因（全部取证实得，非推测）：R58 的「系统性偏亮 +1.10、指向浏览器色彩管理」结论不成立，真实
+    差异由三层构成：
+    ▶ 层 1（工具链缺陷，本轮已修）：R58 的 Rust 参考帧 rust/<case>.png 实为 **JPEG q92**——spec 的
+      encode 段默认 {format:'jpeg',quality:92}，render_spec_to_file 忠实执行，把有损 JPEG 写进了 .png
+      文件名（十六进制实证 ffd8 JFIF）。底图满幅 1px 哈希噪声正是 DCT 量化歼灭对象，tone/gamma 类
+      阶段又放大 ~7 倍——单阶段用例的 maxΔ 13~38/meanΔ 1.9~2.5 全部由此而来。强制 encode=png 后
+      6 个单阶段用例塌缩到 GPU 量化级（05-curves 逐字节 0）。
+    ▶ 层 2（生产缺陷①，01-full-combo meanΔ 66.19）：shader `uHighlightsSlope` 相乘后缺 clamp，
+      c>1 进入曲线 LUT texelFetch，索引 int(c*255+0.5) 最大 268 越界（256 宽纹理）返回 0 → 单通道
+      全黑。实证链：d0-d6 子集二分（真实管线）——d0 恒等逐字节 0；d1（wb+曝光+tone）maxΔ 4；仅加
+      curves 即 maxΔ 255/mean 95.9 爆炸；05-curves 单独（affine=identity、hs=1，c≤1）逐字节 0；
+      d6 帧解剖见「rust R≈202 / web R=3」单通道黑斑位于高亮饱和区。
+    ▶ 层 3（生产缺陷②，03-tone meanΔ 16.61）：负阴影指数反转。执行器 gamma_byte(g)=trunc(255·
+      (x/255)^(1/g))（libvips 语义，单测锁 shadows>0），负阴影分支 apply_gamma(e) 实际施加 1/e
+      （0.898，变暗）；shader/previewUniforms 施加 e（1.114，变亮）。执行器逐字节 JS 模型复刻
+      rust 实测帧 meanAbs=0.0000/max=0（03-tone），三方对照 web==simulateShaderPixel 99.58%——
+      偏离完全钉在执行器与 shader 公式两端。
+    ▶ 基线（口径项③）：执行器逐阶段 u8 trunc 量化（libvips 锁定，libvips 系血统）vs shader 全程
+      float，系统性偏差实测 meanΔ 0.14~0.52 / maxΔ≤2——非缺陷，容差据此定。
+    对照实验矩阵（8 用例均值同值=逐位一致）：无头+2D（基线）FAIL｜--headed FAIL 同值｜--force-srgb
+    FAIL 同值｜--read-pixels FAIL 同值 → headless 合成器/浏览器色彩配置/回读路径三者全排除；
+    drawImage→2D canvas 回读为纯直通。
+  ③ 修法（零生产源码改动）：tests/webgl-parity/run.cjs ①genSpecs 对 spec encode 段强制 format:'png'
+    （对拍对象收敛为「编码前像素数学」，预览侧本就不过 JPEG）；②TOL {maxDelta:2, meanDelta:0.05} →
+    {2, 0.6}（0.05 会把 trunc 量化包络内的 02/04/07 误判红；0.6 为实测包络上界 ×1.25）；③新增
+    --read-pixels / --force-srgb 取证开关与 report.mode 字段（默认行为不变）；④Browser.close 加 5s
+    限时护栏（R58/R59 各实证一次挂死清理段、进程树整体残留）。cases.json 未动（本轮曾临时追加
+    d0-d6 诊断用例做子集二分，取证完已 git checkout 还原）。
+  ④ 回归锁 + 变异验证：对拍本身即锁（取证工具，非 CI 门禁）。因果变异验证（临时改生产源码→重建
+    dist→跑红案→复原再重建）：M1 shader 高光后加 clamp + M2 previewUniforms 负阴影指数改 1/e →
+    01-full-combo 66.19→**1.39**（max 229→18）、03-tone 16.61→**0.52**（max 20→2）、02-exposure
+    对照 0.2986 不变；随后 git checkout 复原两文件、dist 从 HEAD 源码重建，最终定版跑确认两案回到
+    66.19/16.61（如实红）。两处生产修复落地后预期 8/8 全绿（TOL{2,0.6}）。
+  ⑤ 真机取证：实机 GPU（ANGLE Intel UHD D3D11）、无头/有头 Edge 153 驱动真实 dist 产物；最终定版
+    8 用例：6/8 绿（02 max1/mean0.30、04 max1/0.48、05 **0/0**、06 max1/0.0017、07 max1/0.14、
+    08 max1/0.03）、2/8 如实红（01 66.19、03 16.61）；帧底图 web/*.rgba 与 rust/*.png 按取证留
+    %TEMP%/pixyang_parity/（含 d6-masks 诊断帧对）。附带：本round起跑即发现 R58 残留三代孤儿进程
+    （2:18/3:40/3:56 三批 headless 对拍 Edge + 2 个 vite preview + 1 个挂死 40+ 分钟的 R58 driver
+    node，全部带 pixyang_parity_profile/preview 特征，已按特征外科清杀；用户自身 Edge 未触碰）。
+  ⑥ 附带发现/勘正：①R58 日志「对拍驱动与自起进程（vite preview/无头 Edge）已全部清杀」与事实不符
+    （即上述孤儿+挂死 driver；本条即勘正，不改写 R58 原文）；②drawImage→2D canvas 读回 WebGL canvas
+    为像素直通（与 readPixels 逐位同值）——R58「合成/编码路径」假设不成立；③执行器内部两套量化语义
+    并存：executor.rs 仿射/gamma 写回 trunc（libvips 探测表锁定），render.rs 四个就地阶段（分级/
+    饱和/暗角/蒙版）写回 round——均为既有设计，记录在案；④R58 留下的「web 侧系统性偏亮 +1.10」实为
+    JPEG 量化+trunc 偏置的合成假象，无独立物理意义。
+  - 验证：vitest 806/806（58 文件）✓；lint 0 error/8 warning（既有基线）✓；typecheck 净 ✓；
+    format:check 净（run.cjs prettier 合规）✓；cargo 154 lib + 1 golden_audit ✓（examples 不计入，
+    基线不变）；对拍定版 6/8 绿 2/8 如实红（契约见 run.cjs 头注）；纯工具轮零生产改动 → 未跑 NSIS
+    重打包（R57 哈希链仍有效）；dist 已从 HEAD 源码重建（临时变异版本已覆盖）；对拍进程全部清杀、
+    dist/parity 已清理；FreeGB 起点 7.19、最低 ~6.1。
+    提交范围：tests/webgl-parity/run.cjs、AGENTS.md、NIGHTLY_LOG.md。
+  待人工复核：① 生产缺陷①修复裁决（预览 vs 导出像素一致性）：shader uHighlightsSlope 后缺 clamp
+    ——影响真实用户「高光≠0 且曲线/HSL/分级任一开启」的预览（高亮区单通道黑斑）。选项 A：shader
+    高光相乘后补 clamp(c,0,1) 一行（预览对齐导出字节语义；实验已证 66.19→1.39，推荐）；B：同时审计
+    HSL/分级消费 c>1 的路径是否还需各自 clamp。② 生产缺陷②修复裁决（负阴影语义二选一）：执行器
+    （libvips 系，负阴影=变暗）vs shader/预览（负阴影=变亮，方向反直觉）。选项 A：previewUniforms
+    负阴影指数改 1/e（16.61→0.52，预览恢复「负值变暗」且与导出一致，推荐）；B：执行器改 e 并重锁
+    libvips 探测表/golden（代价大，涉及历史口径）。③ 两修复落地后的残差（mean 0.5~1.4/max≤18）尚
+    未逐项归因（执行器 trunc vs float + render.rs round 混合语义），若追求 8/8 全绿需在修复轮一并
+    收敛；TOL{max 2, mean 0.6} 为当前证据口径。④ 对拍是否在 8/8 后升级为 CI 门禁（当前为取证工具，
+    examples 不进 cargo test）。⑤ 历史文档「JS 对拍 8/8 零偏差」补注旧口径事宜（R58 遗留，未动）。
