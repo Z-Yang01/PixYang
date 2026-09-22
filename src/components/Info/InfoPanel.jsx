@@ -9,6 +9,7 @@ import { removeIdsFromSet } from '@/lib/gallery';
 import useGalleryStore from '@/store/galleryStore';
 import { isEnterSubmit } from '@/lib/shortcuts';
 import api from '@/lib/api';
+import { errText, friendlyError } from '@/lib/errorText';
 
 function dirname(p) {
   if (!p) return '';
@@ -125,7 +126,7 @@ export default function InfoPanel({ image, onClose, onImageUpdated, onCountsChan
     if (importDate === image.import_date) return;
     const result = await api.updateImage(image.id, { import_date: importDate });
     if (result?.error) {
-      setDateErr(result.error);
+      setDateErr(friendlyError(result.error));
       return;
     }
     setDateErr('');
@@ -153,7 +154,7 @@ export default function InfoPanel({ image, onClose, onImageUpdated, onCountsChan
     }
     const result = await api.renameImage(image.id, editName.trim());
     if (result.error) {
-      setRenameErr(result.error);
+      setRenameErr(friendlyError(result.error));
     } else {
       setRenameErr('');
       onImageUpdated?.(image.id, { filename: result.newFilename, filepath: result.newPath });
@@ -180,10 +181,11 @@ export default function InfoPanel({ image, onClose, onImageUpdated, onCountsChan
     try {
       result = await api.deleteImage(id);
     } catch (e) {
-      result = { error: `删除失败: ${e.message}` };
+      console.error('[InfoPanel] 删除失败:', e.message);
+      result = { error: errText('删除失败', e) };
     }
     if (result?.error) {
-      toast.error(result.error);
+      toast.error(friendlyError(result.error));
       return;
     }
     // 删除后勾选集仍含该 id：批量操作会打向死 id，须先剪枝（审查批 8 Q-10，对照 ImageGrid）

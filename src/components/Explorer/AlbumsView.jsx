@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { toast } from 'sonner';
 import api from '@/lib/api';
 import { isEnterSubmit } from '@/lib/shortcuts';
+import { errText, friendlyError } from '@/lib/errorText';
 import ConfirmDialog from '../Layout/ConfirmDialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -57,7 +58,7 @@ export default function AlbumsView({ onSelectAlbum, onRefresh }) {
     // 写失败（{error}/reject）不再静默收表单：保留输入供重试（审查批 8 Q-09）
     const album = await api.createAlbum(newName.trim(), newDesc.trim());
     if (album?.error) {
-      toast.error(album.error);
+      toast.error(friendlyError(album.error));
       return;
     }
     setNewName('');
@@ -71,7 +72,7 @@ export default function AlbumsView({ onSelectAlbum, onRefresh }) {
     if (!api.isBridgeAvailable()) return;
     const result = await api.deleteAlbum(id);
     if (result?.error) {
-      toast.error(result.error);
+      toast.error(friendlyError(result.error));
       return;
     }
     await loadAlbums();
@@ -90,7 +91,7 @@ export default function AlbumsView({ onSelectAlbum, onRefresh }) {
     if (renameVal.trim() === renameTarget.name) return;
     const result = await api.renameAlbum(renameTarget.id, renameVal.trim());
     if (result?.error) {
-      toast.error(result.error);
+      toast.error(friendlyError(result.error));
       return;
     }
     setRenameTarget(null);
@@ -108,7 +109,7 @@ export default function AlbumsView({ onSelectAlbum, onRefresh }) {
     try {
       const result = await api.exportAlbumImages(album.id, destDir);
       if (!result || result.error) {
-        toast.error(result?.error || '导出失败');
+        toast.error(friendlyError(result?.error) || '导出失败');
         return;
       }
       const nefText = result.nefCopied > 0 ? `，含配对 NEF ${result.nefCopied} 个` : '';
@@ -117,7 +118,7 @@ export default function AlbumsView({ onSelectAlbum, onRefresh }) {
       else toast.success(base);
     } catch (e) {
       console.error('[albums] 导出失败:', e.message);
-      toast.error(`导出失败: ${e.message}`);
+      toast.error(errText('导出失败', e));
     } finally {
       exportingRef.current = false;
     }

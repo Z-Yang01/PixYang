@@ -39,6 +39,7 @@ import {
   isEnterSubmit,
 } from '@/lib/shortcuts';
 import api from '@/lib/api';
+import { errRaw, errText, friendlyError, rawErrorText } from '@/lib/errorText';
 import {
   EDIT_DEFAULTS,
   CROP_RATIOS,
@@ -86,6 +87,7 @@ export default function ImageViewer({
   hasNext,
   onImageUpdated,
   onOpenInfo,
+  onEnterEdit,
   closeGuardRef,
 }) {
   const [thumbSrc, setThumbSrc] = useState(null);
@@ -120,6 +122,8 @@ export default function ImageViewer({
   const [editOps, setEditOps] = useState(EDIT_DEFAULTS);
   const [busyKind, setBusyKind] = useState(''); // opening | saving | exporting | baking
   const [editError, setEditError] = useState('');
+  // 上屏走中文映射，英文原文留在 title 与控制台供取证
+  const [editErrorRaw, setEditErrorRaw] = useState('');
   const [cropMode, setCropMode] = useState(false);
   const [cropRatioKey, setCropRatioKey] = useState('free');
   const [exitConfirm, setExitConfirm] = useState(false);
@@ -232,6 +236,11 @@ export default function ImageViewer({
 
   // ── 编辑会话（非破坏：保存=只写参数；烘焙替代=显式动作才写像素）──
 
+  const raiseEditError = useCallback((text, raw) => {
+    setEditError(text);
+    setEditErrorRaw(raw);
+  }, []);
+
   const cleanupEditSession = useCallback(() => {
     setEditSession(null);
     editSessionRef.current = null;
@@ -240,6 +249,7 @@ export default function ImageViewer({
     setCropMode(false);
     setMaskTool(null);
     setEditError('');
+    setEditErrorRaw('');
     setBusyKind('');
     setWebglFailed(false);
     setHistInfo({ canUndo: false, canRedo: false, index: 0, length: 0 });
@@ -262,7 +272,7 @@ export default function ImageViewer({
     editPendingRef.current = true; // 会话建立期间禁止翻页/换图（防烘焙覆盖另一张图）
     openingIdRef.current = requestedId;
     setBusyKind('opening');
-    setEditError('');
+    raiseEditError('', '');
     try {
       const session = await api.editOpen(requestedId);
       // await 期间用户可能已换图或关闭查看器（imageIdRef 停格在最后一次渲染值，
@@ -272,8 +282,8 @@ export default function ImageViewer({
         return;
       }
       if (!session || session.error) {
-        const msg = session?.error || '无法进入编辑模式';
-        setEditError(msg);
+        const msg = friendlyError(session?.error) || '无法进入编辑模式';
+        raiseEditError(msg, rawErrorText(session?.error));
         // 失败时 editing 仍为 false，行内错误条不渲染：toast 兜底保证有反馈
         toast.error(msg);
         return;
@@ -299,17 +309,18 @@ export default function ImageViewer({
       historyRef.current = { stack: [{ ops: initial, label: '原始' }], index: 0 };
       savedBaselineRef.current = initial;
       setEditing(true);
+      onEnterEdit?.();
       setZoom(1);
       setPos({ x: 0, y: 0 });
     } catch (e) {
-      setEditError(`进入编辑失败：${e?.message || e}`);
-      toast.error(`进入编辑失败：${e?.message || e}`);
+      raiseEditError(errText('进入编辑失败', e), errRaw('进入编辑失败', e));
+      toast.error(errText('进入编辑失败', e));
     } finally {
       editPendingRef.current = false;
       openingIdRef.current = null;
       setBusyKind('');
     }
-  }, [image, editBusy]);
+  }, [image, editBusy, onEnterEdit, raiseEditError]);
 
   // ── 撤销/重做：历史栈存完整 ops 快照 ──
   const syncHistInfo = useCallback(() => {
@@ -389,17 +400,17 @@ export default function ImageViewer({
         after: ops,
       });
       if (result?.error) {
-        setEditError(result.error);
+        raiseEditError(friendlyError(result.error), result.error);
         return;
       }
       savedBaselineRef.current = ops;
       toast.success('已保存编辑参数');
     } catch (e) {
-      setEditError(`保存失败：${e?.message || e}`);
+      raiseEditError(errText('保存失败', e), errRaw('保存失败', e));
     } finally {
       setBusyKind('');
     }
-  }, [image, editBusy, composeOps]);
+  }, [image, editBusy, composeOps, raiseEditError]);
 
   // 导出：渲染全尺寸到用户选的目标目录（绝不覆盖原图）
   // 打开导出选项对话框
@@ -424,16 +435,16 @@ export default function ImageViewer({
       };
       const result = await api.editExport(image.id, toEditParams(composeOps()), dir, output);
       if (result?.error) {
-        setEditError(result.error);
+        raiseEditError(friendlyError(result.error), result.error);
         return;
       }
       toast.success(`已导出到 ${result.path}`);
     } catch (e) {
-      setEditError(`导出失败：${e?.message || e}`);
+      raiseEditError(errText('导出失败', e), errRaw('导出失败', e));
     } finally {
       setBusyKind('');
     }
-  }, [image, editBusy, composeOps, exportOpts]);
+  }, [image, editBusy, composeOps, exportOpts, raiseEditError]);
 
   // 烘焙替代：渲染并原子替代原图（唯一写原图的路径，需确认）
   const bakeEdits = useCallback(async () => {
@@ -442,7 +453,7 @@ export default function ImageViewer({
     try {
       const result = await api.editBake(image.id, toEditParams(composeOps()));
       if (result?.error) {
-        setEditError(result.error);
+        raiseEditError(friendlyError(result.error), result.error);
         return;
       }
       setBakeConfirm(false);
@@ -458,11 +469,11 @@ export default function ImageViewer({
       // 结构性变化：像素/尺寸/缩略图已变，走全量刷新（查看器内 image 由 App 同步 effect 更新）
       onImageUpdated?.();
     } catch (e) {
-      setEditError(`烘焙失败：${e?.message || e}`);
+      raiseEditError(errText('烘焙失败', e), errRaw('烘焙失败', e));
     } finally {
       setBusyKind('');
     }
-  }, [image, editBusy, onImageUpdated, cleanupEditSession, composeOps]);
+  }, [image, editBusy, onImageUpdated, cleanupEditSession, composeOps, raiseEditError]);
 
   // 退出编辑：有未保存的参数变更时先确认（放弃=不写参数，原图/像素均不受影响）
   // 导出/烘焙在途禁止退出：editCancel 会删编辑底图，渲染中的读取随即失败且结果无人可见（审查批 7 N2）
@@ -1672,7 +1683,9 @@ export default function ImageViewer({
             <Loader2 className="size-5 animate-spin" /> 正在准备编辑底图...
           </div>
         ) : editing && editError ? (
-          <div className="editor-error">{editError}</div>
+          <div className="editor-error" title={editErrorRaw || editError}>
+            {editError}
+          </div>
         ) : editing ? (
           showBeforeOn && compareMode !== 'toggle' && editBaseSrc ? (
             <CompareView mode={compareMode} beforeSrc={editBaseSrc} afterNode={editLayer(true)} />

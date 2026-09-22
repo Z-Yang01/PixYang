@@ -337,12 +337,15 @@ describe('useBatchActions 异步收尾守卫', () => {
       loadStats: vi.fn(async () => {}),
       loadAppData: vi.fn(async () => {}),
     });
-    window.pixyang.batchDeleteImages = vi.fn().mockRejectedValue(new Error('disk yanked'));
+    window.pixyang.batchDeleteImages = vi
+      .fn()
+      .mockRejectedValue(new Error('文件操作失败: Os { code: 5, kind: PermissionDenied }'));
     render(<GuardHarness />);
     await act(async () => {
       await out.current.executeBatchDelete();
     });
-    expect(showToast).toHaveBeenCalledWith('批量删除失败: disk yanked', 'error');
+    // R54：引擎英文原文不上屏，映射为中文（原文进 console 取证）
+    expect(showToast).toHaveBeenCalledWith('批量删除失败：文件被占用或权限不足', 'error');
     expect(useGalleryStore.getState().selectedIds.size).toBe(0);
   });
 
@@ -363,7 +366,7 @@ describe('useBatchActions 异步收尾守卫', () => {
     await act(async () => {
       await out.current.handleBatchUpdate({ favorite: 1 });
     });
-    expect(showToast).toHaveBeenCalledWith('批量更新失败: db busy', 'error');
+    expect(showToast).toHaveBeenCalledWith('批量更新失败：操作未成功', 'error');
     expect(useGalleryStore.getState().images).toEqual([]);
     expect(loadStats).not.toHaveBeenCalled();
   });
@@ -474,7 +477,7 @@ describe('useBatchActions 异步收尾守卫', () => {
     await act(async () => {
       await out.current.handleBatchTag(5);
     });
-    expect(showToast).toHaveBeenCalledWith('批量添加标签失败: db busy', 'error');
+    expect(showToast).toHaveBeenCalledWith('批量添加标签失败：操作未成功', 'error');
     expect(loadAppData).not.toHaveBeenCalled();
 
     showToast.mockClear();
@@ -482,7 +485,7 @@ describe('useBatchActions 异步收尾守卫', () => {
     await act(async () => {
       await out.current.handleBatchTag(5);
     });
-    expect(showToast).toHaveBeenCalledWith('批量添加标签失败: ipc down', 'error');
+    expect(showToast).toHaveBeenCalledWith('批量添加标签失败：操作未成功', 'error');
 
     showToast.mockClear();
     window.pixyang.addTagToImages = vi.fn().mockResolvedValue(0);
@@ -573,7 +576,7 @@ describe('useBatchActions 批量导出（批 7 N3：在途互斥 + failed 计数
     await act(async () => {
       await out.current.handleExportSelected();
     });
-    expect(showToast).toHaveBeenCalledWith('导出失败: disk yanked', 'error');
+    expect(showToast).toHaveBeenCalledWith('导出失败：操作未成功', 'error');
     await act(async () => {
       await out.current.handleExportSelected();
     });

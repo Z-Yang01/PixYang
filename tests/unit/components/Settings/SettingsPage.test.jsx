@@ -158,12 +158,12 @@ describe('SettingsPage', () => {
     window.pixyang.setSetting = vi
       .fn()
       .mockResolvedValueOnce(undefined) // theme 成功
-      .mockRejectedValueOnce(new Error('db locked'));
+      .mockRejectedValueOnce(new Error('数据库错误: database is locked'));
     renderPage();
     await screen.findByText('C:/PixData');
     fireEvent.click(screen.getByText('浅色'));
     fireEvent.click(screen.getByText('保存'));
-    expect(await screen.findByText('保存失败: db locked')).toBeInTheDocument();
+    expect(await screen.findByText('保存失败：数据库正被其他程序占用')).toBeInTheDocument();
     expect(screen.getByText('有未保存的修改')).toBeInTheDocument();
   });
 });

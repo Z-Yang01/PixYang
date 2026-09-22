@@ -297,12 +297,14 @@ describe('InfoPanel（补充：EXIF 全分支/标签操作/删除/评分收藏�
       expect(onClose).not.toHaveBeenCalled();
 
       errSpy.mockClear();
-      window.pixyang.deleteImage = vi.fn().mockRejectedValueOnce(new Error('ipc down'));
+      window.pixyang.deleteImage = vi
+        .fn()
+        .mockRejectedValueOnce(new Error('文件操作失败: Os { code: 5, kind: PermissionDenied }'));
       fireEvent.click(screen.getByTitle('删除图片'));
       const dialog2 = await deleteDialog();
       fireEvent.click(within(dialog2).getByText('删除'));
       await vi.waitFor(() => {
-        expect(errSpy).toHaveBeenCalledWith('删除失败: ipc down');
+        expect(errSpy).toHaveBeenCalledWith('删除失败：文件被占用或权限不足');
       });
       expect(onClose).not.toHaveBeenCalled();
     } finally {

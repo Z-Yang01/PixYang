@@ -871,4 +871,64 @@
   构建产物 CSS 取证；⑤ 其余口径项原样沿用（vite dev 修法二选一、7 条零调用 `api.js` 通道、6 个仅单测触达的桥包装、
   `release/` 98MB、shader vs golden 实机像素对拍、R27 保存后缩略图、曲线用例全量偶发超时）。
 
+- 2026-09-22 22:07 R54 详情/编辑面板「开一个关一个」落地 + 错误文案中文化根治（新 `src/lib/errorText.js` 收口 25 处上屏）：
+  ① 需求：用户对 R53 待复核 ① 裁决「开一个关一个」——详情面板与编辑面板互斥，进入编辑即收起详情；并追问
+    「为什么这个错误信息里会出现英文」（附截图：行内报错条 `保存失败：数据库错误: no such column: ...` 中英混排）、
+    「④ 旧账是什么旧账」。
+  ② 根因（英文）：并非某处笔误，而是**全仓上屏口径**问题。Rust 侧 `PixError`（`src-tauri/src/error.rs`）渲染成
+    `数据库错误: {engine原文}` / `文件操作失败: {msg}`，`commands.rs` 再 `format!("导出失败: {msg}")`——引擎原文
+    （std::io 的 `Os { code: 5, kind: PermissionDenied, message: "Access is denied" }`、rusqlite 的
+    `no such column: images.edit_version`、image-rs 的 `Could not auto-detect image format`）本身就是英文；
+    前端 5 个文件约 25 处显示点又直接 `${前缀}: ${e.message}` 模板拼接，把整串原文送进 Toast/行内错误条。
+    即「中文前缀 + 英文原文」是两层拼接叠加的系统性结果，单点改文案无效。
+  ③ 修法（互斥）：`ImageViewer` 新增 `onEnterEdit` 回调，仅在 `editOpen` 成功、`setEditing(true)` 之后触发；
+    `App.jsx` 侧 `handleEnterEdit` 同时 `infoFromViewerRef.current = false` + `setInfoImage(null)`——清 flag 是必需的，
+    否则 App.jsx:216-221 的翻页跟随 effect 会在下一次导航时把详情面板重新拉起。失败路径不回调（面板不被误关）。
+  ④ 修法（中文化）：新增 `src/lib/errorText.js` 作为错误文案唯一 choke point：
+    `split()` 按首个中英文冒号拆「中文引擎前缀 / 英文正文」（Windows 盘符 `E:\` 不误判，专门有锁）；
+    `RULES` 15 条正则把 io/sqlite/image/WebGL/JS/网络/超时七类原文映射为中文短语；
+    `friendlyError(e)` 上屏、`errText(prefix, e)` 拼接、`errRaw(prefix, e)` 留档。三条契约：
+    空输入返回 `''`（保住调用方原有 `|| '导出失败'`、`|| '备份已取消'` 兜底，首版曾返回「操作未成功」把兜底吃掉）；
+    未命中但正文含中文则原样透传（避免把「隐藏的 NEF 记录不支持编辑」这类合法中文文案切坏，首版曾按 ASCII 剥离）；
+    改写命中时 `console.warn` 保留原始错误，加上各站点既有 `console.error` 与行内条 `title`，取证链三通道完整。
+    替换点：`ImageViewer`（编辑会话 4 端点 + 行内条 title）、`useBatchActions`（导出/标签/更新/删除）、
+    `AlbumsView`（建/删/改名/导出）、`InfoPanel`（日期/改名/删除）、`SettingsPage`（保存/迁移/扫描/重复检测/备份）。
+    期间修掉一处真缺陷：规则表首版漏了 Rust 的 `Os { code: 5, kind: PermissionDenied }` Debug 形状
+    （`PermissionDenied` 无空格、无 `os error N`），补 `code:`/`permission\s*denied`/`wouldblock`/`sharing violation` 等。
+  ⑤ 回归锁（781 → 794 例，+13）：
+    - 新文件 `tests/unit/lib/errorText.test.js` 9 例：17 条真实引擎原文语料逐条对拍、
+      **「上屏文案一律不含 ASCII 字母」不变式**（新增英文泄漏即红）、前缀替换、纯中文透传且不 warn、
+      warn 取证、Error/string/空入参、盘符冒号、`errRaw`；末例扫 `src/components` + `src/hooks` 全量源文件，
+      断言不再残留 `${e.message}` / `${e?.message || e}` 直插（且扫到 >30 文件，防扫描路径失效假绿）。
+    - `ImageViewer.test.jsx` +3 例：成功进入编辑才回调 `onEnterEdit`；`editOpen` 回 `{error}` 时不回调、不进编辑态；
+      保存失败行内条只上屏中文、英文原文降级到 `title`。
+    - `App.test.jsx` +1 例：真 App + 真查看器走完「卡片 → 查看详情 → 进入编辑」，断言 `.info-panel` 由有到无。
+    - 11 例既有测试随文案同步（SettingsPage ×2、AlbumsView、InfoPanel.extra、hooks）：mock 换成真实引擎原文形状，
+      断言换成中文上屏，原意图（错误可见、不推进成功态）不变。
+    变异验证两组：① `数据库字段缺失` 改 `字段缺失 missing` → 语料例 + ASCII 不变式例同时红；
+    ② 把 `onEnterEdit?.()` 提到 `session.error` 守卫之前 → 「失败不回调」例红
+    （`expected spy to not be called at all, but actually been called 1 times`）。均回退复绿。
+  ⑥ 真机取证（Chromium + `vite preview` 静态服务 + `window.pixyang` 注入，非 dev server）：
+    进入编辑成功 `infoBefore 1 → infoAfterEnterEdit 0`；进入失败 `infoAfterFailedEnter 1` 且无编辑面板、
+    Toast 为 `文件被占用或权限不足`、`bodyHasEnglishError false`；保存失败行内条
+    `保存失败：数据库字段缺失`，`title` 完整保留 `保存失败：数据库错误: no such column: images.edit_version`。
+    截图 `%TEMP%\r54-qa-editerror.png`。取证后 preview 实例（占用 4173 的旧 detached 进程 PID 28436）已关停、端口释放，页签关闭，仓库无残留。
+  - 验证：vitest 794/794（58 文件）✅；lint 0 error / 8 warning（基线不变）；typecheck ✅；format:check ✅；
+    `npx vite build` ✅（`index-1UnbPTol.js` 1,048.58 kB；CSS `index-Czb4Wk9j.css` 110.12 kB 与 R53 同哈希，本轮零样式改动）。
+    Rust 侧零改动，cargo 门禁未重跑。安装包 22:07 重打（`PixYang_0.1.0_x64-setup.exe` 4,115,013 B，R53 版 4,112,228 B），
+    核对链：`dist` 22:06 产物 `index-1UnbPTol.js` / `index-Czb4Wk9j.css` → 同分钟 `pixyang.exe` 内嵌资源二进制扫描
+    各命中 1 次，R53 的 `index-BwQye__Q.js` 0 命中。
+    提交范围：`src/App.jsx`、`src/components/Browser/ImageViewer.jsx`、`src/components/Explorer/AlbumsView.jsx`、
+    `src/components/Info/InfoPanel.jsx`、`src/components/Settings/SettingsPage.jsx`、`src/hooks/useBatchActions.js`、
+    `src/lib/errorText.js`、`tests/unit/lib/errorText.test.js`、`tests/unit/components/App.test.jsx` + 4 个既有测试文件、
+    `AGENTS.md`、`NIGHTLY_LOG.md`。
+  待人工复核：① 中文化是「映射表」而非「让引擎说中文」：新出现的英文原文类型若未入表，会落到 `操作未成功`
+    （原文仍进 `title`/控制台）。是否改为 Rust 侧直接输出中文错误（改动面大、要重编后端），请裁决；
+    ② 「开一个关一个」目前只在进入编辑时收起详情；编辑退出后不自动恢复详情面板，是否符合预期；
+    ③ R53 待复核 ③「看不清功能名称」仍须用户安装 22:07 重打包后复验；④ 实机 App 内复测仍被
+    `tauri-plugin-single-instance` 挡住（用户安装版在跑），继续走真机 Chromium 取证；
+    ⑤ 口径旧账清单（用户本轮追问，逐项列明见下）：vite dev 修法二选一（dev-only commonjs 插件 vs `shared/` 全量转 ESM）、
+    7 条零调用 `api.js` 通道、6 个仅单测触达的桥包装、`release/`（98MB）删否、shader vs golden 实机像素对拍、
+    R27 保存后缩略图真机复核、曲线用例全量偶发超时（本轮 13.6s 未复现）、R51 ⑪ 主题命名、R52 ⑬⑭⑮、R53 ②④⑤。
+
 

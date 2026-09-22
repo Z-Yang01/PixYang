@@ -103,7 +103,8 @@ describe('AlbumsView', () => {
       fireEvent.click(await screen.findByRole('menuitem', { name: /删除/ }));
       fireEvent.click(await screen.findByText('删除', { selector: 'button' }));
       await vi.waitFor(() => {
-        expect(errSpy).toHaveBeenCalledWith('删除相册失败: busy');
+        // R54：前缀保留、英文正文不外泄（未命中规则统一「操作未成功」）
+        expect(errSpy).toHaveBeenCalledWith('删除相册失败：操作未成功');
       });
       expect(window.pixyang.getAlbums).toHaveBeenCalledTimes(1);
 
@@ -115,7 +116,7 @@ describe('AlbumsView', () => {
       fireEvent.change(renameInput, { target: { value: '新名字' } });
       fireEvent.blur(renameInput);
       await vi.waitFor(() => {
-        expect(errSpy).toHaveBeenCalledWith('重命名相册失败: busy');
+        expect(errSpy).toHaveBeenCalledWith('重命名相册失败：操作未成功');
       });
       // 失败不收改名框：renameTarget 保持，用户可改后重试
       expect(screen.getByDisplayValue('新名字')).toBeInTheDocument();

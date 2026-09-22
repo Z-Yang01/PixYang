@@ -233,6 +233,49 @@ describe('ImageViewer', () => {
     await vi.waitFor(() => expect(screen.getByText('参数已保存')).toBeDisabled());
   });
 
+  it('进入编辑成功才回调 onEnterEdit（「开一个关一个」：详情面板随之收起）', async () => {
+    mockEditBridge();
+    const onEnterEdit = vi.fn();
+    render(<ImageViewer {...baseProps({ onEnterEdit })} />);
+    fireEvent.click(screen.getByTitle(/编辑模式/));
+    await screen.findByText('参数已保存');
+    expect(onEnterEdit).toHaveBeenCalledTimes(1);
+  });
+
+  it('进入编辑失败（editOpen 回 {error}）不回调 onEnterEdit、不进编辑态', async () => {
+    mockEditBridge();
+    window.pixyang.editOpen.mockResolvedValue({
+      error: '文件操作失败: Os { code: 5, kind: PermissionDenied, message: "Access is denied" }',
+    });
+    const onEnterEdit = vi.fn();
+    render(<ImageViewer {...baseProps({ onEnterEdit })} />);
+    fireEvent.click(screen.getByTitle(/编辑模式/));
+    await vi.waitFor(() => expect(window.pixyang.editOpen).toHaveBeenCalledTimes(1));
+    expect(onEnterEdit).not.toHaveBeenCalled();
+    expect(screen.queryByText('参数已保存')).toBeNull();
+  });
+
+  it('保存失败：行内错误条只上屏中文，引擎英文原文降级到 title', async () => {
+    mockEditBridge();
+    window.pixyang.saveEdits = vi
+      .fn()
+      .mockRejectedValue(new Error('no such column: images.edit_version'));
+    render(<ImageViewer {...baseProps()} />);
+    fireEvent.click(screen.getByTitle(/编辑模式/));
+    await screen.findByText('参数已保存');
+    fireEvent.change(document.querySelectorAll('.editor-slider-row input[type="range"]')[0], {
+      target: { value: '0.5' },
+    });
+    fireEvent.click(screen.getByText('保存参数'));
+    const bar = await vi.waitFor(() => {
+      const el = document.querySelector('.editor-error');
+      expect(el).toBeTruthy();
+      return el;
+    });
+    expect(bar.textContent).toBe('保存失败：数据库字段缺失');
+    expect(bar.getAttribute('title')).toContain('no such column');
+  });
+
   it('编辑模式：烘焙替代需确认后渲染替代原图，并全量刷新列表', async () => {
     mockEditBridge();
     const onImageUpdated = vi.fn();

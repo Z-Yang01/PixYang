@@ -4,6 +4,7 @@ import api from '../lib/api';
 import useGalleryStore from '../store/galleryStore';
 import { toEditParams } from '../lib/editParams';
 import { pageAfterDelete, removeIdsFromSet } from '../lib/gallery';
+import { errText, friendlyError } from '../lib/errorText';
 
 // 批量操作（勾选集驱动）：全选/导出/打标/评分收藏/删除确认 + 批量同步编辑参数。
 // 数据与勾选集都从 galleryStore 读取，弹层确认状态（pendingBatchAction）由本 hook 持有。
@@ -83,7 +84,7 @@ export default function useBatchActions({ showToast }) {
     try {
       const result = await api.exportImages([...selected], dir);
       if (!result || result.error) {
-        showToast(result?.error || '导出失败', 'error');
+        showToast(friendlyError(result?.error) || '导出失败', 'error');
         return;
       }
       const nefText = result.nefCopied > 0 ? `，含配对 NEF ${result.nefCopied} 个` : '';
@@ -92,7 +93,7 @@ export default function useBatchActions({ showToast }) {
       else showToast(base, 'success');
     } catch (e) {
       console.error('[batch] 导出失败:', e.message);
-      showToast(`导出失败: ${e.message}`, 'error');
+      showToast(errText('导出失败', e), 'error');
     } finally {
       exportingRef.current = false;
     }
@@ -108,10 +109,11 @@ export default function useBatchActions({ showToast }) {
       try {
         result = await api.addTagToImages(ids, tagId);
       } catch (e) {
-        result = { error: `批量添加标签失败: ${e.message}` };
+        console.error('[batch] 批量添加标签失败:', e.message);
+        result = { error: errText('批量添加标签失败', e) };
       }
       if (result && result.error) {
-        showToast(result.error, 'error');
+        showToast(friendlyError(result.error), 'error');
         return;
       }
       useGalleryStore.getState().loadAppData();
@@ -129,7 +131,8 @@ export default function useBatchActions({ showToast }) {
       try {
         await api.updateImages(ids, updates);
       } catch (e) {
-        showToast(`批量更新失败: ${e.message}`, 'error');
+        console.error('[batch] 批量更新失败:', e.message);
+        showToast(errText('批量更新失败', e), 'error');
         return;
       }
       const idSet = new Set(ids);
@@ -228,7 +231,8 @@ export default function useBatchActions({ showToast }) {
       try {
         results = await api.batchDeleteImages(deletedIds);
       } catch (e) {
-        results = { error: `批量删除失败: ${e.message}` };
+        console.error('[batch] 批量删除失败:', e.message);
+        results = { error: errText('批量删除失败', e) };
       }
       store.clearSelection();
       setPendingBatchAction(null);
@@ -239,7 +243,7 @@ export default function useBatchActions({ showToast }) {
       const failedCount = batchError ? deletedIds.length : deletedIds.length - list.length;
       okCount = list.length;
       if (batchError) {
-        showToast(results.error, 'error');
+        showToast(friendlyError(results.error), 'error');
       } else if (failedCount > 0) {
         showToast(`已删除 ${okCount} 张，${failedCount} 张失败（文件可能被占用）`, 'error');
       } else {

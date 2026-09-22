@@ -192,6 +192,30 @@ describe('App 组合根冒烟', () => {
     expect(window.pixyang.getAllImageIds).toHaveBeenCalledTimes(1);
   });
 
+  it('查看器内「开一个关一个」：进入编辑即收起详情面板（两面板互斥）', async () => {
+    window.pixyang.editOpen = vi.fn().mockResolvedValue({
+      id: 1,
+      source: 'jpg',
+      basePath: 'C:/cache/1-base.jpg',
+      width: 1920,
+      height: 1080,
+      hasNef: false,
+      savedEdits: null,
+    });
+    window.pixyang.editCancel = vi.fn().mockResolvedValue({ ok: true });
+    window.pixyang.toFileUrl = vi
+      .fn()
+      .mockImplementation((p) => Promise.resolve(p ? `file:///${p}` : null));
+    const { container } = renderApp('/');
+    await screen.findByText('sunset');
+    fireEvent.click(container.querySelector('.image-card'));
+    fireEvent.click(await screen.findByTitle(/查看详情/));
+    await waitFor(() => expect(container.querySelector('.info-panel')).toBeTruthy());
+    fireEvent.click(screen.getByTitle(/编辑模式/));
+    await screen.findByText('参数已保存');
+    expect(container.querySelector('.info-panel')).toBeNull();
+  });
+
   it('非图库路由：Ctrl+A/Ctrl+E/Delete 被路由门禁全部拦截（审查批 6 K2）', async () => {
     renderApp('/settings');
     await screen.findByRole('heading', { name: '设置' });

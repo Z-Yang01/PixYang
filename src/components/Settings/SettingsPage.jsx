@@ -4,6 +4,7 @@ import ConfirmDialog from '../Layout/ConfirmDialog';
 import useGalleryStore from '@/store/galleryStore';
 import api from '@/lib/api';
 import { THEMES, normalizeTheme } from '@/lib/themes';
+import { errText, friendlyError } from '@/lib/errorText';
 
 const DEFAULT_SETTINGS = { theme: 'dark', rows: 3, columns: 5, gap: 12, padding: 16 };
 
@@ -120,7 +121,7 @@ export default function SettingsPage({ onSettingsChanged, onImagesChanged }) {
       await api.setSetting('content_padding', String(d.padding));
     } catch (e) {
       console.error('[设置] 保存失败:', e.message);
-      setMessage(`保存失败: ${e.message}`);
+      setMessage(errText('保存失败', e));
       return;
     }
     savedRef.current = d;
@@ -163,12 +164,12 @@ export default function SettingsPage({ onSettingsChanged, onImagesChanged }) {
       result = await api.setImagesRoot(target);
     } catch (e) {
       console.error('[设置] 迁移图片目录异常:', e.message);
-      result = { error: `迁移失败: ${e.message}` };
+      result = { error: errText('迁移失败', e) };
     }
     setMoving(false);
 
     if (result?.error) {
-      setMessage(result.error);
+      setMessage(friendlyError(result.error));
       return;
     }
 
@@ -194,7 +195,7 @@ export default function SettingsPage({ onSettingsChanged, onImagesChanged }) {
     setSyncing(false);
 
     if (result?.error) {
-      setMessage(result.error);
+      setMessage(friendlyError(result.error));
       return;
     }
 
@@ -218,7 +219,7 @@ export default function SettingsPage({ onSettingsChanged, onImagesChanged }) {
     setRebuilding(false);
     setRebuildProgress(null);
     if (result?.error) {
-      showSaved(result.error);
+      showSaved(friendlyError(result.error));
       return;
     }
     onImagesChanged?.();
@@ -235,12 +236,13 @@ export default function SettingsPage({ onSettingsChanged, onImagesChanged }) {
       list = (await api.scanBrokenRecords()) || [];
     } catch (e) {
       setScanningBroken(false);
-      setMessage(`扫描失效记录失败: ${e.message}`);
+      console.error('[设置] 扫描失效记录失败:', e.message);
+      setMessage(errText('扫描失效记录失败', e));
       return;
     }
     setScanningBroken(false);
     if (list?.error) {
-      setMessage(list.error);
+      setMessage(friendlyError(list.error));
       return;
     }
     setBrokenRecords(list);
@@ -254,7 +256,7 @@ export default function SettingsPage({ onSettingsChanged, onImagesChanged }) {
     const result = await api.deleteBrokenRecords(ids);
     onImagesChanged?.();
     if (result?.error) {
-      setMessage(result.error);
+      setMessage(friendlyError(result.error));
       return;
     }
     const removed = result?.removed ?? 0;
@@ -274,11 +276,11 @@ export default function SettingsPage({ onSettingsChanged, onImagesChanged }) {
       groups = await api.findDuplicates();
     } catch (e) {
       console.error('[settings] 查重失败:', e.message);
-      groups = { error: `检测失败: ${e.message}` };
+      groups = { error: errText('检测失败', e) };
     }
     setFindingDupes(false);
     if (groups?.error) {
-      setMessage(groups.error);
+      setMessage(friendlyError(groups.error));
       return;
     }
     if (!groups || groups.length === 0) {
@@ -328,7 +330,7 @@ export default function SettingsPage({ onSettingsChanged, onImagesChanged }) {
     onImagesChanged?.();
     const mb = (wasted / 1048576).toFixed(1);
     if (!Array.isArray(results) && results?.error) {
-      setMessage(results.error);
+      setMessage(friendlyError(results.error));
       return;
     }
     const failed = Array.isArray(results) ? results.filter((r) => r?.error).length : 0;
@@ -347,7 +349,7 @@ export default function SettingsPage({ onSettingsChanged, onImagesChanged }) {
     if (result?.success) {
       showSaved(`数据库已备份到 ${result.path}`);
     } else {
-      setMessage(result?.error || '备份已取消');
+      setMessage(friendlyError(result?.error) || '备份已取消');
     }
   };
 

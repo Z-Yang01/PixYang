@@ -239,6 +239,12 @@ export default function App() {
     infoFromViewerRef.current = false;
   }, []);
 
+  // 详情面板与编辑面板互斥（口径：开一个关一个）：进入编辑即收起详情并停止翻页跟随
+  const handleEnterEdit = useCallback(() => {
+    infoFromViewerRef.current = false;
+    setInfoImage(null);
+  }, []);
+
   // 查看器翻页：优先用本页数据，跨页时按当前筛选+排序查询单张
   const navigateViewer = useCallback(async (gIdx) => {
     if (!api.isBridgeAvailable() || viewerNavBusyRef.current) return;
@@ -593,6 +599,7 @@ export default function App() {
                 setInfoImage(img);
               }
             }}
+            onEnterEdit={handleEnterEdit}
           />
         )}
 

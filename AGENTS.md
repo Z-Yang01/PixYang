@@ -35,7 +35,7 @@ src-tauri/        Rust/Tauri 后端（唯一运行时桌面端）
   src/exif_read.rs EXIF 读取（18 字段中文映射）
   src/interact.rs 对话框/openPath/backupDatabase（tauri-plugin-dialog/opener）
   src/commands.rs tauri 命令薄封装层（磁盘 I/O + DTO 编排，内核算法在各专用模块）
-  src/error.rs    统一错误类型 AppError（命令错误契约）
+  src/error.rs    统一错误类型 PixError（命令错误契约；渲染为「中文前缀: 引擎英文原文」）
   src/progress.rs 进度事件（rebuild-progress 等，Tauri Emitter）
   tauri.conf.json withGlobalTauri=true、frontendDist=../dist、assetProtocol（$CONFIG/pixyang scope）
 shared/           11 个 .cjs；被前端以默认导入消费（19 处），仅由 vite build 的 rollup interop 提供 default
@@ -52,7 +52,7 @@ src/
   App.jsx         组合根：路由、弹层状态、快捷键接线（批量操作在 useBatchActions）
   store/          zustand store（galleryStore：筛选/勾选/网格设置/图片页数据/共享数据）
   hooks/          useGalleryData（加载 wiring）/ useGlobalShortcuts / useDragImport / useBatchActions（批量操作）/ useMarqueeSelection（网格框选）
-  lib/            api.js（通道封装与守卫）/ tauriBridge.js、tauriBridgeMedia.js（invoke/事件/URL）/ gallery.js / shortcuts.js / format.js / utils.ts
+  lib/            api.js（通道封装与守卫）/ tauriBridge.js、tauriBridgeMedia.js（invoke/事件/URL）/ errorText.js（错误文案中文映射唯一事实源）/ gallery.js / shortcuts.js / format.js / utils.ts
   components/
     Browser/      图片网格（ImageCard/PaginationBar/GridDialogs 拆分组件）、全屏查看器（含非破坏编辑面板）、批量操作栏、CompareView 对比视图
     Explorer/     导入对话框、相册视图
@@ -73,6 +73,11 @@ tests/            vitest（node 环境 + per-file happy-dom pragma）
 - JSX 为 automatic runtime（生产走 @vitejs/plugin-react；vitest 在 `vitest.config.js` 显式 `esbuild: { jsx: 'automatic' }`）：**不要**为 JSX 写 `import React`，需要 React API 时用命名导入（如 `import { useState } from 'react'`）；仅 main.jsx 与个别测试因使用 `React.StrictMode`/`React.useState` 保留默认导入。
 - 前端组件/store **不得直调 `window.__TAURI__` 或 `window.pixyang`**，一律经 `src/lib/api.js`（守卫集中在该层，无桥时方法返回 undefined）。
 - 错误处理保持现有风格：`try/catch` + `console.error('[xxx] ...', e.message)`。
+- **上屏错误文案不得直插引擎原文**：Rust `PixError` 与 JS/WebView 错误正文是英文（`Os { code: 5, kind: PermissionDenied }`、
+  `no such column: ...`），一律经 `src/lib/errorText.js` 映射为中文后再进 Toast/行内错误条——用 `friendlyError(e)`（单参上屏，
+  空输入返回 `''` 以保住调用方 `|| 兜底文案`）、`errText(prefix, e)`（拼中文前缀）、`errRaw(prefix, e)`（留档，只进 title/日志）。
+  禁止在模板串里写 `${e.message}` / `${e?.message || e}`（`tests/unit/lib/errorText.test.js` 全仓扫描把该口径锁死）；
+  新增英文错误类型时在 `RULES` 表补一条，未命中会显示「操作未成功」而原文仍在 title/`console.warn` 里。
 - 通道命名遵循现有约定：`src/lib/api.js` 方法名 ↔ Rust 命令 snake_case，映射集中在 `tauriBridge.js`。
 - 新功能需在 `src-tauri/src/` 实现并注册 tauri 命令，再在 `tauriBridge.js`（或 `tauriBridgeMedia.js`，事件/URL 类）加同名包装，`api.js` 即按包装存在性自动接缝；无包装的方法只透传 `window.pixyang`。
 - 数据库列/表的修改放在 Rust 侧兼容迁移中完成（生产唯一自举在 `db.rs` 的 `ensure_business_schema`：建表/逐列回迁/索引，参考其内注释的 legacy 语义）。
@@ -117,7 +122,7 @@ tests/            vitest（node 环境 + per-file happy-dom pragma）
 
 ## 验证
 
-- 测试：`npm test`（vitest，57 个文件 / 781 例；像素 golden 门禁在 cargo 侧 `golden_audit`，Rust 单测 149 例）；覆盖率：`npm run test:coverage`，门槛配置在 `vitest.config.js`（statements/lines 75、branches 70、functions 50）。
+- 测试：`npm test`（vitest，58 个文件 / 794 例；含 R37 桥接全通道契约、R51/R52 主题↔CSS 对拍、R53 右栏让位契约、R54 错误文案中文化 + 全仓 `${e.message}` 直插扫描；像素 golden 门禁在 cargo 侧 `golden_audit`，Rust 单测 149 例）；覆盖率：`npm run test:coverage`，门槛配置在 `vitest.config.js`（statements/lines 75、branches 70、functions 50）。
 - Lint：`npm run lint`（ESLint flat config，`eslint.config.mjs`）；0 error 为准，warning 不阻塞。
 - 类型检查：`npm run typecheck`（tsc --noEmit，覆盖 src 下 TS/TSX）。
 - 格式检查：`npm run format:check`（Prettier 基线已于 R40 全仓落库，改动后的文件须保持 prettier 合规；历史 `*.md` 与 `src-tauri/gen/` 在 `.prettierignore` 豁免）。

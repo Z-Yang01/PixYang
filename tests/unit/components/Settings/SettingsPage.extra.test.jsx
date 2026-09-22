@@ -136,7 +136,7 @@ describe('SettingsPage（补充：存储/相机/维护/备份/重复图片等交
     renderPage();
     await screen.findByText('C:/PixData');
     fireEvent.click(screen.getByText('选择保存路径'));
-    expect(await screen.findByText(/迁移失败: IPC 超时/)).toBeInTheDocument();
+    expect(await screen.findByText(/迁移失败：IPC 超时/)).toBeInTheDocument();
     // moving 已收尾：按钮恢复可点，不滞留在「正在移动图片...」
     expect(screen.getByText('选择保存路径')).toBeInTheDocument();
   });
@@ -309,7 +309,7 @@ describe('SettingsPage（补充：存储/相机/维护/备份/重复图片等交
     renderPage();
     await screen.findByText('C:/PixData');
     fireEvent.click(screen.getByText('查找重复图片'));
-    expect(await screen.findByText('检测失败: 数据库忙')).toBeInTheDocument();
+    expect(await screen.findByText('检测失败：数据库忙')).toBeInTheDocument();
     expect(await screen.findByText('查找重复图片')).toBeInTheDocument(); // 按钮复位可重试
   });
 
@@ -318,7 +318,7 @@ describe('SettingsPage（补充：存储/相机/维护/备份/重复图片等交
     renderPage();
     await screen.findByText('C:/PixData');
     fireEvent.click(screen.getByText('查找重复图片'));
-    expect(await screen.findByText('检测失败: IPC 超时')).toBeInTheDocument();
+    expect(await screen.findByText('检测失败：IPC 超时')).toBeInTheDocument();
     expect(await screen.findByText('查找重复图片')).toBeInTheDocument();
   });
 
