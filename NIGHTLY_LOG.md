@@ -1237,3 +1237,4 @@
     重打包（R60 哈希链仍有效；dist 未删未动，cargo 复用既有 dist 通过）。安装包不适用。
     提交范围：UNATTENDED.md、docs/TAURI_PARITY.md、NIGHTLY_LOG.md。
   待人工复核：无新增（纯勘正轮；R59/R60 既有裁决项维持原状）。
+- 2026-09-24 00:12 R61.5 批8 性能挂账盘点结论（纯只读零改动，无值守轮）：R-1~R-6、R-9 批8 当轮闭环（证据 galleryStore/useGalleryData/App.jsx 各注释点），R-7 由 R33 闭环且回归锁在位，R-5 随 Electron→Tauri 重构消亡——UNATTENDED §3-③ 性能挂账**已清零**；唯一遗留 R-8「设置预览即生效 vs 需点击保存」文案矛盾属交互口径，裁决选项 A 即时生效+B 真草稿+C 仅改文案（推荐 A）已上报待用户裁决。依据：PROGRESS.md:2035-2149 原清单逐项核码。后续轮次选到 §3-③ 应引用本条记「无改动」。
