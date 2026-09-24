@@ -1626,3 +1626,54 @@
     替代方案（对比时自动收起面板）会失去「边看边调」能力，本轮未取；③ Before 标签 top:56 在
     <320px 高的极矮窗口仍可能压回工具栏，属支持范围外；④ R63 P2-3/P3-2/P3-5/P3-7 与
     01-full-combo TOL 分档、simulateShaderPixel clamp 漂移等既有挂账维持。
+- 2026-09-25 04:35 R69 simulateShaderPixel 高光乘后补 clamp，与 R60 已修 shader 语义对齐（R64 待复核③闭环）：
+  ① 需求/裁决来源：R64 待复核③（= R63 ⑥② 挂账「simulateShaderPixel(:180) 高光乘后仍无 clamp，
+    与 R60 已修的 shader 本体存在契约测试模型漂移」）；本轮任务书点名：漂移属实则修、无漂移则停轮。
+  ② 根因（取证坐实，非推测）：webglPreview.js:143 GLSL 为 `clamp(c * uHighlightsSlope, 0.0, 1.0)`
+    （R60 修复形态），previewUniforms.js:180 JS 模型为裸乘 `x * highlightsSlope`。漂移仅在
+    「highlights<0（slope 上限 1.15）把 c 推过 1 + 下游还有非线性段 + 无 curveLut」三条件齐时显形：
+    有 curveLut 时模型 LUT 索引处 `Math.round(clamp01(x)*255)` 与 shader `int(c*255+0.5)`（其 c
+    已先 clamp）索引同值、LUT 后收敛；仅高光单段时模型末段 `Math.round(clamp01(x)*255)` 兜底，
+    8-bit 出口同值（Case3 实算同）。Node 按两份代码手算 + vitest 改前红跑直调双证：
+    输入 [255,240,220] × slope1.15 + 暗角 -50@角点（f=1）→ shader 语义 [128,128,127]、漂移模型
+    [147,138,127]（R/G 差 19/10）；+ 饱和度 +50 → [255,255,252] vs [255,255,240]（B 差 12）。
+    即契约测试在多阶段用例上锁的是漂移值而非 shader 真实行为——契约模型保真度缺陷，非生产缺陷
+    （生产 shader 已是 R60 修复形态）。
+  ③ 修法：previewUniforms.js 一行——高光乘后 `c = c.map((x) => clamp(x * uniforms.highlightsSlope,
+    0, 1))`，与 GLSL 逐字同语义（clamp 为该模块既有工具函数，复用）；GLSL 本体与 shared 渲染语义
+    层零改动（R60 锁、curves/saturation 既有锁不动）。
+  ④ 回归锁 + 变异验证：previewUniforms.test.jsx 新增 2 例（均走无 curveLut 路径、代表点手算写死）：
+    「slope>1 饱和区先 clamp 再进暗角」=[128,128,127]（附 got 全域 ∈[0,255] 断言）与「先 clamp
+    再进饱和度」=[255,255,252]，两例均同时锁 u.highlightsSlope=1.15 与 u.curveLut=null。改前红跑
+    （真实模型直调）：[147,138,127] / [255,255,240] 如实红；变异验证：把修复点改回裸乘 → 2 例红
+    （错误摘要同改前）→ 回退复绿 21/21。
+  ⑤ 真机取证：不适用（纯 JS 契约模型轮；该段 GLSL 的实机对拍出证在 R60 ⑤，本轮 shader 零改动，
+    R60/R64 对拍定版数字继续有效）。
+  ⑥ 附带发现/勘正：①首跑全量 2 红（viewerInfoRail.test.js「缺少 body:has(.info-panel) 右栏让位
+    规则/未声明 right」）。取证：src/styles/index.css 工作树副本全文件 CRLF（3816/3816 行）而
+    blob 为 LF；该测试 blockOf 以 `\n` 连接三选择器做 `^...\{`（m 旗标）正则，`,\r\n` 不匹配 →
+    railBlock=null。成因为 R68 ⑤「git stash 切换取证产物」在 autocrlf=true（系统级
+    E:/Software/Git/etc/gitconfig）下 03:57 触碰 index.css 留下的工作树 EOL 污染——git status
+    走归一化比对显示 clean，完全不可见；R68 门禁绿跑发生在翻转之前。处置：rm 后
+    `git -c core.eol=lf -c core.autocrlf=false checkout --`（-c 单次覆盖，非改配置）重建，重建件
+    与 `git show HEAD:` 输出 cmp 逐字节一致（零 blob delta，git status 全程 clean），viewerInfoRail
+    复绿 3/3；其余 84 个 w/crlf 文件未动（仅此一个被门禁消费且多行正则敏感）。②UNATTENDED §4
+    vitest 基线在本轮起点即已陈旧（写 58/821，实际 59/827——R67/R68 未同步，R61 曾专门勘正过
+    同类项），本轮一并校正为 59/829。③04:25 一次全量出现 1 例红且未捕获文件名，随后全量×2 复跑
+    均 829/829 绿，按 §10 已知 timing flake 类记为偶发未复现。④`npx vite build` 复建 dist：产物
+    index-Dz8wl2t9.js / index-N03T4aPs.css 与 R68 完全同哈希——simulateShaderPixel 被 rollup
+    tree-shake 出生产包（全仓 grep：零生产消费，仅 previewUniforms.test.jsx 与文档引用），本轮
+    修复不改变安装包字节。
+  - 验证：vitest 59 文件 / 829 例（827+2）✓（04:25 偶发 1 例见⑥③，其后全量×2 全绿）；lint
+    0 error / 8 warning（既有基线）✓；typecheck 净 ✓；format:check 净 ✓；cargo 免跑（Rust 零
+    改动，最近绿记录 R64：154 lib + 1 golden_audit，R68 同）；FreeGB 起点 282；NSIS 不重打包
+    （⑥④ 三重证据：零生产消费 grep + dist 同哈希复建 + R68 安装包哈希链继续有效）。
+    提交范围：src/lib/previewUniforms.js、tests/unit/lib/previewUniforms.test.jsx、AGENTS.md、
+    UNATTENDED.md、NIGHTLY_LOG.md。
+  待人工复核：① viewerInfoRail.test.js 的 EOL 敏感性是否加固——选项 A：blockOf 读入后先
+    normalize \r\n→\n（一行级、机器无关，推荐）；B：维持现状（本机 autocrlf=true，下次任何 git
+    触碰 index.css 即复红，需按⑥①处置法手工修复）；C：全仓工作树统一回归 LF（动 84 文件，须
+    脚本化，涉 §1 红线例外，须用户明示）。② R68 ⑤ 式「git stash 切换取证产物」在 autocrlf=true
+    机器上每次都会留下 EOL 污染且 git status 不可见，建议后续真机取证轮改用 worktree，或取证后
+    以 `git ls-files --eol` + viewerInfoRail 单跑复查。③ R63 P2-3/P3-2/P3-5/P3-7、01-full-combo
+    TOL 分档等既有挂账维持。

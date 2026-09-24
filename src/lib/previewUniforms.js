@@ -177,7 +177,7 @@ export function simulateShaderPixel(rgb255, uniforms, uv = [0.5, 0.5]) {
     const { exponent: e, invert } = uniforms.shadows;
     c = c.map((x) => (invert ? 1 - Math.pow(1 - x, e) : Math.pow(x, e)));
   }
-  if (uniforms.highlightsSlope !== 1) c = c.map((x) => x * uniforms.highlightsSlope);
+  if (uniforms.highlightsSlope !== 1) c = c.map((x) => clamp(x * uniforms.highlightsSlope, 0, 1));
   if (uniforms.curveLut) {
     c = c.map((x, i) => uniforms.curveLut[Math.round(clamp(x, 0, 1) * 255) * 4 + i] / 255);
   }

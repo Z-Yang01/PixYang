@@ -192,6 +192,26 @@ describe('simulateShaderPixel（shader 公式 JS 模拟）与 shared 数学连�
     expect(simulateShaderPixel([200, 200, 200], { ...u, vignette: -50 }, [0.5, 0.5])).toEqual(base);
   });
 
+  it('高光 slope>1 饱和区先 clamp 再进暗角（与 GLSL clamp(c*slope,0,1) 同语义，R64③）', () => {
+    // highlights=-60 → slope=clamp(1.15,0.75,1.15)=1.15；[255,240,220] 乘后 R/G>1，
+    // GLSL 在 webglPreview.js:143 相乘后立即回 [0,1]，暗角角落 f=1 减半后手算
+    // [128,128,127]；无 clamp 的旧模型得 [147,138,127]（漂移 19/10）。
+    const u = buildUniforms({ basic: { highlights: -60 }, lens: { vignette: -50 } });
+    expect(u.highlightsSlope).toBeCloseTo(1.15, 12);
+    expect(u.curveLut).toBeNull();
+    const got = simulateShaderPixel([255, 240, 220], u, [1, 1]);
+    expect(got).toEqual([128, 128, 127]);
+    expect(got.every((x) => x >= 0 && x <= 255)).toBe(true);
+  });
+
+  it('高光 slope>1 饱和区先 clamp 再进饱和度（无 curveLut 兜底路径，R64③）', () => {
+    // slope=1.15 后 [1,1,0.9922]（GLSL 语义），luma-mix k=1.5 手算 B=0.98852→252；
+    // 旧模型带 c>1 进饱和度得 B=240，与 shader 出帧差 12。
+    const u = buildUniforms({ basic: { highlights: -60, saturation: 50 } });
+    expect(u.highlightsSlope).toBeCloseTo(1.15, 12);
+    expect(simulateShaderPixel([255, 240, 220], u)).toEqual([255, 255, 252]);
+  });
+
   it('恒等 uniforms 输出原像素（无编辑不扰动）', () => {
     const u0 = buildUniforms({});
     const got = simulateShaderPixel([120, 60, 30], u0, [1, 1]);
