@@ -1238,3 +1238,30 @@
     提交范围：UNATTENDED.md、docs/TAURI_PARITY.md、NIGHTLY_LOG.md。
   待人工复核：无新增（纯勘正轮；R59/R60 既有裁决项维持原状）。
 - 2026-09-24 00:12 R61.5 批8 性能挂账盘点结论（纯只读零改动，无值守轮）：R-1~R-6、R-9 批8 当轮闭环（证据 galleryStore/useGalleryData/App.jsx 各注释点），R-7 由 R33 闭环且回归锁在位，R-5 随 Electron→Tauri 重构消亡——UNATTENDED §3-③ 性能挂账**已清零**；唯一遗留 R-8「设置预览即生效 vs 需点击保存」文案矛盾属交互口径，裁决选项 A 即时生效+B 真草稿+C 仅改文案（推荐 A）已上报待用户裁决。依据：PROGRESS.md:2035-2149 原清单逐项核码。后续轮次选到 §3-③ 应引用本条记「无改动」。
+- 2026-09-25 00:55 R62 「8/8 零偏差」历史口径补注 + PROGRESS 基线勘正收尾（纯文档零代码）：
+  ① 需求/裁决来源：用户任务书点名（R58 待复核④「历史文档 8/8 零偏差补注旧口径」+ R61 ⑥①
+    「PROGRESS.md 各批次时点值过期」——均属历轮待人工复核清单中的文档类项）。
+  ② 根因：AGENTS.md 目录表 render.rs 行「JS 对拍 8/8 零偏差」无口径限定（R58-R60 已实证该结论
+    属旧验证体系（非实机 GPU）口径，现行实机对拍 6/8 绿 + 2 如实红）；同表 shared 渲染阶段行
+    「执行器 raw pass 与 WebGL2 shader 同公式」与 R59 定案缺陷②（负阴影指数两端公式相反、
+    仍待裁决）句面冲突；PROGRESS.md 头部「分支 test/vitest-setup」与各批次「当前状态」的
+    785/798 passed、coverage 90.1% 等为时点值未勘正。
+  ③ 修法：全部按「不改写原句、勘正另起条」——AGENTS.md 两处追加括注（旧口径说明 + 指向
+    tests/webgl-parity 与 NIGHTLY_LOG R58-R60；同公式句指向 R58-R61）；PROGRESS.md 顶部
+    （分支行下）追加 R62 勘正注：当前实测基线 vitest 58 文件 / 807 例、cargo 154 + golden 1、
+    覆盖率 92.4/87.2/83.1（门槛 75/70/50）、分支 optimize/architecture，注明以实跑为准，
+    历史数字逐条未动。
+  ④ 回归锁 + 变异验证：不适用（零代码纯文档轮）。
+  ⑤ 真机取证：不适用。
+  ⑥ 附带发现/勘正：①「8/8 零偏差」全仓（排除日志）仅两处——AGENTS.md 目录表 render.rs 行
+    （本轮已补注）与 tests/golden/rust-relock-audit.md（R36 golden 重锁时点审计存档，按
+    「时点事实不改写」惯例且不在本轮授权文件范围，未动）；docs/TAURI_PARITY.md 与
+    PROGRESS.md 原文并无该表述，无需补注（宁少勿滥）；②「63 通道口径」核查：TAURI_PARITY.md
+    「64 通道（60 数据+4 事件）」与 api.js 现循环清单逐名点验一致（64 项、其中 4 个 on* 事件），
+    无需补注——「63（59 数据+4 事件）」仅存于 R44 日志历史条目（时点快照，不改写）；
+    ③桥接契约锁（R56）、webgl-parity 工具节（R59/R60 已同步）、61 命令（R56/R61 两轮实测）、
+    TAURI_PARITY「验证口径基线（R61 复核）」逐一与 R56-R61 产出对拍仍准，均未动。
+  - 验证：npm test 快跑 vitest 58 文件 / 807 例 ✓（仓库未破坏）；零代码改动 → lint/typecheck/
+    cargo/vite build/NSIS 不适用（R60 哈希链仍有效）。
+    提交范围：AGENTS.md、PROGRESS.md、NIGHTLY_LOG.md。
+  待人工复核：无新增（纯文档补注轮；R58-R61 既有裁决项维持原状）。

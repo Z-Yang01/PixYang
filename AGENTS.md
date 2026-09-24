@@ -22,7 +22,9 @@ src-tauri/        Rust/Tauri 后端（唯一运行时桌面端）
   src/naming.rs   唯一命名/配对主名（移植 electron/database.js 语义）
   src/image_group.rs 导入分组/日期围栏/安全文件名
   src/images_query.rs 图片列表动态查询/getStats/getImportDates（JS 对拍向量锁定）
-  src/render.rs   渲染像素内核六件套（饱和/暗角/分级/HSL/蒙版/曲线，JS 对拍 8/8 零偏差）
+  src/render.rs   渲染像素内核六件套（饱和/暗角/分级/HSL/蒙版/曲线，JS 对拍 8/8 零偏差——补注
+                  2026-09-25 R62：该结论系旧验证体系（非实机 GPU）口径，现行实机对拍见
+                  tests/webgl-parity 与 NIGHTLY_LOG R58-R60，现口径 6/8 绿 + 2 如实红）
   src/executor.rs 渲染执行器（管线调度/仿射累积/几何裁剪/编码；gamma 与 libvips 实测表逐值一致）
   src/thumbs.rs   双档缩略图/EXIF 转正/NEF 预览段提取（image-rs+kamadak-exif）
   src/exif_relay.rs EXIF 回接（JPEG APP1/PNG eXIf 字节级注放）
@@ -45,7 +47,7 @@ shared/           11 个 .cjs；被前端以默认导入消费（19 处），仅
   pipelineOrder.cjs  渲染阶段固定顺序 + 能力矩阵（14 阶段全部支持，仅测试直接消费）
   builtinPresets.cjs  内置风格预设参数集
   maskGeometry.cjs  蒙版手柄/命中几何映射（MaskOverlay 与查看器共用）
-  curves.cjs / colorGrading.cjs / hsl.cjs / lens.cjs / masks.cjs / saturation.cjs  各渲染阶段语义唯一实现（执行器 raw pass 与 WebGL2 shader 同公式）
+  curves.cjs / colorGrading.cjs / hsl.cjs / lens.cjs / masks.cjs / saturation.cjs  各渲染阶段语义唯一实现（执行器 raw pass 与 WebGL2 shader 同公式；负阴影指数分支两端公式现存已知差异待裁决——见下「WebGL 实机像素对拍」与 NIGHTLY_LOG R58-R61）
 error/
   README.md       历史归档说明：旧层（Electron/sharp/sql.js）引用 → 现行 Rust 落点对照表
   *.md            严重 bug 建档（Symptom/Root Cause/Fix/Prevention 格式，时点事实不改写）

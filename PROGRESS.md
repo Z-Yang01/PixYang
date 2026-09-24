@@ -2,6 +2,15 @@
 
 分支：`test/vitest-setup` ｜ 框架：vitest 3 + @vitest/coverage-v8 + happy-dom + @testing-library/react
 
+> **2026-09-25 R62 勘正注**（按「勘正另起条」规范，不逐条改写下文历史时点值）：上 行分支名与
+> 上行分支名与下文各批次「当前状态」中的 passed 数（如 785/798）、coverage（如 90.1%）等
+> 均为**当时点快照**，
+> 已随轮次增删漂移，不代表现状。当前实测基线（2026-09-23 R61 全门禁实跑复核）：vitest 58 文件 /
+> **807 例**；cargo 单测 **154 例** + golden 门禁 1 例；覆盖率 stmts **92.4%** / branch **87.2%** /
+> funcs **83.1%**（门槛 75/70/50）；当前分支 **`optimize/architecture`**。门禁数字此后仍会随轮次
+> 变化，一律以 `npm test` / `cargo test` 实跑输出为准（权威快照见 docs/TAURI_PARITY.md
+> 「验证口径基线」与 NIGHTLY_LOG.md R61）。
+
 ## 已完成分组
 
 - [x] 阶段一：基建（vitest 安装、vitest.config.js、tests/setup.js、示例测试 `tests/unit/lib/utils.test.ts`）
