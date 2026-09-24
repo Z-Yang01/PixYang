@@ -141,19 +141,23 @@ tests/            vitest（node 环境 + per-file happy-dom pragma）
   R59 定案（R58「色彩管理」假设被排除：--headed/--force-color-profile=srgb/gl.readPixels 三条对照
   与无头 2D 回读逐位同值，回读路径是纯直通）。真实差异三类（修复前对拍如实判红，勿调容差掩盖）：
   ① 01-full-combo R59 时 meanΔ≈66——shader `uHighlightsSlope` 相乘后缺 clamp，c>1 时曲线 LUT
-  texelFetch 索引越界（int(c*255+0.5) 最大 268）返回黑，单通道全黑；R60 已修（webglPreview.js
-  高光相乘后补 clamp(c,0,1)，66.19→1.39 / max 231→18，黑通道消除；残差为多阶段叠加量化——
-  basic-only 子集已 meanΔ 0.90——超单阶段标定的 mean 包络 0.6，TOL 口径待人工裁决）；
+    texelFetch 索引越界（int(c*255+0.5) 最大 268）返回黑，单通道全黑；R60 已修（webglPreview.js
+    高光相乘后补 clamp(c,0,1)，66.19→1.39 / max 231→18，黑通道消除；残差为多阶段叠加量化——
+    basic-only 子集已 meanΔ 0.90——超单阶段标定的 mean 包络 0.6，TOL 分档 R70 落地，见③）；
   ② 03-tone meanΔ≈16.6——负阴影指数反转，执行器 gamma_byte 按
     libvips 语义施加 1/e（变暗），shader/previewUniforms 施加 e（变亮）（因果变异：指数改 1/e 后
     16.61→0.52）；R65 已修（previewUniforms.js 与 SVG 链 editParams.js 负阴影指数改 1/e，
     03-tone 16.61→0.518/max2 绿，编辑审计集 s08 32.03→0.508、m05 33.73→0.367 同轮转绿）；
   ③ 执行器逐阶段 u8 trunc 量化（libvips 锁定）vs shader 全程 float 的
-    系统性偏差，单阶段实测 meanΔ 0.14~0.52 / maxΔ≤2——属设计内，容差口径 TOL{maxDelta:2, meanDelta:0.6}
-    即据此定（仅覆盖单阶段，不覆盖多阶段叠加）。
-  当前 7/8 绿（02/03/04/05/06/07/08，05-curves 逐字节 0），仅①残差（01-full-combo 1.39/
-  max[10,7,18]）如实红（R59「修复后预期 8/8」与 TOL{2,0.6} 矛盾，R60 实测勘正；缺陷② R65 闭环后
-  基线 8 例余 01 一红，编辑审计 30 例 27 绿，m02/m03/m04 多阶段叠加量化如实红）。历史「JS 对拍
+    系统性偏差，单阶段实测 meanΔ 0.14~0.52 / maxΔ≤2——属设计内，缺省档 TOL{maxDelta:2,
+    meanDelta:0.6} 即据此定；多阶段叠加线性放大不归缺省档管——R70 起按用例分档（R60 待复核①
+    选项 A 落地）：cases json 用例可选 `tolerance{maxDelta,meanDelta}`（配套 toleranceBasis 注依据）
+    覆盖缺省档，01-full-combo/m02/m03/m04 标 {max 18, mean 1.5}（数值=量化包络实测上界：
+    01 1.3921/max[10,7,18]、m02 1.3198/[4,4,5]、m03 0.3241/[≤3]、m04 0.6731/[≤3]，R63/R64/R65
+    定版逐位稳定）；真缺陷量级（mean 16.6~33.7 / max 20~47）两界均仍拦下，判定与 report/log
+    均标注所用档位。
+  当前 R70 分档后基线 8 例与编辑审计 30 例全绿（01/m02/m03/m04 走多阶段分档，其余含
+    s08/m05——缺陷② R65 修后——走缺省档；05-curves 逐字节 0）。历史「JS 对拍
   8/8 零偏差」是旧验证体系（非实机 GPU）口径，不可与本实机口径混用。
   运行注意：vite preview 须 `--host 127.0.0.1`（默认只绑 [::1]，浏览器走 127.0.0.1 必落
   chrome-error://）；假桥需 Proxy 兜底全部通道（ImageViewer 挂载即调 api.getImageTags().then）；
@@ -162,7 +166,7 @@ tests/            vitest（node 环境 + per-file happy-dom pragma）
 
 ## 验证
 
-- 测试：`npm test`（vitest，59 个文件 / 829 例；含 R37 桥接全通道契约、R51/R52 主题↔CSS 对拍、R53 右栏让位契约、R54/R55 错误文案中文化、R56 Rust 注册表↔桥命令对拍 + 全仓 `${e.message}` 直插与裸 `x.error` 上屏扫描、R57 主题双事实源对拍（`:root`↔块↔`@theme inline`↔色卡）、R64 曲线 LUT 恒等通道兜底回归锁、R65 负阴影指数对齐回归锁（uniform 1/e 值锁 + simulateShaderPixel 代表点像素锁与全域方向锁 + SVG 链指数锁）、R66 预设/粘贴字段域一致性回归锁（预设只覆盖显式字段 + 粘贴与复制/批量同步同口径）、R67 键盘调参历史收敛回归锁（连调 5 次→1 条 / sat=0 调 hue→0 条 / blur 即结算）与新会话保存态回归锁（未保存→已保存 / 回读→已保存）、R68 滑杆标签列宽与对比视图让位契约、R69 高光乘后 clamp 契约模型对齐回归锁（slope>1 饱和区先回 [0,1] 再进暗角/饱和度，代表点手算写死））；像素 golden 门禁在 cargo 侧 `golden_audit`，Rust 单测 154 例）；覆盖率：`npm run test:coverage`，门槛配置在 `vitest.config.js`（statements/lines 75、branches 70、functions 50）。
+- 测试：`npm test`（vitest，59 个文件 / 830 例；含 R37 桥接全通道契约、R51/R52 主题↔CSS 对拍、R53 右栏让位契约、R54/R55 错误文案中文化、R56 Rust 注册表↔桥命令对拍 + 全仓 `${e.message}` 直插与裸 `x.error` 上屏扫描、R57 主题双事实源对拍（`:root`↔块↔`@theme inline`↔色卡）、R64 曲线 LUT 恒等通道兜底回归锁、R65 负阴影指数对齐回归锁（uniform 1/e 值锁 + simulateShaderPixel 代表点像素锁与全域方向锁 + SVG 链指数锁）、R66 预设/粘贴字段域一致性回归锁（预设只覆盖显式字段 + 粘贴与复制/批量同步同口径）、R67 键盘调参历史收敛回归锁（连调 5 次→1 条 / sat=0 调 hue→0 条 / blur 即结算）与新会话保存态回归锁（未保存→已保存 / 回读→已保存）、R68 滑杆标签列宽与对比视图让位契约、R69 高光乘后 clamp 契约模型对齐回归锁（slope>1 饱和区先回 [0,1] 再进暗角/饱和度，代表点手算写死）、R70 viewerInfoRail EOL 归一回归锁（CRLF 文本输入也命中让位规则，防 autocrlf 工作树多行正则失配））；像素 golden 门禁在 cargo 侧 `golden_audit`，Rust 单测 154 例）；覆盖率：`npm run test:coverage`，门槛配置在 `vitest.config.js`（statements/lines 75、branches 70、functions 50）。
 - Lint：`npm run lint`（ESLint flat config，`eslint.config.mjs`）；0 error 为准，warning 不阻塞。
 - 类型检查：`npm run typecheck`（tsc --noEmit，覆盖 src 下 TS/TSX）。
 - 格式检查：`npm run format:check`（Prettier 基线已于 R40 全仓落库，改动后的文件须保持 prettier 合规；历史 `*.md` 与 `src-tauri/gen/` 在 `.prettierignore` 豁免）。

@@ -1677,3 +1677,64 @@
     机器上每次都会留下 EOL 污染且 git status 不可见，建议后续真机取证轮改用 worktree，或取证后
     以 `git ls-files --eol` + viewerInfoRail 单跑复查。③ R63 P2-3/P3-2/P3-5/P3-7、01-full-combo
     TOL 分档等既有挂账维持。
+- 2026-09-25 04:52 R70 TOL 分档口径落地（R60 待复核①选项 A）+ viewerInfoRail EOL 归一加固（R69 待复核①选项 A）——纯测试基建零生产改动：
+  ① 需求/裁决来源：用户任务书点名两项——R60 待复核①选项 A（cases json 支持每用例可选 tolerance
+    覆盖，多阶段组合用例标注分档容差，依据=量化包络实测；红线=s08/m05 类已修真缺陷不得被新档位
+    掩盖）与 R69 待复核①选项 A（blockOf 先把 \r\n 归一为 \n 再匹配 + 补 1 例 CRLF 断言）。
+  ② 根因（R63/R64 取证定案，本轮复核在案）：对拍统一 TOL{max 2, mean 0.6} 按 R59 单阶段量化
+    包络（meanΔ 0.14~0.52/maxΔ≤2）标定，只覆盖单阶段——多阶段组合用例的执行器逐阶段 u8 trunc
+    量化（libvips 锁定语义）vs shader 全程 float 残差随阶段叠加线性放大（R60 二分：basic-only
+    子集已 mean 0.90>0.6；R63/R64/R65 三轮定版逐位稳定），属设计内量化量级非缺陷，但对拍如实
+    判红（01/m02/m03/m04 四例）。viewerInfoRail 侧：blockOf 以 `\n` 拼多行选择器做 `^...{`（m
+    旗标）正则，autocrlf=true 工作树把 index.css 落成 CRLF（blob 是 LF，git status 归一化比对
+    不可见）时 `,\r\n` 不匹配 → railBlock=null，R69 ⑥①实证一次。
+  ③ 修法（三个测试侧落点，生产源码零改动）：▶run.cjs——新增 `tolOf(c)`：用例可选
+    `tolerance{maxDelta,meanDelta}` 覆盖缺省档，缺字段立即报错不静默回退（undefined 参与比较恒
+    false=全绿，会掩盖真偏离）；判定与 log/report 均标注所用档位（`[default TOL{max 2, mean 0.6}]`
+    / `[case-override TOL{…}]`，报告 per-case 增加 tol/tolTier 字段，结论行注缺省档/分档例数）；
+    分档数值不放 run.cjs 硬编码，由 cases json 逐用例声明防「改一处漏一处」口径漂移。头注同步
+    勘正（R59/R60 结论、R65 后状态、R70 分档依据）。▶cases 文件——01-full-combo、m02、m03、m04
+    标 `tolerance{maxDelta:18, meanDelta:1.5}` + `toleranceBasis` 注依据（JSON 无注释，以数据
+    字段承载）：多阶段量化包络实测上界——01 1.3921/max[10,7,18]、m02 1.3198/[4,4,5]、
+    m03 0.3241/[≤3]、m04 0.6731/[≤3]（R63/R64/R65 定版逐位稳定）；与已知真缺陷量级的分离度=
+    最近真缺陷（03-tone 修复前 mean 16.61/max 20、s08 32.03/45、m05 33.73/47）两界均仍被拦下
+    （mean 界余量 >11 倍），非为真缺陷留豁免。▶viewerInfoRail.test.js——blockOf 抽 blockOfIn
+    （cssText 进参，匹配前 `replace(/\r\n/g,'\n')` 归一），原 blockOf=blockOfIn(css,…) 薄壳，
+    既有断言不变；新增 1 例：css 整体转 CRLF 后让位规则仍命中且 right 值可读。
+  ④ 回归锁 + 变异验证：▶T2：blockOfIn 去掉归一（变异）→ 仅新增 CRLF 例红
+    （「CRLF 文本下让位规则匹配失败（EOL 归一缺失）: expected null not to be null」，其余 3 例
+    绿，工作树 LF 态下其余例不受影响）→ 回退复绿 4/4。▶T1：先按任务书原样「把单阶段用例参数
+    改坏」（02-exposure 0.7→-0.7）→ 对拍仍绿（mean 0.4759/max 1，与 R63 曝光档包络同量级）——
+    如实记录：对拍是「同参数喂双实现比一致」，参数改坏不构成 shader↔执行器分歧，红只能来自真
+    语义偏离（缺陷①②即此，已修）；故改验本轮修复点本体——给 02-exposure 临时标
+    `tolerance{0,0}`（变异）→ 红（「[case-override TOL{max 0, mean 0}] → 超容差」，点名
+    02-exposure，结论 FAIL，实测 meanΔ 0.2986 与 R60 定版逐位一致）→ 回退复绿。红线复核见⑤。
+  ⑤ 真机取证（webgl-parity 定版矩阵，无头 Edge 153 + ANGLE Intel UHD D3D11，encode=png，回读
+    2d-drawImage）：▶基线 8 例 8/8 绿 exit 0——01-full-combo 1.3921/max[10,7,18] 走
+    [case-override TOL{18,1.5}]，02 0.2986、03 0.5180/max[2,2,2]、04 0.4795、05 0/0、06 0.0017、
+    07 0.1446、08 0.0295 全走 [default TOL{2,0.6}]，数字与 R60/R65 定版逐位一致；▶编辑审计
+    30 例 30/30 绿 exit 0——m02 1.3198/[4,4,5]、m03 0.3241/[3,3,3]、m04 0.6731/[3,3,3] 走
+    分档，其余 27 例（含 s08 0.5081/[1,1,1]、m05 0.3669/[1,1,1]——R65 缺陷②修后应绿项）走
+    缺省档，数字与 R64/R65 逐位一致。任务书红线达成：恰 01/m02/m03/m04 四例走分档，已知真缺陷
+    （修复前 mean 16.6~33.7）量级远超两档上限，分档不构成掩盖；报告存档
+    %TEMP%/pixyang_r70_baseline_report.json、%TEMP%/pixyang_r70_audit_report.json（可删）。
+  ⑥ 附带发现/勘正：①「参数改坏」类变异对对拍工具无效（同参数双实现，见④）——后续轮若再被
+    要求变异验证本工具，应变异「判定口径/档位」或临时还原生产修复点+重建 dist（R60 先例），
+    不要浪费时间找「会红的坏参数」；②m03/m04 证得分档是承重的：m03 mean 0.3241 本在缺省档
+    mean 界内，超的是 max（3>2）——分档必须两界同时覆盖，只放 mean 会漏；③UNATTENDED §4 与
+    AGENTS.md「验证」节 vitest 基线 829→830（本轮 +1），AGENTS.md WebGL 对拍节「TOL 待裁决/
+    7/8 绿余 01 一红/审计 27 绿」同步勘正为 R70 分档后全绿口径；④本轮对拍 4 跑（变异×2+矩阵×2）
+    全程无孤儿进程/清理段挂死复发，tauri 打包噪声未出现，工作树仅本轮点名文件。
+  - 验证：vitest 59 文件 / 830 例（829+1）✓；lint 0 error / 8 warning（既有基线）✓；typecheck
+    净 ✓；format:check 净（prettier --write 四个测试文件后复验，均 unchanged）✓；cargo test 与
+    NSIS 重打包不适用——零生产源码改动（本轮触碰仅 run.cjs/cases 两 json/viewerInfoRail.test.js
+    与文档），dist 未动（R69 复建哈希链继续有效），Rust 侧 webgl_parity example 仅以既有
+    release 缓存运行无改动；FreeGB 起点 282；对拍临时进程/文件由脚本自清理。
+    提交范围：tests/webgl-parity/run.cjs、tests/webgl-parity/cases.json、
+    tests/webgl-parity/cases-edit-audit.json、tests/unit/styles/viewerInfoRail.test.js、
+    AGENTS.md、UNATTENDED.md、NIGHTLY_LOG.md。
+  待人工复核：① 分档档位数值本身（{max 18, mean 1.5}=量化包络实测上界，mean 界对最近真缺陷
+    余量 >11 倍）——如需更保守可降 mean 界或留 max 余量（如 20），属口径微调交用户；② 换机器/
+    换 GPU 后量化包络可能漂移（本档位按本机 ANGLE Intel UHD D3D11 实测定），跨环境跑对拍若分档
+    例出红先核包络再判缺陷；③ R69 待复核②「真机取证轮 EOL 污染防worktree化」与 R63 P2-3/
+    P3-2/P3-5/P3-7、对拍升级 CI 门禁（R59 待复核④）等既有挂账维持。

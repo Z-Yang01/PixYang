@@ -1,6 +1,8 @@
 [
   {
     "name": "01-full-combo",
+    "tolerance": { "maxDelta": 18, "meanDelta": 1.5 },
+    "toleranceBasis": "多阶段组合分档（R70，选项 A）：14 阶段全开，执行器逐阶段 u8 trunc 量化 vs shader 全程 float，残差随阶段叠加线性放大（R60 二分：basic-only 子集已 mean 0.90>缺省档 mean 0.6）。R60/R63/R64/R65 定版实测逐位稳定 mean 1.3921 / max[10,7,18]，档位=量化包络实测上界 {18,1.5}；已知真缺陷量级（03-tone 修复前 mean 16.6/max 20、s08 32.03/45、m05 33.73/47）两界均仍拦下，不掩盖真偏离。",
     "params": {
       "basic": {
         "exposure": 0.3,

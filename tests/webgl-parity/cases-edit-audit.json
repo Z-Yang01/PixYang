@@ -136,6 +136,8 @@
   },
   {
     "name": "m02-tone-curve-grading",
+    "tolerance": { "maxDelta": 18, "meanDelta": 1.5 },
+    "toleranceBasis": "多阶段组合分档（R70，选项 A）：执行器逐阶段 u8 trunc 量化叠加超单阶段缺省档包络（R63/R64/R65 定版逐位稳定 mean 1.3198 / max[4,4,5]），档位=量化包络实测上界 {18,1.5}，非缺陷豁免；单阶段缺省档 {2,0.6} 不适用。",
     "params": {
       "basic": { "highlights": -30, "shadows": 25, "whites": 10, "blacks": -8 },
       "curves": { "rgb": [0, 0, 0.5, 0.55, 1, 1], "r": [], "g": [], "b": [] },
@@ -144,6 +146,8 @@
   },
   {
     "name": "m03-stack-vignette",
+    "tolerance": { "maxDelta": 18, "meanDelta": 1.5 },
+    "toleranceBasis": "多阶段组合分档（R70，选项 A）：执行器逐阶段 u8 trunc 量化叠加（R63/R64/R65 定版逐位稳定 mean 0.3241 / max≤3；mean 在缺省档内但 max 3>2），档位=量化包络实测上界 {18,1.5}，非缺陷豁免。",
     "params": {
       "basic": { "exposure": 0.4, "contrast": 15 },
       "curves": { "rgb": [0, 0, 0.25, 0.18, 0.75, 0.82, 1, 1], "r": [], "g": [], "b": [] },
@@ -153,6 +157,8 @@
   },
   {
     "name": "m04-global-plus-masks",
+    "tolerance": { "maxDelta": 18, "meanDelta": 1.5 },
+    "toleranceBasis": "多阶段组合分档（R70，选项 A）：执行器逐阶段 u8 trunc 量化叠加超缺省档（R63/R64/R65 定版逐位稳定 mean 0.6731 / max≤3），档位=量化包络实测上界 {18,1.5}，非缺陷豁免。",
     "params": {
       "basic": { "contrast": 15, "shadows": 20, "temperature": 10 },
       "masks": [

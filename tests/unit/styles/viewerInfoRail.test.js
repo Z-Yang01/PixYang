@@ -9,12 +9,17 @@ const RAIL_SELECTORS = [
   'body:has(.info-panel) .editor-panel',
 ];
 
-const blockOf = (selectorText) => {
+const blockOfIn = (cssText, selectorText) => {
+  // autocrlf=true 工作树会把 index.css 落成 CRLF（blob 是 LF，git status 归一化比对不可见，
+  // R69 实证一次）：多行选择器按 \n 拼接做 ^...{ 匹配会整体失配，故匹配前先归一 EOL。
+  const normalized = cssText.replace(/\r\n/g, '\n');
   const escaped = selectorText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   // 行首锚定：否则 `.editor-panel {` 会先命中让位规则里的 `body:has(.info-panel) .editor-panel {`
-  const m = css.match(new RegExp(`^${escaped}\\s*\\{([^}]*)\\}`, 'm'));
+  const m = normalized.match(new RegExp(`^${escaped}\\s*\\{([^}]*)\\}`, 'm'));
   return m ? m[1] : null;
 };
+
+const blockOf = (selectorText) => blockOfIn(css, selectorText);
 
 const pxOf = (block, prop) => {
   const m = block && block.match(new RegExp(`${prop}:\\s*(\\d+)px`));
@@ -45,5 +50,13 @@ describe('详情面板与查看器右栏的让位契约（历史缺陷：.info-p
     expect(pxOf(blockOf('.viewer-close'), 'right')).toBe(20);
     expect(pxOf(blockOf('.viewer-nav:last-of-type'), 'right')).toBe(20);
     expect(pxOf(blockOf('.editor-panel'), 'right')).toBe(20);
+  });
+
+  it('CRLF 文本输入也能命中让位规则（autocrlf 工作树防多行正则失配，R69 实证）', () => {
+    const crlfBlock = blockOfIn(css.replace(/\n/g, '\r\n'), RAIL_SELECTORS.join(',\n'));
+    expect(crlfBlock, 'CRLF 文本下让位规则匹配失败（EOL 归一缺失）').not.toBeNull();
+    expect(pxOf(crlfBlock, 'right')).toBeGreaterThanOrEqual(
+      pxOf(blockOf('.info-panel'), 'width') + 20
+    );
   });
 });

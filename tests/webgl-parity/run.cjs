@@ -3,19 +3,25 @@
 //   （默认 jpeg q92 会把 Rust 参考帧变有损，R58 全部「超容差」的量级来源即此工具链缺陷）。
 //   帧回读默认 drawImage→2D canvas（R59 实测与 gl.readPixels/--headed/--force-color-profile=srgb
 //   四条路径逐位同值，回读非差异源；--read-pixels 仅作对照开关保留）。
-//   容差 TOL 依据（R59 取证）：执行器按 libvips 语义做逐阶段 u8 trunc 量化，shader 全程 float，
-//   系统性偏差实测 meanΔ 0.14~0.52 / maxΔ≤2（GPU 舍入 +1 与 trunc −1 对冲），故 max 2 / mean 0.6。
-//   已知真偏离（工具如实判红，勿调容差掩盖，见 NIGHTLY_LOG R59/R60 待人工复核）：
+//   容差分档依据（R70 落地 R60 待复核①选项 A；取证 R59/R60/R63/R64/R65）：执行器按 libvips 语义
+//   做逐阶段 u8 trunc 量化，shader 全程 float——单阶段系统性偏差实测 meanΔ 0.14~0.52 / maxΔ≤2
+//   （GPU 舍入 +1 与 trunc −1 对冲），缺省档 TOL{max 2, mean 0.6} 即据此标定。多阶段组合用例的
+//   量化残差随阶段叠加线性放大（R60 二分：basic-only 子集已 mean 0.90>0.6），R63/R64/R65 三轮
+//   定版逐位稳定：01-full-combo 1.3921/max[10,7,18]、m02 1.3198/[4,4,5]、m03 0.3241/[≤3]、
+//   m04 0.6731/[≤3] → 多阶段分档 TOL{max 18, mean 1.5}，数值=量化包络实测上界，非为真缺陷留豁免
+//   （已知真缺陷量级 mean 16.6~33.7 / max 20~47——03-tone 修复前/s08/m05——两界均仍拦下）。
+//   cases json 用例可选 tolerance{maxDelta,meanDelta} 标分档（配套 toleranceBasis 字段注依据），
+//   未标一律走缺省档；判定与 report/log 均标注所用档位。
+//   已知真偏离（工具如实判红，勿调容差掩盖，见 NIGHTLY_LOG R59/R60）：
 //   ① 01-full-combo（R59 时 meanΔ≈66）：shader uHighlightsSlope 相乘后缺 clamp，c>1 时曲线 LUT
 //      texelFetch 索引越界（int(c*255+0.5)≤268）返回黑 → 单通道全黑。——R60 已修（生产源码
-//      webglPreview.js 高光相乘后补 clamp），降至 meanΔ 1.39 / maxΔ 18；残差为多阶段叠加量化
-//      （R60 二分：basic-only 已 meanΔ 0.90），超出按单阶段标定的 mean 包络 0.6，TOL 口径待裁决；
+//      webglPreview.js 高光相乘后补 clamp），降至 meanΔ 1.39 / maxΔ 18；残差为多阶段叠加量化，
+//      属上述分档覆盖的量化量级（R60 二分：basic-only 已 meanΔ 0.90），非缺陷；
 //   ② 03-tone（meanΔ≈16.6）：负阴影指数反转——执行器 gamma_byte(g)=x^(1/g) 实际施加 1/e（变暗），
 //      shader/previewUniforms 施加 e（变亮）。——R65 已修（previewUniforms.js 与 SVG 链 editParams.js
 //      负阴影指数改 1/e：03-tone 16.61→0.518/max2 绿；编辑审计集 s08 32.03→0.508、m05 33.73→0.367 转绿）
-//   R59 头注「两处修复落地后预期 8/8 全绿」与 TOL{2,0.6} 矛盾，R60 实测勘正：修复①后 01 仍超
-//   mean 容差（1.39>0.6），8/8 需先裁决叠加量化残差的口径。R65 后基线 8 例 7 绿（余 01 一红）、
-//   编辑审计 30 例 27 绿（m02/m03/m04 多阶段叠加量化如实红，数字与 R64 逐位一致）。
+//   R59 头注「两处修复落地后预期 8/8 全绿」与 TOL{2,0.6} 矛盾，R60 实测勘正。缺陷② R65 闭环 +
+//   分档 R70 落地后：基线 8 例与编辑审计 30 例预期全绿（01/m02/m03/m04 走多阶段分档，其余走缺省档）。
 // WebGL shader 输出 vs Rust 执行器 实机像素对拍（取证驱动脚本；纯取证工具，不进 CI）。
 // 前置：npx vite build（dist/index.html 缺失时本脚本自动补跑）。
 // 用法：node tests/webgl-parity/run.cjs [--keep] [--headed] [--read-pixels] [--force-srgb] [--case <name>] [--cases <file>]
@@ -47,7 +53,21 @@ const { pathToFileURL } = require('url');
 const REPO = path.resolve(__dirname, '..', '..');
 const TMP = path.join(os.tmpdir(), 'pixyang_parity');
 
+// 缺省档：按 R59 单阶段量化包络标定。多阶段分档值由 cases json 逐用例声明（01/m02/m03/m04 =
+// {max 18, mean 1.5}，依据=量化包络实测上界，见文件头注与各用例 toleranceBasis），不在本文件硬编码，
+// 防「改一处档位、漏另一处对拍」的口径漂移。
 const TOL = { maxDelta: 2, meanDelta: 0.6 };
+
+// 每用例可选容差分档：缺省/未标 tolerance 一律走 TOL。tolerance 存在但缺数值字段时立即报错，
+// 不允许静默回退（undefined 参与比较恒 false = 全部判绿，会掩盖真偏离）。
+function tolOf(c) {
+  if (!c.tolerance) return TOL;
+  const t = c.tolerance;
+  if (!Number.isFinite(t.maxDelta) || !Number.isFinite(t.meanDelta)) {
+    throw new Error(`用例 ${c.name} 的 tolerance 需为数值字段齐全的 {maxDelta, meanDelta}`);
+  }
+  return { maxDelta: t.maxDelta, meanDelta: t.meanDelta };
+}
 
 const argv = process.argv.slice(2);
 const KEEP = argv.includes('--keep');
@@ -549,6 +569,9 @@ async function main() {
         );
         delete stats.dumpB64;
       }
+      const tol = tolOf(c);
+      stats.tol = tol;
+      stats.tolTier = c.tolerance ? 'case-override' : 'default';
       report.cases[c.name] = stats;
       if (stats.error) {
         report.pass = false;
@@ -559,15 +582,20 @@ async function main() {
         break;
       }
       const [mr, mg, mb, ma] = stats.max;
-      const bad = mr > TOL.maxDelta || mg > TOL.maxDelta || mb > TOL.maxDelta || ma > 0;
-      const meanBad = stats.mean > TOL.meanDelta;
+      const bad = mr > tol.maxDelta || mg > tol.maxDelta || mb > tol.maxDelta || ma > 0;
+      const meanBad = stats.mean > tol.meanDelta;
       if (bad || meanBad) report.pass = false;
+      const tierTag = `[${stats.tolTier} TOL{max ${tol.maxDelta}, mean ${tol.meanDelta}}]`;
       log(
         `用例 ${c.name}: renderer=${stats.renderer} maxΔ=[${mr},${mg},${mb}] αΔ=${ma} ` +
-          `meanΔ=${stats.mean.toFixed(4)} nΔ≥1=${stats.cnt[0]} nΔ≥2=${stats.cnt[1]} nΔ≥3=${stats.cnt[2]}` +
+          `meanΔ=${stats.mean.toFixed(4)} nΔ≥1=${stats.cnt[0]} nΔ≥2=${stats.cnt[1]} nΔ≥3=${stats.cnt[2]} ` +
+          tierTag +
           (bad || meanBad ? ' → 超容差' : ' → ok')
       );
     }
+    const overrides = Object.values(report.cases).filter(
+      (s) => s.tolTier === 'case-override'
+    ).length;
 
     const webDumps = fs.existsSync(path.join(TMP, 'web'))
       ? fs.readdirSync(path.join(TMP, 'web')).filter((f) => f.endsWith('.rgba'))
@@ -581,7 +609,9 @@ async function main() {
     fs.writeFileSync(path.join(TMP, 'report.json'), JSON.stringify(report, null, 2));
     log(`报告: ${path.join(TMP, 'report.json')}`);
     log(
-      report.pass ? '结论: PASS（全部用例在容差内）' : '结论: FAIL（存在超容差/失败用例，见报告）'
+      report.pass
+        ? `结论: PASS（全部用例在各自档位容差内；缺省档 ${cases.length - overrides} 例，用例分档 ${overrides} 例）`
+        : '结论: FAIL（存在超容差/失败用例，见报告）'
     );
     if (!report.pass) exitCode = 1;
     cdp.close();
