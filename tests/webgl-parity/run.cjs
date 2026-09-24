@@ -16,12 +16,13 @@
 //   mean 容差（1.39>0.6），8/8 需先裁决叠加量化残差的口径。
 // WebGL shader 输出 vs Rust 执行器 实机像素对拍（取证驱动脚本；纯取证工具，不进 CI）。
 // 前置：npx vite build（dist/index.html 缺失时本脚本自动补跑）。
-// 用法：node tests/webgl-parity/run.cjs [--keep] [--headed] [--read-pixels] [--force-srgb] [--case <name>]
+// 用法：node tests/webgl-parity/run.cjs [--keep] [--headed] [--read-pixels] [--force-srgb] [--case <name>] [--cases <file>]
 //   --keep         跑完不清理临时进程/文件（排障用）
 //   --headed       无头 Edge/Chrome 无 WebGL2 时改有头重试
 //   --read-pixels  帧回读走 gl.readPixels（绕开 drawImage→2D canvas 合成路径；R59 契约口径，见报告 mode 字段）
 //   --force-srgb   浏览器加 --force-color-profile=srgb 启动参数（色彩管理对照实验）
 //   --case         只跑指定用例
+//   --cases        用例集文件路径（默认 cases.json；R63 编辑审计逐阶段用例集 cases-edit-audit.json）
 // 流程（详见 UNATTENDED.md §6.4 / AGENTS.md 验证节）：
 //   1. cargo run --example webgl_parity -- gen      生成确定性底图 fixture.png（%TEMP%/pixyang_parity）
 //   2. 由 cases.json 经前端同一套模块（src/lib/editParams.js + shared/renderSpec.cjs）计算 RenderSpec
@@ -53,6 +54,9 @@ const READPIX = argv.includes('--read-pixels');
 const FORCE_SRGB = argv.includes('--force-srgb');
 const caseIdx = argv.indexOf('--case');
 const ONLY_CASE = caseIdx >= 0 ? argv[caseIdx + 1] : null;
+const casesIdx = argv.indexOf('--cases');
+const CASES_FILE =
+  casesIdx >= 0 ? path.resolve(argv[casesIdx + 1]) : path.join(__dirname, 'cases.json');
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -401,7 +405,7 @@ async function driveCase(cdp, sessionId, c, baseUrl) {
 }
 
 async function main() {
-  const cases = JSON.parse(fs.readFileSync(path.join(__dirname, 'cases.json'), 'utf8')).filter(
+  const cases = JSON.parse(fs.readFileSync(CASES_FILE, 'utf8')).filter(
     (c) => !ONLY_CASE || c.name === ONLY_CASE
   );
   fs.rmSync(TMP, { recursive: true, force: true });

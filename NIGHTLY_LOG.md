@@ -1265,3 +1265,87 @@
     cargo/vite build/NSIS 不适用（R60 哈希链仍有效）。
     提交范围：AGENTS.md、PROGRESS.md、NIGHTLY_LOG.md。
   待人工复核：无新增（纯文档补注轮；R58-R61 既有裁决项维持原状）。
+- 2026-09-25 01:40 R63 编辑面板全阶段取证审计（用户裁定编辑功能最高优先级；纯审计零生产改动，缺陷清单交后续轮次按严重度闭环）：
+  ① 需求/裁决来源：用户原话「pixyang 重点优化编辑功能，现在非常不好用，并且有非常多的错误，各种显示，
+    调节颜色，灰 黑 白 高光 颜色分级 曲线等等」——本轮对渲染正确性（复用 R58 webgl-parity 通道）与
+    面板 UI/交互（同会话驱动真实 DOM）做全阶段取证，产出带证据的缺陷清单。
+  ② 渲染对拍（无头 Edge 153 + ANGLE Intel UHD D3D11，encode=png，TOL{2,0.6}；逐阶段用例集
+    tests/webgl-parity/cases-edit-audit.json 30 例 = 25 单阶段 + 5 多阶段，经 run.cjs 新增 --cases
+    参数加载；基线 8 例同轮复跑核对）：单阶段 24/25 绿（曝光±0.28~0.50、对比度±0.23~0.40、
+    高光±0.41~0.46、阴影+0.50、白色 0.33、黑色 0.004、色温±0.29、色调 0.17、饱和 0.003、曲线 RGB
+    S 逐字节 0、通道曲线见③崩、HSL 逐字节 0、分级三区间 0.001~0.002、暗角正负 0.001~0.002、
+    蒙版径向 0.043/线性 0.018/亮度 0.001，单阶段 maxΔ≤2 全部在容差内）；
+    超容差 4 例全部为已知/多阶段类：s08 阴影 -60 mean 32.03/max45（缺陷②方向反转，量级随幅度
+    增长：-25→16.61、-60→32.03、-80 混合→33.73）；m02 影调+曲线+分级 mean 1.32/max[4,4,5]、
+    m03 基础+曲线+分级+暗角(-35) mean 0.32/max3、m04 全局+双蒙版 mean 0.67/max3（多阶段叠加
+    量化超单阶段标定包络，与 R60 结论同类——本轮数据进一步显示：放大主源是 tone gamma/曲线
+    段的叠加，暗角单独干净、叠加仅温和放大）；基线 8 例逐位复现 R60 定版（01-full-combo
+    1.3921/max[10,7,18]、03-tone 16.6105/max20、其余 6 例绿）。
+  ③ 新缺陷（P1，本轮发现）：仅调部分通道曲线（rgb 恒等/为空 + 任一通道恒等 + 任一通道非恒等，
+    如只拉 R/B）时 shaderUniforms 构建抛 TypeError——shared/curves.cjs buildCurveLuts 对恒等 rgb
+    置 rgbLut=null，恒等通道回退赋值 luts[c]=rgbLut=null，src/lib/previewUniforms.js:62 无兜底读
+    luts.g[i] → `Cannot read properties of null (reading '0')` → .editor-webgl-canvas 不渲染、
+    预览静默降级 SVG 链（HSL/分级退化逐通道近似、蒙版预览消失）+ console.error。实机对拍 s16
+    用例复现（对拍中止暴露）；Node 直调 buildCurveLuts({rgb:[],r:[非恒等],g:[],b:[非恒等]}) 复现
+    g:null；既有单测未覆盖「恒等 rgb + 混合通道」组合（curves.test.js 仅测全恒等→null 与
+    非恒等 rgb 兜底两条边）。修法（后续轮）：previewUniforms 端 `luts[c] ?? rgbLut ?? 恒等表`
+    三级兜底（一行级），或 curves.cjs 恒等通道回退自身恒等 LUT；补两条单测锁该组合。
+  ④ UI/交互取证（假桥 + 真实 DOM，22 步 19 过，3 个 ✗ 经 probe2 复核均为驱动脚本时序/误点，
+    非 App 缺陷；全程 console 0 错误 0 异常；截图与 report.json 在
+    %TEMP%/pixyang_edit_audit/）：通过项——滑杆拖动（CDP 真实指针）值/显示/画布三同步且拖动全程
+    收敛 1 条历史；曝光 +0.8 画布均值亮度 135→194；保存参数端到端（phase 未保存→已保存、
+    saveEdits 载荷 basic/label/before/after 正确）；撤销/重做（按钮+Ctrl+Z）与历史跳转 #0 归零；
+    内置预设 chip 应用、我的预设应用、双击标签重置（300ms 后读值正常，立即读会因 React 连续
+    事件优先级延迟刷新——驱动脚本须等一拍）；分屏（分割线/画布/Before 层）与并排无溢出
+    （overlay scrollWidth=innerWidth）；Before/After 切换画布正确卸载/重挂；裁剪框选/1:1 比例
+    （实测 396×396 ratio 1.000）/清除；蒙版添加/拖拽绘制/列表/调整/删除（计数 n/8 联动）；
+    已保存参数重进编辑回读（含暗角 -30 生效）；缩放 Fit↔100% 切换。取证确认的问题见⑤。
+  ⑤ 本轮缺陷清单（渲染③之外）：
+    ▶ P2-1 预设覆盖范围不一致：applyPreset（ImageViewer.jsx:626-678）固定重置
+      curves/colorGrading/vignette（preset 未含则清零），masks 却保留——用户画了曲线后点任意
+      内置 chip 曲线被静默清空（实机取证：3 锚点→2 端点）。且 scope='basic'（仅影调）文案与
+      行为不符。
+    ▶ P2-2 粘贴/复制/批量同步三处口径不一致：copySettings 存全量（含曲线/分级/暗角/几何），
+      按钮 title 也写「含曲线/分级/暗角+几何」，但 pasteSettings(:727-748) 只回贴 basic 十项；
+      同一剪贴板走批量同步（useBatchActions.js:158-211）却全量生效。
+    ▶ P2-3 高光/阴影调节为全局近似：highlightsSlope=1-v/400（全图线性乘）、阴影=全图 gamma
+      （±镜像域），无亮度掩蔽——高光 -60 表现为全图压暗 15%（预览/导出一致），与「只动高光
+      区域」的直觉相悖，疑为「不好用」主观感受的主要来源之一（语义升级需两端同步改+重锁
+      golden，属产品裁决）。
+    ▶ P3-1 键盘调参历史洪水：滑杆聚焦后每按一次方向键入 1 条历史（实测 5 次 ArrowUp → +5 条
+      「饱和度」），历史面板（180px 高）迅速淹没；分级 hue 在 sat=0 时同样逐条入历史。
+    ▶ P3-2 无数值输入通道：面板 16 个 range + 1 个 text（预设名），所有参数只能拖滑杆/方向键
+      微调，无法键入精确值；双击重置只绑在标签文字上（input 本身双击无动作），可发现性差。
+    ▶ P3-3 并排对比时 After 被编辑面板遮挡（截图 07-side.png：面板盖住 After 右缘 ~230px），
+      分屏/并排的 Before 标签被左上工具栏压住；无 info-panel 式让位机制。
+    ▶ P3-4 白色色阶/黑色色阶 4 字标签在 44px 栅格列内换行成两行，行高错位（截图 03）。
+    ▶ P3-5 保存后无网格/缩略图联动：saveParams 不触发列表刷新，ImageCard 无任何「已编辑」
+      标记，图库无法区分已编辑/未编辑图片（假桥下 thumbnail_path=null，真机待验证影响面）。
+    ▶ P3-6 新会话即显示「参数已保存」（savedBaseline=初始默认 ops → clean），实际数据库从未
+      保存过，文案误导。
+    ▶ P3-7 无阶段启停开关：14 阶段均只有「清除」/删除，无逐阶段临时启停（对比勾选），属功能
+      缺口非缺陷（是否补齐待产品裁决）。
+  ⑥ 附带发现/勘正：①R59 ④「负阴影分支执行器施加 1/e（变暗）」描述不完整——执行器为镜像域
+    1/e、shader/previewUniforms 为镜像域 e，两端同为镜像域、仅指数互为倒数，本轮以 s07/s08
+    单阶段对拍坐实（+60 绿/-60 红）；②previewUniforms.js simulateShaderPixel(:178) 高光乘后仍
+    无 clamp（R60 只修了 shader 本体），依赖 LUT 索引处 clamp 兜底、无 curveLut 时与 shader
+    行为有差异——契约测试模型漂移，修 P1 时应同步；③webgl-parity run.cjs 本轮新增 --cases
+    <file> 参数支持外置用例集（默认 cases.json 行为不变），驱动脚本遇「画布未出现」即致命的
+    旧逻辑会在逐阶段审计时被单例生产缺陷中断——本轮以逐例 --case 方式绕过，未改该行为；
+    ④CDP Input.dispatchMouseEvent 事件类型为 mousePressed/mouseReleased（非 mouseUp），晚注入
+    假桥后首次 getImages 已空跑、须路由往返触发重查——两点已固化进 %TEMP% 审计脚本。
+  - 验证：vitest 58 文件 / 807 例 ✓；lint 0 error/8 warning（既有基线）✓；typecheck 净 ✓；
+    format:check 净（本轮 run.cjs/cases-edit-audit.json 已 prettier 合规）✓；cargo 154 lib +
+    1 golden_audit ✓（examples 不计）；纯取证轮零生产改动 → 未跑 NSIS 重打包（R60 哈希链仍
+    有效）；dist 已从 HEAD 重建（index-Dq6YwgLN.js 与 R60 一致）；对拍/UI 驱动进程已按 PID+
+    端口清杀，dist/parity 已清理；FreeGB 起点 8.19、最低 ~7.7。
+    提交范围：tests/webgl-parity/run.cjs（--cases 参数）、tests/webgl-parity/cases-edit-audit.json
+    （30 例逐阶段用例集）、NIGHTLY_LOG.md。
+  待人工复核：① 缺陷②（负阴影方向反转）维持 R59 裁决项，本轮新增幅度-量级曲线（-25→16.61/
+    -60→32.03/-80 混→33.73）供定案参考；② P2-3 高光/阴影全局近似语义是否升级为亮度掩蔽实现
+    （两端同步+golden 重锁，代价大，建议列入编辑功能优化主项）；③ P2-1 预设覆盖范围与 P2-2
+    粘贴口径（选项：预设只覆盖显式字段/粘贴全量化/维持现状+文案明示）；④ P3-5「已编辑」标记
+    与缩略图联动方案（网格卡片角标 vs 缩略图烘焙预览——后者有 R59 已证的工具链先例
+    renderEditPreviewAfterSave 挂点）；⑤ P3-7 阶段启停开关是否纳入编辑功能重构；⑥ R60 待复核
+    ①（01-full-combo 残差 TOL 分档）维持，本轮多阶段数据（m02/m03/m04 max 3~5）支持按用例
+    分档方向。
