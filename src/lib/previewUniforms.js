@@ -48,7 +48,7 @@ export function specToShaderUniforms(spec, imageSize = [0, 0]) {
     shadowsVal > 0
       ? { exponent: clamp(1 - shadowsVal / 220, 0.55, 1), invert: 0 }
       : shadowsVal < 0
-        ? { exponent: clamp(1 + -shadowsVal / 220, 1, 1.45), invert: 1 }
+        ? { exponent: 1 / clamp(1 + -shadowsVal / 220, 1, 1.45), invert: 1 }
         : null;
   const highlightsSlope = tone.highlights !== 0 ? clamp(1 - tone.highlights / 400, 0.75, 1.15) : 1;
 

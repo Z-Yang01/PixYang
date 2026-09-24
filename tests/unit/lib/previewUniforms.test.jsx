@@ -55,6 +55,20 @@ describe('specToShaderUniforms（RenderSpec → shader uniforms）', () => {
     expect(u.saturation).toBeCloseTo(chain.saturate, 5);
   });
 
+  it('负阴影指数与导出端对齐：镜像域下施加 1/e（<1 压暗），与 SVG 预览链同值（R65 缺陷②）', () => {
+    const params = { basic: { shadows: -60 } };
+    const u = buildUniforms(params);
+    expect(u.shadows.invert).toBe(1);
+    expect(u.shadows.exponent).toBeCloseTo(11 / 14, 12);
+    expect(u.shadows.exponent).toBeLessThan(1);
+    const chain = previewFilterChain(fromEditParams(editSchema.normalizeEdits(params)));
+    expect(chain.shadows.exponent).toBeCloseTo(u.shadows.exponent, 5);
+    expect(chain.shadows.invert).toBe(true);
+    const uPos = buildUniforms({ basic: { shadows: 30 } });
+    expect(uPos.shadows.invert).toBe(0);
+    expect(uPos.shadows.exponent).toBeLessThan(1);
+  });
+
   it('曲线 LUT 与 shared buildCurveLuts 逐项一致', () => {
     const u = buildUniforms(FULL_PARAMS);
     const luts = curves.buildCurveLuts(FULL_PARAMS.curves);
@@ -182,6 +196,21 @@ describe('simulateShaderPixel（shader 公式 JS 模拟）与 shared 数学连�
     const u0 = buildUniforms({});
     const got = simulateShaderPixel([120, 60, 30], u0, [1, 1]);
     expect(got).toEqual([120, 60, 30]);
+  });
+
+  it('负阴影采样点变暗（执行器 libvips 语义 1/e，R65 代表点手算写死）', () => {
+    const u = buildUniforms({ basic: { shadows: -60 } });
+    expect(simulateShaderPixel([128, 128, 128], u)).toEqual([108, 108, 108]);
+    expect(simulateShaderPixel([200, 120, 90], u)).toEqual([179, 100, 74]);
+  });
+
+  it('阴影方向锁：负值全域压暗、正值全域提亮（恒等仿射）', () => {
+    const uNeg = buildUniforms({ basic: { shadows: -60 } });
+    const uPos = buildUniforms({ basic: { shadows: 60 } });
+    for (const v of [10, 64, 128, 200, 240]) {
+      expect(simulateShaderPixel([v, v, v], uNeg).every((x) => x < v)).toBe(true);
+      expect(simulateShaderPixel([v, v, v], uPos).every((x) => x > v)).toBe(true);
+    }
   });
 });
 

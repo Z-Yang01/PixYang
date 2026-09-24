@@ -61,14 +61,15 @@ describe('previewFilterChain（M5 预览滤镜链）', () => {
     expect(chain.saturate).toBeNull();
   });
 
-  it('正/负阴影产生 gamma 原语，负值带镜像域标记', async () => {
+  it('正/负阴影产生 gamma 原语，负值带镜像域标记且指数为 1/e（压暗，与导出端 libvips 语义一致）', async () => {
     const { previewFilterChain } = await import('@/lib/editParams');
     const lift = previewFilterChain({ shadows: 80 });
     expect(lift.shadows.invert).toBe(false);
     expect(lift.shadows.exponent).toBeLessThan(1);
     const crush = previewFilterChain({ shadows: -80 });
     expect(crush.shadows.invert).toBe(true);
-    expect(crush.shadows.exponent).toBeGreaterThan(1);
+    expect(crush.shadows.exponent).toBeLessThan(1);
+    expect(crush.shadows.exponent).toBeCloseTo(11 / 15, 12);
   });
 
   it('高光与饱和度独立原语', async () => {

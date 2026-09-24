@@ -11,9 +11,11 @@
 //      webglPreview.js 高光相乘后补 clamp），降至 meanΔ 1.39 / maxΔ 18；残差为多阶段叠加量化
 //      （R60 二分：basic-only 已 meanΔ 0.90），超出按单阶段标定的 mean 包络 0.6，TOL 口径待裁决；
 //   ② 03-tone（meanΔ≈16.6）：负阴影指数反转——执行器 gamma_byte(g)=x^(1/g) 实际施加 1/e（变暗），
-//      shader/previewUniforms 施加 e（变亮）。（仍待人工裁决）
+//      shader/previewUniforms 施加 e（变亮）。——R65 已修（previewUniforms.js 与 SVG 链 editParams.js
+//      负阴影指数改 1/e：03-tone 16.61→0.518/max2 绿；编辑审计集 s08 32.03→0.508、m05 33.73→0.367 转绿）
 //   R59 头注「两处修复落地后预期 8/8 全绿」与 TOL{2,0.6} 矛盾，R60 实测勘正：修复①后 01 仍超
-//   mean 容差（1.39>0.6），8/8 需先裁决叠加量化残差的口径。
+//   mean 容差（1.39>0.6），8/8 需先裁决叠加量化残差的口径。R65 后基线 8 例 7 绿（余 01 一红）、
+//   编辑审计 30 例 27 绿（m02/m03/m04 多阶段叠加量化如实红，数字与 R64 逐位一致）。
 // WebGL shader 输出 vs Rust 执行器 实机像素对拍（取证驱动脚本；纯取证工具，不进 CI）。
 // 前置：npx vite build（dist/index.html 缺失时本脚本自动补跑）。
 // 用法：node tests/webgl-parity/run.cjs [--keep] [--headed] [--read-pixels] [--force-srgb] [--case <name>] [--cases <file>]

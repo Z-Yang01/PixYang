@@ -229,7 +229,7 @@ export function previewFilterChain(ops) {
   if (s.shadows > 0) {
     shadows = { exponent: clamp(1 - s.shadows / 220, 0.55, 1), invert: false };
   } else if (s.shadows < 0) {
-    shadows = { exponent: clamp(1 + -s.shadows / 220, 1, 1.45), invert: true };
+    shadows = { exponent: 1 / clamp(1 + -s.shadows / 220, 1, 1.45), invert: true };
   }
 
   // 高光线性回收（sharp 端在阴影之后，单独原语保持顺序）

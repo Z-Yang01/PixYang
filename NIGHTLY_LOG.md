@@ -1394,3 +1394,54 @@
     ② 多阶段叠加量化 TOL 分档（m02/m03/m04）维持 R60 待裁决；③ R63 ⑥②
     simulateShaderPixel 高光 clamp 漂移未随本轮修（一轮一主题），建议与缺陷②同批处理；
     ④ R63 P2/P3 清单（P2-1/P2-2/P2-3、P3-1..P3-7）维持待裁决。
+- 2026-09-25 02:30 R65 负阴影指数与导出端对齐（R59/R63 定案缺陷②闭环；预览恢复「负值变暗」且与导出一致）：
+  ① 需求/裁决来源：用户报「编辑器高光/阴影有很多错误」（R63 审计授权线）+ R59 待人工复核②
+    选项 A（previewUniforms 负阴影指数改 1/e，R59 实验矩阵与因果变异已定案）+ R63/R64 两轮挂账
+    「缺陷②待后续轮次闭环」。本轮任务书明示放行。
+  ② 根因（R59 定案，本轮 HEAD 基线逐位复现后落地）：执行器（导出，libvips 语义）负阴影分支
+    negate_linear → apply_gamma(e)，gamma_byte(g)=trunc(255·(x/255)^(1/g)) 实际施加 1/e（变暗）；
+    预览两端（shader uniform 与 SVG 链）负阴影分支按字面 e>1 施加（镜像域下变亮）——预览与导出
+    方向相反。全仓 grep 取证施加点共两处生产代码：previewUniforms.js（shader uniform 值）与
+    editParams.js previewFilterChain（SVG 回退链，同公式同反向）；webglPreview.js GLSL 与
+    simulateShaderPixel 均只消费 uniform 值、不内嵌指数式，uniform 改则二者自动同步（本轮以
+    simulateShaderPixel 像素锁实证同改生效）。
+  ③ 修法（每处一行，`exponent: clamp(1+|s|/220,1,1.45)` → `exponent: 1/clamp(...)`）：
+    src/lib/previewUniforms.js:51（shader uniform，正分支不动）；
+    src/lib/editParams.js:232（SVG 回退链——若只修 WebGL 路径，webglFailed 降级时缺陷残留，
+    故按「凡施加点逐一同步」一并修复）。执行器/golden/libvips 探测表零改动（R59 裁决即以导出端
+    为基准）。
+  ④ 回归锁 + 变异验证：锁 1 = previewUniforms.test.jsx 新增 3 例——uniform 指数锁（shadows=-60 →
+    11/14≈0.7857 <1、invert=1，且与 SVG 链同值）、代表点像素锁（simulateShaderPixel([128,128,128])
+    =[108,108,108]、[200,120,90]=[179,100,74]，手算写死；旧公式给 150，区分干净）、全域方向锁
+    （10/64/128/200/240 五点负值全压暗、正值全提亮）；锁 2 = editParams.test.js 既有断言按新公式
+    修正（shadows=-80：toBeGreaterThan(1) → toBeLessThan(1) + toBeCloseTo(11/15,12)，该用例名本意
+    即「crush 压暗」，旧断言锁的是错方向）；锁 3 = webgl-parity 对拍。变异验证：两处生产点临时
+    改回 e → 4 红（editParams 1：「expected 1.3636…to be less than 1」；previewUniforms 3：指数
+    「expected 1.2727…received difference 0.487」+ 代表点 [150≠108] + 方向锁）→ 回退复绿
+    （两文件 40/40）。
+  ⑤ 真机取证（webgl-parity，无头 Edge 153 + ANGLE Intel UHD D3D11，encode=png，TOL{2,0.6}；
+    修复前 HEAD 基线同轮复跑逐位复现 R64 后再落地）：基线 8 例 7/8 绿——03-tone 16.6105/max20 →
+    **0.5180/max[2,2,2] 绿**（与 R59 因果变异预测 0.52 一致），其余 6 例与 R60/R64 逐位一致零回归，
+    01-full-combo 1.3921/max[10,7,18] 原样（阴影 +25 为正域，不受本修影响；残差属①多阶段叠加
+    量化，TOL 口径维持待裁决）；编辑审计 30 例 **27/30**——s08-shadows-minus 32.0320/max45 →
+    **0.5081/max[1,1,1] 绿**、m05-heavy-tone 33.7284/max47 → **0.3669/max[1,1,1] 绿**，m02
+    （1.3198/max[4,4,5]）/m03（0.3241/max3）/m04（0.6731/max3）与 R64 逐位一致（多阶段叠加量化
+    如实红，未调容差掩盖）；Rust 侧独立复核与浏览器回读逐案同值。
+  ⑥ 附带发现/勘正：①R64 待复核③「simulateShaderPixel 高光乘后无 clamp（与 R60 已修 shader 本体
+    存在契约测试模型漂移）」本轮未动（一轮一主题；负阴影代表点不经过高光段，锁不受影响），继续
+    挂账；②R59 头注②「仍待人工裁决」与 AGENTS.md「现存已知差异待裁决」由本轮落地即闭环，run.cjs
+    头注与 AGENTS.md 已同步勘正（R59/R63/R64 原文按规范不改写）；③tauri 打包噪声（Cargo.toml/
+    gen schemas）本轮未出现，工作树仅本轮点名文件。
+  - 验证：vitest 58 文件 / **812** 例（809+3）✓；lint 0 error / 8 warning（既有基线）✓；typecheck
+    净 ✓；format:check 净（含本轮 run.cjs 头注改动后复验）✓；cargo 154 lib + 1 golden_audit ✓
+    （Rust 未动无变化）；安装包 PixYang_0.1.0_x64-setup.exe mtime 2026-09-25 02:21:51 /
+    4,109,284 字节（旧 4,108,470 / 01:58），哈希链一手核对：dist 引用 index-9nwtNm8W.js /
+    index-D1t41p9t.css 在 release pixyang.exe（02:21:52）均 1 命中，旧 index-CPgGXolI.js（R64）、
+    index-Dq6YwgLN.js（R60）均 0 命中；FreeGB 起点 282；对拍临时进程/文件由脚本自清理。
+    提交范围：src/lib/previewUniforms.js、src/lib/editParams.js、tests/unit/lib/previewUniforms.test.jsx、
+    tests/unit/lib/editParams.test.js、tests/webgl-parity/run.cjs、AGENTS.md、UNATTENDED.md
+    （基线 809→812）、NIGHTLY_LOG.md。
+  待人工复核：① 01-full-combo 残差 TOL 分档（R60/R63 维持；本轮后为基线 8 例唯一红）；② 多阶段
+    叠加量化 m02/m03/m04（数字与 R64 逐位一致，同①类口径）；③ simulateShaderPixel 高光 clamp 漂移
+    （R63 ⑥②/R64 ③ 维持，建议后续轮单独闭环）；④ R63 P2/P3 清单（P2-1/P2-2/P2-3、P3-1..P3-7）
+    维持待裁决。
