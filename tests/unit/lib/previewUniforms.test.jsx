@@ -67,6 +67,41 @@ describe('specToShaderUniforms（RenderSpec → shader uniforms）', () => {
     expect(identity.curveLut).toBeNull();
   });
 
+  it('恒等 rgb + 非恒等单通道：不产生 null 解引用，恒等通道回落恒等表', () => {
+    const params = { curves: { rgb: [], r: [0, 0.02, 0.5, 0.55, 1, 1], g: [], b: [] } };
+    const luts = curves.buildCurveLuts(params.curves);
+    expect(luts).not.toBeNull();
+    expect(luts.g).toBeNull();
+    const u = buildUniforms(params);
+    expect(u.curveLut).not.toBeNull();
+    for (let i = 0; i < 256; i++) {
+      expect(u.curveLut[i * 4]).toBe(luts.r[i]);
+      expect(u.curveLut[i * 4 + 1]).toBe(i);
+      expect(u.curveLut[i * 4 + 2]).toBe(i);
+    }
+  });
+
+  it('恒等 rgb + R/B 双通道：G 恒等直线通过，R/B 与复合 LUT 一致', () => {
+    const params = {
+      curves: {
+        rgb: [],
+        r: [0, 0.02, 0.5, 0.55, 1, 1],
+        g: [],
+        b: [0, 0, 0.5, 0.44, 1, 0.96],
+      },
+    };
+    const luts = curves.buildCurveLuts(params.curves);
+    expect(luts.g).toBeNull();
+    const u = buildUniforms(params);
+    expect(u.curveLut).not.toBeNull();
+    for (let i = 0; i < 256; i++) {
+      expect(u.curveLut[i * 4]).toBe(luts.r[i]);
+      expect(u.curveLut[i * 4 + 1]).toBe(i);
+      expect(u.curveLut[i * 4 + 2]).toBe(luts.b[i]);
+    }
+    expect(simulateShaderPixel([200, 120, 90], u)).toEqual([206, 120, 79]);
+  });
+
   it('HSL 8 带数组归一化进入 uniforms', () => {
     const u = buildUniforms(FULL_PARAMS);
     expect(u.hslOn).toBe(1);

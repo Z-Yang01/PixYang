@@ -1349,3 +1349,48 @@
     renderEditPreviewAfterSave 挂点）；⑤ P3-7 阶段启停开关是否纳入编辑功能重构；⑥ R60 待复核
     ①（01-full-combo 残差 TOL 分档）维持，本轮多阶段数据（m02/m03/m04 max 3~5）支持按用例
     分档方向。
+- 2026-09-25 02:00 R64 曲线 LUT 恒等通道兜底修复预览崩溃（R63 P1-1）：
+  ① 需求/裁决来源：R63 缺陷清单 P1-1（用户裁定编辑功能最高优先级后按严重度闭环的第一项）。
+  ② 根因（实机复现 + Node 直调坐实）：仅调部分通道曲线（rgb 恒等 + 任一通道非恒等，如只拉
+    R/B）时 shared/curves.cjs buildCurveLuts 对恒等 rgb 置 rgbLut=null，恒等通道回退赋值
+    luts[c]=rgbLut=null；src/lib/previewUniforms.js specToShaderUniforms 组 RGBA LUT 纹理时
+    无兜底直读 luts.g[i] → TypeError: Cannot read properties of null (reading '0') →
+    ImageViewer 渲染中断、WebGL 预览整级静默退化 SVG 链（HSL/分级退化逐通道近似、蒙版预览
+    消失）。s16 用例在 R63 复现并中止审计，本轮 HEAD 上 Node 直调逐字复现同错误。
+  ③ 修法：previewUniforms.js 端三级兜底 `luts[c] ?? luts.rgb ?? 恒等表`（恒等表=i 的
+    Uint8Array(256)，每通道解析一次）。选 previewUniforms 端而非 curves.cjs 端、改动面最小
+    的理由：全仓直读 r/g/b 的生产消费点仅 specToShaderUniforms 一处；curves.cjs 是渲染语义
+    唯一实现层，其「恒等通道复合=rgb 表本身」被既有单测 S 曲线用例锁数值，且该语义本身
+    正确——通道恒等时复合结果就该是 rgb 曲线，若改成回退自身恒等表反而会把 rgb 曲线从
+    该通道丢掉；同时「全恒等→null」对外契约原样不动（curves.test.js 既有断言全绿）。
+  ④ 回归锁 + 变异验证：previewUniforms.test.jsx 新增 2 例——「恒等 rgb + 非恒等单通道」
+    （r 非恒等、g/b 恒等：断言 luts.g 为 null 而 curveLut 非空，G/B 逐索引=恒等表、R=复合
+    LUT）与「恒等 rgb + R/B 双通道」（s16 参数：G 直线通过、R/B=复合 LUT + 
+    simulateShaderPixel([200,120,90])=[206,120,79] 全公式像素锁）。变异验证：把兜底改坏为
+    `chan=(c)=>luts[c]` → 2 例红（TypeError: Cannot read properties of null (reading '0')，
+    与生产错误逐字一致）→ 回退复绿（16/16）。
+  ⑤ 真机取证：tests/webgl-parity/run.cjs --cases cases-edit-audit.json（30 例，无头 Edge
+    ANGLE Intel UHD D3D11，encode=png + TOL{max 2, mean 0.6}）。s16-curves-channels 由 R63
+    崩溃（对拍中止）转 ok 且逐字节一致（maxΔ=[0,0,0] meanΔ=0.0000 nΔ≥1=0）；其余用例
+    数字与 R63 逐一相符零回归：25/30 ok，如实红 5 例全部为既有已知类——s08（32.0320/
+    max45）、m05（33.7284/max47）= 缺陷②（负阴影反转），m02（1.3198/max[4,4,5]）、
+    m03（0.3241/max3）、m04（0.6731/max3）= 多阶段叠加量化超单阶段包络（R60 口径待裁决
+    项）。基线 8 例同轮复跑：6/8 绿，01-full-combo 1.3921/max[10,7,18]、03-tone
+    16.6105/max20 与 R60 定版逐位一致（2/8 如实红维持）。
+  ⑥ 附带发现/勘正：①R63 ⑥② 提到的 simulateShaderPixel(:178) 高光乘后无 clamp（与 R60
+    已修的 shader 本体存在契约测试模型漂移）本轮未动——属测试保真度项非崩溃项，按
+    「一轮一主题」留待后续轮次；②R63 文字「超容差 4 例」未把 m05-heavy-tone 单列，本轮
+    口径勘明 30 例矩阵实为 5 例红（m05 的 33.73 与 R63「-80 混合→33.73」同值同源，均属
+    缺陷②类，数字本身 R63 已测得，非本轮新增回归）。
+  - 验证：vitest 58 文件 / 809 例（807+2）✓；lint 0 error / 8 warning（既有基线）✓；
+    typecheck 净 ✓；format:check 净（本轮 2 文件 prettier 合规）✓；cargo 154 lib +
+    1 golden_audit ✓；安装包 PixYang_0.1.0_x64-setup.exe mtime 2026-09-25 01:58 /
+    4,108,470 字节（旧 4,104,913 / 09-23 05:57），哈希链一手核对：dist 引用
+    index-CPgGXolI.js / index-D1t41p9t.css 在 release pixyang.exe（01:59）均命中、旧哈希
+    index-Dq6YwgLN.js 0 命中；FreeGB 起点 281；对拍临时进程/文件已由脚本自清理。
+    提交范围：src/lib/previewUniforms.js、tests/unit/lib/previewUniforms.test.jsx、
+    AGENTS.md、UNATTENDED.md（基线 807→809）、NIGHTLY_LOG.md。
+  待人工复核：① 缺陷②（负阴影方向反转）维持 R59 裁决项（本轮 s08/m05 数字原样未动）；
+    ② 多阶段叠加量化 TOL 分档（m02/m03/m04）维持 R60 待裁决；③ R63 ⑥②
+    simulateShaderPixel 高光 clamp 漂移未随本轮修（一轮一主题），建议与缺陷②同批处理；
+    ④ R63 P2/P3 清单（P2-1/P2-2/P2-3、P3-1..P3-7）维持待裁决。

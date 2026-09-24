@@ -56,11 +56,13 @@ export function specToShaderUniforms(spec, imageSize = [0, 0]) {
   const luts = buildCurveLuts(by.curves?.params || {});
   let curveLut = null;
   if (luts) {
+    const IDENTITY = new Uint8Array(256).map((_, i) => i);
+    const chan = (c) => luts[c] ?? luts.rgb ?? IDENTITY;
     curveLut = new Uint8Array(256 * 4);
     for (let i = 0; i < 256; i++) {
-      curveLut[i * 4] = luts.r[i];
-      curveLut[i * 4 + 1] = luts.g[i];
-      curveLut[i * 4 + 2] = luts.b[i];
+      curveLut[i * 4] = chan('r')[i];
+      curveLut[i * 4 + 1] = chan('g')[i];
+      curveLut[i * 4 + 2] = chan('b')[i];
       curveLut[i * 4 + 3] = 255;
     }
   }
