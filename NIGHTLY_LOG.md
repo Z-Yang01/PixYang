@@ -1445,3 +1445,64 @@
     叠加量化 m02/m03/m04（数字与 R64 逐位一致，同①类口径）；③ simulateShaderPixel 高光 clamp 漂移
     （R63 ⑥②/R64 ③ 维持，建议后续轮单独闭环）；④ R63 P2/P3 清单（P2-1/P2-2/P2-3、P3-1..P3-7）
     维持待裁决。
+- 2026-09-25 03:10 R66 预设与剪贴板字段域一致性修复（R63 P2-1/P2-2，口径「只覆盖显式包含或复制的字段，其余保留」）：
+  ① 需求/裁决来源：R63 缺陷清单 P2-1（预设静默清空）+ P2-2（复制/粘贴/批量同步三口径）；本轮任务书
+    明示口径放行：「预设/粘贴只覆盖其显式包含或复制的字段，其余保留」——与批量同步行为对齐。
+  ② 根因（R63 实机取证，本轮 HEAD 复核代码坐实）：applyPreset（ImageViewer.jsx）以
+    `...EDIT_DEFAULTS` 打底 + `curves: presetParams.curves || EDIT_DEFAULTS.curves` 三连——preset
+    未含 curves/colorGrading/vignette 时恒被清零，且 basic 子集未含的影调项也一并落回默认值；
+    copySettings 存全量（ref=完整 ops 快照 + store copiedEdits 含 basic/曲线/分级/暗角/朝向），
+    pasteSettings 只回贴 basic 十项，同一份 copiedEdits 走批量同步（useBatchActions
+    handleSyncEdits）却按「basic+曲线/分级/暗角（±朝向）」全量生效——同一数据三条路径三种口径。
+    另：内置 chips 的 onClick 构造 `{curves: bp.curves, ...}` 时键恒存在、值可为 undefined，
+    「字段是否包含」必须按值判定而非 `in`。
+  ③ 修法（两处，均在 src/components/Browser/ImageViewer.jsx）：
+    ▶ P2-1 applyPreset：打底由 EDIT_DEFAULTS 改为 editOpsRef.current（当前值全保留），
+      curves/colorGrading 按值存在才覆盖（truthy 判定，与旧式 `||` 的存在语义一致——用户预设
+      显式含空曲线时仍按快照清空，行为不变），vignette 以 `Number.isFinite(presetParams.lens?.vignette)`
+      判定（旧式 `||` 会把显式 0 误判为「未含」）；scope='all' 分支原样。清除类操作（曲线/分级
+      「清除」按钮、滑杆双击重置）不经 applyPreset，不受影响。scope='basic'「仅影调」文案与行为
+      由此对齐（影调=基础+曲线/分级/暗角按预设所含覆盖，几何保留）。
+    ▶ P2-2 pasteSettings：在 basic 十项之上，按与 handleSyncEdits 逐字相同的条件追加
+      curves/colorGrading/vignette（`...(c.curves ? {...} : {})` 三连，含 vignette=0 不覆盖的
+      既有批量语义）；几何决定：旋转/翻转/裁剪/蒙版一律不回贴、保留当前图自己的构图——与批量
+      同步默认「仅影调（推荐）」模式一致（裁剪/蒙版坐标系随图，批量同步连「影调+几何」模式都
+      不同步 crop；朝向如需同步走批量的显式「影调+几何」入口，粘贴不新增开关）。
+    「手动粘贴 ≡ 批量同步（同一份复制、同一目标图）写出的 params_json 逐值一致」由此成立。
+  ④ 回归锁 + 变异验证（tests/unit/components/Browser/ImageViewer.test.jsx 新增 2 describe 4 例，
+    沿用假桥 + 真实 DOM + saveEdits 载荷断言模式）：
+    ▶ P2-1 ×2：①有用户曲线（savedEdits 带 rgb 3 点）时点「经典黑白」→ 曲线保留、saturation/contrast/
+      whites/blacks 按预设、exposure（预设未含）保留、vignette 不动；②黑白胶片→港风霓虹→风光艳丽
+      依次应用：curves/分级/暗角逐段按预设覆盖且前序预设字段不被后续未含预设清掉。
+    ▶ P2-2 ×2：③复制后清除曲线/分级、调暗角/曝光再粘贴 → saveEdits 载荷四域全回贴且
+      rotate 90/crop/masks 保留；④同一份复制：手动粘贴保存的参数与 handleSyncEdits('basic') 写参
+      toEqual 逐值一致。
+    变异验证（亲手改坏各一次）：P2-1 还原旧三连清零 → 例①②红（expected [] to deeply equal
+    [0,0,0.5,0.8,1,1]，与 R63 实机「3 锚点→2 端点」同源），P2-2 两例保持绿（归因干净）；P2-2 删去
+    粘贴三连 → 例③红（同类断言）；例④初版在旧粘贴下仍绿（复制后未制造非 basic 域分歧，锁不
+    住）——补「复制后清除本地曲线」一步后旧粘贴下红（pasted vs synced 不等）→ 回退复绿。
+  ⑤ 真机取证：本轮改动为纯前端状态合并逻辑，经真实组件 + 真实 DOM 断言覆盖（④）；渲染数学零改动，
+    webgl-parity 实机对拍（无头 Edge + ANGLE Intel UHD D3D11，encode=png + TOL{2,0.6}）基线 8 例
+    7/8 绿与 R65 逐值一致——01-full-combo 1.3921/max[10,7,18]（唯一如实红，残差属多阶段叠加量化，
+    TOL 口径维持待裁决）、02 0.2986 / 03 0.5180 / 04 0.4795 / 05 0.0000 / 06 0.0017 / 07 0.1446 /
+    08 0.0295 全部原样，无 preset 相关对拍用例受影响。未重复 R63 式 UI 驱动审计（缺陷现场即
+    UI 交互，已由④的单测在真实组件/DOM 上复现并锁定）。
+  ⑥ 附带发现/勘正：①copySettings 的应用内剪贴板 ref（copiedBasicRef）从始即是完整 ops 快照，
+    命名「basic」名实不符系历史遗留——本轮仅同步注释未改名（最小改动，改名无行为收益）；
+    ②R63 P2-1 描述「masks 却保留」系 `...current` 打底的自然结果，修复后蒙版照旧保留；
+    ③批量同步 vignette 的 truthy 条件（=0 时跳过、目标保留自己的值）系既有行为，本轮粘贴侧
+    按同条件对齐、未改批量侧——「显式 0 是否应覆盖目标」如需改口径须两处同步+补锁（待人工裁决）。
+  - 验证：vitest 58 文件 / **816** 例（812+4）✓；lint 0 error / 8 warning（既有基线）✓；
+    typecheck 净 ✓；format:check 净（本轮 2 文件 prettier 合规）✓；cargo 154 lib + 1 golden_audit ✓
+    （Rust 未动）；安装包 PixYang_0.1.0_x64-setup.exe mtime 2026-09-25 03:01:59 / 4,107,791 字节
+    （旧 4,109,284 / 02:21:51），哈希链一手核对：dist 引用 index-UzYJcmbA.js / index-D1t41p9t.css
+    在 release pixyang.exe（03:02:00）均 1 命中，旧 index-9nwtNm8W.js（R65）、index-CPgGXolI.js
+    （R64）、index-Dq6YwgLN.js（R60）均 0 命中；FreeGB 起点 282；对拍临时文件由脚本自清理，
+    工作树仅本轮点名文件（无 tauri 打包噪声）。
+    提交范围：src/components/Browser/ImageViewer.jsx、
+    tests/unit/components/Browser/ImageViewer.test.jsx、AGENTS.md、UNATTENDED.md（基线 812→816）、
+    NIGHTLY_LOG.md。
+  待人工复核：① 批量同步/粘贴的 vignette=0「不覆盖目标」语义是否改为显式覆盖（现状与旧版一致，
+    若改须两处同步+补锁）；② R63 P2-3（高光/阴影全局近似语义）与 P3-1..P3-7 维持待裁决（本轮不动）；
+    ③ 01-full-combo 残差 TOL 分档维持 R60/R63/R64/R65 待裁决；④ simulateShaderPixel 高光 clamp
+    漂移（R63 ⑥②/R64 ③）维持待后续轮单独闭环。

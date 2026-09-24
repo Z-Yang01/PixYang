@@ -170,7 +170,7 @@ export default function ImageViewer({
   bustRef.current = bust;
   const historyRef = useRef(null); // { stack: [ops], index }
   const savedBaselineRef = useRef(null); // 最近一次保存的参数快照（dirty 判定基线）
-  const copiedBasicRef = useRef(null); // 复制/粘贴的 basic 参数（应用内会话级剪贴板）
+  const copiedBasicRef = useRef(null); // 复制/粘贴的参数快照（应用内会话级剪贴板）
   const compareActive = editing && showBefore && compareMode !== 'toggle';
 
   // 同步图片切换
@@ -621,23 +621,21 @@ export default function ImageViewer({
     setSelectedMaskId(null);
   }, [selectedMaskId, pushHistory]);
 
-  // 应用预设：scope='basic' 只覆盖影调（几何保持当前构图）；
+  // 应用预设：只覆盖预设对象里实际存在的字段（basic 子集/curves/colorGrading/lens.vignette），
+  // 其余影调与几何保留当前值——预设不含的字段不得静默清零（R63 P2-1）；
   // scope='all' 连旋转/翻转/裁剪一起应用（crop 坐标基于保存时的底图尺寸，跨尺寸图需手动微调）
   const applyPreset = useCallback(
     (presetParams, scope = 'basic') => {
       const p = presetParams?.basic;
       if (!p) return;
       const next = {
-        ...EDIT_DEFAULTS,
-        rotation: editOpsRef.current.rotation,
-        flipH: editOpsRef.current.flipH,
-        flipV: editOpsRef.current.flipV,
-        crop: editOpsRef.current.crop,
-        masks: editOpsRef.current.masks,
+        ...editOpsRef.current,
         ...p,
-        curves: presetParams.curves || EDIT_DEFAULTS.curves,
-        colorGrading: presetParams.colorGrading || EDIT_DEFAULTS.colorGrading,
-        vignette: presetParams.lens?.vignette || EDIT_DEFAULTS.vignette,
+        ...(presetParams.curves ? { curves: presetParams.curves } : {}),
+        ...(presetParams.colorGrading ? { colorGrading: presetParams.colorGrading } : {}),
+        ...(Number.isFinite(presetParams.lens?.vignette)
+          ? { vignette: presetParams.lens.vignette }
+          : {}),
       };
       if (scope === 'all') {
         const o = presetParams.orientation;
@@ -730,6 +728,8 @@ export default function ImageViewer({
       toast.info('暂无已复制的参数');
       return;
     }
+    // 与批量同步（useBatchActions.handleSyncEdits）同字段同条件：影调十项 + 曲线/分级/暗角；
+    // 几何（旋转/翻转/裁剪/蒙版）不回贴，保留当前图自己的构图（R63 P2-2）
     const next = {
       ...editOpsRef.current,
       exposure: c.exposure,
@@ -741,6 +741,9 @@ export default function ImageViewer({
       saturation: c.saturation,
       temperature: c.temperature,
       tint: c.tint,
+      ...(c.curves ? { curves: c.curves } : {}),
+      ...(c.colorGrading ? { colorGrading: c.colorGrading } : {}),
+      ...(c.vignette ? { vignette: c.vignette } : {}),
     };
     pushHistory(next, '粘贴参数');
     setEditOps(next);

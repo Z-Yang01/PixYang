@@ -1,7 +1,9 @@
 // @vitest-environment happy-dom
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, fireEvent, cleanup } from '@testing-library/react';
+import { render, screen, fireEvent, cleanup, act } from '@testing-library/react';
 import ImageViewer from '@/components/Browser/ImageViewer';
+import useGalleryStore from '@/store/galleryStore';
+import useBatchActions from '@/hooks/useBatchActions';
 
 const testImage = {
   id: 3,
@@ -1124,5 +1126,211 @@ describe('历史面板（本轮新功能验证）', () => {
     } finally {
       window.Image = RealImage;
     }
+  });
+});
+
+describe('预设字段域一致性（R66 P2-1：预设只覆盖显式包含的字段）', () => {
+  const USER_CURVES = [0, 0, 0.5, 0.8, 1, 1];
+
+  function mockBridge(savedEdits) {
+    window.pixyang = {
+      getImageTags: vi.fn().mockResolvedValue([]),
+      toFileUrl: vi.fn().mockImplementation((p) => Promise.resolve(p ? `file:///${p}` : null)),
+      editOpen: vi.fn().mockResolvedValue({
+        id: 3,
+        source: 'jpg',
+        basePath: 'C:/cache/3-base.jpg',
+        width: 1920,
+        height: 1080,
+        hasNef: false,
+        savedEdits,
+      }),
+      getPresets: vi.fn().mockResolvedValue([]),
+      createPreset: vi.fn().mockResolvedValue({ id: 1, name: 'x' }),
+      deletePreset: vi.fn().mockResolvedValue(undefined),
+      editCancel: vi.fn().mockResolvedValue({ ok: true }),
+      saveEdits: vi.fn().mockResolvedValue({ version: 1, params: {} }),
+    };
+  }
+
+  async function enterEditWith(savedEdits) {
+    mockBridge(savedEdits);
+    render(<ImageViewer {...baseProps()} />);
+    fireEvent.click(screen.getByTitle(/编辑模式/));
+    await screen.findByText('经典黑白');
+  }
+
+  async function saveAndCapture(callIndex) {
+    fireEvent.click(await screen.findByText('保存参数'));
+    await vi.waitFor(() => expect(window.pixyang.saveEdits).toHaveBeenCalledTimes(callIndex + 1));
+    return window.pixyang.saveEdits.mock.calls[callIndex][1];
+  }
+
+  afterEach(() => {
+    cleanup();
+    delete window.pixyang;
+  });
+
+  it('有用户曲线时应用不含 curves 的预设：曲线保留，basic 未含字段保留', async () => {
+    await enterEditWith({
+      version: 1,
+      params: { basic: { exposure: 0.5 }, curves: { rgb: USER_CURVES } },
+    });
+    fireEvent.click(screen.getByText('经典黑白'));
+    const params = await saveAndCapture(0);
+    expect(params.curves.rgb).toEqual(USER_CURVES);
+    expect(params.basic.saturation).toBe(-100);
+    expect(params.basic.contrast).toBe(15);
+    expect(params.basic.whites).toBe(10);
+    expect(params.basic.blacks).toBe(20);
+    expect(params.basic.exposure).toBe(0.5);
+    expect(params.lens.vignette).toBe(0);
+  });
+
+  it('应用含 curves/分级/暗角的预设：相应字段按预设覆盖，该预设未含的字段仍保留', async () => {
+    await enterEditWith({
+      version: 1,
+      params: { basic: { exposure: 0.5 }, curves: { rgb: USER_CURVES } },
+    });
+    fireEvent.click(screen.getByText('黑白胶片'));
+    let params = await saveAndCapture(0);
+    expect(params.curves.rgb).toEqual([0, 0, 0.3, 0.18, 0.7, 0.85, 1, 1]);
+    expect(params.basic.exposure).toBe(0.5);
+    await screen.findByText('参数已保存');
+    fireEvent.click(screen.getByText('港风霓虹'));
+    params = await saveAndCapture(1);
+    expect(params.colorGrading.highlights).toEqual([320, 35]);
+    expect(params.curves.rgb).toEqual([0, 0, 0.3, 0.18, 0.7, 0.85, 1, 1]);
+    await screen.findByText('参数已保存');
+    fireEvent.click(screen.getByText('风光艳丽'));
+    params = await saveAndCapture(2);
+    expect(params.lens.vignette).toBe(-20);
+    expect(params.curves.rgb).toEqual([0, 0, 0.3, 0.18, 0.7, 0.85, 1, 1]);
+    expect(params.colorGrading.highlights).toEqual([320, 35]);
+  });
+});
+
+describe('复制/粘贴字段域一致性（R66 P2-2：粘贴与复制/批量同步同口径）', () => {
+  const COPIED_STATE = {
+    version: 1,
+    params: {
+      basic: { exposure: 0.2 },
+      curves: { rgb: [0, 0, 0.5, 0.8, 1, 1] },
+      colorGrading: { highlights: [320, 35] },
+      lens: { vignette: -30 },
+    },
+  };
+
+  // 含 rotate 90 的版本：验证粘贴不回贴几何（旋转保留当前图自己的）
+  const PASTE_STATE = {
+    version: 1,
+    params: {
+      orientation: { rotate: 90 },
+      basic: { exposure: 0.2 },
+      curves: { rgb: [0, 0, 0.5, 0.8, 1, 1] },
+      colorGrading: { highlights: [320, 35] },
+      lens: { vignette: -30 },
+    },
+  };
+
+  function mockBridge(savedEdits) {
+    window.pixyang = {
+      getImageTags: vi.fn().mockResolvedValue([]),
+      toFileUrl: vi.fn().mockImplementation((p) => Promise.resolve(p ? `file:///${p}` : null)),
+      editOpen: vi.fn().mockResolvedValue({
+        id: 3,
+        source: 'jpg',
+        basePath: 'C:/cache/3-base.jpg',
+        width: 1920,
+        height: 1080,
+        hasNef: false,
+        savedEdits,
+      }),
+      getPresets: vi.fn().mockResolvedValue([]),
+      createPreset: vi.fn().mockResolvedValue({ id: 1, name: 'x' }),
+      deletePreset: vi.fn().mockResolvedValue(undefined),
+      editCancel: vi.fn().mockResolvedValue({ ok: true }),
+      saveEdits: vi.fn().mockResolvedValue({ version: 1, params: {} }),
+    };
+  }
+
+  async function enterEditWith(savedEdits) {
+    mockBridge(savedEdits);
+    render(<ImageViewer {...baseProps()} />);
+    fireEvent.click(screen.getByTitle(/编辑模式/));
+    await screen.findByText('经典黑白');
+  }
+
+  function exposureSlider() {
+    return document.querySelectorAll('.editor-slider-row input[type="range"]')[0];
+  }
+
+  function sectionClearButton(headerText) {
+    return screen.getByText(headerText).closest('.editor-crop-section').querySelector('button');
+  }
+
+  afterEach(() => {
+    cleanup();
+    delete window.pixyang;
+    useGalleryStore.setState({ copiedEdits: null, selectedIds: new Set() });
+  });
+
+  it('复制后粘贴：影调/曲线/分级/暗角全量回贴，几何保留当前图', async () => {
+    await enterEditWith(PASTE_STATE);
+    // 先把曝光调到 0.7 再复制：粘贴后与保存基线仍有差异，保存按钮可用
+    fireEvent.change(exposureSlider(), { target: { value: '0.7' } });
+    fireEvent.click(screen.getByText('复制'));
+    // 破坏三个影调域 + 曝光：曲线/分级清除、暗角调 20、曝光压到 -1
+    fireEvent.click(sectionClearButton('曲线'));
+    fireEvent.click(sectionClearButton('颜色分级'));
+    fireEvent.change(screen.getByText('暗角').closest('label').querySelector('input'), {
+      target: { value: '20' },
+    });
+    fireEvent.change(exposureSlider(), { target: { value: '-1' } });
+    fireEvent.click(screen.getByText('粘贴'));
+    fireEvent.click(await screen.findByText('保存参数'));
+    await vi.waitFor(() => expect(window.pixyang.saveEdits).toHaveBeenCalledTimes(1));
+    const params = window.pixyang.saveEdits.mock.calls[0][1];
+    expect(params.basic.exposure).toBe(0.7);
+    expect(params.curves.rgb).toEqual([0, 0, 0.5, 0.8, 1, 1]);
+    expect(params.colorGrading.highlights).toEqual([320, 35]);
+    expect(params.lens.vignette).toBe(-30);
+    expect(params.orientation.rotate).toBe(90);
+    expect(params.orientation.flipH).toBe(false);
+    expect(params.crop).toBeNull();
+    expect(params.masks).toEqual([]);
+  });
+
+  it('同一份复制：手动粘贴与批量同步写出的参数一致', async () => {
+    const out = { current: null };
+    function BatchHarness() {
+      out.current = useBatchActions({ showToast: vi.fn() });
+      return null;
+    }
+    useGalleryStore.setState({ selectedIds: new Set([77]), copiedEdits: null });
+    mockBridge(COPIED_STATE);
+    render(
+      <>
+        <BatchHarness />
+        <ImageViewer {...baseProps()} />
+      </>
+    );
+    fireEvent.click(screen.getByTitle(/编辑模式/));
+    await screen.findByText('经典黑白');
+    fireEvent.change(exposureSlider(), { target: { value: '0.7' } });
+    fireEvent.click(screen.getByText('复制'));
+    // 复制后本地曲线被清掉：粘贴必须把曲线一并回贴，才能与批量同步写出的参数一致
+    fireEvent.click(sectionClearButton('曲线'));
+    fireEvent.click(screen.getByText('粘贴'));
+    fireEvent.click(await screen.findByText('保存参数'));
+    await vi.waitFor(() => expect(window.pixyang.saveEdits).toHaveBeenCalledTimes(1));
+    const pasted = window.pixyang.saveEdits.mock.calls[0][1];
+    await act(async () => {
+      await out.current.handleSyncEdits('basic');
+    });
+    expect(window.pixyang.saveEdits).toHaveBeenCalledTimes(2);
+    const synced = window.pixyang.saveEdits.mock.calls[1][1];
+    expect(window.pixyang.saveEdits.mock.calls[1][0]).toBe(77);
+    expect(pasted).toEqual(synced);
   });
 });
