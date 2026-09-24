@@ -206,7 +206,7 @@ describe('ImageViewer', () => {
     mockEditBridge();
     render(<ImageViewer {...baseProps()} />);
     fireEvent.click(screen.getByTitle(/编辑模式/));
-    await screen.findByText('参数已保存');
+    await screen.findByText('编辑');
     const img = document.querySelector('.editor-transform-layer img.viewer-image');
     expect(img.getAttribute('crossorigin')).toBe('anonymous');
   });
@@ -216,7 +216,9 @@ describe('ImageViewer', () => {
     const onImageUpdated = vi.fn();
     render(<ImageViewer {...baseProps({ onImageUpdated })} />);
     fireEvent.click(screen.getByTitle(/编辑模式/));
-    expect(await screen.findByText('参数已保存')).toBeDisabled(); // 无变更
+    expect(await screen.findByText('编辑')).toBeInTheDocument();
+    // 新会话无已存参数：未保存态且无可保存（R67 P3-6 语义，不再是「参数已保存」）
+    expect(screen.getByTitle(/保存编辑参数/)).toBeDisabled();
     // 调曝光滑杆
     const sliders = document.querySelectorAll('.editor-slider-row input[type="range"]');
     fireEvent.change(sliders[0], { target: { value: '0.5' } });
@@ -231,7 +233,7 @@ describe('ImageViewer', () => {
       expect(window.pixyang.editBake).not.toHaveBeenCalled();
       expect(onImageUpdated).not.toHaveBeenCalled();
     });
-    // dirty 复位
+    // 真实保存成功后才转「参数已保存」且 dirty 复位
     await vi.waitFor(() => expect(screen.getByText('参数已保存')).toBeDisabled());
   });
 
@@ -240,7 +242,7 @@ describe('ImageViewer', () => {
     const onEnterEdit = vi.fn();
     render(<ImageViewer {...baseProps({ onEnterEdit })} />);
     fireEvent.click(screen.getByTitle(/编辑模式/));
-    await screen.findByText('参数已保存');
+    await screen.findByText('编辑');
     expect(onEnterEdit).toHaveBeenCalledTimes(1);
   });
 
@@ -264,7 +266,7 @@ describe('ImageViewer', () => {
       .mockRejectedValue(new Error('no such column: images.edit_version'));
     render(<ImageViewer {...baseProps()} />);
     fireEvent.click(screen.getByTitle(/编辑模式/));
-    await screen.findByText('参数已保存');
+    await screen.findByText('编辑');
     fireEvent.change(document.querySelectorAll('.editor-slider-row input[type="range"]')[0], {
       target: { value: '0.5' },
     });
@@ -283,7 +285,7 @@ describe('ImageViewer', () => {
     const onImageUpdated = vi.fn();
     render(<ImageViewer {...baseProps({ onImageUpdated })} />);
     fireEvent.click(screen.getByTitle(/编辑模式/));
-    await screen.findByText('参数已保存');
+    await screen.findByText('编辑');
     fireEvent.change(document.querySelectorAll('.editor-slider-row input[type="range"]')[0], {
       target: { value: '0.5' },
     });
@@ -303,7 +305,7 @@ describe('ImageViewer', () => {
     const onImageUpdated = vi.fn();
     render(<ImageViewer {...baseProps({ onImageUpdated })} />);
     fireEvent.click(screen.getByTitle(/编辑模式/));
-    await screen.findByText('参数已保存');
+    await screen.findByText('编辑');
     fireEvent.change(document.querySelectorAll('.editor-slider-row input[type="range"]')[0], {
       target: { value: '0.5' },
     });
@@ -337,7 +339,7 @@ describe('ImageViewer', () => {
     mockEditBridge();
     render(<ImageViewer {...baseProps()} />);
     fireEvent.click(screen.getByTitle(/编辑模式/));
-    await screen.findByText('参数已保存');
+    await screen.findByText('编辑');
     // 右旋一次产生变更
     fireEvent.click(screen.getByTitle('右旋 90° (R)'));
     fireEvent.click(container_close());
@@ -479,7 +481,7 @@ describe('ImageViewer', () => {
     expect(screen.getByText('颜色分级')).toBeInTheDocument();
     const hue = screen.getByLabelText('阴影色相');
     const strength = screen.getByLabelText('阴影强度');
-    // 拖色相（键盘调整路径：无指针直接 change → 逐次入历史）
+    // 拖色相（键盘调整路径：无指针直接 change；sat=0 时无渲染效果不入历史）
     fireEvent.change(hue, { target: { value: '210' } });
     expect(strength.value).toBe('0'); // 强度独立，不自动激活
     fireEvent.change(strength, { target: { value: '45' } });
@@ -531,7 +533,7 @@ describe('ImageViewer', () => {
     });
     const { container } = render(<ImageViewer {...baseProps()} />);
     fireEvent.click(screen.getByTitle(/编辑模式/));
-    await screen.findByText('参数已保存');
+    await screen.findByText('编辑');
     fireEvent.click(screen.getByTitle('裁剪'));
     const content = container.querySelector('.viewer-content');
     fireEvent.mouseDown(content, { clientX: 200, clientY: 200 });
@@ -566,7 +568,7 @@ describe('ImageViewer', () => {
 
   async function enterEdit() {
     fireEvent.click(screen.getByTitle(/编辑模式/));
-    await screen.findByText('参数已保存');
+    await screen.findByText('编辑');
   }
 
   function drawCrop() {
@@ -966,7 +968,7 @@ describe('历史面板（本轮新功能验证）', () => {
   it('历史面板：操作产生带标签条目，点击旧条目跳转到该状态', async () => {
     render(<ImageViewer {...baseProps()} />);
     fireEvent.click(screen.getByTitle(/编辑模式/));
-    await screen.findByText('参数已保存');
+    await screen.findByText('编辑');
     // 依次右旋、水平翻转 → 产生两条历史
     fireEvent.click(screen.getByTitle('右旋 90° (R)'));
     fireEvent.click(screen.getByTitle('水平翻转 (H)'));
@@ -990,7 +992,7 @@ describe('历史面板（本轮新功能验证）', () => {
   it('历史跳转后撤销/重做按钮联动', async () => {
     render(<ImageViewer {...baseProps()} />);
     fireEvent.click(screen.getByTitle(/编辑模式/));
-    await screen.findByText('参数已保存');
+    await screen.findByText('编辑');
     fireEvent.click(screen.getByTitle('右旋 90° (R)'));
     fireEvent.click(screen.getByTitle('右旋 90° (R)'));
     // 跳回「原始」
@@ -1028,7 +1030,7 @@ describe('历史面板（本轮新功能验证）', () => {
     });
     const { container } = render(<ImageViewer {...baseProps()} />);
     fireEvent.click(screen.getByTitle(/编辑模式/));
-    await screen.findByText('参数已保存');
+    await screen.findByText('编辑');
     fireEvent.click(screen.getByTitle('裁剪'));
     const content = container.querySelector('.viewer-content');
     fireEvent.mouseDown(content, { clientX: 100, clientY: 100 });
@@ -1332,5 +1334,109 @@ describe('复制/粘贴字段域一致性（R66 P2-2：粘贴与复制/批量同
     const synced = window.pixyang.saveEdits.mock.calls[1][1];
     expect(window.pixyang.saveEdits.mock.calls[1][0]).toBe(77);
     expect(pasted).toEqual(synced);
+  });
+});
+
+describe('键盘调参历史收敛与新会话保存态（R67 P3-1/P3-6）', () => {
+  function mockBridge(savedEdits = null) {
+    window.pixyang = {
+      getImageTags: vi.fn().mockResolvedValue([]),
+      toFileUrl: vi.fn().mockImplementation((p) => Promise.resolve(p ? `file:///${p}` : null)),
+      editOpen: vi.fn().mockResolvedValue({
+        id: 3,
+        source: 'jpg',
+        basePath: 'C:/cache/3-base.jpg',
+        width: 1920,
+        height: 1080,
+        hasNef: false,
+        savedEdits,
+      }),
+      getPresets: vi.fn().mockResolvedValue([]),
+      editCancel: vi.fn().mockResolvedValue({ ok: true }),
+      saveEdits: vi.fn().mockResolvedValue({ version: 1, params: {} }),
+    };
+  }
+
+  async function enterEditWith(savedEdits) {
+    mockBridge(savedEdits);
+    render(<ImageViewer {...baseProps()} />);
+    fireEvent.click(screen.getByTitle(/编辑模式/));
+    await screen.findByText('经典黑白'); // 面板就绪（预设行已渲染）
+  }
+
+  function exposureSlider() {
+    return document.querySelectorAll('.editor-slider-row input[type="range"]')[0];
+  }
+
+  function historyHint() {
+    return [...document.querySelectorAll('.editor-crop-header .editor-crop-hint')]
+      .map((el) => el.textContent)
+      .find((t) => t.endsWith('步'));
+  }
+
+  afterEach(() => {
+    cleanup();
+    delete window.pixyang;
+  });
+
+  it('键盘连续调节：5 次方向键调整只收敛为 1 条历史（停顿越过收敛窗后结算）', async () => {
+    await enterEditWith();
+    const before = historyHint();
+    // 模拟滑杆聚焦后连按 5 次方向键：逐次 change、值递增（无指针拖动路径）
+    for (let i = 1; i <= 5; i++) {
+      fireEvent.change(exposureSlider(), { target: { value: String(i * 0.1) } });
+    }
+    expect(exposureSlider().value).toBe('0.5'); // 值实时生效
+    expect(historyHint()).toBe(before); // 手势窗内不再逐条入历史（旧实现此处 +5 条）
+    await vi.waitFor(() => expect(historyHint()).toBe('2 步'), { timeout: 3000 }); // 停顿 700ms 结算
+    expect(document.querySelector('.editor-history-list').textContent).toContain('曝光');
+    expect(exposureSlider().value).toBe('0.5'); // 结算不改值
+  });
+
+  it('无效果调整不入历史：sat=0 时调分级色相不产生任何条目', async () => {
+    await enterEditWith();
+    const before = historyHint();
+    const hue = screen.getByLabelText('阴影色相');
+    fireEvent.change(hue, { target: { value: '210' } });
+    expect(hue.value).toBe('210'); // 值已更新（后续调强度时生效）
+    await new Promise((r) => setTimeout(r, 900)); // 越过收敛窗仍不结算
+    expect(historyHint()).toBe(before);
+    expect(document.querySelector('.editor-history-list').textContent).not.toContain('分级');
+  });
+
+  it('焦点离开立即结算：blur 后无需等收敛窗即入一条', async () => {
+    await enterEditWith();
+    const before = historyHint();
+    const slider = exposureSlider();
+    fireEvent.change(slider, { target: { value: '0.3' } });
+    fireEvent.change(slider, { target: { value: '0.6' } });
+    expect(historyHint()).toBe(before);
+    fireEvent.blur(slider);
+    expect(historyHint()).toBe('2 步');
+    expect(document.querySelector('.editor-history-list').textContent).toContain('曝光');
+  });
+
+  it('新会话无已存参数：显示「未保存」中性态，真实 saveEdits 成功后才转「参数已保存」', async () => {
+    await enterEditWith();
+    const saveBtn = () => screen.getByTitle(/保存编辑参数/);
+    expect(screen.queryByText('参数已保存')).toBeNull();
+    expect(saveBtn().textContent).toBe('未保存');
+    expect(saveBtn()).toBeDisabled(); // 初始无差异可保存
+    expect(document.querySelector('.editor-phase-tag').textContent).toBe('未保存');
+    fireEvent.change(exposureSlider(), { target: { value: '0.5' } });
+    fireEvent.click(screen.getByText('保存参数'));
+    await vi.waitFor(() => {
+      expect(window.pixyang.saveEdits).toHaveBeenCalledTimes(1);
+      expect(saveBtn().textContent).toBe('参数已保存');
+      expect(saveBtn()).toBeDisabled(); // 保存后 dirty 复位
+      expect(document.querySelector('.editor-phase-tag').textContent).toBe('已保存');
+    });
+  });
+
+  it('重进编辑回读已存参数：直接显示「参数已保存」（回读场景不受影响）', async () => {
+    await enterEditWith({ version: 1, params: { basic: { exposure: 0.5 } } });
+    const saveBtn = () => screen.getByTitle(/保存编辑参数/);
+    expect(saveBtn().textContent).toBe('参数已保存');
+    expect(document.querySelector('.editor-phase-tag').textContent).toBe('已保存');
   });
 });

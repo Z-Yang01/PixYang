@@ -212,7 +212,7 @@ describe('App 组合根冒烟', () => {
     fireEvent.click(await screen.findByTitle(/查看详情/));
     await waitFor(() => expect(container.querySelector('.info-panel')).toBeTruthy());
     fireEvent.click(screen.getByTitle(/编辑模式/));
-    await screen.findByText('参数已保存');
+    await screen.findByText('编辑');
     expect(container.querySelector('.info-panel')).toBeNull();
   });
 

@@ -72,7 +72,7 @@ function mockEditBridge(over = {}) {
 
 async function enterEdit() {
   fireEvent.click(screen.getByTitle(/编辑模式/));
-  await screen.findByText('参数已保存');
+  await screen.findByText('编辑');
 }
 
 describe('ImageViewer 蒙版 overlay（拖拽创建 + 手柄编辑）', () => {

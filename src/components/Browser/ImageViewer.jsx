@@ -76,6 +76,11 @@ const clamp = (v, min, max) => Math.min(max, Math.max(min, v));
 // 连续调节停止多少毫秒后把草稿预览补成全分辨率帧
 const EDIT_SETTLE_MS = 160;
 
+// 键盘方向键连续调节的「调节手势」收敛窗：同一滑杆连续按键只结算为一条历史，
+// 停顿超过该时长（或焦点离开/会话结束）才落栈。取 700ms：远大于人工连按/自动重复的
+// 键间隔（约 30-200ms），又足够短使历史面板在停手后近乎即时更新
+const KEY_GESTURE_MS = 700;
+
 export default function ImageViewer({
   image,
   imageIndex = 0,
@@ -150,6 +155,7 @@ export default function ImageViewer({
   const contentRef = useRef(null);
   const cropDragRef = useRef(null);
   const sliderDragRef = useRef(null); // 拖动中的滑杆 key（pointerup 时收敛为一条历史）
+  const keyGestureRef = useRef(null); // 键盘调节手势 { timer, label, ops }（停顿 KEY_GESTURE_MS 结算为一条历史）
   const editOpsRef = useRef(editOps);
   editOpsRef.current = editOps;
   const editingRef = useRef(false);
@@ -170,6 +176,9 @@ export default function ImageViewer({
   bustRef.current = bust;
   const historyRef = useRef(null); // { stack: [ops], index }
   const savedBaselineRef = useRef(null); // 最近一次保存的参数快照（dirty 判定基线）
+  // 本会话是否存在「已保存基线」：回读已存参数或本轮 saveEdits 成功才为真；
+  // 新会话（无可恢复参数）为假 → 上屏中性态「未保存」而非误导的「参数已保存」（R63 P3-6）
+  const [hasSavedEdits, setHasSavedEdits] = useState(false);
   const copiedBasicRef = useRef(null); // 复制/粘贴的参数快照（应用内会话级剪贴板）
   const compareActive = editing && showBefore && compareMode !== 'toggle';
 
@@ -255,6 +264,12 @@ export default function ImageViewer({
     setHistInfo({ canUndo: false, canRedo: false, index: 0, length: 0 });
     historyRef.current = null;
     savedBaselineRef.current = null;
+    setHasSavedEdits(false);
+    // 在途键盘手势随会话作废：只清计时器不结算（历史栈已整体销毁）
+    if (keyGestureRef.current) {
+      clearTimeout(keyGestureRef.current.timer);
+      keyGestureRef.current = null;
+    }
     setZoom(1);
     setPos({ x: 0, y: 0 });
     setShowBefore(false);
@@ -308,6 +323,7 @@ export default function ImageViewer({
       setEditOps(initial);
       historyRef.current = { stack: [{ ops: initial, label: '原始' }], index: 0 };
       savedBaselineRef.current = initial;
+      setHasSavedEdits(!!session.savedEdits);
       setEditing(true);
       onEnterEdit?.();
       setZoom(1);
@@ -334,7 +350,7 @@ export default function ImageViewer({
   }, []);
 
   // 历史栈条目：{ ops, label }——label 供历史面板展示
-  const pushHistory = useCallback(
+  const pushEntry = useCallback(
     (snapshot, label = '调整') => {
       const h = historyRef.current;
       if (!h) return;
@@ -349,8 +365,45 @@ export default function ImageViewer({
     [syncHistInfo]
   );
 
+  // 键盘手势结算：在途手势立即落栈（pushEntry 自带「与栈顶相同不重复入栈」兜底）
+  const settleKeyGesture = useCallback(() => {
+    const g = keyGestureRef.current;
+    if (!g) return;
+    clearTimeout(g.timer);
+    keyGestureRef.current = null;
+    pushEntry(g.ops, g.label);
+  }, [pushEntry]);
+
+  // 键盘方向键连续调节（无指针拖动）：同一「调节手势」只结算一条历史——
+  // 同一滑杆的连续按键刷新收敛窗与快照，停顿 KEY_GESTURE_MS 才落栈；换滑杆时上一手势
+  // 即告结算。任何其他入栈动作经 pushHistory 时先结算在途手势，保证历史时序不乱
+  const recordKeyAdjust = useCallback(
+    (next, label) => {
+      const prev = keyGestureRef.current;
+      if (prev) {
+        clearTimeout(prev.timer);
+        if (prev.label !== label) pushEntry(prev.ops, prev.label);
+      }
+      keyGestureRef.current = {
+        label,
+        ops: next,
+        timer: setTimeout(settleKeyGesture, KEY_GESTURE_MS),
+      };
+    },
+    [pushEntry, settleKeyGesture]
+  );
+
+  const pushHistory = useCallback(
+    (snapshot, label = '调整') => {
+      settleKeyGesture();
+      pushEntry(snapshot, label);
+    },
+    [settleKeyGesture, pushEntry]
+  );
+
   const jumpToHistory = useCallback(
     (index) => {
+      settleKeyGesture(); // 跳转前面板尚未含在途键盘调整：先结算，索引与面板所见一致
       const h = historyRef.current;
       if (!h || index < 0 || index >= h.stack.length) return;
       h.index = index;
@@ -359,18 +412,19 @@ export default function ImageViewer({
       setEditOps(h.stack[index].ops);
       syncHistInfo();
     },
-    [syncHistInfo]
+    [settleKeyGesture, syncHistInfo]
   );
 
   const applyHistory = useCallback(
     (dir) => {
+      settleKeyGesture(); // 撤销/重做前先落栈在途键盘调整，否则该调整会迟到地插到跳转态之上
       const h = historyRef.current;
       if (!h) return;
       const next = dir === 'undo' ? h.index - 1 : h.index + 1;
       if (next < 0 || next >= h.stack.length) return;
       jumpToHistory(next);
     },
-    [jumpToHistory]
+    [settleKeyGesture, jumpToHistory]
   );
 
   // 当前编辑参数（含裁剪框）
@@ -404,6 +458,7 @@ export default function ImageViewer({
         return;
       }
       savedBaselineRef.current = ops;
+      setHasSavedEdits(true);
       toast.success('已保存编辑参数');
     } catch (e) {
       raiseEditError(errText('保存失败', e), errRaw('保存失败', e));
@@ -1171,13 +1226,16 @@ export default function ImageViewer({
     };
   }, []);
 
-  // 滑杆兜底结算：窗口外释放/失焦导致元素 pointerup 丢失时，任何 pointerup 都收敛拖动状态并补记历史
+  // 滑杆兜底结算：窗口外释放/失焦导致元素 pointerup 丢失时，任何 pointerup 都收敛拖动状态并补记历史；
+  // 窗口失焦同时结算在途键盘手势（Alt+Tab 等场景）
   useEffect(() => {
     if (!editing) return undefined;
     const settle = () => {
-      if (!sliderDragRef.current) return;
-      sliderDragRef.current = null;
-      pushHistory(editOpsRef.current, '滑杆调整');
+      if (sliderDragRef.current) {
+        sliderDragRef.current = null;
+        pushHistory(editOpsRef.current, '滑杆调整');
+      }
+      settleKeyGesture();
     };
     window.addEventListener('pointerup', settle);
     window.addEventListener('pointercancel', settle);
@@ -1187,7 +1245,15 @@ export default function ImageViewer({
       window.removeEventListener('pointercancel', settle);
       window.removeEventListener('blur', settle);
     };
-  }, [editing, pushHistory]);
+  }, [editing, pushHistory, settleKeyGesture]);
+
+  // 键盘手势计时器卸载清理（setTimeout 一律 ref 托管 + 卸载清理，防 teardown 偶发挂起）
+  useEffect(
+    () => () => {
+      if (keyGestureRef.current) clearTimeout(keyGestureRef.current.timer);
+    },
+    []
+  );
 
   // 滚轮缩放（以鼠标位置为中心）；分屏/并排对比时缩放只作用于 After 层，统一禁用
   const handleWheel = useCallback(
@@ -1318,7 +1384,7 @@ export default function ImageViewer({
               ? 'dirty'
               : 'clean';
   const PHASE_LABELS = {
-    clean: '已保存',
+    clean: hasSavedEdits ? '已保存' : '未保存',
     dirty: '未保存',
     saving: '保存中…',
     exporting: '导出中…',
@@ -1890,11 +1956,12 @@ export default function ImageViewer({
                     pushHistory(editOpsRef.current, label);
                   }
                 }}
+                onBlur={settleKeyGesture}
                 onChange={(e) => {
                   const next = { ...editOpsRef.current, [key]: Number(e.target.value) };
                   setEditOps(next);
-                  // 键盘调整（无指针拖动）逐次入历史；拖动全程由 pointerup 收敛为一条
-                  if (!sliderDragRef.current) pushHistory(next, label);
+                  // 键盘调整（无指针拖动）进入手势收敛窗：连续按键只结算一条历史
+                  if (!sliderDragRef.current) recordKeyAdjust(next, label);
                 }}
               />
               <em>{fmt(editOps[key])}</em>
@@ -1998,10 +2065,12 @@ export default function ImageViewer({
                       sliderDragRef.current = `grade-${key}`;
                     }}
                     onPointerUp={commit}
+                    onBlur={settleKeyGesture}
                     onChange={(e) => {
                       const next = setRange(Number(e.target.value), sat);
                       setEditOps(next);
-                      if (!sliderDragRef.current) pushHistory(next, `分级·${label}`);
+                      // sat=0 时色相无渲染效果：纯无效果调整不入历史（R63 P3-1）
+                      if (!sliderDragRef.current && sat > 0) recordKeyAdjust(next, `分级·${label}`);
                     }}
                   />
                   <input
@@ -2015,10 +2084,11 @@ export default function ImageViewer({
                       sliderDragRef.current = `grade-${key}`;
                     }}
                     onPointerUp={commit}
+                    onBlur={settleKeyGesture}
                     onChange={(e) => {
                       const next = setRange(hue, Number(e.target.value));
                       setEditOps(next);
-                      if (!sliderDragRef.current) pushHistory(next, `分级·${label}`);
+                      if (!sliderDragRef.current) recordKeyAdjust(next, `分级·${label}`);
                     }}
                   />
                 </div>
@@ -2302,7 +2372,7 @@ export default function ImageViewer({
               title="保存编辑参数（原图不动，可随时回到当前效果）"
             >
               {editBusy ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />}
-              {editDirty ? '保存参数' : '参数已保存'}
+              {editDirty ? '保存参数' : hasSavedEdits ? '参数已保存' : '未保存'}
             </Button>
             <div className="editor-footer-row">
               <Button

@@ -1506,3 +1506,63 @@
     若改须两处同步+补锁）；② R63 P2-3（高光/阴影全局近似语义）与 P3-1..P3-7 维持待裁决（本轮不动）；
     ③ 01-full-combo 残差 TOL 分档维持 R60/R63/R64/R65 待裁决；④ simulateShaderPixel 高光 clamp
     漂移（R63 ⑥②/R64 ③）维持待后续轮单独闭环。
+- 2026-09-25 03:35 R67 键盘调参历史收敛与新会话保存态修正（R63 P3-1/P3-6）：
+  ① 需求/裁决来源：R63 缺陷清单 P3-1（键盘调参历史洪水）+ P3-6（假「参数已保存」）；本轮任务书
+    放行交互参数（收敛窗长自定，600-800ms 档）。
+  ② 根因（R63 实机取证，本轮 HEAD 复核代码坐实）：▶P3-1——基础滑杆与分级 hue/强度三处
+    onChange 的键盘路径（无指针拖动）每次 change 直接 pushHistory，pushHistory 仅对「与栈顶
+    完全相同」去重，连续按 5 次方向键值值不同 → 5 条「饱和度」；分级 hue 的 onChange 无
+    「是否有效果」判定，sat=0 时色相无渲染效果仍逐条入栈。▶P3-6——savedBaselineRef 在
+    enterEdit 时无条件初始化为当前 ops（含无 savedEdits 的新会话）→ editDirty=false →
+    保存按钮恒显示「参数已保存」，实际数据库从未保存过。
+  ③ 修法（全在 src/components/Browser/ImageViewer.jsx）：
+    ▶P3-1——pushHistory 拆为 pushEntry（原栈操作原样）+ 三层：recordKeyAdjust(next,label)
+    建/续「键盘调节手势」{timer,label,ops}（KEY_GESTURE_MS=700ms，同滑杆连按刷新窗与快照，
+    换滑杆即结算上一手势）；settleKeyGesture() 到期/换焦点/会话结束结算；pushHistory 头部
+    先结算在途手势再入栈——拖动结束/预设/清除/双击重置等全部历史路径经 pushHistory 自动
+    获得正确时序；撤销/重做/历史跳转（applyHistory/jumpToHistory）头部同样先结算，避免在途
+    调整迟到地插到跳转态之上。结算点：停顿 700ms、滑杆 blur、窗口 blur（并入既有 pointerup
+    兜底 effect）、会话清理（cleanupEditSession 只弃不结算，栈已销毁）、卸载清计时器（§10
+    ref 托管+清理）。无效果判定沿用面板既有显示口径 `sat>0`（与「210° · 45%」em 同条件）：
+    sat=0 时调 hue 只更新 editOps 不建手势，后续调强度时随快照一并入栈，无数据丢失。
+    ▶P3-6——新增 hasSavedEdits 状态：enterEdit 时 =!!session.savedEdits（回读场景为真），
+    saveEdits 成功后置真，cleanupEditSession 复位假；保存按钮文案 clean 态由
+    hasSavedEdits 决定「参数已保存」/「未保存」，PHASE_LABELS.clean 同步动态化
+    （clean 徽标新会话显示「未保存」，dirty 语义不变）。
+  ④ 回归锁 + 变异验证（ImageViewer.test.jsx 新增 describe 5 例，沿假桥+真实 DOM 模式；
+    既有 12 处以「参数已保存」为面板就绪信号的 fresh 会话用例改用「编辑」（该文案语义已改，
+    见⑥③））：P3-1×3——①连调 5 次（0.1→0.5）→ 窗内步数不变、停顿后恰 1 条「曝光」且值保留；
+    ②sat=0 调 hue=210 → 越窗 900ms 后仍 0 条；③blur 立即结算 1 条。P3-6×2——④新会话按钮
+    与 phase 徽标均「未保存」且保存禁用 → 调曝光保存成功后转「参数已保存」+「已保存」禁用；
+    ⑤回读 savedEdits 直接「参数已保存」+「已保存」。变异验证（各改坏一次→红→回退复绿）：
+    A 键盘路径还原逐次 pushHistory → ①红「expected 6 步 to be 0 步」（与 R63 实测 5 次+5 条
+    同源）+③红，②保持绿（归因干净）；B 删 `&& sat>0` 判定 → ②红「expected 2 步 to be
+    0 步」；C enterEdit 恒 setHasSavedEdits(true) → ④红（⑤保持绿）。
+  ⑤ 真机取证：本轮为纯交互状态逻辑（无渲染数学改动），缺陷现场即 UI，已由④在真实组件/DOM
+    上复现并锁定；渲染链零改动，webgl-parity 基线口径（7/8 绿、01-full-combo 1.39 如实红）
+    不受影响，未重复实机对拍。
+  ⑥ 附带发现/勘正：①既有显示怪癖——enterEdit 只写 historyRef 不同步 histInfo，进入编辑后
+    历史面板计步显示「0 步」直至首次入栈（栈内实有「原始」1 条）；本轮测试改为取增量断言
+    不依赖该初值，是否修（enterEdit 补 syncHistInfo）待后续轮顺手处理；②既有窗口 pointerup
+    兜底 effect 原实现「无拖动即早退」，本轮扩展为同时结算键盘手势——副作用是窗内点击任意处
+    即结算在途键盘调整，与真实浏览器「点击他处先 blur」语义一致；③「参数已保存」此前被 12 处
+    测试当作「编辑面板已就绪」信号使用（语义本身未被断言），本轮随修复改用中性信号「编辑」，
+    R66 两条 P2 测试与回读用例的「参数已保存」断言均为真实已存/已保存态，原样保留。
+  - 验证：vitest 58 文件 / **821** 例（816+5）✓；lint 0 error / 8 warning（既有基线）✓；
+    typecheck 净 ✓；format:check 净（本轮 4 文件 prettier 合规）✓；cargo 154 lib +
+    1 golden_audit ✓（Rust 未动）；安装包 PixYang_0.1.0_x64-setup.exe mtime 2026-09-25
+    03:30:45 / 4,099,758 字节（旧 4,107,791 / 03:01:59），哈希链一手核对：dist 引用
+    index-CuB-tm5K.js / index-D1t41p9t.css 在 release pixyang.exe（03:30:46）均 1 命中，
+    旧 index-UzYJcmbA.js（R66）、index-9nwtNm8W.js（R65）、index-CPgGXolI.js（R64）、
+    index-Dq6YwgLN.js（R60）均 0 命中；FreeGB 起点 282；工作树仅本轮点名文件（无 tauri
+    打包噪声）。
+    提交范围：src/components/Browser/ImageViewer.jsx、
+    tests/unit/components/Browser/ImageViewer.test.jsx、
+    tests/unit/components/Browser/ImageViewer.maskOverlay.test.jsx、
+    tests/unit/components/App.test.jsx、AGENTS.md、UNATTENDED.md（基线 816→821）、
+    NIGHTLY_LOG.md。
+  待人工复核：① 新会话 clean 态文案取「未保存」（与 dirty 同文案）——若需区分「从未保存」
+    与「有改动未保存」（如「未修改/未保存」两词），属产品口径；② R63 P3-2/P3-3/P3-4/P3-5/P3-7
+    与 P2-3 维持待裁决（本轮未动）；③ 01-full-combo 残差 TOL 分档维持 R60/R63/R64/R65/R66
+    待裁决；④ simulateShaderPixel 高光 clamp 漂移（R63 ⑥②/R64 ③/R66 ④）维持待后续轮；
+    ⑤ ⑥①「0 步」初值怪癖是否顺手修，待后续轮。
