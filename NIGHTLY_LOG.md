@@ -1566,3 +1566,63 @@
     与 P2-3 维持待裁决（本轮未动）；③ 01-full-combo 残差 TOL 分档维持 R60/R63/R64/R65/R66
     待裁决；④ simulateShaderPixel 高光 clamp 漂移（R63 ⑥②/R64 ③/R66 ④）维持待后续轮；
     ⑤ ⑥①「0 步」初值怪癖是否顺手修，待后续轮。
+- 2026-09-25 04:00 R68 编辑面板标签换行与并排对比遮挡修复（R63 P3-4/P3-3，显示类一轮双项）：
+  ① 需求/裁决来源：R63 缺陷清单 P3-4（四字标签换行）+ P3-3（并排对比遮挡）；本轮任务书指定恰好
+    一轮闭环这两项，布局类以「遮挡消除」为客观判据可自决。
+  ② 根因（R63 实机取证，本轮 HEAD 复核坐实）：▶P3-4——`.editor-slider-row` 网格
+    `44px 1fr 44px`、行字号 12px，「白色色阶」「黑色色阶」四字需 48px，首列装不下逐字折行成
+    两行（实机标签盒高 36px，邻行 18px → 行高错位，即 R63 截图 03）；该网格为编辑滑杆/导出
+    滑杆/蒙版滑杆三处共用，现役最长标签即这四个四字词（ImageViewer/MaskPanel 全量扫描）。
+    ▶P3-3——对比视图无任何让位机制：`.editor-panel`（absolute right:20 宽 280，z 30）叠在
+    `.viewer-content` 之上，并排模式 `.editor-side-wrap` 铺满容器（≤95vw），After 窗格右缘
+    伸到面板之下（实机 1440×1000 被盖 251px，R63 报 ~230px 系窗口差异）；Before 标签
+    `top: 12px` 落在 `.viewer-actions`（视口 y 20~66）矩形内被压（R63 截图 07-side.png）。
+  ③ 修法：▶P3-4 首列 44→52px（48px 需求 + 4px 冗余；取「列宽」而非 white-space:nowrap——
+    nowrap 会溢出压到滑杆；也非 max-content——每行是独立网格，随行标签长短不同会失去纵向
+    对齐）；折行消失后行高自然恢复统一。▶P3-3 沿用 R53 让位口径（纯 CSS 几何让位、不动 JS
+    联动）：`.viewer-content:has(.editor-split-wrap), .viewer-content:has(.editor-side-wrap)
+    { max-width: calc(95vw - 320px); margin-right: 320px }`（让位值 = 面板 280 + 右距 20 +
+    呼吸 20；max-width 收窄同一数值 → 居中盒右缘 = 97.5vw − 320，恒小于面板左缘 100vw − 300，
+    对一切视口宽成立）；配套 `.viewer-content:has(.editor-split-wrap) .editor-split-after
+    { min-width: 0 }` 与分屏域 `.viewer-image { max-width: 100% }`，防 95vw 图溢出让位后的
+    容器重新钻回面板下方（并排域已有 `.editor-side-pane .viewer-image` 同款先例）；
+    `.editor-split-label.left` top 12→56 让出工具栏（下缘 64 − 容器顶缘最低 2.5vh → 56 对
+    ≥320px 高窗口全部成立）。产品取舍记录：「面板自动收起 vs 平移视图」中选平移视图——改动面
+    最小（纯 CSS）且保留「边看对比边调参」能力。
+  ④ 回归锁 + 变异验证：新 `tests/unit/styles/editorCompareLayout.test.js` 6 例（P3-4 一例 +
+    P3-3 五例）。P3-4 锁解析 CSS 表达式：首列 ≥ 两消费方（ImageViewer/MaskPanel）全部滑杆
+    label 字面量最大码点数 × 行字号（配置带 `min:` 区别于 pushHistory 等同名非滑杆 label），
+    不复述列宽常量。P3-3 锁：两形态共用一条让位规则、让位值 ≥ 面板宽 + 右距（面板加宽而不改
+    让位 = 重新压叠）、max-width 与 margin 同值、分屏域 min-width:0 + 图上限 100%、Before
+    标签视口 y 下限（top + 2.5%×最小支持窗高 480）≥ 工具栏下缘（top + padding×2 + 图标钮
+    36，shadcn size-9 基线）。变异验证三处各自改坏一次：52→44 → 红「expected 44 to be
+    greater than or equal to 48」；margin 320→280 → 红「280 ≥ 300」+「calc(95vw - 320px)
+    ≠ calc(95vw - 280px)」两例；标签 top 56→44 → 红「56 ≥ 64」；回退复绿 6/6。
+  ⑤ 真机取证：vite preview + 无头 Edge CDP（1440×1000，假桥 + 真实 DOM；同一驱动脚本
+    %TEMP%/pixyang_r68/probe.cjs 跑修复前后各一轮，产物用 git stash 切换、各自 vite build）：
+    白色/黑色色阶标签盒高 36→18（单行，行高与邻行一致）；并排 After 窗格右缘 1359→1045
+    （面板左缘 1108，被盖 251px→0px）；Before 标签与工具栏矩形相交 side true→false、
+    split false（修复后标签 y 顶 35→78，分屏窄内容随让位整体左移 160px 也不再压回）；无横向
+    溢出（scrollW=innerW=1408）。截图 %TEMP%/pixyang_r68/{before,after}-{edit,side,split,
+    panel}.png + {before,after}-report.json（before-side.png 可见 After 右缘没入面板、
+    「白色色/阶」两行、Before 标签压工具栏三缺陷同框）。
+  ⑥ 附带发现/勘正：①分屏（split）对纵向图容器收缩至图宽（fixture 800×1000 → 687px），面板
+    原本就不遮挡；遮挡主现场是并排（铺满容器宽）与横向图分屏（95vw 右缘同样在面板下）——让位
+    规则两形态统一声明，窄内容分屏仅左移居中、无回归；②普通编辑态（toggle）画布右缘仍会部分
+    没入面板之下（非 R63 清单项，属浮动面板设计固有形态），是否也要让位待产品裁决；③Cargo.toml/
+    gen 打包噪声本轮未出现改动。
+  - 验证：vitest 59 文件 / 827 例 ✓（较 R67 +1 文件 +6 例）；lint 0 error / 8 warning（既有
+    基线）✓；typecheck 净 ✓；format:check 净（新测试文件已 prettier 合规）✓；cargo 154 lib +
+    1 golden_audit ✓（本轮 Rust 零改动）；安装包 03:59 重打（PixYang_0.1.0_x64-setup.exe
+    4,105,597 B；R67 版 03:30 为 4,099,758 B），哈希链一手核对：dist 03:59 产物
+    index-Dz8wl2t9.js / index-N03T4aPs.css → 同分钟 release pixyang.exe（16,236,032 B）内嵌
+    资源扫描均 1 命中，R67 的 index-CuB-tm5K.js / index-D1t41p9t.css 与 R66 的
+    index-UzYJcmbA.js 均 0 命中；取证进程（preview/Edge/CDP 端口）已按 PID+端口清杀，
+    dist/parity 夹具已清理；FreeGB 起点 282。
+    提交范围：src/styles/index.css、tests/unit/styles/editorCompareLayout.test.js、
+    AGENTS.md、NIGHTLY_LOG.md。
+  待人工复核：① 普通编辑态（toggle）画布右缘部分没入面板之下是否也要让位（⑥②，产品口径，
+    R63 未列项）；② 对比让位后视图整体左移并让出 320px 宽，是否符合「并排对比可用性」预期——
+    替代方案（对比时自动收起面板）会失去「边看边调」能力，本轮未取；③ Before 标签 top:56 在
+    <320px 高的极矮窗口仍可能压回工具栏，属支持范围外；④ R63 P2-3/P3-2/P3-5/P3-7 与
+    01-full-combo TOL 分档、simulateShaderPixel clamp 漂移等既有挂账维持。
