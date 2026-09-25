@@ -1784,3 +1784,7 @@
   ③ tauriBridge.test 死导入清理（R57 尾巴，lint 11→10 warning 回基线）。
   验证：vitest 829/829；cargo 152+golden；lint 0 error/10 warning（基线）；
   typecheck/build ✓；NSIS 重打（Sep 25 16:54，含 R60-R62）。
+- 2026-09-25 R63 蒙版羽化可视化：径向蒙版选中时叠加径向渐变填充（内圈全量色 → 外缘透明，
+  渐变半径随羽化滑杆实时移动），与既有羽化环线互补——拖羽化手柄可直接看到过渡带宽窄。
+  userSpaceOnUse 坐标系对齐蒙版几何；pointer-events 穿透不挡手柄。蒙版测试 25/25 全过。
+  验证：vitest 829/829；cargo 152+golden；lint 0 error/10 基线；NSIS 重打（Sep 25 17:28）。

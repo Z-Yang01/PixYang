@@ -306,15 +306,43 @@ export default function MaskOverlay({
         ))}
         {draft && shapeEl({ ...draft, id: null }, true)}
         {selected?.type === 'radial' && (
-          <ellipse
-            className="editor-mask-feather-ring"
-            cx={selected.cx}
-            cy={selected.cy}
-            rx={Math.max(0, selected.rx * (1 - (selected.feather || 0)))}
-            ry={Math.max(0, selected.ry * (1 - (selected.feather || 0)))}
-            transform={`rotate(${selected.rotation || 0} ${selected.cx} ${selected.cy})`}
-            vectorEffect="non-scaling-stroke"
-          />
+          <>
+            {/* 羽化过渡可视化：内圈（全量）到外缘（0 权重）的径向渐变 */}
+            <defs>
+              <radialGradient
+                id={`feather-grad-${selected.id}`}
+                gradientUnits="userSpaceOnUse"
+                cx={selected.cx}
+                cy={selected.cy}
+                r={Math.max(0.001, Math.max(selected.rx, selected.ry))}
+              >
+                <stop offset="0" stopColor="rgba(125,211,252,0.22)" />
+                <stop
+                  offset={String(Math.max(0, 1 - (selected.feather || 0)))}
+                  stopColor="rgba(125,211,252,0.22)"
+                />
+                <stop offset="1" stopColor="rgba(125,211,252,0)" />
+              </radialGradient>
+            </defs>
+            <ellipse
+              cx={selected.cx}
+              cy={selected.cy}
+              rx={Math.max(0, selected.rx)}
+              ry={Math.max(0, selected.ry)}
+              transform={`rotate(${selected.rotation || 0} ${selected.cx} ${selected.cy})`}
+              fill={`url(#feather-grad-${selected.id})`}
+              pointerEvents="none"
+            />
+            <ellipse
+              className="editor-mask-feather-ring"
+              cx={selected.cx}
+              cy={selected.cy}
+              rx={Math.max(0, selected.rx * (1 - (selected.feather || 0)))}
+              ry={Math.max(0, selected.ry * (1 - (selected.feather || 0)))}
+              transform={`rotate(${selected.rotation || 0} ${selected.cx} ${selected.cy})`}
+              vectorEffect="non-scaling-stroke"
+            />
+          </>
         )}
       </svg>
       {handles.map((h) => (
