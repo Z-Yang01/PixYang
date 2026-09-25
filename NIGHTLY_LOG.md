@@ -1825,3 +1825,8 @@
   用户感知"编辑面板黑黢黢"的残留根因）。三主题同步提亮至各自 bg-secondary 档
   （深色 rgba(42,44,53)/midnight rgba(22,35,62)/forest rgba(24,42,32)），浅色系已对无需动。
   主题测试 20/20（token 覆盖断言全过，无幽灵 token）。vitest 832/832；NSIS 重打（19:22）。
+- 2026-09-25 R70 滑杆键盘精度：基础滑杆加 Shift+←/→ 粗调（×10 步长，钳量程）与
+  Ctrl+Del/Backspace 回默认值（键盘版双击重置）；Home/End 原生极值保持。键盘调整仍走
+  KEY_GESTURE_MS 收敛窗（连按一条历史）。tooltip 同步三条提示。+1 测试（粗调>初值/
+  回默认=0）。
+  验证：vitest 833/833；lint 0 error/10 基线；typecheck/format/build ✓；NSIS 重打（19:34）。

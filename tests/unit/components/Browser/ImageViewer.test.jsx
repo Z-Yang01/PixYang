@@ -513,6 +513,28 @@ describe('ImageViewer', () => {
     });
   });
 
+  it('编辑模式：滑杆 Shift+方向键粗调与 Ctrl+Del 回默认（R70 键盘精度）', async () => {
+    mockEditBridge();
+    render(<ImageViewer {...baseProps()} />);
+    fireEvent.click(screen.getByTitle(/编辑模式/));
+    await screen.findByText('编辑');
+    const panel = screen.getByText('曝光').closest('.editor-slider-row');
+    const range = panel.querySelector('input[type="range"]');
+    const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+    setter.call(range, '0.1');
+    range.dispatchEvent(new Event('input', { bubbles: true }));
+    // Shift+→ 粗调：0.1 + 10×0.05(默认 step) = 0.6（钳到 step 网格）
+    fireEvent.keyDown(range, { key: 'ArrowRight', shiftKey: true });
+    await vi.waitFor(() => {
+      expect(Number(range.value)).toBeGreaterThan(0.1);
+    });
+    // Ctrl+Delete 回默认 0
+    fireEvent.keyDown(range, { key: 'Delete', ctrlKey: true });
+    await vi.waitFor(() => {
+      expect(Number(range.value)).toBe(0);
+    });
+  });
+
   it('编辑模式：暗角滑杆入参数（overlay 渲染）并可重置', async () => {
     mockEditBridge();
     const { container } = render(<ImageViewer {...baseProps()} />);

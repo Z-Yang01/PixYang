@@ -1988,7 +1988,7 @@ export default function ImageViewer({
             <label
               className="editor-slider-row"
               key={key}
-              title="双击重置该项"
+              title="双击重置该项；Shift+←/→ 粗调；Ctrl+Del 回默认"
               onDoubleClick={() => {
                 const next = { ...editOpsRef.current, [key]: EDIT_DEFAULTS[key] };
                 pushHistory(next, `重置${label}`);
@@ -2017,6 +2017,31 @@ export default function ImageViewer({
                   setEditOps(next);
                   // 键盘调整（无指针拖动）进入手势收敛窗：连续按键只结算一条历史
                   if (!sliderDragRef.current) recordKeyAdjust(next, label);
+                }}
+                onKeyDown={(e) => {
+                  // Shift+←/→：粗调（10 步）；Ctrl+Home/End：直接回默认值（键盘版双击重置）
+                  if (e.shiftKey && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
+                    e.preventDefault();
+                    const dir = e.key === 'ArrowRight' ? 1 : -1;
+                    const jumped = Math.min(
+                      max,
+                      Math.max(min, Number(editOps[key]) + dir * step * 10)
+                    );
+                    const next = { ...editOpsRef.current, [key]: jumped };
+                    setEditOps(next);
+                    if (!sliderDragRef.current) recordKeyAdjust(next, label);
+                    return;
+                  }
+                  if (
+                    e.ctrlKey &&
+                    !e.shiftKey &&
+                    (e.key === 'Home' || e.key === 'Delete' || e.key === 'Backspace')
+                  ) {
+                    e.preventDefault();
+                    const next = { ...editOpsRef.current, [key]: EDIT_DEFAULTS[key] };
+                    pushHistory(next, `重置${label}`);
+                    setEditOps(next);
+                  }
                 }}
               />
               <em>{fmt(editOps[key])}</em>
