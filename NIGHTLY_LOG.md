@@ -1767,3 +1767,14 @@
   文档删除；TAURI_PARITY.md 中对 NIGHTLY_PROGRESS 的历史口径说明保留（勘正性引用）。
   error/ 建档与 UNATTENDED/AGENTS/README 为活文档，全部保留。
   验证：editSchema 测试 6/6。
+- 2026-09-25 R61 冗余深扫（机器化全量 + 逐项核证，本轮零删除）：
+  shared/ 全导出扫描的"无消费"初判经逐项核证几乎全为两类误报：
+  ① 模块内部互供（InPlace 系是 simulateShaderPixel 的对拍基准与 shader 语义源，
+  删除会破坏"预览==导出"测试网）；② 活契约锁（pipelineOrder 的 UNSUPPORTED_STAGES
+  空集断言=全阶段已支持的门禁）。唯一已删项 R60 的 isDefaultEdits。
+  其余核对：electron/ 已删、node_modules 无 sharp/exifr/better-sqlite3 残留、
+  package.json 无遗留字段/依赖、scripts//build/ 空目录无追踪、
+  CSS 编辑器类抽查全部有 JSX 消费、Rust release 构建 0 warning。
+  README "npm run dev 不可用"警示仍有效（shared/*.cjs CJS 限制未变）。
+  结论：当前代码库无可靠可删项，冗余清理收官。
+  验证：vitest 829/829（60 文件）；cargo 152+golden；lint 0 error。
