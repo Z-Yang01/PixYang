@@ -1894,3 +1894,5 @@
   「存储路径、原始路径」，现只有存储路径）——补 UI 属产品口径，本轮不动；③ 网格日期分组头
   按 taken_at 优先而侧栏日期筛选按 import_date，两口径并存导致的「点日期桶看到别的日期头」
   体感是否需要统一（UX 决策）；④ 相册允许重名（镜像语义）是否要加唯一约束。
+
+- 2026-09-25 23:00 R71 开工记录（用户 23:00 前后拍板）：P2-3 亮度掩蔽立项——方案 B（smoothstep 带：高光 w=smoothstep(0.5,1,L)、阴影 w=1-smoothstep(0,0.5,L)，L=Rec.709）+ 高光方向 LR 化（正=提亮）。硬切不设新旧开关（语义升级即用户诉求）。R71 主轮=四端同步实现（previewUniforms/webglPreview/editParams SVG 链仅翻方向/executor.rs 掩蔽算子）+ golden 重锁；R72 验证轮=webgl-parity 全矩阵+TOL 分档重标+NSIS+真机观感。要点：f(c) 力度公式不变只加定位；L 取算子自身输入 luma；Rec.709 精确系与 grading/蒙版一致；SVG 回退链不加掩蔽（设计内分歧，注释标注）。
