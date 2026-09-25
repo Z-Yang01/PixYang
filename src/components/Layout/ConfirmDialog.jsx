@@ -17,6 +17,8 @@ export default function ConfirmDialog({
   danger = false,
   onConfirm,
   onCancel,
+  thirdLabel,
+  onThird,
 }) {
   // radix 的 Action 点击后自带关闭流程会回调 onOpenChange(false)：
   // 不隔离的话「确认」会连带执行一次「取消」
@@ -39,6 +41,18 @@ export default function ConfirmDialog({
           <AlertDialogDescription>{message}</AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
+          {thirdLabel && (
+            <AlertDialogAction
+              className="mr-auto"
+              onClick={(e) => {
+                e.stopPropagation();
+                confirmedRef.current = true;
+                onThird?.();
+              }}
+            >
+              {thirdLabel}
+            </AlertDialogAction>
+          )}
           <AlertDialogCancel onClick={onCancel}>取消</AlertDialogCancel>
           <AlertDialogAction
             className={danger ? 'bg-destructive text-white hover:bg-destructive/90' : ''}

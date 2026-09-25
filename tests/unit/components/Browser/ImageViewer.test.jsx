@@ -343,8 +343,21 @@ describe('ImageViewer', () => {
     // 右旋一次产生变更
     fireEvent.click(screen.getByTitle('右旋 90° (R)'));
     fireEvent.click(container_close());
-    expect(await screen.findByText('放弃未保存的参数编辑？')).toBeInTheDocument();
+    expect(await screen.findByText('有未保存的参数编辑')).toBeInTheDocument();
     fireEvent.click(screen.getByText('放弃编辑'));
+    await vi.waitFor(() => expect(window.pixyang.editCancel).toHaveBeenCalledWith(3));
+  });
+
+  it('编辑模式：退出确认三选——保存并退出（写参数 + editCancel 清底图）', async () => {
+    mockEditBridge();
+    render(<ImageViewer {...baseProps()} />);
+    fireEvent.click(screen.getByTitle(/编辑模式/));
+    await screen.findByText('编辑');
+    fireEvent.click(screen.getByTitle('右旋 90° (R)'));
+    fireEvent.click(container_close());
+    await screen.findByText('有未保存的参数编辑');
+    fireEvent.click(screen.getByText('保存并退出'));
+    await vi.waitFor(() => expect(window.pixyang.saveEdits).toHaveBeenCalled());
     await vi.waitFor(() => expect(window.pixyang.editCancel).toHaveBeenCalledWith(3));
   });
 

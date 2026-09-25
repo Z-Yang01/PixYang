@@ -551,6 +551,33 @@ export default function ImageViewer({
     cleanupEditSession();
   }, [image?.id, editBusy, cleanupEditSession, composeOps]);
 
+  const saveAndExit = useCallback(async () => {
+    if (editBusy) return;
+    setExitConfirm(false);
+    try {
+      const result = await api.saveEdits(image.id, toEditParams(composeOps()), {
+        label: '保存并退出',
+        before: savedBaselineRef.current,
+        after: composeOps(),
+      });
+      if (result?.error) {
+        raiseEditError(friendlyError(result.error), result.error);
+        return;
+      }
+    } catch (e) {
+      raiseEditError(errText('保存失败', e), errRaw('保存失败', e));
+      return;
+    }
+    savedBaselineRef.current = composeOps();
+    api.editCancel(image.id);
+    setEditing(false);
+    cleanupEditSession();
+    setRotation(Number(image?.rotation) || 0);
+    setFlipH(!!image?.flip_h);
+    setFlipV(!!image?.flip_v);
+    toast.success('已保存参数并退出编辑');
+  }, [image, editBusy, cleanupEditSession, composeOps, raiseEditError]);
+
   const discardEditAndExit = useCallback(async () => {
     if (editBusy) return;
     setExitConfirm(false);
@@ -2578,12 +2605,14 @@ export default function ImageViewer({
 
       {exitConfirm && (
         <ConfirmDialog
-          title="放弃未保存的参数编辑？"
-          message="当前调整尚未保存为编辑参数，退出后将丢失（原图不受任何影响）。可先「保存参数」保留调整。"
+          title="有未保存的参数编辑"
+          message="当前调整尚未保存为编辑参数。可保存后退出（原图不动），或放弃本次调整。"
           confirmLabel="放弃编辑"
           danger
           onConfirm={discardEditAndExit}
           onCancel={() => setExitConfirm(false)}
+          thirdLabel="保存并退出"
+          onThird={saveAndExit}
         />
       )}
     </div>

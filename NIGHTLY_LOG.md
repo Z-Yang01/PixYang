@@ -1814,3 +1814,9 @@
   自我发现并修正）+ ImageViewer case（saveParamsRef 中转避免键盘 effect 依赖爆炸，
   两次插位失误由 vitest TDZ 错误即时捕获）+ SHORTCUT_GROUPS 查看器组补条目 + 2 测试。
   验证：vitest 831/831；lint 0 error/10 基线；typecheck/format/build ✓；NSIS 重打（18:42）。
+- 2026-09-25 R68 退出确认三选：编辑脏状态退出（X/Esc）确认框升级为三按钮——
+  保存并退出（新）/ 取消（继续编辑）/ 放弃编辑。ConfirmDialog 加 thirdLabel/onThird
+  可选 props（第三钮左置 mr-auto，confirmedRef 隔离双触发与既有按钮同款）。
+  saveAndExit：saveEdits 落库成功 → editCancel 清底图 → 退出编辑（失败则留在编辑态
+  行内报错）。标题/文案同步调整，1 测试断言更新 + 1 新测试（三选写库+清底图）。
+  验证：vitest 832/832；lint 0 error/10 基线；typecheck/format/build ✓；NSIS 重打（19:02）。
