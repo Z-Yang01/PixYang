@@ -47,11 +47,11 @@
 ## 4. 门禁清单与当前基线
 
 ```
-npm test                # vitest：60 文件 / 838 例
+npm test                # vitest：61 文件 / 849 例
 npm run lint            # 0 error 为准；10 warning 为既有基线（有意设计，勿为消警告而掩盖）
 npm run typecheck       # tsc --noEmit 干净
 npm run format:check    # Prettier 真门禁（R40 起）
-cd src-tauri && CARGO_BUILD_JOBS=1 cargo test --jobs 1   # 155 lib + 1 golden_audit（R71 起基线）
+cd src-tauri && CARGO_BUILD_JOBS=1 cargo test --jobs 1   # 162 lib + 1 golden_audit（R73 起基线）
 npx vite build          # 产物哈希须与本轮源码一致（见 §5）
 ```
 - 覆盖率（可选复验）：`npm run test:coverage`，门槛 statements/lines 75、branches 70、functions 50。

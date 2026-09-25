@@ -2,6 +2,7 @@
 // ImageGrid 冒烟：数据/筛选/勾选来自 galleryStore（zustand），渲染前用 setState 预置。
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, cleanup } from '@testing-library/react';
+import { toast } from 'sonner';
 import ImageGrid from '@/components/Browser/ImageGrid';
 import useGalleryStore from '@/store/galleryStore';
 
@@ -60,7 +61,10 @@ describe('ImageGrid', () => {
       toFileUrls: vi.fn().mockResolvedValue({}),
       toFileUrl: vi.fn().mockResolvedValue(null),
       updateImage: vi.fn().mockResolvedValue(undefined),
-      deleteImage: vi.fn().mockResolvedValue(undefined),
+      deleteImageToTrash: vi
+        .fn()
+        .mockResolvedValue({ id: 1, filename: 'sunset.jpg', filepath: 'C:/pics/sunset.jpg' }),
+      restoreImageFromTrash: vi.fn().mockResolvedValue(null),
       renameImage: vi.fn().mockResolvedValue({}),
       addTagToImage: vi.fn().mockResolvedValue(undefined),
       removeTagFromImage: vi.fn().mockResolvedValue(undefined),
@@ -207,7 +211,7 @@ describe('ImageGrid', () => {
     expect(useGalleryStore.getState().selectedIds.size).toBe(0);
   });
 
-  it('回归：单图删除确认后从勾选集移除该 id（不留陈旧死 id）', async () => {
+  it('回归：单图删除确认后从勾选集移除该 id（不留陈旧死 id）；删除走暂存区通道', async () => {
     seedStore({ images: [makeImage()], totalImages: 1, selectedIds: new Set([1, 999]) });
     const { container } = render(<ImageGrid />);
     await screen.findByText('sunset');
@@ -215,11 +219,55 @@ describe('ImageGrid', () => {
     fireEvent.click(await screen.findByRole('menuitem', { name: /删除/ }));
     fireEvent.click(await screen.findByRole('button', { name: '删除' }));
     await vi.waitFor(() => {
-      expect(window.pixyang.deleteImage).toHaveBeenCalledWith(1);
+      expect(window.pixyang.deleteImageToTrash).toHaveBeenCalledWith(1);
       const sel = useGalleryStore.getState().selectedIds;
       expect(sel.has(1)).toBe(false);
       expect(sel.has(999)).toBe(true);
     });
+  });
+
+  it('回归：删除成功 Toast 提供「撤销」，点击撤销整链还原并刷新（round 73 trash）', async () => {
+    const onImageUpdated = vi.fn();
+    const successSpy = vi.spyOn(toast, 'success').mockImplementation(() => {});
+    seedStore({ images: [makeImage()], totalImages: 1 });
+    const { container } = render(<ImageGrid onImageUpdated={onImageUpdated} />);
+    await screen.findByText('sunset');
+    fireEvent.contextMenu(container.querySelector('.image-card'));
+    fireEvent.click(await screen.findByRole('menuitem', { name: /删除/ }));
+    fireEvent.click(await screen.findByRole('button', { name: '删除' }));
+    await vi.waitFor(() => {
+      expect(successSpy).toHaveBeenCalledWith(
+        '已删除「sunset.jpg」',
+        expect.objectContaining({ action: expect.objectContaining({ label: '撤销' }) })
+      );
+    });
+    try {
+      await successSpy.mock.calls.at(-1)[1].action.onClick();
+      expect(window.pixyang.restoreImageFromTrash).toHaveBeenCalledWith(1);
+      expect(onImageUpdated).toHaveBeenCalledWith();
+    } finally {
+      successSpy.mockRestore();
+    }
+  });
+
+  it('回归：删除失败（文件被占用中止）上错误 Toast，不提供撤销', async () => {
+    const errSpy = vi.spyOn(toast, 'error').mockImplementation(() => {});
+    const successSpy = vi.spyOn(toast, 'success').mockImplementation(() => {});
+    window.pixyang.deleteImageToTrash = vi
+      .fn()
+      .mockRejectedValue(new Error('文件操作失败: 无法移入暂存区（文件可能被占用）'));
+    seedStore({ images: [makeImage()], totalImages: 1 });
+    const { container } = render(<ImageGrid />);
+    await screen.findByText('sunset');
+    fireEvent.contextMenu(container.querySelector('.image-card'));
+    fireEvent.click(await screen.findByRole('menuitem', { name: /删除/ }));
+    fireEvent.click(await screen.findByRole('button', { name: '删除' }));
+    await vi.waitFor(() => {
+      expect(errSpy).toHaveBeenCalledWith('删除失败：无法移入暂存区（文件可能被占用）');
+    });
+    expect(successSpy).not.toHaveBeenCalled();
+    errSpy.mockRestore();
+    successSpy.mockRestore();
   });
 
   it('回归：thumbnail_edit_path 写回后清该图缩略图缓存并重新解析 URL', async () => {

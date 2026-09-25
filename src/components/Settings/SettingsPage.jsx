@@ -457,7 +457,7 @@ export default function SettingsPage({ onSettingsChanged, onImagesChanged }) {
             </Button>
           </div>
           <p className="settings-help">
-            界面设置（主题、网格、间距）修改后需点击「保存」生效；「撤回」可撤销未保存的修改。恢复默认不会改变保存图片地址。
+            界面设置（主题、网格、间距）调整即时预览生效；点击「保存」持久化，退出未保存的调整将还原。「撤回」可撤销未保存的修改。恢复默认不会改变保存图片地址。
           </p>
         </section>
 

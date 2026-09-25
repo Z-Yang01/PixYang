@@ -18,6 +18,7 @@ pub mod render;
 pub mod scan;
 pub mod tags_albums;
 pub mod thumbs;
+pub mod trash;
 pub mod update_image;
 
 use tauri::Manager;
@@ -80,6 +81,8 @@ pub fn run() {
             let default_images_dir = data_dir.join("images");
             let thumbs_dir = data_dir.join("thumbnails");
             let _ = std::fs::create_dir_all(&thumbs_dir);
+            let trash_dir = data_dir.join("trash");
+            let _ = std::fs::create_dir_all(&trash_dir);
 
             // 图片根：设置优先；未设置但旧默认目录（%APPDATA%/pixyang/images）有照片时
             // 沿用旧位置（不搬用户照片，绝对路径仍可访问）
@@ -113,8 +116,26 @@ pub fn run() {
             app.manage(database);
             app.manage(db::AppPaths {
                 thumbs_dir,
+                trash_dir: trash_dir.clone(),
                 default_images_dir,
             });
+            // 暂存区清扫：启动一轮 + 每 24h 一轮（超期 24h 的延迟物理删除，防误删次日可救）
+            {
+                let sweep_dir = trash_dir;
+                std::thread::spawn(move || loop {
+                    let removed = crate::trash::sweep_trash(
+                        &sweep_dir,
+                        std::time::SystemTime::now(),
+                        std::time::Duration::from_secs(crate::trash::RETENTION_SECS),
+                    );
+                    if removed > 0 {
+                        eprintln!("[清扫] 暂存区过期清理 {removed} 个文件");
+                    }
+                    std::thread::sleep(std::time::Duration::from_secs(
+                        crate::trash::RETENTION_SECS,
+                    ));
+                });
+            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -142,6 +163,9 @@ pub fn run() {
             commands::get_album_images,
             commands::delete_image,
             commands::batch_delete_images,
+            commands::delete_image_to_trash,
+            commands::batch_delete_images_to_trash,
+            commands::restore_image_from_trash,
             commands::get_presets,
             commands::create_preset,
             commands::delete_preset,

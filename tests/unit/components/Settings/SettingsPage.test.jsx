@@ -70,6 +70,14 @@ describe('SettingsPage', () => {
     expect(screen.queryByText('保存')).not.toBeInTheDocument();
   });
 
+  it('回归：帮助文案承认即时生效语义，旧「需点击保存生效」矛盾文案不复存在（R-8，round 73）', async () => {
+    renderPage();
+    expect(
+      await screen.findByText(/调整即时预览生效；点击「保存」持久化，退出未保存的调整将还原/)
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/修改后需点击「保存」生效/)).not.toBeInTheDocument();
+  });
+
   it('切换主题进入未保存态，点保存后逐项 setSetting', async () => {
     const onSettingsChanged = vi.fn();
     renderPage({ onSettingsChanged });

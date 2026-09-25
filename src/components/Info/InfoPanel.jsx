@@ -10,6 +10,7 @@ import useGalleryStore from '@/store/galleryStore';
 import { isEnterSubmit } from '@/lib/shortcuts';
 import api from '@/lib/api';
 import { errText, friendlyError } from '@/lib/errorText';
+import { offerDeleteUndo } from '@/lib/trashUndo';
 
 function dirname(p) {
   if (!p) return '';
@@ -179,7 +180,7 @@ export default function InfoPanel({ image, onClose, onImageUpdated, onCountsChan
     const id = image.id;
     let result;
     try {
-      result = await api.deleteImage(id);
+      result = await api.deleteImageToTrash(id);
     } catch (e) {
       console.error('[InfoPanel] 删除失败:', e.message);
       result = { error: errText('删除失败', e) };
@@ -193,6 +194,11 @@ export default function InfoPanel({ image, onClose, onImageUpdated, onCountsChan
     st.setSelectedIds(removeIdsFromSet(st.selectedIds, [id]));
     onClose();
     onImageUpdated?.();
+    if (!result) return;
+    offerDeleteUndo([result], `已删除「${result.filename || image.filename}」`, {
+      onRestored: () => onImageUpdated?.(),
+      onFailed: (n, msg) => toast.error(msg || `撤销失败（${n} 张）`),
+    });
   };
 
   const unusedTags = allTags.filter((t) => !imgTags.find((it) => it.id === t.id));

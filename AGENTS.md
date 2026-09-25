@@ -32,6 +32,8 @@ src-tauri/        Rust/Tauri 后端（唯一运行时桌面端）
                   高光带[0.5,1] smoothstep，高光方向 LR 惯例 +提亮/−压暗），f 力度公式不变、
                   段末单次 trunc，负阴影不再走 negate 三次量化复合）
   src/thumbs.rs   双档缩略图/EXIF 转正/NEF 预览段提取（image-rs+kamadak-exif）
+  src/trash.rs    删除暂存区（trash）：用户手动删除延迟物理化（移入 `{id}__` 前缀改名 +
+                  manifest 全列快照 / 撤销整链还原 / 启动+每24h 清扫超期 24h 物理删）
   src/exif_relay.rs EXIF 回接（JPEG APP1/PNG eXIf 字节级注放）
   src/db.rs       rusqlite 连接/settings/删除通道（与旧版共用 pixyang.db，schema 自举+快照迁移）
   src/file_ops.rs 导入编排/改名（NEF 避让收养、双回滚）
@@ -125,6 +127,19 @@ tests/            vitest（node 环境 + per-file happy-dom pragma）
 - 修改导入日期（`updateImage`）会移动 JPG 与配对 NEF 到新日期目录。
 - `taken_at`（拍摄时间，`YYYY-MM-DD HH:MM`，精确到分钟）由 EXIF `DateTimeOriginal` 提取，仅对新导入图片生效，无 EXIF 时间为空；日期排序优先按 `taken_at`，空值回退 `import_date`。
 
+## 删除暂存区（trash）约定（round 73）
+
+- 仅**用户手动删除**走暂存区：网格/详情面板单删（`deleteImageToTrash`）与勾选批量删（`batchDeleteImagesToTrash`）——
+  库记录先删、磁盘文件移入 `<数据目录>/trash/`，Toast 6s「撤销」窗口内 `restoreImageFromTrash(id)` 按
+  manifest（`{id}__record.json`，全 28 列 + 标签/相册/编辑/历史关联快照）整链还原；配对 NEF 与派生缩略图随迁随还。
+- **直删通道保持现状**：「损坏记录清理」（`delete_broken_records`）、「重复删除」（设置页走 `batchDeleteImages`）、
+  NEF 收养等内部 `delete_image_record` 调用点不进 trash；`db::delete_image`/`batch_delete_images` 仍是物理删除原语。
+- trash 文件名 `{id}__原名` / `{id}__raw__原名` / `{id}__thumb__派生名`；**移入时 mtime 归一到当下**（rename/copy
+  保留原图 mtime，老照片会被按 mtime 判期的清扫立即误删）；清扫在启动 + 每 24h 各一轮，物理删除超期 24h 文件。
+- 冲突策略：还原时磁盘同名占用 → 新文件绝不动，暂存文件以「stem (恢复N).ext」改名回位并同步更新记录
+  filename/filepath（NEF 跟随还原后主文件主名）；库内 filepath 已被新导入占用 → 整体拒绝撤销（中文报错），
+  暂存文件留存待清扫。占位测试用 `share_mode(0)` 独占打开模拟文件占用。
+
 ## Rust/Tauri 约定
 
 - Tauri/Rust 为唯一桌面后端（Electron 层已于 2026-09-21 R36 删除）。内核分层保持：
@@ -176,7 +191,7 @@ tests/            vitest（node 环境 + per-file happy-dom pragma）
 
 ## 验证
 
-- 测试：`npm test`（vitest，60 个文件 / 838 例；含 R37 桥接全通道契约、R51/R52 主题↔CSS 对拍、R53 右栏让位契约、R54/R55 错误文案中文化、R56 Rust 注册表↔桥命令对拍 + 全仓 `${e.message}` 直插与裸 `x.error` 上屏扫描、R57 主题双事实源对拍（`:root`↔块↔`@theme inline`↔色卡）、R64 曲线 LUT 恒等通道兜底回归锁、R65 负阴影指数对齐回归锁（uniform 1/e 值锁 + SVG 链指数锁；像素锁已随 R71 掩蔽化重导）、R66 预设/粘贴字段域一致性回归锁（预设只覆盖显式字段 + 粘贴与复制/批量同步同口径）、R67 键盘调参历史收敛回归锁（连调 5 次→1 条 / sat=0 调 hue→0 条 / blur 即结算）与新会话保存态回归锁（未保存→已保存 / 回读→已保存）、R68 滑杆标签列宽与对比视图让位契约、R69 高光乘后 clamp 契约模型对齐回归锁（slope>1 饱和区先回 [0,1] 再进暗角/饱和度，代表点手算写死；R71 起该锁经掩蔽 mix 重导）、R70 viewerInfoRail EOL 归一回归锁（CRLF 文本输入也命中让位规则，防 autocrlf 工作树多行正则失配）、R71 高光/阴影亮度掩蔽回归锁（掩蔽带端点 uniform 锁 + 暗区动/亮区不动双向分区锁 + 高光 LR 方向锁 + 像素代表点手算写死 + GLSL mix 源串锁 + 掩蔽 uniform 上传锁；Rust 侧手算表与分区/方向锁）、R74 搜索命中原始路径回归锁（matchesListFilters haystack 含 original_path，与 SQL 同口径防轻量写回误剪枝））；像素 golden 门禁在 cargo 侧 `golden_audit`（基线 2026-09-25 R71 随掩蔽语义重锁，Δ 审计归档 tests/golden/r71-tone-mask-relock-audit.md：恰 5 例 tone 用例变化、余 18 例 Δ=0），Rust 单测 155 例（R71 起 tone 掩蔽手算表/分区锁替旧 libvips 探测表 1 例→2 例）；覆盖率：`npm run test:coverage`，门槛配置在 `vitest.config.js`（statements/lines 75、branches 70、functions 50）。
+- 测试：`npm test`（vitest，61 个文件 / 849 例；含 R37 桥接全通道契约、R51/R52 主题↔CSS 对拍、R53 右栏让位契约、R54/R55 错误文案中文化、R56 Rust 注册表↔桥命令对拍 + 全仓 `${e.message}` 直插与裸 `x.error` 上屏扫描、R57 主题双事实源对拍（`:root`↔块↔`@theme inline`↔色卡）、R64 曲线 LUT 恒等通道兜底回归锁、R65 负阴影指数对齐回归锁（uniform 1/e 值锁 + SVG 链指数锁；像素锁已随 R71 掩蔽化重导）、R66 预设/粘贴字段域一致性回归锁（预设只覆盖显式字段 + 粘贴与复制/批量同步同口径）、R67 键盘调参历史收敛回归锁（连调 5 次→1 条 / sat=0 调 hue→0 条 / blur 即结算）与新会话保存态回归锁（未保存→已保存 / 回读→已保存）、R68 滑杆标签列宽与对比视图让位契约、R69 高光乘后 clamp 契约模型对齐回归锁（slope>1 饱和区先回 [0,1] 再进暗角/饱和度，代表点手算写死；R71 起该锁经掩蔽 mix 重导）、R70 viewerInfoRail EOL 归一回归锁（CRLF 文本输入也命中让位规则，防 autocrlf 工作树多行正则失配）、R71 高光/阴影亮度掩蔽回归锁（掩蔽带端点 uniform 锁 + 暗区动/亮区不动双向分区锁 + 高光 LR 方向锁 + 像素代表点手算写死 + GLSL mix 源串锁 + 掩蔽 uniform 上传锁；Rust 侧手算表与分区/方向锁）、R74 搜索命中原始路径回归锁（matchesListFilters haystack 含 original_path，与 SQL 同口径防轻量写回误剪枝）、R73 删除暂存区回归锁（trashUndo Toast 6s「撤销」语义与逐行还原调用链 + 单图/批量删除走 trash 通道不走直删 + 设置页 R-8 即时生效文案锁）；像素 golden 门禁在 cargo 侧 `golden_audit`（基线 2026-09-25 R71 随掩蔽语义重锁，Δ 审计归档 tests/golden/r71-tone-mask-relock-audit.md：恰 5 例 tone 用例变化、余 18 例 Δ=0），Rust 单测 162 例（R73 起 +7 trash 锁：移入/还原/NEF 配对/磁盘冲突改名/库冲突拒绝/清扫/占用中止）；覆盖率：`npm run test:coverage`，门槛配置在 `vitest.config.js`（statements/lines 75、branches 70、functions 50）。
 - Lint：`npm run lint`（ESLint flat config，`eslint.config.mjs`）；0 error 为准，warning 不阻塞。
 - 类型检查：`npm run typecheck`（tsc --noEmit，覆盖 src 下 TS/TSX）。
 - 格式检查：`npm run format:check`（Prettier 基线已于 R40 全仓落库，改动后的文件须保持 prettier 合规；历史 `*.md` 与 `src-tauri/gen/` 在 `.prettierignore` 豁免）。

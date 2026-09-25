@@ -11,6 +11,7 @@ use crate::progress;
 use crate::scan;
 use crate::tags_albums;
 use crate::thumbs;
+use crate::trash;
 use crate::update_image;
 use serde::Serialize;
 use serde_json::{json, Value};
@@ -1138,6 +1139,61 @@ pub async fn batch_delete_images(
             "批量删除失败",
             db::batch_delete_images(&conn, &ids, &paths.thumbs_dir),
         )
+    })
+    .await
+    .map_err(|e| format!("后台任务失败：{}", err_cn::text(&e)))?
+}
+
+// ── 删除暂存区通道（round 73）：用户手动删除走延迟物理化，可撤销；直删通道保持现状 ──
+
+#[tauri::command]
+pub async fn delete_image_to_trash(
+    db: State<'_, Db>,
+    paths: State<'_, AppPaths>,
+    id: i64,
+) -> Result<Option<images_query::ImageRow>, String> {
+    let db = db.inner().clone();
+    let paths = paths.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let conn = db.write_lock();
+        trash::delete_image_to_trash_core(&conn, id, &paths.thumbs_dir, &paths.trash_dir)
+            .map_err(|e| err_cn::text(&e))
+    })
+    .await
+    .map_err(|e| format!("后台任务失败：{}", err_cn::text(&e)))?
+}
+
+#[tauri::command]
+pub async fn batch_delete_images_to_trash(
+    db: State<'_, Db>,
+    paths: State<'_, AppPaths>,
+    ids: Vec<i64>,
+) -> Result<Value, String> {
+    let db = db.inner().clone();
+    let paths = paths.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let conn = db.write_lock();
+        ok_or_error_value(
+            "批量删除失败",
+            trash::batch_delete_images_to_trash_core(&conn, &ids, &paths.thumbs_dir, &paths.trash_dir),
+        )
+    })
+    .await
+    .map_err(|e| format!("后台任务失败：{}", err_cn::text(&e)))?
+}
+
+#[tauri::command]
+pub async fn restore_image_from_trash(
+    db: State<'_, Db>,
+    paths: State<'_, AppPaths>,
+    id: i64,
+) -> Result<(), String> {
+    let db = db.inner().clone();
+    let paths = paths.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let conn = db.write_lock();
+        trash::restore_image_from_trash_core(&conn, id, &paths.thumbs_dir, &paths.trash_dir)
+            .map_err(|e| err_cn::text(&e))
     })
     .await
     .map_err(|e| format!("后台任务失败：{}", err_cn::text(&e)))?

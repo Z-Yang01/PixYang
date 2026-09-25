@@ -434,10 +434,11 @@ pub fn default_db_path() -> PathBuf {
     resolve_data_dir().join("pixyang.db")
 }
 
-/// 托管状态：连接 + 宿主派生路径（缩略图目录、默认图片根）
+/// 托管状态：连接 + 宿主派生路径（缩略图目录、删除暂存区、默认图片根）
 #[derive(Clone)]
 pub struct AppPaths {
     pub thumbs_dir: PathBuf,
+    pub trash_dir: PathBuf,
     pub default_images_dir: PathBuf,
 }
 

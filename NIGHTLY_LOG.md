@@ -2023,3 +2023,57 @@
   待人工复核：① SVG 回退链无掩蔽的设计内分歧（R71②，维持）；② 高光滑杆 tooltip 方向语义文案
     （R71④，维持）；③ R63 P3-2/P3-5/P3-7 与既有挂账维持；④ 本轮首跑 vitest 1 例非复现红若再现，
     建议下一轮用 --reporter=verbose 全量捕获定位（无本-round 因果证据，不立案）。
+- 2026-09-26 01:08 R73 删除延迟物理化可撤销（trash 暂存区）+ 设置页 R-8 文案收口（round 73·用户拍板轻量替代）：
+  ① 需求/裁决来源：用户拍板两项——删除可撤销选「轻量替代先行」（非完整回收站：删除确认后延迟物理删除，
+    `<数据目录>/trash/` 暂存 + Toast「已删除 · 撤销」5-8 秒 + 24h 保留清扫，设置页不加开关）；R-8 设置页文案
+    选「A 承认即时 + 改文案」（零行为改动纯文案）。
+  ② 根因（取证）：`db.rs` delete_image/batch_delete_images 确认后直接删文件+记录+缩略图，全应用唯一不可逆
+    破坏性动作；`SettingsPage.jsx` 草稿每变即 applyPreview 即时生效，但 :460 帮助文案写「修改后需点击『保存』
+    生效」——文案与行为矛盾（R61.5 挂账）。
+  ③ 修法：新模块 `src-tauri/src/trash.rs`（移入/还原/清扫三内核）+ 3 条新命令 `delete_image_to_trash`/
+    `batch_delete_images_to_trash`/`restore_image_from_trash`（桥接/api/契约表同步注册）。要点：删除只删库记录，
+    磁盘文件（原图+配对 NEF+双档缩略图/编辑派生 6 件）以 `{id}__` 前缀改名移入 `<数据目录>/trash/`（rename 优先、
+    跨卷回退 copy+remove）；**移入时 mtime 归一到当下**（rename/CopyFileEx 保留原图 mtime，老照片会被按 mtime
+    判期的清扫立即误删）；manifest `{id}__record.json` 落盘 images 全 28 列 + 标签/相册/编辑/历史关联快照
+    （undo 不能依赖前端回传行：get_image_by_id 投影缺 thumbnail_edit_path/hash/flag）；还原按 manifest 整链
+    回插，磁盘同名占用→新文件绝不动、暂存文件「stem (恢复N).ext」改名回位并同步记录 filename/filepath
+    （NEF 跟随还原后主文件主名），库内 filepath 被新导入占用→整体拒绝（中文报错）暂存留存待清扫；
+    清扫启动+每 24h 各一轮（sweep_trash 按 mtime，metadata 不可读视为未过期宁留勿删）。前端三删除点
+    （ImageGrid/InfoPanel/useBatchActions）改走 trash 通道，`src/lib/trashUndo.js` 统一「已删除…」+
+    duration 6000ms「撤销」动作（逐行按 id 还原→loadImages/loadStats/loadAppData 或 onImageUpdated 刷新）；
+    **「损坏记录清理」「重复删除」等其它删除调用点保持现状直删**（评估：二者走独立命令 delete_broken_records/
+    batch_delete_images，本设计天然隔离零改动；db::delete_image/batch_delete_images 保留为直删原语，其中单删
+    命令现无前端消费者，属契约面保留）。设置页文案改「调整即时预览生效；点击「保存」持久化，退出未保存的
+    调整将还原。」（引号沿用全文「」体例，语义与任务书一致）。
+  ④ 回归锁 + 变异验证：vitest +11（契约表 3 通道锁、trashUndo 4 例（6s 窗口界/撤销逐行还原/部分失败分流/
+    全失败兜底）、ImageGrid +2（删除走 trash 通道 + Toast 撤销点击还原刷新 + 占用中止错误无撤销）、
+    InfoPanel +1（同撤销链）、批量删除成功改锁 sonner「撤销」Toast、设置页新文案在/旧文案不在 1 例）；
+    cargo +7 trash 锁（移入暂存+manifest 保全列/还原记录文件关联全回位/磁盘冲突改名不覆盖/库冲突拒绝留存/
+    清扫超期物理删/批量 ghost 跳过+直删通道对照/占用中止 share_mode(0)）。变异三处各改坏一次→红→回退复绿：
+    M1 move_image_to_trash 空转 → 7 红；M2 还原跳过原图回位 → 恰 2 红（两还原锁，归因干净）；
+    M3 清扫 retention→0 → 恰 1 红（清扫锁）；复绿 7/7。
+  ⑤ 真机取证：未实机执行删除链（红线：真实库只读、禁 delete；undo 实机验证须临时库，见待人工复核②），
+    通道级证据以单测/契约锁 + NSIS 产物哈希链代证；真机取证建议步骤已写入报告转交。
+  ⑥ 附带发现/勘正：①undo 快照含编辑关联属设计内扩展（只还 images 行会丢已存编辑参数，与「可撤销」矛盾）；
+    ②InfoPanel 单删 reject 原为未捕获 unhandled rejection，本轮顺手 try/catch 上中文 toast（ImageGrid 同步）；
+    ③自动增量 id 不复用（AUTOINCREMENT），同一 id 不会二次入 trash，`{id}__` 命名无碰撞。
+  - 验证：vitest 61 文件 / **849** 例（838+11）✓；lint 0 error / 10 warning（既有基线）✓；typecheck 净 ✓；
+    format:check 净（2 文件 prettier 复验）✓；cargo **162** lib（155+7）+ 1 golden_audit ✓；webgl-parity 基线
+    8 例 PASS（缺省 6+分档 2）全数字与 R72 定版逐位一致（本修复不涉渲染数学）✓；安装包
+    PixYang_0.1.0_x64-setup.exe mtime 2026-09-26 01:05:41 / 4,130,710 字节（R71 包 4,085,993 / 23:27:23），
+    哈希链一手核对：dist 引用 index-CWsfjPqW.js / index-BRVGMQ2R.css 在 release pixyang.exe 均 1 命中，
+    index-DzCvnQ-B.js（R71-R72 旧 JS）0 命中；FreeGB 281；工作树仅本轮点名文件（无 tauri 打包噪声）。
+    提交范围：src-tauri/src/trash.rs（新）、src-tauri/src/{db,lib,commands}.rs、src/lib/{tauriBridge,api}.js、
+    src/lib/trashUndo.js（新）、src/components/Browser/ImageGrid.jsx、src/components/Info/InfoPanel.jsx、
+    src/hooks/useBatchActions.js、src/components/Settings/SettingsPage.jsx、tests/unit/lib/{trashUndo.test.js（新）,
+    apiTauriContract.test.js}、tests/unit/components/Browser/ImageGrid.test.jsx、
+    tests/unit/components/Info/InfoPanel.extra.test.jsx、tests/unit/hooks/hooks.test.jsx、
+    tests/unit/components/Settings/SettingsPage.test.jsx、AGENTS.md、UNATTENDED.md（基线 838→849/155→162）、
+    NIGHTLY_LOG.md。
+  待人工复核：① trash 撤销窗口 6000ms/保留 24h/「(恢复N)」改名文案是否合意（均可后调，改动点已集中）；
+    ② 实机 undo 全链验证须在临时库上做（建议：tauri:dev + CDP，images_root 指向含 2-3 张拷贝图的临时目录，
+    UI 删除→查 trash 目录→点撤销→核对文件回位与记录回库；真实库受红线保护不可试删）；
+    ③ 批量删除「部分失败」分支仍为纯错误 toast 不带撤销（成功行也可撤，暂未做混合提示，属产品口径）；
+    ④ 设置页未加 trash 开关（用户拍板不加；后续如需「永久删除」二级确认入口属新裁决）；
+    ⑤ db::delete_image（单删直删命令）现无前端消费者，保留为契约面/直删原语，若裁决「冗余清理」须连同
+    契约表一起评估；⑥ R63 P3-2/P3-5/P3-7 与既有挂账维持。

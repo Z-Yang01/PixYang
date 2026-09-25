@@ -67,7 +67,10 @@ describe('InfoPanel（补充：EXIF 全分支/标签操作/删除/评分收藏�
       updateImage: vi.fn().mockResolvedValue(undefined),
       renameImage: vi.fn().mockResolvedValue({ newFilename: 'x.jpg' }),
       openPath: vi.fn().mockResolvedValue(undefined),
-      deleteImage: vi.fn().mockResolvedValue(undefined),
+      deleteImageToTrash: vi
+        .fn()
+        .mockResolvedValue({ id: 9, filename: 'sunset.jpg', filepath: testImage.filepath }),
+      restoreImageFromTrash: vi.fn().mockResolvedValue(null),
     };
   });
 
@@ -240,7 +243,7 @@ describe('InfoPanel（补充：EXIF 全分支/标签操作/删除/评分收藏�
     expect(screen.getByDisplayValue('sunset.jpg')).toBeInTheDocument();
   });
 
-  it('删除图片：取消不删除；确认后删除并回调', async () => {
+  it('删除图片：取消不删除；确认后删除并回调（走暂存区通道）', async () => {
     const onClose = vi.fn();
     const onImageUpdated = vi.fn();
     renderPanel({ onClose, onImageUpdated });
@@ -251,17 +254,39 @@ describe('InfoPanel（补充：EXIF 全分支/标签操作/删除/评分收藏�
     await vi.waitFor(() => {
       expect(screen.queryByRole('alertdialog', { name: '删除图片' })).not.toBeInTheDocument();
     });
-    expect(window.pixyang.deleteImage).not.toHaveBeenCalled();
+    expect(window.pixyang.deleteImageToTrash).not.toHaveBeenCalled();
 
     // 重新打开并确认删除
     fireEvent.click(screen.getByTitle('删除图片'));
     const dialog2 = await deleteDialog();
     fireEvent.click(within(dialog2).getByText('删除'));
     await vi.waitFor(() => {
-      expect(window.pixyang.deleteImage).toHaveBeenCalledWith(9);
+      expect(window.pixyang.deleteImageToTrash).toHaveBeenCalledWith(9);
       expect(onClose).toHaveBeenCalled();
       expect(onImageUpdated).toHaveBeenCalled();
     });
+  });
+
+  it('删除成功 Toast 提供「撤销」：点击撤销按 id 还原并刷新（round 73 trash）', async () => {
+    const successSpy = vi.spyOn(toast, 'success').mockImplementation(() => {});
+    const onImageUpdated = vi.fn();
+    try {
+      renderPanel({ onImageUpdated });
+      fireEvent.click(screen.getByTitle('删除图片'));
+      const dialog = await deleteDialog();
+      fireEvent.click(within(dialog).getByText('删除'));
+      await vi.waitFor(() => {
+        expect(successSpy).toHaveBeenCalledWith(
+          '已删除「sunset.jpg」',
+          expect.objectContaining({ action: expect.objectContaining({ label: '撤销' }) })
+        );
+      });
+      await successSpy.mock.calls.at(-1)[1].action.onClick();
+      expect(window.pixyang.restoreImageFromTrash).toHaveBeenCalledWith(9);
+      expect(onImageUpdated).toHaveBeenCalledTimes(2); // 删除后 + 撤销后各一次
+    } finally {
+      successSpy.mockRestore();
+    }
   });
 
   it('删除成功：勾选集剪枝该 id，批量操作不打向死 id（审查批 8 Q-10）', async () => {
@@ -273,7 +298,7 @@ describe('InfoPanel（补充：EXIF 全分支/标签操作/删除/评分收藏�
       const dialog = await deleteDialog();
       fireEvent.click(within(dialog).getByText('删除'));
       await vi.waitFor(() => {
-        expect(window.pixyang.deleteImage).toHaveBeenCalledWith(9);
+        expect(window.pixyang.deleteImageToTrash).toHaveBeenCalledWith(9);
         expect([...useGalleryStore.getState().selectedIds]).toEqual([10]);
         expect(onImageUpdated).toHaveBeenCalled();
       });
@@ -285,7 +310,7 @@ describe('InfoPanel（补充：EXIF 全分支/标签操作/删除/评分收藏�
   it('删除失败（{error}/reject）：toast 可见且面板不关闭（审查批 8 Q-09）', async () => {
     const errSpy = vi.spyOn(toast, 'error').mockImplementation(() => {});
     try {
-      window.pixyang.deleteImage.mockResolvedValueOnce({ error: '文件被占用' });
+      window.pixyang.deleteImageToTrash.mockResolvedValueOnce({ error: '文件被占用' });
       const onClose = vi.fn();
       renderPanel({ onClose });
       fireEvent.click(screen.getByTitle('删除图片'));
@@ -297,7 +322,7 @@ describe('InfoPanel（补充：EXIF 全分支/标签操作/删除/评分收藏�
       expect(onClose).not.toHaveBeenCalled();
 
       errSpy.mockClear();
-      window.pixyang.deleteImage = vi
+      window.pixyang.deleteImageToTrash = vi
         .fn()
         .mockRejectedValueOnce(new Error('文件操作失败: Os { code: 5, kind: PermissionDenied }'));
       fireEvent.click(screen.getByTitle('删除图片'));

@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, fireEvent, cleanup, waitFor, act } from '@testing-library/react';
+import { toast } from 'sonner';
 import useGlobalShortcuts from '@/hooks/useGlobalShortcuts';
 import useGalleryData from '@/hooks/useGalleryData';
 import useBatchActions from '@/hooks/useBatchActions';
@@ -337,7 +338,7 @@ describe('useBatchActions 异步收尾守卫', () => {
       loadStats: vi.fn(async () => {}),
       loadAppData: vi.fn(async () => {}),
     });
-    window.pixyang.batchDeleteImages = vi
+    window.pixyang.batchDeleteImagesToTrash = vi
       .fn()
       .mockRejectedValue(new Error('文件操作失败: Os { code: 5, kind: PermissionDenied }'));
     render(<GuardHarness />);
@@ -353,12 +354,12 @@ describe('useBatchActions 异步收尾守卫', () => {
   });
 
   it('批量删除：勾选集已空时早退，不发 IPC', async () => {
-    window.pixyang.batchDeleteImages = vi.fn();
+    window.pixyang.batchDeleteImagesToTrash = vi.fn();
     render(<GuardHarness />);
     await act(async () => {
       await out.current.executeBatchDelete();
     });
-    expect(window.pixyang.batchDeleteImages).not.toHaveBeenCalled();
+    expect(window.pixyang.batchDeleteImagesToTrash).not.toHaveBeenCalled();
   });
 
   it('批量更新：updateImages reject 转 error toast，列表不本地假更新', async () => {
@@ -405,7 +406,7 @@ describe('useBatchActions 异步收尾守卫', () => {
       loadStats: vi.fn(async () => {}),
       loadAppData: vi.fn(async () => {}),
     });
-    window.pixyang.batchDeleteImages = vi.fn().mockResolvedValue([{ id: 1 }]);
+    window.pixyang.batchDeleteImagesToTrash = vi.fn().mockResolvedValue([{ id: 1 }]);
     render(<GuardHarness />);
     await act(async () => {
       await out.current.executeBatchDelete();
@@ -415,26 +416,51 @@ describe('useBatchActions 异步收尾守卫', () => {
     expect(loadImages).toHaveBeenCalledWith();
   });
 
-  it('批量删除全部成功仍按 deletedCount 播报（对照组）', async () => {
+  it('批量删除全部成功：Toast 提供「撤销」，点击撤销逐行还原并重查列表（round 73 trash）', async () => {
+    const loadImages = vi.fn(async () => {});
+    const loadStats = vi.fn(async () => {});
+    const loadAppData = vi.fn(async () => {});
     useGalleryStore.setState({
       selectedIds: new Set([1, 2]),
       totalImages: 5,
       images: [],
-      loadImages: vi.fn(async () => {}),
-      loadStats: vi.fn(async () => {}),
-      loadAppData: vi.fn(async () => {}),
+      loadImages,
+      loadStats,
+      loadAppData,
     });
-    window.pixyang.batchDeleteImages = vi.fn().mockResolvedValue([{ id: 1 }, { id: 2 }]);
+    window.pixyang.batchDeleteImagesToTrash = vi.fn().mockResolvedValue([
+      { id: 1, filename: 'a.jpg' },
+      { id: 2, filename: 'b.jpg' },
+    ]);
+    window.pixyang.restoreImageFromTrash = vi.fn().mockResolvedValue(null);
+    const successSpy = vi.spyOn(toast, 'success').mockImplementation(() => {});
     render(<GuardHarness />);
-    await act(async () => {
-      await out.current.executeBatchDelete();
-    });
-    expect(showToast).toHaveBeenCalledWith('已删除 2 张图片', 'success');
+    try {
+      await act(async () => {
+        await out.current.executeBatchDelete();
+      });
+      expect(showToast).not.toHaveBeenCalledWith('已删除 2 张图片', 'success');
+      expect(successSpy).toHaveBeenCalledWith(
+        '已删除 2 张图片',
+        expect.objectContaining({ action: expect.objectContaining({ label: '撤销' }) })
+      );
+      await act(async () => {
+        await successSpy.mock.calls.at(-1)[1].action.onClick();
+      });
+      expect(window.pixyang.restoreImageFromTrash).toHaveBeenCalledTimes(2);
+      expect(window.pixyang.restoreImageFromTrash).toHaveBeenNthCalledWith(1, 1);
+      expect(window.pixyang.restoreImageFromTrash).toHaveBeenNthCalledWith(2, 2);
+      expect(loadImages).toHaveBeenCalledWith();
+      expect(loadStats).toHaveBeenCalled();
+      expect(loadAppData).toHaveBeenCalled();
+    } finally {
+      successSpy.mockRestore();
+    }
   });
 
   it('删除在途再次触发被互斥吞掉：IPC 只发一次（批 8 Q-03）', async () => {
     let resolveDel;
-    window.pixyang.batchDeleteImages = vi
+    window.pixyang.batchDeleteImagesToTrash = vi
       .fn()
       .mockImplementationOnce(
         () =>
@@ -461,13 +487,13 @@ describe('useBatchActions 异步收尾守卫', () => {
     await act(async () => {
       await Promise.all([t1, t2]);
     });
-    expect(window.pixyang.batchDeleteImages).toHaveBeenCalledTimes(1);
+    expect(window.pixyang.batchDeleteImagesToTrash).toHaveBeenCalledTimes(1);
     // 第一轮收尾完成后互斥释放：确认框卸载重开场景可再次发起
     useGalleryStore.setState({ selectedIds: new Set([7]) });
     await act(async () => {
       await out.current.executeBatchDelete();
     });
-    expect(window.pixyang.batchDeleteImages).toHaveBeenCalledTimes(2);
+    expect(window.pixyang.batchDeleteImagesToTrash).toHaveBeenCalledTimes(2);
   });
 
   it('批量打标：{error}/reject 可见且不动 appData；计数 0 不误判失败（批 8 Q-08）', async () => {

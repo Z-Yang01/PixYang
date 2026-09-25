@@ -2,7 +2,8 @@ import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { ImageOff } from 'lucide-react';
-import { friendlyError } from '@/lib/errorText';
+import { friendlyError, errText } from '@/lib/errorText';
+import { offerDeleteUndo } from '@/lib/trashUndo';
 import {
   groupImagesByDate,
   pageSizeOf,
@@ -393,9 +394,23 @@ export default function ImageGrid({
     const image = deleteTarget;
     setDeleteTarget(null);
     if (!image || !api.isBridgeAvailable()) return;
-    await api.deleteImage(image.id);
+    let result;
+    try {
+      result = await api.deleteImageToTrash(image.id);
+    } catch (e) {
+      result = { error: errText('删除失败', e) };
+    }
     setSelectedIds(removeIdsFromSet(selectedIdsRef.current, [image.id]));
     onImageUpdated?.();
+    if (result?.error) {
+      toast.error(friendlyError(result.error));
+      return;
+    }
+    if (!result) return;
+    offerDeleteUndo([result], `已删除「${image.filename}」`, {
+      onRestored: () => onImageUpdated?.(),
+      onFailed: (n, msg) => toast.error(msg || `撤销失败（${n} 张）`),
+    });
   };
 
   const handleToggleFavorite = useCallback(

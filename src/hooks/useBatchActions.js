@@ -5,6 +5,7 @@ import useGalleryStore from '../store/galleryStore';
 import { toEditParams } from '../lib/editParams';
 import { pageAfterDelete, removeIdsFromSet } from '../lib/gallery';
 import { errText, friendlyError } from '../lib/errorText';
+import { offerDeleteUndo } from '../lib/trashUndo';
 
 // 批量操作（勾选集驱动）：全选/导出/打标/评分收藏/删除确认 + 批量同步编辑参数。
 // 数据与勾选集都从 galleryStore 读取，弹层确认状态（pendingBatchAction）由本 hook 持有。
@@ -229,14 +230,14 @@ export default function useBatchActions({ showToast }) {
       // 兜异常：DB 层未预期错误仍会 reject，不接住的话确认框永久挂起（弹层卡死）
       let results;
       try {
-        results = await api.batchDeleteImages(deletedIds);
+        results = await api.batchDeleteImagesToTrash(deletedIds);
       } catch (e) {
         console.error('[batch] 批量删除失败:', e.message);
         results = { error: errText('批量删除失败', e) };
       }
       store.clearSelection();
       setPendingBatchAction(null);
-      // batchDeleteImages 只回推成功行（失败行不回推、无 error 元素）：
+      // batchDeleteImagesToTrash 只回推成功行（失败行不回推、无 error 元素）：
       // 成功数 = 返回长度，失败数 = 请求数 − 成功数；ghost id 也计入失败而非静默成功（审查批 8 Q-02）
       const batchError = !Array.isArray(results) && results?.error;
       const list = Array.isArray(results) ? results : [];
@@ -247,7 +248,13 @@ export default function useBatchActions({ showToast }) {
       } else if (failedCount > 0) {
         showToast(`已删除 ${okCount} 张，${failedCount} 张失败（文件可能被占用）`, 'error');
       } else {
-        showToast(`已删除 ${deletedCount} 张图片`, 'success');
+        offerDeleteUndo(list, `已删除 ${deletedCount} 张图片`, {
+          onRestored: async () => {
+            const s2 = useGalleryStore.getState();
+            await Promise.all([s2.loadImages(), s2.loadStats(), s2.loadAppData()]);
+          },
+          onFailed: (n, msg) => showToast(msg || `撤销失败（${n} 张）`, 'error'),
+        });
       }
     } finally {
       deletingRef.current = false;

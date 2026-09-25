@@ -100,6 +100,19 @@ const ROUTES = [
     cmd: 'batch_delete_images',
     invokeArgs: { ids: [1, 2] },
   },
+  { method: 'deleteImageToTrash', args: [9], cmd: 'delete_image_to_trash', invokeArgs: { id: 9 } },
+  {
+    method: 'batchDeleteImagesToTrash',
+    args: [[1, 2]],
+    cmd: 'batch_delete_images_to_trash',
+    invokeArgs: { ids: [1, 2] },
+  },
+  {
+    method: 'restoreImageFromTrash',
+    args: [9],
+    cmd: 'restore_image_from_trash',
+    invokeArgs: { id: 9 },
+  },
   {
     method: 'getPresets',
     args: [],
