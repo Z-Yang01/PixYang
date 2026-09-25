@@ -37,7 +37,7 @@
   --bg-input: #26272f;
   --border: #40424f;
   --border-light: #585b6b;
-  --bg-panel: rgba(20, 20, 24, 0.95);
+  --bg-panel: rgba(42, 44, 53, 0.95);
   --border-color: rgba(255, 255, 255, 0.12);
   --text-primary: #f2f3f7;
   --text-secondary: #bcbfc9;
@@ -1956,7 +1956,7 @@ body:has(.info-panel) .editor-panel {
   --bg-input: #142040;
   --border: #2e4066;
   --border-light: #3c5280;
-  --bg-panel: rgba(18, 29, 52, 0.95);
+  --bg-panel: rgba(22, 35, 62, 0.95);
   --border-color: rgba(255, 255, 255, 0.12);
   --text-primary: #eaf1fb;
   --text-secondary: #a9b9d4;
@@ -2030,7 +2030,7 @@ body:has(.info-panel) .editor-panel {
   --bg-input: #16281e;
   --border: #2f4a37;
   --border-light: #3f5f49;
-  --bg-panel: rgba(16, 32, 23, 0.95);
+  --bg-panel: rgba(24, 42, 32, 0.95);
   --border-color: rgba(255, 255, 255, 0.12);
   --text-primary: #ebf2ec;
   --text-secondary: #aabfb1;

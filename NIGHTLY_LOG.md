@@ -1820,3 +1820,8 @@
   saveAndExit：saveEdits 落库成功 → editCancel 清底图 → 退出编辑（失败则留在编辑态
   行内报错）。标题/文案同步调整，1 测试断言更新 + 1 新测试（三选写库+清底图）。
   验证：vitest 832/832；lint 0 error/10 基线；typecheck/format/build ✓；NSIS 重打（19:02）。
+- 2026-09-25 R69 编辑面板主题一致性修复：R61 主题提亮轮漏掉了 --bg-panel token
+  （三套暗色主题的编辑面板仍用旧深黑 rgba(18-20)，与提亮后的窗口主体色断层——
+  用户感知"编辑面板黑黢黢"的残留根因）。三主题同步提亮至各自 bg-secondary 档
+  （深色 rgba(42,44,53)/midnight rgba(22,35,62)/forest rgba(24,42,32)），浅色系已对无需动。
+  主题测试 20/20（token 覆盖断言全过，无幽灵 token）。vitest 832/832；NSIS 重打（19:22）。
