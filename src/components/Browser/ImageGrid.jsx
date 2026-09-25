@@ -27,6 +27,8 @@ const EMPTY_TAGS = [];
 // 写回 thumbnail_edit_path 后旧键自然不命中触发重解析（按 id 键控需 purge 与 loadUrls 抢顺序）
 const preferredThumbOf = (img) =>
   img.thumbnail_edit_path || img.thumbnail_small_path || img.thumbnail_path;
+// 高清档（thumbnail_path，medium 640px）：列数少=卡片大，优先取大图防高 DPI 发糊
+const hiResThumbOf = (img) => img.thumbnail_edit_path || img.thumbnail_path || img.thumbnail_small_path;
 
 export default function ImageGrid({
   onView,
@@ -309,8 +311,10 @@ export default function ImageGrid({
     const token = urlSeqRef.current.next();
     const needThumbPaths = [];
     const needOrigPaths = [];
+    const useHiRes = gridSettings.columns <= 4;
+    const pickThumb = useHiRes ? hiResThumbOf : preferredThumbOf;
     for (const img of imgs) {
-      const preferredThumb = preferredThumbOf(img);
+      const preferredThumb = pickThumb(img);
       if (preferredThumb && thumbUrlsRef.current[preferredThumb] === undefined) {
         needThumbPaths.push(preferredThumb);
       }
@@ -327,7 +331,7 @@ export default function ImageGrid({
     const thumbByPath = {};
     const origById = {};
     for (const img of imgs) {
-      const preferredThumb = preferredThumbOf(img);
+      const preferredThumb = pickThumb(img);
       if (preferredThumb && thumbSet.has(preferredThumb) && urlMap[preferredThumb]) {
         thumbByPath[preferredThumb] = urlMap[preferredThumb];
       }
@@ -555,7 +559,7 @@ export default function ImageGrid({
             );
           }
           const { image, index } = item;
-          const preferred = preferredThumbOf(image);
+          const preferred = gridSettings.columns <= 4 ? hiResThumbOf(image) : preferredThumbOf(image);
           const thumbUrl = preferred ? thumbUrls[preferred] : undefined;
           return (
             <ImageCard

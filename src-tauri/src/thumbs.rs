@@ -9,8 +9,10 @@ use image::{DynamicImage, GenericImageView, RgbaImage};
 use std::io::BufReader;
 use std::path::Path;
 
-pub const THUMB_SMALL_SIZE: u32 = 160;
-pub const THUMB_MEDIUM_SIZE: u32 = 400;
+// 高 DPI（2x）下网格卡片物理像素可达 470px：small 160 源会放大 3 倍发糊。
+// R72：small 320（普通屏 2 列也够）、medium 640（2x 屏 1:1），质量 80→85。
+pub const THUMB_SMALL_SIZE: u32 = 320;
+pub const THUMB_MEDIUM_SIZE: u32 = 640;
 
 /// 镜像 EXIF orientation 2-8 的像素转正（sharp .rotate() 无参语义）
 pub fn apply_orientation(img: &DynamicImage, orientation: u32) -> DynamicImage {
@@ -92,8 +94,8 @@ pub fn generate_tiers(filepath: &Path) -> Result<(Vec<u8>, Vec<u8>, u32, u32), P
     let (raw_w, raw_h) = img.dimensions();
     let upright = apply_orientation(&img, orientation);
     let flat = flatten_white(&upright);
-    let small = encode_jpeg(&resize_inside(&flat, THUMB_SMALL_SIZE), 80)?;
-    let medium = encode_jpeg(&resize_inside(&flat, THUMB_MEDIUM_SIZE), 80)?;
+    let small = encode_jpeg(&resize_inside(&flat, THUMB_SMALL_SIZE), 85)?;
+    let medium = encode_jpeg(&resize_inside(&flat, THUMB_MEDIUM_SIZE), 85)?;
     let swapped = orientation >= 5;
     let (w, h) = if swapped {
         (raw_h, raw_w)
@@ -232,9 +234,9 @@ mod tests {
         let (small, medium, w, h) = generate_tiers(&src).unwrap();
         assert_eq!((w, h), (60, 40));
         let sd = image::load_from_memory(&small).unwrap();
-        assert_eq!(sd.dimensions(), (160, 107));
+        assert_eq!(sd.dimensions(), (320, 213));
         let md = image::load_from_memory(&medium).unwrap();
-        assert_eq!(md.dimensions(), (400, 267));
+        assert_eq!(md.dimensions(), (640, 427));
         let _ = std::fs::remove_dir_all(&dir);
     }
 

@@ -6,7 +6,6 @@ const {
   normalizeEdits,
   upgradeEdits,
   fromLegacyImage,
-  stripOutput,
   SCHEMA_VERSION,
 } = editSchema;
 
