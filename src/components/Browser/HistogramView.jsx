@@ -7,12 +7,7 @@ const BINS = 64;
 export default function HistogramView({ histogram }) {
   const pathD = useMemo(() => {
     if (!histogram) return null;
-    const max = Math.max(
-      ...histogram.r,
-      ...histogram.g,
-      ...histogram.b,
-      1
-    );
+    const max = Math.max(...histogram.r, ...histogram.g, ...histogram.b, 1);
     const channelPath = (arr) => {
       let d = '';
       for (let i = 0; i < BINS; i++) {
@@ -22,16 +17,38 @@ export default function HistogramView({ histogram }) {
       }
       return d;
     };
-    return { r: channelPath(histogram.r), g: channelPath(histogram.g), b: channelPath(histogram.b) };
+    return {
+      r: channelPath(histogram.r),
+      g: channelPath(histogram.g),
+      b: channelPath(histogram.b),
+    };
   }, [histogram]);
 
   if (!pathD) return null;
   return (
     <div className="editor-histogram" aria-hidden="true">
       <svg viewBox="0 0 100 100" preserveAspectRatio="none">
-        <path d={`${pathD.r} L 100 100 L 0 100 Z`} fill="rgba(255,99,89,0.38)" stroke="rgba(255,99,89,0.8)" strokeWidth="0.6" vectorEffect="non-scaling-stroke" />
-        <path d={`${pathD.g} L 100 100 L 0 100 Z`} fill="rgba(87,194,106,0.38)" stroke="rgba(87,194,106,0.8)" strokeWidth="0.6" vectorEffect="non-scaling-stroke" />
-        <path d={`${pathD.b} L 100 100 L 0 100 Z`} fill="rgba(106,157,255,0.38)" stroke="rgba(106,157,255,0.8)" strokeWidth="0.6" vectorEffect="non-scaling-stroke" />
+        <path
+          d={`${pathD.r} L 100 100 L 0 100 Z`}
+          fill="rgba(255,99,89,0.38)"
+          stroke="rgba(255,99,89,0.8)"
+          strokeWidth="0.6"
+          vectorEffect="non-scaling-stroke"
+        />
+        <path
+          d={`${pathD.g} L 100 100 L 0 100 Z`}
+          fill="rgba(87,194,106,0.38)"
+          stroke="rgba(87,194,106,0.8)"
+          strokeWidth="0.6"
+          vectorEffect="non-scaling-stroke"
+        />
+        <path
+          d={`${pathD.b} L 100 100 L 0 100 Z`}
+          fill="rgba(106,157,255,0.38)"
+          stroke="rgba(106,157,255,0.8)"
+          strokeWidth="0.6"
+          vectorEffect="non-scaling-stroke"
+        />
       </svg>
     </div>
   );

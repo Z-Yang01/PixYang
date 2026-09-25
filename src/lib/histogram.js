@@ -12,7 +12,12 @@ export function extractHistogram(glCanvas) {
   if (!gl) return null;
   const pixels = new Uint8Array(w * h * 4);
   gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
-  const hist = { r: new Array(BINS).fill(0), g: new Array(BINS).fill(0), b: new Array(BINS).fill(0), l: new Array(BINS).fill(0) };
+  const hist = {
+    r: new Array(BINS).fill(0),
+    g: new Array(BINS).fill(0),
+    b: new Array(BINS).fill(0),
+    l: new Array(BINS).fill(0),
+  };
   const shift = 8 - Math.log2(BINS); // 256→64 桶：右移 2
   for (let i = 0; i < pixels.length; i += 4) {
     const r = pixels[i] >> shift;

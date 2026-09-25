@@ -25,7 +25,8 @@ fn gen() {
         for x in 0..w {
             let fx = x as f32 / w as f32;
             let fy = y as f32 / h as f32;
-            let noise = ((x as u32).wrapping_mul(73856093) ^ (y as u32).wrapping_mul(19349663)) % 15;
+            let noise =
+                ((x as u32).wrapping_mul(73856093) ^ (y as u32).wrapping_mul(19349663)) % 15;
             let saw = ((x + y) % 128) as f32 / 127.0;
             let wave = (fx * std::f32::consts::PI * 6.0).sin();
             let r = fx * 235.0 + 10.0 + wave * 8.0 + noise as f32;
@@ -40,7 +41,8 @@ fn gen() {
         }
     }
     std::fs::create_dir_all(parity_dir()).unwrap();
-    img.save_with_format(fixture_path(), image::ImageFormat::Png).unwrap();
+    img.save_with_format(fixture_path(), image::ImageFormat::Png)
+        .unwrap();
     println!("fixture: {}", fixture_path().display());
 }
 
@@ -168,7 +170,9 @@ fn main() {
         Some("render") => render(),
         Some("diff") => diff(),
         other => {
-            eprintln!("用法: cargo run --example webgl_parity -- gen|render|diff（收到: {other:?}）");
+            eprintln!(
+                "用法: cargo run --example webgl_parity -- gen|render|diff（收到: {other:?}）"
+            );
             std::process::exit(2);
         }
     }
