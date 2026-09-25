@@ -243,13 +243,13 @@ describe('draft 草稿帧与上传降采样', () => {
     expect(previewDrawSize(1, 10000, 2048)).toEqual({ w: 1, h: 2048 });
   });
 
-  it('draft 出帧：画布长边 1024（面积 1/4），viewport 同步缩小', async () => {
+  it('draft 出帧：画布长边 896（拖动跟手性调优值），viewport 同步缩小', async () => {
     const { canvas, gl } = makeCanvas();
     globalThis.createImageBitmap = vi.fn().mockResolvedValue({ close: vi.fn() });
     expect(await renderWebGLPreview(canvas, bigImage, baseUniforms(), { draft: true })).toBe(true);
-    expect(canvas.width).toBe(1024);
-    expect(canvas.height).toBe(512);
-    expect(gl.__calls.find((c) => c.prop === 'viewport').args).toEqual([0, 0, 1024, 512]);
+    expect(canvas.width).toBe(896);
+    expect(canvas.height).toBe(448);
+    expect(gl.__calls.find((c) => c.prop === 'viewport').args).toEqual([0, 0, 896, 448]);
   });
 
   it('上传即在 bitmap 阶段降采样到画布上限（全尺寸原图不进纹理）', async () => {

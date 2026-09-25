@@ -198,26 +198,74 @@ fn migrate_images_columns(conn: &Connection) {
         return;
     }
     let cols: [(&str, &str); 23] = [
-        ("import_date", "ALTER TABLE images ADD COLUMN import_date TEXT DEFAULT ''"),
-        ("taken_at", "ALTER TABLE images ADD COLUMN taken_at TEXT DEFAULT ''"),
-        ("original_path", "ALTER TABLE images ADD COLUMN original_path TEXT DEFAULT ''"),
-        ("raw_path", "ALTER TABLE images ADD COLUMN raw_path TEXT DEFAULT ''"),
+        (
+            "import_date",
+            "ALTER TABLE images ADD COLUMN import_date TEXT DEFAULT ''",
+        ),
+        (
+            "taken_at",
+            "ALTER TABLE images ADD COLUMN taken_at TEXT DEFAULT ''",
+        ),
+        (
+            "original_path",
+            "ALTER TABLE images ADD COLUMN original_path TEXT DEFAULT ''",
+        ),
+        (
+            "raw_path",
+            "ALTER TABLE images ADD COLUMN raw_path TEXT DEFAULT ''",
+        ),
         (
             "original_raw_path",
             "ALTER TABLE images ADD COLUMN original_raw_path TEXT DEFAULT ''",
         ),
-        ("hidden", "ALTER TABLE images ADD COLUMN hidden INTEGER DEFAULT 0"),
-        ("orientation", "ALTER TABLE images ADD COLUMN orientation INTEGER DEFAULT 1"),
-        ("rotation", "ALTER TABLE images ADD COLUMN rotation INTEGER DEFAULT 0"),
-        ("flip_h", "ALTER TABLE images ADD COLUMN flip_h INTEGER DEFAULT 0"),
-        ("flip_v", "ALTER TABLE images ADD COLUMN flip_v INTEGER DEFAULT 0"),
-        ("updated_at", "ALTER TABLE images ADD COLUMN updated_at DATETIME"),
-        ("size", "ALTER TABLE images ADD COLUMN size INTEGER DEFAULT 0"),
-        ("width", "ALTER TABLE images ADD COLUMN width INTEGER DEFAULT 0"),
-        ("height", "ALTER TABLE images ADD COLUMN height INTEGER DEFAULT 0"),
-        ("format", "ALTER TABLE images ADD COLUMN format TEXT DEFAULT ''"),
-        ("thumbnail", "ALTER TABLE images ADD COLUMN thumbnail TEXT DEFAULT ''"),
-        ("thumbnail_path", "ALTER TABLE images ADD COLUMN thumbnail_path TEXT DEFAULT ''"),
+        (
+            "hidden",
+            "ALTER TABLE images ADD COLUMN hidden INTEGER DEFAULT 0",
+        ),
+        (
+            "orientation",
+            "ALTER TABLE images ADD COLUMN orientation INTEGER DEFAULT 1",
+        ),
+        (
+            "rotation",
+            "ALTER TABLE images ADD COLUMN rotation INTEGER DEFAULT 0",
+        ),
+        (
+            "flip_h",
+            "ALTER TABLE images ADD COLUMN flip_h INTEGER DEFAULT 0",
+        ),
+        (
+            "flip_v",
+            "ALTER TABLE images ADD COLUMN flip_v INTEGER DEFAULT 0",
+        ),
+        (
+            "updated_at",
+            "ALTER TABLE images ADD COLUMN updated_at DATETIME",
+        ),
+        (
+            "size",
+            "ALTER TABLE images ADD COLUMN size INTEGER DEFAULT 0",
+        ),
+        (
+            "width",
+            "ALTER TABLE images ADD COLUMN width INTEGER DEFAULT 0",
+        ),
+        (
+            "height",
+            "ALTER TABLE images ADD COLUMN height INTEGER DEFAULT 0",
+        ),
+        (
+            "format",
+            "ALTER TABLE images ADD COLUMN format TEXT DEFAULT ''",
+        ),
+        (
+            "thumbnail",
+            "ALTER TABLE images ADD COLUMN thumbnail TEXT DEFAULT ''",
+        ),
+        (
+            "thumbnail_path",
+            "ALTER TABLE images ADD COLUMN thumbnail_path TEXT DEFAULT ''",
+        ),
         (
             "thumbnail_small_path",
             "ALTER TABLE images ADD COLUMN thumbnail_small_path TEXT DEFAULT ''",
@@ -226,9 +274,18 @@ fn migrate_images_columns(conn: &Connection) {
             "thumbnail_edit_path",
             "ALTER TABLE images ADD COLUMN thumbnail_edit_path TEXT DEFAULT ''",
         ),
-        ("rating", "ALTER TABLE images ADD COLUMN rating INTEGER DEFAULT 0"),
-        ("favorite", "ALTER TABLE images ADD COLUMN favorite INTEGER DEFAULT 0"),
-        ("notes", "ALTER TABLE images ADD COLUMN notes TEXT DEFAULT ''"),
+        (
+            "rating",
+            "ALTER TABLE images ADD COLUMN rating INTEGER DEFAULT 0",
+        ),
+        (
+            "favorite",
+            "ALTER TABLE images ADD COLUMN favorite INTEGER DEFAULT 0",
+        ),
+        (
+            "notes",
+            "ALTER TABLE images ADD COLUMN notes TEXT DEFAULT ''",
+        ),
         ("hash", "ALTER TABLE images ADD COLUMN hash TEXT DEFAULT ''"),
     ];
     for (name, ddl) in cols {
@@ -549,7 +606,10 @@ mod tests {
         )
         .unwrap();
         assert_eq!(
-            all_settings_map(&conn).unwrap().into_iter().collect::<Vec<_>>(),
+            all_settings_map(&conn)
+                .unwrap()
+                .into_iter()
+                .collect::<Vec<_>>(),
             vec![
                 ("a".into(), "1".into()),
                 ("b".into(), "2".into()),
@@ -855,14 +915,22 @@ mod path_tests {
                 .unwrap();
             assert_eq!(ua, "2020-01-02 03:04:05", "updated_at 应按 created_at 回填");
             cols_after_first = conn
-                .query_row("SELECT COUNT(*) FROM pragma_table_info('images')", [], |r| r.get(0))
+                .query_row(
+                    "SELECT COUNT(*) FROM pragma_table_info('images')",
+                    [],
+                    |r| r.get(0),
+                )
                 .unwrap();
         }
         drop(db);
         let db2 = Db::open(&p).unwrap();
         let conn = db2.open_read().unwrap();
         let n: i64 = conn
-            .query_row("SELECT COUNT(*) FROM pragma_table_info('images')", [], |r| r.get(0))
+            .query_row(
+                "SELECT COUNT(*) FROM pragma_table_info('images')",
+                [],
+                |r| r.get(0),
+            )
             .unwrap();
         assert_eq!(n, cols_after_first, "重复打开不得再加列");
         drop(conn);

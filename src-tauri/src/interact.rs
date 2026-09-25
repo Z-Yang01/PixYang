@@ -74,7 +74,10 @@ mod tests {
     use std::path::{Path, PathBuf};
 
     fn roots() -> (PathBuf, PathBuf) {
-        (PathBuf::from("E:/Pic/library"), PathBuf::from("C:/Users/u/AppData/Roaming/pixyang"))
+        (
+            PathBuf::from("E:/Pic/library"),
+            PathBuf::from("C:/Users/u/AppData/Roaming/pixyang"),
+        )
     }
 
     #[test]
@@ -90,8 +93,16 @@ mod tests {
     fn 目录外_同前缀名字迷惑_与上级逃逸均不受管() {
         let (img, db) = roots();
         // 同前缀但不同路径组件（starts_with 按组件比较，不被字符串前缀迷惑）
-        assert!(!is_managed_path(&img, &db, &Path::new("E:/Pic/libraryEvil")));
-        assert!(!is_managed_path(&img, &db, &Path::new("E:/Pic/library2/a.jpg")));
+        assert!(!is_managed_path(
+            &img,
+            &db,
+            &Path::new("E:/Pic/libraryEvil")
+        ));
+        assert!(!is_managed_path(
+            &img,
+            &db,
+            &Path::new("E:/Pic/library2/a.jpg")
+        ));
         assert!(!is_managed_path(&img, &db, &Path::new("E:/tmp/x.jpg")));
         assert!(!is_managed_path(&img, &db, &Path::new("D:/Pic/library")));
     }
@@ -101,7 +112,11 @@ mod tests {
         let (img, _) = roots();
         let fallback = PathBuf::from(".");
         assert!(is_managed_path(&img, &fallback, &img.join("a.jpg")));
-        assert!(!is_managed_path(&img, &fallback, &Path::new("C:/Windows/explorer.exe")));
+        assert!(!is_managed_path(
+            &img,
+            &fallback,
+            &Path::new("C:/Windows/explorer.exe")
+        ));
     }
 }
 

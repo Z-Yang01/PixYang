@@ -38,25 +38,6 @@ describe('tauriBridge', () => {
     await expect(tauriInvoke('ping')).rejects.toThrow('backend boom');
   });
 
-  it('uniqueFilename 包装命令参数形状（单参数 args 包裹）', async () => {
-    const invoke = vi.fn().mockResolvedValue('a_1.jpg');
-    window.__TAURI__ = { core: { invoke } };
-    await expect(tauriApi.uniqueFilename('E:/pics', 'a.jpg', ['e:/pics/a.jpg'])).resolves.toBe(
-      'a_1.jpg'
-    );
-    expect(invoke).toHaveBeenCalledWith('unique_filename', {
-      args: { dir: 'E:/pics', name: 'a.jpg', taken: ['e:/pics/a.jpg'] },
-    });
-  });
-
-  it('groupImportFiles 包装透传文件列表', async () => {
-    const invoke = vi.fn().mockResolvedValue([]);
-    window.__TAURI__ = { core: { invoke } };
-    const files = [{ filename: 'a.jpg', filepath: 'E:/c/a.jpg' }];
-    await tauriApi.groupImportFiles(files);
-    expect(invoke).toHaveBeenCalledWith('group_import_files', { files });
-  });
-
   it('api 设置通道在 Tauri 可用时走 Rust 命令', async () => {
     const invoke = vi.fn().mockResolvedValue('dark');
     window.__TAURI__ = { core: { invoke } };
@@ -257,24 +238,6 @@ describe('tauriBridge', () => {
     expect(invoke).toHaveBeenCalledWith('get_all_image_ids', { query: { tagId: 3 } });
     await api.fileExists('E:/managed/a.jpg');
     expect(invoke).toHaveBeenCalledWith('file_exists', { filepath: 'E:/managed/a.jpg' });
-  });
-
-  it('接缝 5 阶段 1：缩略图/NEF/meta 命令参数形状', async () => {
-    const invoke = vi.fn().mockResolvedValue({ width: 100, height: 60 });
-    window.__TAURI__ = { core: { invoke } };
-    await tauriApi.makeThumbnailTiers('E:/p/a.jpg', 'E:/thumbs', 9);
-    expect(invoke).toHaveBeenCalledWith('make_thumbnail_tiers', {
-      filepath: 'E:/p/a.jpg',
-      thumbsDir: 'E:/thumbs',
-      id: 9,
-    });
-    await tauriApi.extractNefPreview('E:/p/a.nef', 'E:/thumbs/a.jpg');
-    expect(invoke).toHaveBeenCalledWith('extract_nef_preview', {
-      nefPath: 'E:/p/a.nef',
-      outPath: 'E:/thumbs/a.jpg',
-    });
-    await tauriApi.imageMeta('E:/p/a.jpg');
-    expect(invoke).toHaveBeenCalledWith('image_meta', { filepath: 'E:/p/a.jpg' });
   });
 
   it('接缝 4c：导入/改名通道走 Rust 命令', async () => {

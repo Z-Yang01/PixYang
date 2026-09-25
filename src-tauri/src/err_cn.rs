@@ -55,36 +55,73 @@ fn translate(body: &str) -> String {
     let known: Option<(&str, bool)> = match low.as_str() {
         _ if contains_any(&low, &["already exists", "file exists"]) => Some(("文件已存在", false)),
         _ if contains_any(&low, &["directory not empty"]) => Some(("目录非空", false)),
-        _ if contains_any(&low, &["is a directory", "not a directory"]) => Some(("路径类型不符", false)),
-        _ if contains_any(&low, &[
-            "access is denied",
-            "permission denied",
-            "being used by another process",
-            "sharing violation",
-            "would block",
-        ]) => Some(("文件被占用或权限不足", true)),
-        _ if contains_any(&low, &[
-            "no such file or directory",
-            "cannot find the file",
-            "cannot find the path",
-            "path not found",
-            "notfound",
-            "entity not found",
-        ]) => Some(("文件或路径不存在", true)),
-        _ if contains_any(&low, &[
-            "name too long",
-            "path too long",
-            "invalidfilename",
-            "filename or extension is too long",
-        ]) => Some(("路径过长", true)),
-        _ if contains_any(&low, &["no space left", "not enough space", "disk full", "insufficient disk"]) => {
+        _ if contains_any(&low, &["is a directory", "not a directory"]) => {
+            Some(("路径类型不符", false))
+        }
+        _ if contains_any(
+            &low,
+            &[
+                "access is denied",
+                "permission denied",
+                "being used by another process",
+                "sharing violation",
+                "would block",
+            ],
+        ) =>
+        {
+            Some(("文件被占用或权限不足", true))
+        }
+        _ if contains_any(
+            &low,
+            &[
+                "no such file or directory",
+                "cannot find the file",
+                "cannot find the path",
+                "path not found",
+                "notfound",
+                "entity not found",
+            ],
+        ) =>
+        {
+            Some(("文件或路径不存在", true))
+        }
+        _ if contains_any(
+            &low,
+            &[
+                "name too long",
+                "path too long",
+                "invalidfilename",
+                "filename or extension is too long",
+            ],
+        ) =>
+        {
+            Some(("路径过长", true))
+        }
+        _ if contains_any(
+            &low,
+            &[
+                "no space left",
+                "not enough space",
+                "disk full",
+                "insufficient disk",
+            ],
+        ) =>
+        {
             Some(("磁盘空间不足", true))
         }
         _ if code == Some(5) || code == Some(32) => Some(("文件被占用或权限不足", true)),
         _ if code == Some(2) || code == Some(3) => Some(("文件或路径不存在", true)),
         _ if code == Some(36) || code == Some(206) => Some(("路径过长", true)),
         _ if code == Some(112) => Some(("磁盘空间不足", true)),
-        _ if contains_any(&low, &["database is locked", "database table is locked", "sqlite_busy"]) => {
+        _ if contains_any(
+            &low,
+            &[
+                "database is locked",
+                "database table is locked",
+                "sqlite_busy",
+            ],
+        ) =>
+        {
             Some(("数据库正被其他程序占用", false))
         }
         _ if low.contains("no such table") => Some(("数据库表缺失", false)),
@@ -94,7 +131,9 @@ fn translate(body: &str) -> String {
         _ if low.contains("unique constraint") => Some(("记录已存在", false)),
         _ if low.contains("foreign key constraint") => Some(("关联记录不存在", false)),
         _ if low.contains("query returned no rows") => Some(("记录不存在", false)),
-        _ if contains_any(&low, &["rusqlite", "sqlite", "database"]) => Some(("数据库操作失败", false)),
+        _ if contains_any(&low, &["rusqlite", "sqlite", "database"]) => {
+            Some(("数据库操作失败", false))
+        }
         _ if contains_any(
             &low,
             &[
@@ -108,17 +147,41 @@ fn translate(body: &str) -> String {
                 "decode",
                 "corrupt",
             ],
-        ) => Some(("图片无法解码", false)),
+        ) =>
+        {
+            Some(("图片无法解码", false))
+        }
         _ if contains_any(&low, &["teximage2d", "webgl", "gl_invalid", "framebuffer"]) => {
             Some(("图形预览失败，已回退基础预览", false))
         }
-        _ if contains_any(&low, &["cannot read properties of", "is not a function", "of undefined", "of null"]) => {
+        _ if contains_any(
+            &low,
+            &[
+                "cannot read properties of",
+                "is not a function",
+                "of undefined",
+                "of null",
+            ],
+        ) =>
+        {
             Some(("内部数据不完整", false))
         }
-        _ if contains_any(&low, &["failed to fetch", "networkerror", "load failed", "err_"]) => {
+        _ if contains_any(
+            &low,
+            &["failed to fetch", "networkerror", "load failed", "err_"],
+        ) =>
+        {
             Some(("本地文件读取失败", false))
         }
-        _ if contains_any(&low, &["failed to join task", "task cancelled", "sender channel closed"]) => {
+        _ if contains_any(
+            &low,
+            &[
+                "failed to join task",
+                "task cancelled",
+                "sender channel closed",
+            ],
+        ) =>
+        {
             Some(("任务被中断", false))
         }
         _ if contains_any(&low, &["timed out", "timeout"]) => Some(("操作超时", false)),
@@ -174,7 +237,8 @@ mod tests {
     #[test]
     fn 共享语料逐条对拍() {
         let raw = include_str!("../../shared/errorCorpus.json");
-        let value: serde_json::Value = serde_json::from_str(raw).expect("errorCorpus.json 必须是合法 JSON");
+        let value: serde_json::Value =
+            serde_json::from_str(raw).expect("errorCorpus.json 必须是合法 JSON");
         let pairs = value.as_array().expect("errorCorpus.json 顶层必须是数组");
         assert!(pairs.len() >= 16, "语料条数意外变少：{}", pairs.len());
         for pair in pairs {
@@ -186,7 +250,9 @@ mod tests {
 
     #[test]
     fn 上屏文案不含英文单词且保留错误码() {
-        let s = line("文件操作失败: Os { code: 32, kind: PermissionDenied, message: \"Sharing violation\" }");
+        let s = line(
+            "文件操作失败: Os { code: 32, kind: PermissionDenied, message: \"Sharing violation\" }",
+        );
         assert_eq!(s, "文件操作失败：文件被占用或权限不足（错误码 32）");
         for case in [
             "IoError for script segment (\\??\\E:\\PicX\\a.nef)",
@@ -204,9 +270,15 @@ mod tests {
             line("文件操作失败: 建目录失败: Os { code: 5, kind: PermissionDenied }"),
             "文件操作失败：建目录失败：文件被占用或权限不足（错误码 5）"
         );
-        assert_eq!(line("编辑失败：隐藏的 NEF 记录不支持编辑"), "编辑失败：隐藏的 NEF 记录不支持编辑");
+        assert_eq!(
+            line("编辑失败：隐藏的 NEF 记录不支持编辑"),
+            "编辑失败：隐藏的 NEF 记录不支持编辑"
+        );
         assert_eq!(line(""), "");
-        assert_eq!(text(&std::io::Error::from(std::io::ErrorKind::NotFound)), "文件或路径不存在");
+        assert_eq!(
+            text(&std::io::Error::from(std::io::ErrorKind::NotFound)),
+            "文件或路径不存在"
+        );
     }
 
     #[test]

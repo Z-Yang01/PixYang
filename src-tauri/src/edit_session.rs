@@ -2,8 +2,8 @@
 // getEditHistory 与 electron/main.js 烘焙（bake）/导出（export）编排中可内核化部分的 Rust 直译。
 // 会话状态（editSessions 表、底图缓存、预览世代令牌）留在命令层，此处以 input 参数承接已就绪底图。
 
-use crate::error::PixError;
 use crate::err_cn;
+use crate::error::PixError;
 use crate::executor;
 use crate::images_query;
 use crate::naming::{basename_no_ext, extname};

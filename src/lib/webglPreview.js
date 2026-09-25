@@ -207,7 +207,7 @@ export function isWebGL2Available() {
 
 // 全分辨率出帧的画布长边上限；draft（滑杆拖动中）再降一档，像素量 1/4
 const FULL_EDGE = 2048;
-const DRAFT_EDGE = 1024;
+const DRAFT_EDGE = 896;
 
 export function previewDrawSize(naturalWidth, naturalHeight, maxEdge) {
   const longEdge = Math.max(naturalWidth, naturalHeight);

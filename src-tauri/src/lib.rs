@@ -4,8 +4,8 @@ pub mod interact;
 // [MOD-B]
 pub mod db;
 pub mod edit_session;
-pub mod error;
 pub mod err_cn;
+pub mod error;
 pub mod executor;
 pub mod exif_read;
 pub mod exif_relay;
@@ -118,8 +118,6 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            commands::unique_filename,
-            commands::group_import_files,
             commands::get_setting,
             commands::set_setting,
             commands::get_settings,
@@ -151,9 +149,6 @@ pub fn run() {
             commands::get_database_path,
             commands::get_all_image_ids,
             commands::file_exists,
-            commands::make_thumbnail_tiers,
-            commands::extract_nef_preview,
-            commands::image_meta,
             commands::render_edit,
             commands::import_images,
             commands::rename_image,

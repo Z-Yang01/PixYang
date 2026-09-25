@@ -37,9 +37,6 @@ function requirePluginGlobal(plugin, method) {
 }
 
 export const tauriApi = {
-  uniqueFilename: (dir, name, taken = []) =>
-    tauriInvoke('unique_filename', { args: { dir, name, taken } }),
-  groupImportFiles: (files) => tauriInvoke('group_import_files', { files }),
   getSettings: () => tauriInvoke('get_settings'),
   getSetting: (key) => tauriInvoke('get_setting', { key }),
   setSetting: (key, value) => tauriInvoke('set_setting', { key, value }),
@@ -90,10 +87,6 @@ export const tauriApi = {
   getDatabasePath: () => tauriInvoke('get_database_path'),
   getAllImageIds: (options) => tauriInvoke('get_all_image_ids', { query: options ?? {} }),
   fileExists: (filepath) => tauriInvoke('file_exists', { filepath }),
-  makeThumbnailTiers: (filepath, thumbsDir, id) =>
-    tauriInvoke('make_thumbnail_tiers', { filepath, thumbsDir, id }),
-  extractNefPreview: (nefPath, outPath) => tauriInvoke('extract_nef_preview', { nefPath, outPath }),
-  imageMeta: (filepath) => tauriInvoke('image_meta', { filepath }),
   selectDirectory: async () => {
     const dialog = requirePluginGlobal(tauriDialog(), 'open');
     return dialog.open({ directory: true, title: '选择要导入的图片文件夹' });

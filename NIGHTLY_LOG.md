@@ -1745,3 +1745,12 @@
   NSIS 重打（Sep 25 15:24，含画布守卫 + 分组聚合 + 全部此前修复）。
   待人工复核：旧实例中观察到的"DOM 951-970 vs DB 1117-"错位未在当前构建复现
   （4轮/16轮 CDP 实测均一致），归因旧包；若新包再现请附 F12 截图。
+- 2026-09-25 R57+R58 冗余清理与编辑优化：
+  R57 冗余清理（生产引用计数判据）：5 条无前端消费的 tauri 命令下线——
+  unique_filename/group_import_files/make_thumbnail_tiers/extract_nef_preview/image_meta
+  （桥包装 + Rust 命令壳 + lib.rs 注册 + 对应测试同步移除；内核函数 naming/image_group/
+  thumbs 有内部调用方全部保留）。Rust 测试 152 + golden；vitest 827（59 文件，-3 死通道测试）。
+  R58 编辑模式优化（基于 CDP 取证的跟手性调优）：EDIT_SETTLE_MS 160→120ms（松手后全分辨率
+  回补更快）；DRAFT_EDGE 1024→896（拖动中出帧像素量再降 23%，跟手性提升）。测试断言同步。
+  验证：cargo 152/152 + golden；vitest 827/827；lint/typecheck/vite build 全绿。
+  待人工复核：直方图等新编辑功能属产品裁决，未擅自加。

@@ -6,129 +6,20 @@ use crate::edit_session;
 use crate::err_cn;
 use crate::executor;
 use crate::file_ops;
-use crate::image_group::{self, ImportFile, PairGroup};
 use crate::images_query;
-use crate::naming;
 use crate::progress;
 use crate::scan;
 use crate::tags_albums;
 use crate::thumbs;
 use crate::update_image;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use serde_json::{json, Value};
-use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use tauri::{AppHandle, Manager, State};
-
-#[derive(Debug, Deserialize)]
-pub struct UniqueFilenameArgs {
-    pub dir: String,
-    pub name: String,
-    #[serde(default)]
-    pub taken: Vec<String>,
-}
-
-#[tauri::command]
-pub fn unique_filename(args: UniqueFilenameArgs) -> Result<String, String> {
-    let taken: HashSet<String> = args.taken.into_iter().collect();
-    Ok(naming::generate_unique_filename(
-        Path::new(&args.dir),
-        &args.name,
-        &taken,
-        |p| p.exists(),
-    ))
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct ImportFileDto {
-    pub filename: String,
-    pub filepath: String,
-    #[serde(default)]
-    pub raw_source: Option<String>,
-    #[serde(default)]
-    pub raw_filename: Option<String>,
-}
-
-#[derive(Debug, Serialize)]
-pub struct GroupDto {
-    pub key: String,
-    pub jpg: Option<ImportFileDto>,
-    pub nef: Option<ImportFileDto>,
-}
-
-impl From<&ImportFile> for ImportFileDto {
-    fn from(f: &ImportFile) -> Self {
-        Self {
-            filename: f.filename.clone(),
-            filepath: f.filepath.clone(),
-            raw_source: f.raw_source.clone(),
-            raw_filename: f.raw_filename.clone(),
-        }
-    }
-}
-
-#[tauri::command]
-pub fn group_import_files(files: Vec<ImportFileDto>) -> Result<Vec<GroupDto>, String> {
-    let owned: Vec<ImportFile> = files
-        .into_iter()
-        .map(|f| ImportFile {
-            filename: f.filename,
-            filepath: f.filepath,
-            raw_source: f.raw_source,
-            raw_filename: f.raw_filename,
-        })
-        .collect();
-    let groups: Vec<(String, PairGroup)> = image_group::group_import_files(&owned);
-    Ok(groups
-        .into_iter()
-        .map(|(key, g)| GroupDto {
-            key,
-            jpg: g.jpg.as_ref().map(Into::into),
-            nef: g.nef.as_ref().map(Into::into),
-        })
-        .collect())
-}
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn 唯一命名命令_磁盘占用派生避让() {
-        let dir = std::env::temp_dir().join("pixyang_cmd_test_r3");
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        std::fs::write(dir.join("a.txt"), b"x").unwrap();
-        let out = unique_filename(UniqueFilenameArgs {
-            dir: dir.to_string_lossy().into_owned(),
-            name: "a.txt".into(),
-            taken: vec![],
-        })
-        .unwrap();
-        assert_eq!(out, "a_1.txt");
-        let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    #[test]
-    fn 分组命令_nef小写归并到组() {
-        let out = group_import_files(vec![
-            ImportFileDto {
-                filename: "dsc_1.jpg".into(),
-                filepath: r"E:\c\dsc_1.jpg".into(),
-                raw_source: None,
-                raw_filename: None,
-            },
-            ImportFileDto {
-                filename: "DSC_1.NEF".into(),
-                filepath: r"E:\c\DSC_1.NEF".into(),
-                raw_source: None,
-                raw_filename: None,
-            },
-        ])
-        .unwrap();
-        assert_eq!(out.len(), 1);
-        assert!(out[0].jpg.is_some() && out[0].nef.is_some());
-    }
 
     #[test]
     fn 创建标签_重名与非法名返回错误对象() {
@@ -407,53 +298,8 @@ pub fn file_exists(
     filepath: String,
 ) -> Result<bool, String> {
     let conn = db.open_read().map_err(|e| err_cn::text(&e))?;
-    db::managed_file_exists(&conn, &paths.default_images_dir, &filepath).map_err(|e| err_cn::text(&e))
-}
-
-// ── 缩略图内核命令（迁移接缝 5 阶段 1） ──
-
-#[tauri::command]
-pub async fn make_thumbnail_tiers(
-    filepath: String,
-    thumbs_dir: String,
-    id: i64,
-) -> Result<(u32, u32), String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        let (small, medium, w, h) =
-            thumbs::generate_tiers(std::path::Path::new(&filepath)).map_err(|e| err_cn::text(&e))?;
-        let dir = std::path::Path::new(&thumbs_dir);
-        std::fs::create_dir_all(dir).map_err(|e| err_cn::text(&e))?;
-        std::fs::write(dir.join(format!("{id}.jpg")), small).map_err(|e| err_cn::text(&e))?;
-        std::fs::write(dir.join(format!("{id}_s.jpg")), medium).map_err(|e| err_cn::text(&e))?;
-        Ok((w, h))
-    })
-    .await
-    .map_err(|e| format!("后台任务失败：{}", err_cn::text(&e)))?
-}
-
-#[tauri::command]
-pub async fn extract_nef_preview(
-    nef_path: String,
-    out_path: String,
-) -> Result<Option<(u32, u32)>, String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        thumbs::extract_nef_preview(
-            std::path::Path::new(&nef_path),
-            std::path::Path::new(&out_path),
-        )
+    db::managed_file_exists(&conn, &paths.default_images_dir, &filepath)
         .map_err(|e| err_cn::text(&e))
-    })
-    .await
-    .map_err(|e| format!("后台任务失败：{}", err_cn::text(&e)))?
-}
-
-#[tauri::command]
-pub async fn image_meta(filepath: String) -> Result<(u32, u32, u32, bool), String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        thumbs::image_meta(std::path::Path::new(&filepath)).map_err(|e| err_cn::text(&e))
-    })
-    .await
-    .map_err(|e| format!("后台任务失败：{}", err_cn::text(&e)))?
 }
 
 // ── 导入/改名编排（迁移接缝 4c） ──
@@ -534,7 +380,8 @@ pub async fn export_album_images(
     let db = db.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
         let conn = db.write_lock();
-        let images = tags_albums::get_album_images(&conn, album_id).map_err(|e| err_cn::text(&e))?;
+        let images =
+            tags_albums::get_album_images(&conn, album_id).map_err(|e| err_cn::text(&e))?;
         finish_export(&images, &dest_dir)
     })
     .await
@@ -733,7 +580,8 @@ pub async fn find_duplicates(
     let paths = paths.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
         let conn = db.open_read().map_err(|e| err_cn::text(&e))?;
-        update_image::find_duplicates(&conn, &paths.default_images_dir).map_err(|e| err_cn::text(&e))
+        update_image::find_duplicates(&conn, &paths.default_images_dir)
+            .map_err(|e| err_cn::text(&e))
     })
     .await
     .map_err(|e| format!("后台任务失败：{}", err_cn::text(&e)))?

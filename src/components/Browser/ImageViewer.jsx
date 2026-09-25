@@ -74,7 +74,7 @@ import ConfirmDialog from '@/components/Layout/ConfirmDialog';
 const clamp = (v, min, max) => Math.min(max, Math.max(min, v));
 
 // 连续调节停止多少毫秒后把草稿预览补成全分辨率帧
-const EDIT_SETTLE_MS = 160;
+const EDIT_SETTLE_MS = 120;
 
 // 键盘方向键连续调节的「调节手势」收敛窗：同一滑杆连续按键只结算为一条历史，
 // 停顿超过该时长（或焦点离开/会话结束）才落栈。取 700ms：远大于人工连按/自动重复的
@@ -1345,7 +1345,8 @@ export default function ImageViewer({
     const img = editImgRef.current;
     if (!canvas || !img) return;
     const sessionSrc = editBaseSrc || displaySrc;
-    const imgIsCurrent = () => img.src === sessionSrc || img.src.endsWith(sessionSrc) || sessionSrc.startsWith(img.src);
+    const imgIsCurrent = () =>
+      img.src === sessionSrc || img.src.endsWith(sessionSrc) || sessionSrc.startsWith(img.src);
     const draw = (draft) => {
       if (img.complete && img.naturalWidth > 0 && imgIsCurrent()) {
         renderWebGLPreview(canvas, img, shaderUniforms, { draft }).then((ok) => {
