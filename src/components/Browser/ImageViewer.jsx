@@ -1333,6 +1333,8 @@ export default function ImageViewer({
   // WebGL 预览绘制：uniforms 或底图变化时重绘（底图纹理按 src 缓存）。
   // 滑杆/蒙版连续调节（editOps 引用变化）先出 1024 草稿帧，停止 SETTLE_MS 后补全分辨率帧；
   // 底图切换/bust（烘焙刷新）/Before 对比等单发重绘直接全分辨率，首次进入编辑也是全分辨率。
+  // imgSrc 必须与当前会话 editBaseSrc 一致才允许绘制：换图瞬间 effect 可能在 img.src
+  // 更新前执行，纹理缓存按旧 src 命中 → 画布渲染上一张图（实机 CDP 复现：dataLen 逐字节一致）
   const drawnOpsRef = useRef(null);
   useEffect(() => {
     if (!webglActive || !shaderUniforms) {
@@ -1342,8 +1344,10 @@ export default function ImageViewer({
     const canvas = webglCanvasRef.current;
     const img = editImgRef.current;
     if (!canvas || !img) return;
+    const sessionSrc = editBaseSrc || displaySrc;
+    const imgIsCurrent = () => img.src === sessionSrc || img.src.endsWith(sessionSrc) || sessionSrc.startsWith(img.src);
     const draw = (draft) => {
-      if (img.complete && img.naturalWidth > 0) {
+      if (img.complete && img.naturalWidth > 0 && imgIsCurrent()) {
         renderWebGLPreview(canvas, img, shaderUniforms, { draft }).then((ok) => {
           if (!ok) setWebglFailed(true);
         });
@@ -1351,7 +1355,7 @@ export default function ImageViewer({
     };
     const opsDriven = drawnOpsRef.current !== null && drawnOpsRef.current !== editOps;
     drawnOpsRef.current = editOps;
-    if (!(img.complete && img.naturalWidth > 0)) {
+    if (!(img.complete && img.naturalWidth > 0) || !imgIsCurrent()) {
       const onLoad = () => draw(false);
       img.addEventListener('load', onLoad, { once: true });
       return () => img.removeEventListener('load', onLoad);
