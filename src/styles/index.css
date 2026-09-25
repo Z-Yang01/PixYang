@@ -3814,3 +3814,18 @@ body {
   font-size: 11px;
   color: var(--text-muted);
 }
+
+/* 编辑面板直方图（R59）：玻璃底 + RGB 三通道叠加 */
+.editor-histogram {
+  height: 64px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid var(--border);
+  overflow: hidden;
+  flex-shrink: 0;
+}
+.editor-histogram svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}

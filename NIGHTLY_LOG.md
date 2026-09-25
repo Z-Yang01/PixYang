@@ -1754,3 +1754,8 @@
   回补更快）；DRAFT_EDGE 1024→896（拖动中出帧像素量再降 23%，跟手性提升）。测试断言同步。
   验证：cargo 152/152 + golden；vitest 827/827；lint/typecheck/vite build 全绿。
   待人工复核：直方图等新编辑功能属产品裁决，未擅自加。
+- 2026-09-25 R59 编辑功能增强：编辑面板实时 RGB 直方图——src/lib/histogram.js
+  （WebGL readPixels 64 桶三通道+亮度统计，仅 settled 帧提取不抢拖动性能）+
+  HistogramView 组件（SVG 三通道叠加，加色混合）+ 玻璃底 CSS + 3 个单测
+  （像素统计/空画布/无上下文）。实机 CDP 验证：241x64 三通道可见。
+  vitest 830/830（60 文件）；lint 0 error；typecheck/build ✓；NSIS 已重打（16:04）。

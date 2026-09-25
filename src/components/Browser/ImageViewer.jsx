@@ -64,6 +64,8 @@ const { vignettePreviewStyle } = lensLib;
 import renderSpecModule from '../../../shared/renderSpec.cjs';
 const { editParamsToRenderSpec } = renderSpecModule;
 import { isWebGL2Available, renderWebGLPreview, releaseWebGLPreview } from '@/lib/webglPreview';
+import { extractHistogram } from '@/lib/histogram';
+import HistogramView from './HistogramView';
 import { specToShaderUniforms } from '@/lib/previewUniforms';
 import CompareView from './CompareView';
 import CurveEditor from './CurveEditor';
@@ -142,6 +144,7 @@ export default function ImageViewer({
   const webglAvailable = useRef(isWebGL2Available()).current;
   const [webglFailed, setWebglFailed] = useState(false);
   const webglCanvasRef = useRef(null);
+  const [histogram, setHistogram] = useState(null);
   // 画布卸载/重挂时释放旧 canvas 的 GL 上下文：上下文不随元素卸载回收，
   // 每页活动上限约 16，反复切换 Before/对比或进出编辑会耗尽配额（审查批 8 P-1）
   const setWebglCanvas = useCallback((el) => {
@@ -1350,7 +1353,14 @@ export default function ImageViewer({
     const draw = (draft) => {
       if (img.complete && img.naturalWidth > 0 && imgIsCurrent()) {
         renderWebGLPreview(canvas, img, shaderUniforms, { draft }).then((ok) => {
-          if (!ok) setWebglFailed(true);
+          if (!ok) {
+            setWebglFailed(true);
+            return;
+          }
+          if (!draft) {
+            const hist = extractHistogram(canvas);
+            if (hist) setHistogram(hist);
+          }
         });
       }
     };
@@ -1786,6 +1796,7 @@ export default function ImageViewer({
       {/* 编辑参数面板 */}
       {editing && editSession && (
         <div className="editor-panel" onClick={(e) => e.stopPropagation()}>
+          {histogram && <HistogramView histogram={histogram} />}
           <div className="editor-panel-header">
             <SlidersHorizontal className="size-4" />
             <span>编辑</span>
