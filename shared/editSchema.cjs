@@ -245,13 +245,6 @@ function normalizeEdits(input) {
   return parsed.success ? parsed.data : DEFAULT_EDITS();
 }
 
-// 是否与默认参数等价（用于跳过渲染、显示"未编辑"）；output 是导出设置不算编辑
-function isDefaultEdits(params) {
-  const d = stripOutput(DEFAULT_EDITS());
-  const p = stripOutput(params);
-  return JSON.stringify(p) === JSON.stringify(d);
-}
-
 // 剔除输出设置后的"编辑语义"参数（预设/复制粘贴/同步用：output 不跟随）
 function stripOutput(params) {
   const { output, ...rest } = normalizeEdits(params);
@@ -266,7 +259,6 @@ module.exports = {
   normalizeEdits,
   upgradeEdits,
   fromLegacyImage,
-  isDefaultEdits,
   stripOutput,
   upgrades,
 };

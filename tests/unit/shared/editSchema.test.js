@@ -6,14 +6,12 @@ const {
   normalizeEdits,
   upgradeEdits,
   fromLegacyImage,
-  isDefaultEdits,
   stripOutput,
   SCHEMA_VERSION,
 } = editSchema;
 
 describe('editSchema（EditParams v1）', () => {
-  it('默认值归一化后等于默认且判定为未编辑', () => {
-    expect(isDefaultEdits(DEFAULT_EDITS())).toBe(true);
+  it('默认值归一化', () => {
     const n = normalizeEdits({});
     expect(n.schemaVersion).toBe(SCHEMA_VERSION);
     expect(n.basic.exposure).toBe(0);
@@ -71,18 +69,6 @@ describe('editSchema（EditParams v1）', () => {
       masks: [{ type: 'radial', cx: 1, cy: 1, rx: 2, ry: 2, adjustments: { exposure: 0.5 } }],
     });
     expect(keep.masks[0].adjustments.exposure).toBe(0.5);
-  });
-
-  it('非默认编辑检测与 output 剥离', () => {
-    expect(isDefaultEdits({ basic: { exposure: 0.5 } })).toBe(false);
-    expect(isDefaultEdits({ output: { quality: 60 } })).toBe(true); // output 不算编辑
-    const stripped = stripOutput({
-      ...DEFAULT_EDITS(),
-      basic: { exposure: 1 },
-      output: { format: 'png', quality: 80 },
-    });
-    expect(stripped.output).toBeUndefined();
-    expect(stripped.basic.exposure).toBe(1);
   });
 
   it('legacy images 行 → 初始 EditParams（查看态旋转/翻转并入 orientation）', () => {

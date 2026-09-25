@@ -1759,3 +1759,11 @@
   HistogramView 组件（SVG 三通道叠加，加色混合）+ 玻璃底 CSS + 3 个单测
   （像素统计/空画布/无上下文）。实机 CDP 验证：241x64 三通道可见。
   vitest 830/830（60 文件）；lint 0 error；typecheck/build ✓；NSIS 已重打（16:04）。
+- 2026-09-25 R60 冗余清理（代码+文档，生产引用计数判据）：
+  代码：shared/editSchema.cjs 的 isDefaultEdits 下线（零生产消费，仅测试引用；stripOutput/
+  fromLegacyImage 有内部消费保留）。
+  文档：SEAM5_DECISION.md（决策已执行完毕、零引用）与 PROGRESS.md（test 分支时代历史快照，
+  R62 勘正注已声明不代表现状）与 NIGHTLY_PROGRESS.md（迁移收官、Nightly log 承接）三份过期
+  文档删除；TAURI_PARITY.md 中对 NIGHTLY_PROGRESS 的历史口径说明保留（勘正性引用）。
+  error/ 建档与 UNATTENDED/AGENTS/README 为活文档，全部保留。
+  验证：editSchema 测试 6/6。
