@@ -20,8 +20,8 @@ export const EDIT_DEFAULTS = {
   contrast: 0, // -50..50
   saturation: 0, // -100..100（0 为原色，-100 黑白）
   temperature: 0, // -100..100（暖+ 冷-，预览为叠加近似）
-  highlights: 0, // -100..100
-  shadows: 0, // -100..100
+  highlights: 0, // -100..100（亮度掩蔽域：正=提亮高光，负=压暗高光，LR 惯例）
+  shadows: 0, // -100..100（正=提亮暗部，负=压暗暗部）
   whites: 0, // -100..100
   blacks: 0, // -100..100
   tint: 0, // -100..100（绿- 品红+）
@@ -232,8 +232,10 @@ export function previewFilterChain(ops) {
     shadows = { exponent: 1 / clamp(1 + -s.shadows / 220, 1, 1.45), invert: true };
   }
 
-  // 高光线性回收（sharp 端在阴影之后，单独原语保持顺序）
-  const highlightsSlope = s.highlights !== 0 ? clamp(1 - s.highlights / 400, 0.75, 1.15) : null;
+  // 高光线性回收（sharp 端在阴影之后，单独原语保持顺序）；方向为 LR 惯例：+提亮高光/−压暗高光。
+  // SVG 原语无法按 luma 混合，故不带亮度掩蔽（P2-3 主实现只在 shader/执行器端）——
+  // 降级路径近似，无 WebGL 时 tone 段与导出存在设计内分歧（与 HSL/分级 SVG 链既有哲学一致）。
+  const highlightsSlope = s.highlights !== 0 ? clamp(1 + s.highlights / 400, 0.75, 1.15) : null;
   // 曲线表（复合 rgb+通道，均匀采样供 feComponentTransfer type="table"），管线序在 tone 后、saturation 前
   const curves = buildCurveTables(s.curves);
   // 分离色调表（逐通道近似，管线序在 curves 后、saturation 前）

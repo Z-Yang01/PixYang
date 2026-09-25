@@ -72,11 +72,13 @@ describe('previewFilterChain（M5 预览滤镜链）', () => {
     expect(crush.shadows.exponent).toBeCloseTo(11 / 15, 12);
   });
 
-  it('高光与饱和度独立原语', async () => {
+  it('高光与饱和度独立原语（高光方向 LR 惯例：−压暗/＋提亮；SVG 链无掩蔽属设计内降级近似）', async () => {
     const { previewFilterChain } = await import('@/lib/editParams');
     const chain = previewFilterChain({ highlights: -60, saturation: -50 });
-    expect(chain.highlightsSlope).toBeCloseTo(1.15, 3);
+    expect(chain.highlightsSlope).toBeCloseTo(0.85, 3);
     expect(chain.saturate).toBeCloseTo(0.5, 3);
+    const plus = previewFilterChain({ highlights: 60 });
+    expect(plus.highlightsSlope).toBeCloseTo(1.15, 3);
   });
 });
 

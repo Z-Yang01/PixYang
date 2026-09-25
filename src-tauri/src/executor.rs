@@ -2,8 +2,10 @@
 // 逐语义镜像 electron/render/renderSpecToSharp.cjs：仿射累积（白平衡/曝光/影调线性复合为单次
 // linear）、非线性边界物化（curves/hsl/grading/saturation/masks/lens/detail 前先 flush）、
 // 蒙版 pre-crop 坐标系、crop 经 geometry 映射 + 钳制、EXIF 经 exif_relay 注回产物。
-// libvips 探测结论（NIGHTLY_LOG）：linear/gamma 对 uchar 均 truncate；gamma(1,g) =
-// trunc(255·(x/255)^(1/g))。
+// libvips 探测结论（NIGHTLY_LOG）：linear 对 uchar 截断 + 钳 0..255。R71 起 tone 段的高光/阴影
+// 为亮度掩蔽算子（apply_tone_masked：L=Rec.709 → w=smoothstep 带 → mix(c,f(c),w)），f 沿用原
+// 力度公式、段末单次 trunc——不再折叠进仿射/负阴影 negate 复合（原 gamma(1,g) 探测表语义
+// 随之退役，见 tests 阴影提升_亮度掩蔽_手算表一致）。
 // 已记录分歧（SEAM5_DECISION.md）：灰度源按 RGBA 解码；detail.sharpness 用近似 USM；
 // ICC 不回接；非 90° 倍数旋转跳过；代理分辨率直接编码（无元数据回接，同 JS）。
 
@@ -70,9 +72,66 @@ fn linear_byte(x: u8, a: f64, b: f64) -> u8 {
     (x as f64 * a + b).clamp(0.0, 255.0).trunc() as u8
 }
 
-/// libvips gamma：trunc(255·(x/255)^(1/gamma_out))
-fn gamma_byte(x: u8, gamma_out: f64) -> u8 {
-    (255.0 * (x as f64 / 255.0).powf(1.0 / gamma_out)).trunc() as u8
+/// GLSL 同名内建语义：t = clamp((x−e0)/(e1−e0), 0, 1)，t²(3−2t)
+fn smoothstep(e0: f64, e1: f64, x: f64) -> f64 {
+    let t = ((x - e0) / (e1 - e0)).clamp(0.0, 1.0);
+    t * t * (3.0 - 2.0 * t)
+}
+
+/// 亮度掩蔽 tone（P2-3）：out = mix(c, f(c), w(L))，L = Rec.709 luma（0.2126/0.7152/0.0722）。
+/// 阴影带 [0,0.5]（w=1−smoothstep），高光带 [0.5,1]（w=smoothstep）；阴影取算子输入（仿射后）
+/// 值、高光取阴影后值，与 shader 管线序一致。f 为原力度公式（阴影 ±镜像域 gamma、高光线性
+/// 乘后 clamp）；逐像素浮点连续求值、段末单次 trunc——旧实现负阴影经 negate→gamma→negate
+/// 三次量化，此为单次。零空间核（逐像素、无邻域），不产生光晕。
+fn apply_tone_masked(
+    buf: &mut [u8],
+    shadow: Option<(bool, f64)>,
+    highlight_slope: f64,
+    channels: usize,
+) {
+    let c_count = if channels >= 3 { 3 } else { 1 };
+    let luma = |c: &[f64; 3]| {
+        if c_count >= 3 {
+            0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]
+        } else {
+            c[0]
+        }
+    };
+    let mut i = 0;
+    while i + c_count <= buf.len() {
+        let mut c = [0.0f64; 3];
+        for cc in 0..c_count {
+            c[cc] = buf[i + cc] as f64 / 255.0;
+        }
+        if let Some((invert, e)) = shadow {
+            let w = 1.0 - smoothstep(0.0, 0.5, luma(&c));
+            if w > 0.0 {
+                for cc in 0..c_count {
+                    let x = c[cc];
+                    let f = if invert {
+                        1.0 - (1.0 - x).powf(e)
+                    } else {
+                        x.powf(e)
+                    };
+                    c[cc] = x + (f - x) * w;
+                }
+            }
+        }
+        if highlight_slope != 1.0 {
+            let w = smoothstep(0.5, 1.0, luma(&c));
+            if w > 0.0 {
+                for cc in 0..c_count {
+                    let x = c[cc];
+                    let f = (x * highlight_slope).clamp(0.0, 1.0);
+                    c[cc] = x + (f - x) * w;
+                }
+            }
+        }
+        for cc in 0..c_count {
+            buf[i + cc] = (c[cc] * 255.0).clamp(0.0, 255.0).trunc() as u8;
+        }
+        i += channels;
+    }
 }
 
 fn apply_affine(buf: &mut [u8], affine: &Affine, channels: usize) {
@@ -84,28 +143,6 @@ fn apply_affine(buf: &mut [u8], affine: &Affine, channels: usize) {
     while i + c_count <= buf.len() {
         for c in 0..c_count {
             buf[i + c] = linear_byte(buf[i + c], affine.slope[c], affine.offset[c]);
-        }
-        i += channels;
-    }
-}
-
-fn apply_gamma(buf: &mut [u8], gamma_out: f64, channels: usize) {
-    let c_count = if channels >= 3 { 3 } else { 1 };
-    let mut i = 0;
-    while i + c_count <= buf.len() {
-        for c in 0..c_count {
-            buf[i + c] = gamma_byte(buf[i + c], gamma_out);
-        }
-        i += channels;
-    }
-}
-
-fn negate_linear(buf: &mut [u8], channels: usize) {
-    let c_count = if channels >= 3 { 3 } else { 1 };
-    let mut i = 0;
-    while i + c_count <= buf.len() {
-        for c in 0..c_count {
-            buf[i + c] = linear_byte(buf[i + c], -1.0, 255.0);
         }
         i += channels;
     }
@@ -495,41 +532,26 @@ pub fn render_spec_to_file(
                 let blacks_off = -blacks * 0.35;
                 affine = affine.mul(whites_f * cf, cf * blacks_off + 127.5 * (1.0 - cf));
                 let highlight_slope = if highlights != 0.0 {
-                    (1.0 - highlights / 400.0).clamp(0.75, 1.15)
+                    (1.0 + highlights / 400.0).clamp(0.75, 1.15)
                 } else {
                     1.0
                 };
-                if shadows == 0.0 {
-                    if highlight_slope != 1.0 {
-                        affine = affine.mul(highlight_slope, 0.0);
-                    }
+                let shadow_op = if shadows > 0.0 {
+                    Some((false, (1.0 - shadows / 220.0).clamp(0.55, 1.0)))
+                } else if shadows < 0.0 {
+                    Some((true, 1.0 / (1.0 + (-shadows) / 220.0).clamp(1.0, 1.45)))
+                } else {
+                    None
+                };
+                if shadow_op.is_none() && highlight_slope == 1.0 {
                     continue;
                 }
+                // 亮度掩蔽后高光/阴影不再是可折叠的纯仿射/gamma 段（负阴影亦不走 negate
+                // 复合；highlights-only 免解码路径随之失效）：物化 pending 仿射后逐像素施加
                 flush_affine(&mut pixels, &mut affine, input)?;
                 ensure_decoded(&mut pixels, input)?;
                 let p = pixels.as_mut().unwrap();
-                if shadows > 0.0 {
-                    let e = (1.0 - shadows / 220.0).clamp(0.55, 1.0);
-                    apply_gamma(&mut p.data, 1.0 / e, p.channels);
-                    if highlight_slope != 1.0 {
-                        affine = Affine::identity().mul(highlight_slope, 0.0);
-                    }
-                } else {
-                    let e = (1.0 + (-shadows) / 220.0).clamp(1.0, 1.45);
-                    negate_linear(&mut p.data, p.channels);
-                    apply_gamma(&mut p.data, e, p.channels);
-                    affine = if highlight_slope != 1.0 {
-                        Affine {
-                            slope: [-highlight_slope; 3],
-                            offset: [255.0 * highlight_slope; 3],
-                        }
-                    } else {
-                        Affine {
-                            slope: [-1.0; 3],
-                            offset: [255.0; 3],
-                        }
-                    };
-                }
+                apply_tone_masked(&mut p.data, shadow_op, highlight_slope, p.channels);
             }
             "curves" => {
                 let Some(luts) = build_curve_luts(&params) else {
@@ -787,13 +809,13 @@ mod tests {
     }
 
     #[test]
-    fn 阴影提升_gamma_trunc与libvips探测表一致() {
-        let dir = std::env::temp_dir().join("pixyang_exec_gamma");
+    fn 阴影提升_亮度掩蔽_手算表一致() {
+        let dir = std::env::temp_dir().join("pixyang_exec_tone_mask");
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let src = dir.join("in.png");
         let out = dir.join("out.png");
-        // 探测表的 16 个输入值（NIGHTLY_LOG gamma(1,2) ⇔ shadows=110 → e=0.5）
+        // 沿用旧 libvips 探测表的 16 个输入值；shadows=110 → e=clamp(1−110/220,0.55,1)=0.55
         let vals: [u8; 16] = [
             0, 5, 10, 15, 50, 100, 101, 150, 200, 250, 255, 1, 2, 3, 4, 6,
         ];
@@ -810,18 +832,66 @@ mod tests {
         .unwrap();
         render_spec_to_file(&spec, &src, &out).unwrap();
         let got = read_pixels(&out);
-        // 与 libvips 实测（node 探测 gamma(1,1/0.55)，NIGHTLY_LOG）逐值一致：
-        // trunc(255·(x/255)^0.55)——shadows=110 时指数被 clampNum(…, 0.55, 1) 钳到 0.55
-        let libvips: [u8; 16] = [
-            0, 29, 42, 53, 104, 152, 153, 190, 223, 252, 255, 12, 17, 22, 25, 32,
+        // 手算表（P2-3 掩蔽语义）：out = trunc(255·mix(x, x^0.55, 1−smoothstep(0,0.5,x)))。
+        // L≥0.5 的中高调原样通过（150/200/250/255 不动），暗区按原力度公式提升。
+        let expected: [u8; 16] = [
+            0, 29, 42, 52, 85, 106, 106, 150, 200, 250, 255, 12, 17, 22, 25, 32,
         ];
         for i in 0..16 {
             assert_eq!(
                 got[i * 4],
-                libvips[i],
-                "gamma 阴影提升 像素 {i} 与 libvips 不符"
+                expected[i],
+                "掩蔽阴影提升 像素 {i} 与手算表不符"
             );
         }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn 影调亮度掩蔽_分区锁与高光方向_lr惯例() {
+        let dir = std::env::temp_dir().join("pixyang_exec_tone_dir");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let src = dir.join("in.png");
+        // 6 灰像素：10/26/64 = 暗区（w_阴影>0，w_高光=0）；200/242 = 亮区（反向）；128 = 中点
+        let vals: [u8; 6] = [10, 26, 64, 128, 200, 242];
+        let mut px = Vec::new();
+        for &v in &vals {
+            px.extend_from_slice(&[v, v, v, 255]);
+        }
+        write_test_png(&src, &px, 6, 1);
+        let run = |tone: &str, tag: &str| {
+            let out = dir.join(tag);
+            let spec: Value = serde_json::from_str(&format!(
+                r#"{{"specVersion":1,"stages":[
+                    {{"kind":"tone","params":{tone}}},
+                    {{"kind":"encode","params":{{"format":"png"}}}}]}}"#
+            ))
+            .unwrap();
+            render_spec_to_file(&spec, &src, &out).unwrap();
+            let p = read_pixels(&out);
+            [p[0], p[4], p[8], p[12], p[16], p[20]]
+        };
+        // 阴影 +60（e=8/11）：暗区提亮、L≥0.5 原样
+        assert_eq!(
+            run(r#"{"shadows":60}"#, "s_plus.png"),
+            [23u8, 46, 78, 128, 200, 242]
+        );
+        // 阴影 −60（镜像域 11/14）：暗区压暗、亮区原样（负阴影单次量化）
+        assert_eq!(
+            run(r#"{"shadows":-60}"#, "s_minus.png"),
+            [7u8, 21, 57, 128, 200, 242]
+        );
+        // 高光 +60（slope=1.15）：亮区提亮、暗区原样（LR 惯例：正=提亮）
+        assert_eq!(
+            run(r#"{"highlights":60}"#, "h_plus.png"),
+            [10u8, 26, 64, 128, 218, 254]
+        );
+        // 高光 −60（slope=0.85）：亮区压暗、暗区原样（LR 惯例：负=压暗；128 在带沿降 1 属 w≈0 残余）
+        assert_eq!(
+            run(r#"{"highlights":-60}"#, "h_minus.png"),
+            [10u8, 26, 64, 127, 181, 206]
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 

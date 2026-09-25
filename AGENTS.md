@@ -27,7 +27,10 @@ src-tauri/        Rust/Tauri 后端（唯一运行时桌面端）
   src/render.rs   渲染像素内核六件套（饱和/暗角/分级/HSL/蒙版/曲线，JS 对拍 8/8 零偏差——补注
                   2026-09-25 R62：该结论系旧验证体系（非实机 GPU）口径，现行实机对拍见
                   tests/webgl-parity 与 NIGHTLY_LOG R58-R60，现口径 6/8 绿 + 2 如实红）
-  src/executor.rs 渲染执行器（管线调度/仿射累积/几何裁剪/编码；gamma 与 libvips 实测表逐值一致）
+  src/executor.rs 渲染执行器（管线调度/仿射累积/几何裁剪/编码；R71 起 tone 段高光/阴影为
+                  亮度掩蔽算子 apply_tone_masked（mix(c,f(c),w(L))，L=Rec.709，阴影带[0,0.5]/
+                  高光带[0.5,1] smoothstep，高光方向 LR 惯例 +提亮/−压暗），f 力度公式不变、
+                  段末单次 trunc，负阴影不再走 negate 三次量化复合）
   src/thumbs.rs   双档缩略图/EXIF 转正/NEF 预览段提取（image-rs+kamadak-exif）
   src/exif_relay.rs EXIF 回接（JPEG APP1/PNG eXIf 字节级注放）
   src/db.rs       rusqlite 连接/settings/删除通道（与旧版共用 pixyang.db，schema 自举+快照迁移）
@@ -158,8 +161,11 @@ tests/            vitest（node 环境 + per-file happy-dom pragma）
     01 1.3921/max[10,7,18]、m02 1.3198/[4,4,5]、m03 0.3241/[≤3]、m04 0.6731/[≤3]，R63/R64/R65
     定版逐位稳定）；真缺陷量级（mean 16.6~33.7 / max 20~47）两界均仍拦下，判定与 report/log
     均标注所用档位。
-  当前 R70 分档后基线 8 例与编辑审计 30 例全绿（01/m02/m03/m04 走多阶段分档，其余含
-    s08/m05——缺陷② R65 修后——走缺省档；05-curves 逐字节 0）。历史「JS 对拍
+  当前 R70 分档后基线被 R71 P2-3 亮度掩蔽（渲染语义修复）重置：shader/执行器/JS 模型
+  四端同步改掩蔽语义后，基线 8 例与编辑审计 30 例中恰 9 例数字变化（01/03、
+  s05-s08/m02/m04/m05）；单阶段 tone 例（s05-s08）全部 maxΔ≤1 绿，03-tone mean 1.0304/max2
+  与 m05 mean 1.0550/max2 超缺省档 mean 界 0.6（掩蔽 smoothstep 带沿放大 GPU 舍入 vs
+  trunc 的量化差，量级远离真缺陷），分档重标留待下轮。历史「JS 对拍
   8/8 零偏差」是旧验证体系（非实机 GPU）口径，不可与本实机口径混用。
   运行注意：vite preview 须 `--host 127.0.0.1`（默认只绑 [::1]，浏览器走 127.0.0.1 必落
   chrome-error://）；假桥需 Proxy 兜底全部通道（ImageViewer 挂载即调 api.getImageTags().then）；
@@ -168,7 +174,7 @@ tests/            vitest（node 环境 + per-file happy-dom pragma）
 
 ## 验证
 
-- 测试：`npm test`（vitest，60 个文件 / 834 例；含 R37 桥接全通道契约、R51/R52 主题↔CSS 对拍、R53 右栏让位契约、R54/R55 错误文案中文化、R56 Rust 注册表↔桥命令对拍 + 全仓 `${e.message}` 直插与裸 `x.error` 上屏扫描、R57 主题双事实源对拍（`:root`↔块↔`@theme inline`↔色卡）、R64 曲线 LUT 恒等通道兜底回归锁、R65 负阴影指数对齐回归锁（uniform 1/e 值锁 + simulateShaderPixel 代表点像素锁与全域方向锁 + SVG 链指数锁）、R66 预设/粘贴字段域一致性回归锁（预设只覆盖显式字段 + 粘贴与复制/批量同步同口径）、R67 键盘调参历史收敛回归锁（连调 5 次→1 条 / sat=0 调 hue→0 条 / blur 即结算）与新会话保存态回归锁（未保存→已保存 / 回读→已保存）、R68 滑杆标签列宽与对比视图让位契约、R69 高光乘后 clamp 契约模型对齐回归锁（slope>1 饱和区先回 [0,1] 再进暗角/饱和度，代表点手算写死）、R70 viewerInfoRail EOL 归一回归锁（CRLF 文本输入也命中让位规则，防 autocrlf 工作树多行正则失配）、R74 搜索命中原始路径回归锁（matchesListFilters haystack 含 original_path，与 SQL 同口径防轻量写回误剪枝））；像素 golden 门禁在 cargo 侧 `golden_audit`，Rust 单测 154 例（R74 起含导入唯一名「盘∪库」判重与搜索含 original_path 各 1 例；R72 前基线实为 152，数字曾陈旧）；覆盖率：`npm run test:coverage`，门槛配置在 `vitest.config.js`（statements/lines 75、branches 70、functions 50）。
+- 测试：`npm test`（vitest，60 个文件 / 838 例；含 R37 桥接全通道契约、R51/R52 主题↔CSS 对拍、R53 右栏让位契约、R54/R55 错误文案中文化、R56 Rust 注册表↔桥命令对拍 + 全仓 `${e.message}` 直插与裸 `x.error` 上屏扫描、R57 主题双事实源对拍（`:root`↔块↔`@theme inline`↔色卡）、R64 曲线 LUT 恒等通道兜底回归锁、R65 负阴影指数对齐回归锁（uniform 1/e 值锁 + SVG 链指数锁；像素锁已随 R71 掩蔽化重导）、R66 预设/粘贴字段域一致性回归锁（预设只覆盖显式字段 + 粘贴与复制/批量同步同口径）、R67 键盘调参历史收敛回归锁（连调 5 次→1 条 / sat=0 调 hue→0 条 / blur 即结算）与新会话保存态回归锁（未保存→已保存 / 回读→已保存）、R68 滑杆标签列宽与对比视图让位契约、R69 高光乘后 clamp 契约模型对齐回归锁（slope>1 饱和区先回 [0,1] 再进暗角/饱和度，代表点手算写死；R71 起该锁经掩蔽 mix 重导）、R70 viewerInfoRail EOL 归一回归锁（CRLF 文本输入也命中让位规则，防 autocrlf 工作树多行正则失配）、R71 高光/阴影亮度掩蔽回归锁（掩蔽带端点 uniform 锁 + 暗区动/亮区不动双向分区锁 + 高光 LR 方向锁 + 像素代表点手算写死 + GLSL mix 源串锁 + 掩蔽 uniform 上传锁；Rust 侧手算表与分区/方向锁）、R74 搜索命中原始路径回归锁（matchesListFilters haystack 含 original_path，与 SQL 同口径防轻量写回误剪枝））；像素 golden 门禁在 cargo 侧 `golden_audit`（基线 2026-09-25 R71 随掩蔽语义重锁，Δ 审计归档 tests/golden/r71-tone-mask-relock-audit.md：恰 5 例 tone 用例变化、余 18 例 Δ=0），Rust 单测 155 例（R71 起 tone 掩蔽手算表/分区锁替旧 libvips 探测表 1 例→2 例）；覆盖率：`npm run test:coverage`，门槛配置在 `vitest.config.js`（statements/lines 75、branches 70、functions 50）。
 - Lint：`npm run lint`（ESLint flat config，`eslint.config.mjs`）；0 error 为准，warning 不阻塞。
 - 类型检查：`npm run typecheck`（tsc --noEmit，覆盖 src 下 TS/TSX）。
 - 格式检查：`npm run format:check`（Prettier 基线已于 R40 全仓落库，改动后的文件须保持 prettier 合规；历史 `*.md` 与 `src-tauri/gen/` 在 `.prettierignore` 豁免）。

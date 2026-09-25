@@ -21,6 +21,8 @@ uniform vec3 uAffineSlope;
 uniform float uAffineOffset;
 uniform vec2 uShadows;          // x=exponent(0=off), y=invert
 uniform float uHighlightsSlope;
+uniform vec2 uShadowBand;       // 阴影亮度掩蔽带端点（w = 1−smoothstep(e0,e1,L)）
+uniform vec2 uHighlightBand;    // 高光亮度掩蔽带端点（w = smoothstep(e0,e1,L)）
 uniform float uHslOn;
 uniform float uHslHue[8];
 uniform float uHslSat[8];
@@ -137,10 +139,20 @@ float weighted(float adj[8], float h) {
 void main() {
   vec3 c = texture(uImage, vUv).rgb;
   c = clamp(c * uAffineSlope + uAffineOffset, 0.0, 1.0);
+  // 亮度掩蔽 tone（out = mix(c, f(c), w(L))，L=Rec.709）：阴影取仿射后值、高光取阴影后值，
+  // 与执行器 apply_tone_masked 同序同公式（f 只管力度、w 只管定位）
   if (uShadows.x > 0.0) {
-    c = uShadows.y > 0.5 ? 1.0 - pow(1.0 - c, vec3(uShadows.x)) : pow(c, vec3(uShadows.x));
+    float Ls = dot(c, vec3(0.2126, 0.7152, 0.0722));
+    float ws = 1.0 - smoothstep(uShadowBand.x, uShadowBand.y, Ls);
+    vec3 f = uShadows.y > 0.5 ? 1.0 - pow(1.0 - c, vec3(uShadows.x)) : pow(c, vec3(uShadows.x));
+    c = mix(c, f, ws);
   }
-  if (uHighlightsSlope != 1.0) c = clamp(c * uHighlightsSlope, 0.0, 1.0);
+  if (uHighlightsSlope != 1.0) {
+    float Lh = dot(c, vec3(0.2126, 0.7152, 0.0722));
+    float wh = smoothstep(uHighlightBand.x, uHighlightBand.y, Lh);
+    vec3 f = clamp(c * uHighlightsSlope, 0.0, 1.0);
+    c = mix(c, f, wh);
+  }
   if (uCurveLutOn > 0.5) {
     // texelFetch 显式最近邻取整（round 语义），与执行器 applyCurveLutsInPlace 的
     // data[byte] 同式；NEAREST+floor(u*256) 在上半值区间存在差一输入档的采样分叉
@@ -230,6 +242,8 @@ function getUniformLocations(gl, program) {
     'uAffineOffset',
     'uShadows',
     'uHighlightsSlope',
+    'uShadowBand',
+    'uHighlightBand',
     'uHslOn',
     'uHslHue',
     'uHslSat',
@@ -412,6 +426,8 @@ export async function renderWebGLPreview(canvas, image, uniforms, opts = {}) {
       uniforms.shadows ? uniforms.shadows.invert : 0
     );
     gl.uniform1f(locs.uHighlightsSlope, uniforms.highlightsSlope);
+    gl.uniform2fv(locs.uShadowBand, uniforms.shadowBand || [0, 0.5]);
+    gl.uniform2fv(locs.uHighlightBand, uniforms.highlightBand || [0.5, 1]);
     gl.uniform1f(locs.uHslOn, uniforms.hslOn);
     gl.uniform1fv(locs.uHslHue, uniforms.hslHue);
     gl.uniform1fv(locs.uHslSat, uniforms.hslSat);

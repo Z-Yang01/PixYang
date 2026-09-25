@@ -1896,3 +1896,79 @@
   体感是否需要统一（UX 决策）；④ 相册允许重名（镜像语义）是否要加唯一约束。
 
 - 2026-09-25 23:00 R71 开工记录（用户 23:00 前后拍板）：P2-3 亮度掩蔽立项——方案 B（smoothstep 带：高光 w=smoothstep(0.5,1,L)、阴影 w=1-smoothstep(0,0.5,L)，L=Rec.709）+ 高光方向 LR 化（正=提亮）。硬切不设新旧开关（语义升级即用户诉求）。R71 主轮=四端同步实现（previewUniforms/webglPreview/editParams SVG 链仅翻方向/executor.rs 掩蔽算子）+ golden 重锁；R72 验证轮=webgl-parity 全矩阵+TOL 分档重标+NSIS+真机观感。要点：f(c) 力度公式不变只加定位；L 取算子自身输入 luma；Rec.709 精确系与 grading/蒙版一致；SVG 回退链不加掩蔽（设计内分歧，注释标注）。
+- 2026-09-25 23:28 R71 P2-3 主实现：高光/阴影亮度掩蔽（smoothstep 带）+ 高光方向 LR 化（用户拍板方案 B，硬切无新旧开关）：
+  ① 需求/裁决来源：R63 缺陷清单 P2-3（高光/阴影全局近似语义）+ R66/R67/R68/R70 连续四轮待裁决挂账；本轮任务书
+    明示用户已拍板：亮度掩蔽式 out=mix(c,f(c),w(L))、族 1 smoothstep 带（高光 w=smoothstep(0.5,1,L)、阴影
+    w=1−smoothstep(0,0.5,L)）、L=Rec.709(0.2126/0.7152/0.0722) 取算子自身输入像素（阴影用仿射后值、高光用
+    阴影后值）、高光方向翻转 LR 惯例（+提亮/−压暗）、硬切不留旧算法开关、零空间核不做空间处理。
+  ② 根因（R63 审计 + 本轮 HEAD 复核）：旧实现高光=全图线性乘（slope=1−v/400）、阴影=全图 gamma（±镜像域，
+    负阴影经 negate→gamma→negate 三次量化复合），无亮度定位——调高光/阴影等于调全图亮度/对比，与「只动高光
+    区域」直觉相悖。**高光方向勘正（对 R63 P2-3 取证文字）**：R63 原文「高光 -60 表现为全图压暗 15%」与 HEAD
+    旧代码不符——旧公式 slope=1−v/400 在 v=−60 时为 1.15，实为**全图提亮 15%**（滑杆方向与 LR 惯例相反）；
+    R63 的「压暗」是用户直觉期望而非旧代码行为。新旧语义对照：旧（−60 全图提亮/＋60 全图压暗，方向反）→
+    新（−60 压暗高光区/＋60 提亮高光区，方向正且带亮度定位）。R63 原文按规范不改写，以本条为准。
+  ③ 修法（四端，shared/ 零改动——schema 值域 −100..100 不变）：
+    ▶ src/lib/previewUniforms.js：highlightsSlope 公式翻转为 clamp(1+v/400, 0.75, 1.15)；uniforms 新增
+      shadowBand:[0,0.5] / highlightBand:[0.5,1]（带端点作为 uniform 传入，沿「GLSL 只消费 uniform」架构）；
+      simulateShaderPixel 逐字同步掩蔽+方向（smoothstep 为模块级助手）。
+    ▶ src/lib/webglPreview.js：GLSL 高光/阴影段改 mix(c,f,w(L))——阴影 f=±镜像域 pow、高光 f=clamp(c·slope,0,1)
+      （R60 clamp 契约保留在 f 内），uShadowBand/uHighlightBand 声明+位置表+uniform2fv 上传同步。
+    ▶ src/lib/editParams.js：SVG 回退链只翻转高光方向（1−v/400→1+v/400），**不加掩蔽**——SVG 原语无法按 luma
+      混合，注释标注「降级路径近似，无 WebGL 时 tone 段与导出存在设计内分歧」（与 HSL/分级 SVG 链既有哲学一致）；
+      EDIT_DEFAULTS 注释同步方向语义。
+    ▶ src-tauri/src/executor.rs：tone 段重写——高光 slope 同步翻转；解除三处仿射折叠（highlights-only 纯仿射
+      免解码路径、shadows>0 后的高光仿射、负阴影 negate 复合 Affine 均删除）；新增逐像素 apply_tone_masked
+      （L→w→mix→段末单次 trunc+clamp，负阴影从三次量化变单次量化；tone 有非零高光/阴影时强制 flush+decode）；
+      gamma_byte/apply_gamma/negate_linear 随旧语义退役删除，linear_byte（仿射 flush）保留。
+  ④ 回归锁 + 变异验证（旧锁→新锁对照）：
+    ▶ previewUniforms.test.jsx：R65 三例像素锁重导——[128,128,128]→[108,108,108]（全图域）改为掩蔽代表点锁
+      （[26]→[21]、[64]→[58]、L≈0.5 与亮区含彩色 [200,120,90] 原样，Python 双精度独立复算写死）；R65 全域
+      方向锁改双向分区锁（[10,26,40,64] 负值压暗/正值提亮且 [128,180,230,240] 逐字节不动）；新增高光分区
+      方向锁（+60 slope=1.15 亮区 [230]→[252]/[242]→[255] 暗区不动；−60 slope=0.85 [230]→[199]/[242]→[207]）、
+      掩蔽带端点 uniform 锁、LR 方向 uniform 锁；R69 两例 slope>1 锁改经掩蔽 mix 重导（[255,240,220]+60:
+      暗角 [128,127,126] / 饱和度 [255,255,251]，手算写死）；暗角锁对 u8 半量子边界改 ±1 诚实容差（掩蔽改变
+      tone 段输出使 base 落在边界，中心锁仍逐字节）。全公式连续求值例加掩蔽两段。
+    ▶ webglPreview.test.js：baseUniforms +shadowBand/highlightBand；R60 GLSL clamp 源串锁改掩蔽形态
+      （f=clamp(c·slope)+mix 锁 + 禁止回退旧裸乘/裸 clamp）；新增 uniform2fv 上传锁。
+    ▶ editParams.test.js：高光 SVG 链锁按新方向重导（−60→0.85、+60→1.15）。
+    ▶ executor.rs cargo 测试：旧「阴影提升_gamma_trunc 与 libvips 探测表一致」对象消失 → 改写为掩蔽手算表
+      （shadows=110/e=0.55，16 值逐字节：暗区按 f 力度、150 以上原样）+ 新增分区/方向四 spec 锁（[10,26,64,128,
+      200,242]×{shadows±60,highlights±60} 全表手算写死，f64 与 Python 复算逐值一致）；1 例→2 例，lib 154→155。
+    ▶ 变异验证四组（各改坏→红→回退复绿）：M1 权重 w≡1（退回全图）→ previewUniforms 6 红（分区锁/代表点
+      [128]→[108] 复活/方向锁）；M2 方向公式还原 1−v/400 → 5 红（LR 方向锁/SVG 链一致性/像素锁）；M3 掩蔽
+      uniform 漏传（删 uniform2fv 两行）→ webglPreview 恰 1 红（上传锁，余 15 绿归因干净）；M4 Rust 侧阴影
+      w≡1 → executor 恰 2 红（手算表+分区锁，余 4 绿）。
+  ⑤ 真机取证（webgl-parity，无头 Edge 153 + ANGLE Intel UHD D3D11，encode=png，回读 2d-drawImage）：
+    ▶ 基线 8 例：恰 2 例数字变化——01-full-combo 1.3921/[10,7,18]→1.1098/[10,6,17]（分档 {18,1.5} 内绿）、
+      03-tone 0.5180→1.0304/[2,2,2]（超缺省档 mean 0.6 如实红）；02 0.2986/04 0.4795/05 0/06 0.0017/
+      07 0.1446/08 0.0295 与 R70 定版逐位一致（无 tone 参数例零扰动）。
+    ▶ 编辑审计 30 例：恰 7 例数字变化（与预测的 9 例合计一致）——s05 0.2402、s06 0.3042、s07 0.1948、
+      s08 0.2528（全部 max≤1 缺省档绿，单阶段掩蔽量化包络良好）、m02 1.3198/[4,4,5]→0.8964/[4,4,4]（分档内）、
+      m04 0.6731/[3,3,3]→0.4434/[3,3,3]（分档内）、m05 0.3669/[1,1,1]→1.0550/[2,2,2]（max 2 内、mean 超缺省档
+      如实红）；m03 0.3241/[3,3,3] 逐位不动（contrast/exposure-only 佐证掩蔽未越界）；其余 21 例逐位一致。
+    ▶ 03/m05 两例红属掩蔽 smoothstep 带沿放大 GPU 舍入 vs 执行器 trunc 的量化差（量级 1.0~1.1，与真缺陷
+      16.6~33.7 差一个数量级以上），TOL 分档重标按任务书留下一轮，本轮不调容差掩盖。
+  ⑥ 附带发现/勘正：①R63 P2-3「压暗」措辞勘正见②；②golden 基线随渲染语义重锁（第二道理锁，先例
+    rust-relock-audit.md），Δ 审计归档 tests/golden/r71-tone-mask-relock-audit.md——恰 5 例 tone 用例变化
+    （012 max38/mean13.40、013 29/10.95、014 76/17.29、015 61/16.85、019 35/8.52），其余 18 例 Δ=0 逐字节
+    （004-contrast-30 纯仿射路径零扰动佐证折叠解除只影响非零高光/阴影路径）；③simulateShaderPixel 高光 clamp
+    漂移挂账（R63⑥②/R64③/R66④/R69 已修）随掩蔽重导闭环——该锁现锁 mix 前 f=clamp(c·slope)；④本机
+    autocrlf 警告（UNATTENDED/webglPreview LF→CRLF 提示）为工作树常态，blob 全 LF 零改动。
+  - 验证：vitest 60 文件 / **838** 例（834+4）✓；lint 0 error / 10 warning（既有基线）✓；typecheck 净 ✓；
+    format:check 净（本轮 6 文件 prettier 复验）✓；cargo **155** lib + 1 golden_audit ✓（重锁后）；golden 重锁
+    GOLDEN_RELOCK=1 执行（先红留 Δ 记录→重锁→155+1 复绿）；安装包 PixYang_0.1.0_x64-setup.exe mtime
+    2026-09-25 23:27:23 / 4,085,993 字节（旧 4,083,359 / 21:39），哈希链一手核对：dist 引用
+    index-DzCvnQ-B.js / index-BRVGMQ2R.css 在 release pixyang.exe（23:27:24）均 1 命中，
+    index-Dz8wl2t9.js/N03T4aPs.css（R68-R70）、CuB-tm5K.js（R67）、UzYJcmbA.js（R66）、9nwtNm8W.js（R65）、
+    CPgGXolI.js（R64）、Dq6YwgLN.js（R60）均 0 命中；FreeGB 起点 281；对拍临时进程/文件由脚本自清理，
+    无 tauri 打包噪声（工作树仅本轮点名文件）。
+    提交范围：src/lib/previewUniforms.js、src/lib/webglPreview.js、src/lib/editParams.js、
+    src-tauri/src/executor.rs、tests/unit/lib/previewUniforms.test.jsx、tests/unit/lib/webglPreview.test.js、
+    tests/unit/lib/editParams.test.js、tests/golden/cases/{012,013,014,015,019} 基线、
+    tests/golden/r71-tone-mask-relock-audit.md、AGENTS.md、UNATTENDED.md（基线 834→838/154→155）、
+    NIGHTLY_LOG.md。
+  待人工复核：① webgl-parity TOL 分档重标（03-tone mean 1.0304、m05 mean 1.0550 超缺省档 mean 0.6，max 均 ≤2；
+    建议 tone 系用例分档或缺省档微调，量级远离真缺陷包络）；② SVG 回退链无掩蔽的设计内分歧（无 WebGL 环境
+    tone 段与导出现可观感差异大于掩蔽前，是否需在 UI 提示降级，属产品口径）；③ 已存编辑重导出观感改变属
+    预期（修复本身，用户已拍板硬切），若用户反馈「旧图调过的 tone 变了」属此；④ 高光滑杆 tooltip 文案是否
+    需注明新方向语义（现 UI 无方向提示文案，未动）；⑤ R63 P3-2/P3-5/P3-7 与既有挂账维持。

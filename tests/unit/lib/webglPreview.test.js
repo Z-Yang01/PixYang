@@ -60,6 +60,8 @@ function baseUniforms() {
     affineOffset255: 0,
     shadows: null,
     highlightsSlope: 1,
+    shadowBand: [0, 0.5],
+    highlightBand: [0.5, 1],
     hslOn: 0,
     hslHue: zeros(8),
     hslSat: zeros(8),
@@ -174,7 +176,7 @@ describe('renderWebGLPreview', () => {
     expect(src).not.toMatch(/texture\(\s*uCurveLut/);
   });
 
-  it('高光斜率相乘后 clamp 到 [0,1]，防 c>1 进曲线 LUT texelFetch 越界取黑（R60）', async () => {
+  it('高光亮度掩蔽：f=clamp(c*slope) 先回 [0,1] 再按 w(L) mix，防 c>1 进 LUT 越界（R60/R71）', async () => {
     const { canvas, gl } = makeCanvas();
     globalThis.createImageBitmap = vi.fn().mockResolvedValue({ close: vi.fn() });
     expect(await renderWebGLPreview(canvas, testImage, baseUniforms())).toBe(true);
@@ -183,10 +185,27 @@ describe('renderWebGLPreview', () => {
     );
     expect(frag).toBeTruthy();
     const src = String(frag.args[1]);
-    expect(src).toContain(
-      'if (uHighlightsSlope != 1.0) c = clamp(c * uHighlightsSlope, 0.0, 1.0);'
-    );
+    expect(src).toContain('vec3 f = clamp(c * uHighlightsSlope, 0.0, 1.0);');
+    expect(src).toContain('float wh = smoothstep(uHighlightBand.x, uHighlightBand.y, Lh);');
+    expect(src).toContain('c = mix(c, f, wh);');
+    expect(src).toContain('float ws = 1.0 - smoothstep(uShadowBand.x, uShadowBand.y, Ls);');
+    expect(src).toContain('c = mix(c, f, ws);');
+    // 禁止回退：无掩蔽裸乘/裸 clamp（P2-3 亮度掩蔽前的旧形态）
     expect(src).not.toContain('c *= uHighlightsSlope');
+    expect(src).not.toContain('c = clamp(c * uHighlightsSlope, 0.0, 1.0);');
+  });
+
+  it('亮度掩蔽带端点作为 uniform 上传（漏传即回退为全图 tone，P2-3 契约）', async () => {
+    const { canvas, gl } = makeCanvas();
+    globalThis.createImageBitmap = vi.fn().mockResolvedValue({ close: vi.fn() });
+    expect(await renderWebGLPreview(canvas, testImage, baseUniforms())).toBe(true);
+    const uploaded = gl.__calls.filter((c) => c.prop === 'uniform2fv');
+    expect(
+      uploaded.some((c) => Array.isArray(c.args[1]) && c.args[1][0] === 0 && c.args[1][1] === 0.5)
+    ).toBe(true);
+    expect(
+      uploaded.some((c) => Array.isArray(c.args[1]) && c.args[1][0] === 0.5 && c.args[1][1] === 1)
+    ).toBe(true);
   });
 });
 

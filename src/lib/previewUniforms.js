@@ -1,7 +1,10 @@
 // RenderSpec → WebGL2 shader uniforms：预览 shader 直接消费 spec.stages（M7），
 // 与渲染执行器（Rust executor.rs）共享 shared/ 下的数学实现，保证预览/导出同语义。
-// 管线序（shader 内应用）：affine(白平衡/曝光/影调线性) → 阴影 gamma → 高光线性
-//   → 曲线 LUT → HSL 带调整 → 分级(真亮度加权) → 饱和度 → 暗角。
+// 管线序（shader 内应用）：affine(白平衡/曝光/影调线性) → 阴影 gamma(亮度掩蔽) →
+//   高光线性(亮度掩蔽) → 曲线 LUT → HSL 带调整 → 分级(真亮度加权) → 饱和度 → 暗角。
+// 高光/阴影为亮度掩蔽算子 out = mix(c, f(c), w(L))：f 只管力度（原有公式），w 定位
+// （阴影 w=1−smoothstep(0,0.5,L)、高光 w=smoothstep(0.5,1,L)，L=Rec.709）；带端点
+// 作为 uniform 传入（GLSL 只消费 uniform），高光方向为 LR 惯例（+提亮/−压暗）。
 // 几何/裁剪不进 shader（CSS transform 与裁剪框承担）；detail.sharpness 预览不呈现（与 SVG 路径一致）。
 
 import curvesLib from '../../shared/curves.cjs';
@@ -16,6 +19,10 @@ const { normalizeHsl, HSL_BANDS } = hslLib;
 const { saturate01 } = saturationLib;
 
 const clamp = (v, min, max) => Math.min(max, Math.max(min, v));
+const smoothstep = (e0, e1, x) => {
+  const t = clamp((x - e0) / (e1 - e0), 0, 1);
+  return t * t * (3 - 2 * t);
+};
 
 // 阶段查找表
 function stagesBy(spec) {
@@ -42,7 +49,7 @@ export function specToShaderUniforms(spec, imageSize = [0, 0]) {
   const affineSlope = wbGain.map((w) => w * gain * whitesF * cf);
   const affineOffset255 = cf * blacksOff + 127.5 * (1 - cf);
 
-  // 阴影 gamma（±镜像域）与高光线性（与 SVG 链同公式）
+  // 阴影 gamma（±镜像域）与高光线性（与 SVG 链同公式；高光方向 LR 惯例：+提亮/−压暗）
   const shadowsVal = tone.shadows || 0;
   const shadows =
     shadowsVal > 0
@@ -50,7 +57,7 @@ export function specToShaderUniforms(spec, imageSize = [0, 0]) {
       : shadowsVal < 0
         ? { exponent: 1 / clamp(1 + -shadowsVal / 220, 1, 1.45), invert: 1 }
         : null;
-  const highlightsSlope = tone.highlights !== 0 ? clamp(1 - tone.highlights / 400, 0.75, 1.15) : 1;
+  const highlightsSlope = tone.highlights !== 0 ? clamp(1 + tone.highlights / 400, 0.75, 1.15) : 1;
 
   // 曲线：复合 rgb+通道 → 256 级 RGBA LUT 纹理数据（A 通道占位 255）
   const luts = buildCurveLuts(by.curves?.params || {});
@@ -148,6 +155,8 @@ export function specToShaderUniforms(spec, imageSize = [0, 0]) {
     affineOffset255,
     shadows,
     highlightsSlope,
+    shadowBand: [0, 0.5],
+    highlightBand: [0.5, 1],
     curveLut,
     hslOn,
     hslHue: hsl.hue,
@@ -175,9 +184,21 @@ export function simulateShaderPixel(rgb255, uniforms, uv = [0.5, 0.5]) {
   ];
   if (uniforms.shadows) {
     const { exponent: e, invert } = uniforms.shadows;
-    c = c.map((x) => (invert ? 1 - Math.pow(1 - x, e) : Math.pow(x, e)));
+    const L = 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+    const w = 1 - smoothstep(uniforms.shadowBand[0], uniforms.shadowBand[1], L);
+    c = c.map((x) => {
+      const f = invert ? 1 - Math.pow(1 - x, e) : Math.pow(x, e);
+      return x + (f - x) * w;
+    });
   }
-  if (uniforms.highlightsSlope !== 1) c = c.map((x) => clamp(x * uniforms.highlightsSlope, 0, 1));
+  if (uniforms.highlightsSlope !== 1) {
+    const L = 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+    const w = smoothstep(uniforms.highlightBand[0], uniforms.highlightBand[1], L);
+    c = c.map((x) => {
+      const f = clamp(x * uniforms.highlightsSlope, 0, 1);
+      return x + (f - x) * w;
+    });
+  }
   if (uniforms.curveLut) {
     c = c.map((x, i) => uniforms.curveLut[Math.round(clamp(x, 0, 1) * 255) * 4 + i] / 255);
   }

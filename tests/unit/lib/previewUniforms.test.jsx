@@ -69,6 +69,23 @@ describe('specToShaderUniforms（RenderSpec → shader uniforms）', () => {
     expect(uPos.shadows.exponent).toBeLessThan(1);
   });
 
+  it('亮度掩蔽带端点 uniform（shader uShadowBand/uHighlightBand 同源，P2-3）', () => {
+    const u = buildUniforms({});
+    expect(u.shadowBand).toEqual([0, 0.5]);
+    expect(u.highlightBand).toEqual([0.5, 1]);
+  });
+
+  it('高光方向 LR 惯例：正 slope>1 提亮、负 slope<1 压暗（与 SVG 链同值）', () => {
+    const uPos = buildUniforms({ basic: { highlights: 60 } });
+    const uNeg = buildUniforms({ basic: { highlights: -60 } });
+    expect(uPos.highlightsSlope).toBeCloseTo(1.15, 12);
+    expect(uNeg.highlightsSlope).toBeCloseTo(0.85, 12);
+    const chainPos = previewFilterChain(
+      fromEditParams(editSchema.normalizeEdits({ basic: { highlights: 60 } }))
+    );
+    expect(chainPos.highlightsSlope).toBeCloseTo(uPos.highlightsSlope, 5);
+  });
+
   it('曲线 LUT 与 shared buildCurveLuts 逐项一致', () => {
     const u = buildUniforms(FULL_PARAMS);
     const luts = curves.buildCurveLuts(FULL_PARAMS.curves);
@@ -141,12 +158,24 @@ describe('specToShaderUniforms（RenderSpec → shader uniforms）', () => {
 describe('simulateShaderPixel（shader 公式 JS 模拟）与 shared 数学连续求值一致', () => {
   const u = buildUniforms(FULL_PARAMS);
 
-  it('全公式像素：affine→shadows→highlights→curves→hsl→grading→saturation 逐段同值', () => {
+  it('全公式像素：affine→阴影(掩蔽)→高光(掩蔽)→curves→hsl→grading→saturation 逐段同值', () => {
     // 独立按 shared 数学连续求值（0..1 全程不取整）
     const clamp01 = (v) => Math.min(1, Math.max(0, v));
     let c = [200, 120, 90].map((v, i) => clamp01((v * u.affineSlope[i] + u.affineOffset255) / 255));
-    c = c.map((x) => Math.pow(x, u.shadows.exponent));
-    c = c.map((x) => x * u.highlightsSlope);
+    const Ls = 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+    const ws = 1 - smoothstep(u.shadowBand[0], u.shadowBand[1], Ls);
+    c = c.map((x) => {
+      const f = u.shadows.invert
+        ? 1 - Math.pow(1 - x, u.shadows.exponent)
+        : Math.pow(x, u.shadows.exponent);
+      return x + (f - x) * ws;
+    });
+    const Lh = 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+    const wh = smoothstep(u.highlightBand[0], u.highlightBand[1], Lh);
+    c = c.map((x) => {
+      const f = clamp01(x * u.highlightsSlope);
+      return x + (f - x) * wh;
+    });
     c = c.map((x, i) => u.curveLut[Math.round(clamp01(x) * 255) * 4 + i] / 255);
     const [h, s, l] = hsl.rgbToHsl(c[0], c[1], c[2]);
     const h2 = (h + (hsl.weightedAdjust(u.hslHue, h) / 100) * 30 + 360) % 360;
@@ -188,28 +217,29 @@ describe('simulateShaderPixel（shader 公式 JS 模拟）与 shared 数学连�
     const base = simulateShaderPixel([200, 200, 200], { ...u, vignette: 0 }, uvCorner);
     const withVig = simulateShaderPixel([200, 200, 200], { ...u, vignette: -50 }, uvCorner);
     const expected = base.map((v) => Math.round(v * (1 + (-50 / 100) * f)));
-    expect(withVig).toEqual(expected);
+    // 暗角在 float 域施加、出口单次取整，expected 由 u8 base 推导——base 落在半量子
+    // 边界时允许 ±1（u8 边界诚实容差）；中心无 falloff 仍须逐字节相等。
+    expect(withVig.every((v, i) => Math.abs(v - expected[i]) <= 1)).toBe(true);
     expect(simulateShaderPixel([200, 200, 200], { ...u, vignette: -50 }, [0.5, 0.5])).toEqual(base);
   });
 
-  it('高光 slope>1 饱和区先 clamp 再进暗角（与 GLSL clamp(c*slope,0,1) 同语义，R64③）', () => {
-    // highlights=-60 → slope=clamp(1.15,0.75,1.15)=1.15；[255,240,220] 乘后 R/G>1，
-    // GLSL 在 webglPreview.js:143 相乘后立即回 [0,1]，暗角角落 f=1 减半后手算
-    // [128,128,127]；无 clamp 的旧模型得 [147,138,127]（漂移 19/10）。
-    const u = buildUniforms({ basic: { highlights: -60 }, lens: { vignette: -50 } });
+  it('高光 slope>1 饱和区先 clamp 再进暗角（+60 提亮亮区，mix 前 f 先回 [0,1]）', () => {
+    // highlights=+60 → slope=clamp(1.15,0.75,1.15)=1.15（LR 惯例）；[255,240,220] 的
+    // L=0.9480 → w=smoothstep(0.5,1,L)=0.9698，f=clamp(c*1.15)=[1,1,0.9922]，
+    // mix 后暗角角落 f=1 减半手算 [128,127,126]。
+    const u = buildUniforms({ basic: { highlights: 60 }, lens: { vignette: -50 } });
     expect(u.highlightsSlope).toBeCloseTo(1.15, 12);
     expect(u.curveLut).toBeNull();
     const got = simulateShaderPixel([255, 240, 220], u, [1, 1]);
-    expect(got).toEqual([128, 128, 127]);
+    expect(got).toEqual([128, 127, 126]);
     expect(got.every((x) => x >= 0 && x <= 255)).toBe(true);
   });
 
-  it('高光 slope>1 饱和区先 clamp 再进饱和度（无 curveLut 兜底路径，R64③）', () => {
-    // slope=1.15 后 [1,1,0.9922]（GLSL 语义），luma-mix k=1.5 手算 B=0.98852→252；
-    // 旧模型带 c>1 进饱和度得 B=240，与 shader 出帧差 12。
-    const u = buildUniforms({ basic: { highlights: -60, saturation: 50 } });
+  it('高光 slope>1 饱和区先 clamp 再进饱和度（无 curveLut 兜底路径）', () => {
+    // mix 后 [1, 0.99822, 0.98825]，luma-mix k=1.5 手算 B=0.98344→251。
+    const u = buildUniforms({ basic: { highlights: 60, saturation: 50 } });
     expect(u.highlightsSlope).toBeCloseTo(1.15, 12);
-    expect(simulateShaderPixel([255, 240, 220], u)).toEqual([255, 255, 252]);
+    expect(simulateShaderPixel([255, 240, 220], u)).toEqual([255, 255, 251]);
   });
 
   it('恒等 uniforms 输出原像素（无编辑不扰动）', () => {
@@ -218,19 +248,43 @@ describe('simulateShaderPixel（shader 公式 JS 模拟）与 shared 数学连�
     expect(got).toEqual([120, 60, 30]);
   });
 
-  it('负阴影采样点变暗（执行器 libvips 语义 1/e，R65 代表点手算写死）', () => {
+  it('阴影亮度掩蔽代表点：暗区施加、中灰与亮区原样（手算写死，R65 锁掩蔽化重导）', () => {
     const u = buildUniforms({ basic: { shadows: -60 } });
-    expect(simulateShaderPixel([128, 128, 128], u)).toEqual([108, 108, 108]);
-    expect(simulateShaderPixel([200, 120, 90], u)).toEqual([179, 100, 74]);
+    expect(u.shadows.exponent).toBeCloseTo(11 / 14, 12);
+    // L=0.102 / 0.251（暗区）：w=0.9825 / 0.4971，镜像域压暗
+    expect(simulateShaderPixel([26, 26, 26], u)).toEqual([21, 21, 21]);
+    expect(simulateShaderPixel([64, 64, 64], u)).toEqual([58, 58, 58]);
+    // L≈0.502 与亮区（含彩色 L=0.529）：w=0，原样通过
+    expect(simulateShaderPixel([128, 128, 128], u)).toEqual([128, 128, 128]);
+    expect(simulateShaderPixel([230, 230, 230], u)).toEqual([230, 230, 230]);
+    expect(simulateShaderPixel([200, 120, 90], u)).toEqual([200, 120, 90]);
   });
 
-  it('阴影方向锁：负值全域压暗、正值全域提亮（恒等仿射）', () => {
+  it('阴影分区方向锁：暗区动、亮区不动（正值提亮暗部/负值压暗暗部）', () => {
     const uNeg = buildUniforms({ basic: { shadows: -60 } });
     const uPos = buildUniforms({ basic: { shadows: 60 } });
-    for (const v of [10, 64, 128, 200, 240]) {
+    for (const v of [10, 26, 40, 64]) {
       expect(simulateShaderPixel([v, v, v], uNeg).every((x) => x < v)).toBe(true);
       expect(simulateShaderPixel([v, v, v], uPos).every((x) => x > v)).toBe(true);
     }
+    for (const v of [128, 180, 230, 240]) {
+      expect(simulateShaderPixel([v, v, v], uNeg)).toEqual([v, v, v]);
+      expect(simulateShaderPixel([v, v, v], uPos)).toEqual([v, v, v]);
+    }
+  });
+
+  it('高光分区方向锁（LR 惯例）：+v 亮区提亮暗区不动、−v 亮区压暗（手算写死）', () => {
+    const uPos = buildUniforms({ basic: { highlights: 60 } });
+    const uNeg = buildUniforms({ basic: { highlights: -60 } });
+    for (const v of [10, 26, 64]) {
+      expect(simulateShaderPixel([v, v, v], uPos)).toEqual([v, v, v]);
+      expect(simulateShaderPixel([v, v, v], uNeg)).toEqual([v, v, v]);
+    }
+    // L=0.902 / 0.949：w=0.8998 / 0.9728，f=clamp(c·1.15) 与 f=c·0.85
+    expect(simulateShaderPixel([230, 230, 230], uPos)).toEqual([252, 252, 252]);
+    expect(simulateShaderPixel([242, 242, 242], uPos)).toEqual([255, 255, 255]);
+    expect(simulateShaderPixel([230, 230, 230], uNeg)).toEqual([199, 199, 199]);
+    expect(simulateShaderPixel([242, 242, 242], uNeg)).toEqual([207, 207, 207]);
   });
 });
 
@@ -410,4 +464,9 @@ describe('masks uniforms（蒙版打包 + shader 模拟）', () => {
 
 function clamp01(v) {
   return Math.min(1, Math.max(0, v));
+}
+
+function smoothstep(e0, e1, x) {
+  const t = clamp01((x - e0) / (e1 - e0));
+  return t * t * (3 - 2 * t);
 }
