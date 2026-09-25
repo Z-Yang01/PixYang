@@ -446,6 +446,7 @@ export default function ImageViewer({
   const editDirty = editing && opsChanged(composeOps(), savedBaselineRef.current);
 
   // 保存：只写 EditParams JSON 到数据库（像素不动）
+  const saveParamsRef = useRef(null);
   const saveParams = useCallback(async () => {
     if (!image || editBusy) return;
     setBusyKind('saving');
@@ -469,6 +470,7 @@ export default function ImageViewer({
       setBusyKind('');
     }
   }, [image, editBusy, composeOps, raiseEditError]);
+  saveParamsRef.current = saveParams;
 
   // 导出：渲染全尺寸到用户选的目标目录（绝不覆盖原图）
   // 打开导出选项对话框
@@ -1088,6 +1090,9 @@ export default function ImageViewer({
           break;
         case VIEWER_ACTIONS.ToggleInfo:
           if (!editingRef.current) onOpenInfo?.(image);
+          break;
+        case VIEWER_ACTIONS.SaveEdits:
+          if (editingRef.current) saveParamsRef.current?.();
           break;
         case VIEWER_ACTIONS.ZoomReset:
           setZoom(1);

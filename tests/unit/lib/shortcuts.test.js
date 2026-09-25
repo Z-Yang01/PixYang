@@ -159,3 +159,21 @@ describe('SHORTCUT_GROUPS', () => {
     });
   });
 });
+
+describe('viewer Ctrl+S 保存参数（R67）', () => {
+  it('Ctrl/Cmd+S 映射到 SaveEdits，且在通用 Ctrl 拦截前判定', () => {
+    const e = keyEvent('s', { ctrlKey: true });
+    expect(matchViewerShortcut(e)).toBe(VIEWER_ACTIONS.SaveEdits);
+    const m = keyEvent('s', { metaKey: true });
+    expect(matchViewerShortcut(m)).toBe(VIEWER_ACTIONS.SaveEdits);
+    // 无修饰的 s 不触发
+    expect(matchViewerShortcut(keyEvent('s'))).toBeNull();
+  });
+
+  it('SHORTCUT_GROUPS 查看器组含 Ctrl+S 条目', () => {
+    const viewer = SHORTCUT_GROUPS.find((g) => g.title === '查看器');
+    expect(viewer.items.some((it) => it.keys.includes('Ctrl/⌘') && it.keys.includes('S'))).toBe(
+      true
+    );
+  });
+});

@@ -54,6 +54,7 @@ export const VIEWER_ACTIONS = {
   Rate5: 'rate5',
   ClearRating: 'clearRating',
   ToggleInfo: 'toggleInfo',
+  SaveEdits: 'saveEdits',
 };
 
 export const SHORTCUT_GROUPS = [
@@ -84,6 +85,7 @@ export const SHORTCUT_GROUPS = [
       { keys: ['1–5'], desc: '设置评分' },
       { keys: ['I'], desc: '打开 / 关闭详情面板' },
       { keys: ['Esc'], desc: '关闭查看器' },
+      { keys: ['Ctrl/⌘', 'S'], desc: '编辑态：保存参数（原图不动）' },
     ],
   },
   {
@@ -138,6 +140,9 @@ export function matchGridShortcut(e) {
 
 export function matchViewerShortcut(e) {
   const key = e.key;
+  // Ctrl+S（编辑态保存参数）须在通用 Ctrl 拦截前判定
+  if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && key === 's')
+    return VIEWER_ACTIONS.SaveEdits;
   if (e.ctrlKey || e.metaKey || e.altKey) return null;
   // Escape 由 App 统一处理（帮助 > 详情 > 查看器 > 清选择），避免双层同时关闭
   if (key === 'ArrowLeft') return VIEWER_ACTIONS.Prev;

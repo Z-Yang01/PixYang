@@ -1809,3 +1809,8 @@
   编辑面板 16 滑杆、直方图 241x64 三通道实时渲染、JS 异常 0。
   裁剪三分线未在冒烟中触发（需先拖出裁剪框，属交互前置条件，非缺陷；组件测试已覆盖）。
   提交：8d4dfcf（格式化收尾）。工作区 CLEAN。
+- 2026-09-25 R67 编辑快捷键：Ctrl/Cmd+S 保存参数（编辑态）——shortcuts.js SaveEdits
+  动作（须在 matchViewerShortcut 的通用 Ctrl 拦截之前判定，插入顺序错误会在写测试时
+  自我发现并修正）+ ImageViewer case（saveParamsRef 中转避免键盘 effect 依赖爆炸，
+  两次插位失误由 vitest TDZ 错误即时捕获）+ SHORTCUT_GROUPS 查看器组补条目 + 2 测试。
+  验证：vitest 831/831；lint 0 error/10 基线；typecheck/format/build ✓；NSIS 重打（18:42）。
