@@ -1953,17 +1953,17 @@ export default function ImageViewer({
               fmt: (v) => `${v > 0 ? '+' : ''}${v}`,
             },
           ].map(({ key, label, min, max, step, fmt }) => (
-            <label className="editor-slider-row" key={key}>
-              <span
-                title="双击重置"
-                onDoubleClick={() => {
-                  const next = { ...editOpsRef.current, [key]: EDIT_DEFAULTS[key] };
-                  pushHistory(next, `重置${label}`);
-                  setEditOps(next);
-                }}
-              >
-                {label}
-              </span>
+            <label
+              className="editor-slider-row"
+              key={key}
+              title="双击重置该项"
+              onDoubleClick={() => {
+                const next = { ...editOpsRef.current, [key]: EDIT_DEFAULTS[key] };
+                pushHistory(next, `重置${label}`);
+                setEditOps(next);
+              }}
+            >
+              <span>{label}</span>
               <input
                 type="range"
                 min={min}
@@ -2059,21 +2059,21 @@ export default function ImageViewer({
                 }
               };
               return (
-                <div key={key} className="editor-grade-row">
+                <div
+                  key={key}
+                  className="editor-grade-row"
+                  title="双击清除该区间"
+                  onDoubleClick={() => {
+                    const next = {
+                      ...editOpsRef.current,
+                      colorGrading: { ...editOpsRef.current.colorGrading, [key]: [] },
+                    };
+                    pushHistory(next, `清除分级·${label}`);
+                    setEditOps(next);
+                  }}
+                >
                   <div className="editor-grade-labels">
-                    <span
-                      title="双击清除该区间"
-                      onDoubleClick={() => {
-                        const next = {
-                          ...editOpsRef.current,
-                          colorGrading: { ...editOpsRef.current.colorGrading, [key]: [] },
-                        };
-                        pushHistory(next, `清除分级·${label}`);
-                        setEditOps(next);
-                      }}
-                    >
-                      {label}
-                    </span>
+                    <span>{label}</span>
                     {sat > 0 && <em>{`${Math.round(hue)}° · ${Math.round(sat)}%`}</em>}
                   </div>
                   <input

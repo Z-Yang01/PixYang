@@ -491,9 +491,9 @@ describe('ImageViewer', () => {
       expect(section.textContent).toContain('210° · 45%');
       expect(section.querySelector('.editor-crop-header button')).toBeTruthy();
     });
-    // 双击标签清除该区间（"阴影"与基础滑杆同名，取分级区间的那个）
-    const gradeLabel = [...screen.getAllByText('阴影')].find((el) => el.title === '双击清除该区间');
-    fireEvent.doubleClick(gradeLabel);
+    // 双击分级行清除该区间（整行 handler）
+    const gradeRow = hue.closest('.editor-grade-row');
+    fireEvent.doubleClick(gradeRow);
     await vi.waitFor(() => {
       const section = hue.closest('.editor-crop-section');
       expect(section.querySelector('.editor-crop-header button')).toBeNull();
