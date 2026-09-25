@@ -200,6 +200,8 @@
   },
   {
     "name": "m05-heavy-tone",
+    "tolerance": { "maxDelta": 4, "meanDelta": 1.5 },
+    "toleranceBasis": "R72 掩蔽后包络复测（tone 族单阶段档）：R71 亮度掩蔽（smoothstep 带）重置量化包络后，本用例 R71/R72 两轮逐位稳定 mean 1.0550 / max[2,2,2]——掩蔽带沿放大 GPU 舍入 vs 执行器单次 trunc 的量化差，非缺陷（R65 修复前该例 mean 33.73/max47 为真方向反转，量级差一个数量级以上）；档位=实测上界×余量（max 2×2=4、mean ≈1.05×1.4=1.5，与既有多阶段档 mean 同值），真缺陷量级两界均仍拦下；变异验证见 NIGHTLY_LOG R72（高光 f 去 clamp → 本用例红）。",
     "params": { "basic": { "shadows": -80, "highlights": 80, "whites": -30, "blacks": 30 } }
   }
 ]

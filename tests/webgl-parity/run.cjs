@@ -20,8 +20,10 @@
 //   ② 03-tone（meanΔ≈16.6）：负阴影指数反转——执行器 gamma_byte(g)=x^(1/g) 实际施加 1/e（变暗），
 //      shader/previewUniforms 施加 e（变亮）。——R65 已修（previewUniforms.js 与 SVG 链 editParams.js
 //      负阴影指数改 1/e：03-tone 16.61→0.518/max2 绿；编辑审计集 s08 32.03→0.508、m05 33.73→0.367 转绿）
-//   R59 头注「两处修复落地后预期 8/8 全绿」与 TOL{2,0.6} 矛盾，R60 实测勘正。缺陷② R65 闭环 +
-//   分档 R70 落地后：基线 8 例与编辑审计 30 例预期全绿（01/m02/m03/m04 走多阶段分档，其余走缺省档）。
+//   R59 头注「两处修复落地后预期 8/8 全绿」与 TOL{2,0.6} 矛盾，R60 实测勘正。缺陷② R65 闭环、
+//   分档 R70 落地、R71 亮度掩蔽重置包络 + R72 重标后：基线 8 例与编辑审计 30 例预期全绿
+//   （01/m02/m03/m04 走多阶段档 {max 18, mean 1.5}，03-tone/m05 走掩蔽后 tone 档 {max 4, mean 1.5}，
+//   其余走缺省档）。
 // WebGL shader 输出 vs Rust 执行器 实机像素对拍（取证驱动脚本；纯取证工具，不进 CI）。
 // 前置：npx vite build（dist/index.html 缺失时本脚本自动补跑）。
 // 用法：node tests/webgl-parity/run.cjs [--keep] [--headed] [--read-pixels] [--force-srgb] [--case <name>] [--cases <file>]

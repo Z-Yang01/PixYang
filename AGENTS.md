@@ -159,13 +159,15 @@ tests/            vitest（node 环境 + per-file happy-dom pragma）
     选项 A 落地）：cases json 用例可选 `tolerance{maxDelta,meanDelta}`（配套 toleranceBasis 注依据）
     覆盖缺省档，01-full-combo/m02/m03/m04 标 {max 18, mean 1.5}（数值=量化包络实测上界：
     01 1.3921/max[10,7,18]、m02 1.3198/[4,4,5]、m03 0.3241/[≤3]、m04 0.6731/[≤3]，R63/R64/R65
-    定版逐位稳定）；真缺陷量级（mean 16.6~33.7 / max 20~47）两界均仍拦下，判定与 report/log
-    均标注所用档位。
-  当前 R70 分档后基线被 R71 P2-3 亮度掩蔽（渲染语义修复）重置：shader/执行器/JS 模型
-  四端同步改掩蔽语义后，基线 8 例与编辑审计 30 例中恰 9 例数字变化（01/03、
-  s05-s08/m02/m04/m05）；单阶段 tone 例（s05-s08）全部 maxΔ≤1 绿，03-tone mean 1.0304/max2
-  与 m05 mean 1.0550/max2 超缺省档 mean 界 0.6（掩蔽 smoothstep 带沿放大 GPU 舍入 vs
-  trunc 的量化差，量级远离真缺陷），分档重标留待下轮。历史「JS 对拍
+    定版逐位稳定）；R72 起 tone 族单阶段例另有掩蔽后档 {max 4, mean 1.5}：03-tone 实测
+    mean 1.0304/max[2,2,2]、m05 mean 1.0550/max[2,2,2]（R71/R72 逐位一致，掩蔽 smoothstep 带沿
+    放大 GPU 舍入 vs trunc 的量化差，变异证明该残差与高光 clamp 无关）；真缺陷量级
+    （mean 16.6~33.7 / max 20~47）各档两界均仍拦下（clamp 变异实测 maxΔ 10 > 4 界），
+    判定与 report/log 均标注所用档位。
+  R72 分档重标后基线：基线 8 例（缺省 6+分档 2）与编辑审计 30 例（缺省 26+分档 4）预期全绿，
+  R71 掩蔽重置 + R72 重标的全部数字逐位稳定；掩蔽分区效果实机取证（shadows+60 暗区 +13.4/
+  亮区 0、highlights−60 亮区 −16.6/暗区 0，旧全图近似同底图反事实为亮区 +15.0/暗区 +11.6 方向反）
+  归档 %TEMP%\pixyang_r72。历史「JS 对拍
   8/8 零偏差」是旧验证体系（非实机 GPU）口径，不可与本实机口径混用。
   运行注意：vite preview 须 `--host 127.0.0.1`（默认只绑 [::1]，浏览器走 127.0.0.1 必落
   chrome-error://）；假桥需 Proxy 兜底全部通道（ImageViewer 挂载即调 api.getImageTags().then）；
