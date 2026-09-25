@@ -1799,3 +1799,13 @@
   （点滑杆本体/数值/任意位置均可重置；分级行为双击清除区间）。行为入历史栈语义不变。
   1 个测试的目标从 span 改为整行（.editor-grade-row），语义等价。
   验证：vitest 829/829；lint 0 error/10 基线；typecheck/build ✓；NSIS 重打（Sep 25 晚）。
+- 2026-09-25 18:20 全面测试（R66 收尾轮）：
+  前端四门：lint 0 error/10 基线 warning；typecheck ✓；format:check 抓到直方图两文件
+  未格式化（R59 遗漏）已修；vitest 829/829（60 文件）；coverage statements 92.92/
+  branches 87.08/functions 83.16（门槛 75/70/50）；vite build ✓。
+  Rust：fmt 抓到 webgl_parity.rs 遗留（已 fmt）；clippy 0 error；cargo 152/152 + golden 门禁 ✓。
+  NSIS 重打（Sep 25 18:17，4.1MB）。
+  实机 CDP 冒烟（18:17 构建）：IPC 三通道（933 图/5 标签/12 设置）、网格 20/20 缩略图、
+  编辑面板 16 滑杆、直方图 241x64 三通道实时渲染、JS 异常 0。
+  裁剪三分线未在冒烟中触发（需先拖出裁剪框，属交互前置条件，非缺陷；组件测试已覆盖）。
+  提交：8d4dfcf（格式化收尾）。工作区 CLEAN。
