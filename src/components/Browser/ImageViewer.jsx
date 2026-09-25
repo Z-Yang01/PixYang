@@ -1473,6 +1473,13 @@ export default function ImageViewer({
         )}
         {edited && compareMode === 'toggle' && crop && cropPct && (
           <div className="editor-crop-box" style={cropPct} data-crop-box="1">
+            {/* 三分线参考（裁剪构图辅助） */}
+            <div className="crop-guide-lines" aria-hidden="true">
+              <span style={{ left: '33.33%' }} />
+              <span style={{ left: '66.66%' }} />
+              <span style={{ top: '33.33%' }} />
+              <span style={{ top: '66.66%' }} />
+            </div>
             {['n', 's', 'e', 'w', 'ne', 'nw', 'se', 'sw'].map((h) => (
               <span key={h} data-crop-handle={h} className={`editor-crop-handle handle-${h}`} />
             ))}

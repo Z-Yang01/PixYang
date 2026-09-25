@@ -192,16 +192,19 @@ export default function CurveEditor({ curves, onCommit, onChange, epoch = 0 }) {
           vectorEffect="non-scaling-stroke"
         />
         {pts.map((p, i) => (
-          <circle
-            key={i}
-            cx={p[0] * 100}
-            cy={(1 - p[1]) * 100}
-            r="2.6"
-            fill={channelColor}
-            stroke="#fff"
-            strokeWidth="0.8"
-            vectorEffect="non-scaling-stroke"
-          />
+          <g key={i}>
+            <circle
+              cx={p[0] * 100}
+              cy={(1 - p[1]) * 100}
+              r="2.6"
+              fill={channelColor}
+              stroke="#fff"
+              strokeWidth="0.8"
+              vectorEffect="non-scaling-stroke"
+            />
+            {/* 锚点数值提示：输入(x)/输出(y) 百分比，悬停显示 */}
+            <title>{`入 ${Math.round(p[0] * 100)} / 出 ${Math.round(p[1] * 100)}`}</title>
+          </g>
         ))}
       </svg>
     </div>

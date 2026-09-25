@@ -1778,3 +1778,9 @@
   README "npm run dev 不可用"警示仍有效（shared/*.cjs CJS 限制未变）。
   结论：当前代码库无可靠可删项，冗余清理收官。
   验证：vitest 829/829（60 文件）；cargo 152+golden；lint 0 error。
+- 2026-09-25 R62 编辑增强（裁剪参考线 + 曲线数值提示）：
+  ① 裁剪框三分线（构图辅助，33.3%/66.6% 交线，白色 35% 半透明不抢主体）；
+  ② 曲线锚点 hover 数值提示（入 x / 出 y 百分比，SVG title 原生 tooltip）；
+  ③ tauriBridge.test 死导入清理（R57 尾巴，lint 11→10 warning 回基线）。
+  验证：vitest 829/829；cargo 152+golden；lint 0 error/10 warning（基线）；
+  typecheck/build ✓；NSIS 重打（Sep 25 16:54，含 R60-R62）。
