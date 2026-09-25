@@ -21,7 +21,9 @@ src-tauri/        Rust/Tauri 后端（唯一运行时桌面端）
   src/main.rs     桌面入口（release 隐控制台）
   src/naming.rs   唯一命名/配对主名（移植 electron/database.js 语义）
   src/image_group.rs 导入分组/日期围栏/安全文件名
-  src/images_query.rs 图片列表动态查询/getStats/getImportDates（JS 对拍向量锁定）
+  src/images_query.rs 图片列表动态查询/getStats/getImportDates（JS 对拍向量锁定；
+                  R74 起搜索额外含 original_path——README:67 承诺口径优先，系对 JS 镜像的已记录分歧，
+                  前端 matchesListFilters 剪枝 haystack 已同步）
   src/render.rs   渲染像素内核六件套（饱和/暗角/分级/HSL/蒙版/曲线，JS 对拍 8/8 零偏差——补注
                   2026-09-25 R62：该结论系旧验证体系（非实机 GPU）口径，现行实机对拍见
                   tests/webgl-parity 与 NIGHTLY_LOG R58-R60，现口径 6/8 绿 + 2 如实红）
@@ -166,7 +168,7 @@ tests/            vitest（node 环境 + per-file happy-dom pragma）
 
 ## 验证
 
-- 测试：`npm test`（vitest，59 个文件 / 830 例；含 R37 桥接全通道契约、R51/R52 主题↔CSS 对拍、R53 右栏让位契约、R54/R55 错误文案中文化、R56 Rust 注册表↔桥命令对拍 + 全仓 `${e.message}` 直插与裸 `x.error` 上屏扫描、R57 主题双事实源对拍（`:root`↔块↔`@theme inline`↔色卡）、R64 曲线 LUT 恒等通道兜底回归锁、R65 负阴影指数对齐回归锁（uniform 1/e 值锁 + simulateShaderPixel 代表点像素锁与全域方向锁 + SVG 链指数锁）、R66 预设/粘贴字段域一致性回归锁（预设只覆盖显式字段 + 粘贴与复制/批量同步同口径）、R67 键盘调参历史收敛回归锁（连调 5 次→1 条 / sat=0 调 hue→0 条 / blur 即结算）与新会话保存态回归锁（未保存→已保存 / 回读→已保存）、R68 滑杆标签列宽与对比视图让位契约、R69 高光乘后 clamp 契约模型对齐回归锁（slope>1 饱和区先回 [0,1] 再进暗角/饱和度，代表点手算写死）、R70 viewerInfoRail EOL 归一回归锁（CRLF 文本输入也命中让位规则，防 autocrlf 工作树多行正则失配））；像素 golden 门禁在 cargo 侧 `golden_audit`，Rust 单测 154 例）；覆盖率：`npm run test:coverage`，门槛配置在 `vitest.config.js`（statements/lines 75、branches 70、functions 50）。
+- 测试：`npm test`（vitest，60 个文件 / 834 例；含 R37 桥接全通道契约、R51/R52 主题↔CSS 对拍、R53 右栏让位契约、R54/R55 错误文案中文化、R56 Rust 注册表↔桥命令对拍 + 全仓 `${e.message}` 直插与裸 `x.error` 上屏扫描、R57 主题双事实源对拍（`:root`↔块↔`@theme inline`↔色卡）、R64 曲线 LUT 恒等通道兜底回归锁、R65 负阴影指数对齐回归锁（uniform 1/e 值锁 + simulateShaderPixel 代表点像素锁与全域方向锁 + SVG 链指数锁）、R66 预设/粘贴字段域一致性回归锁（预设只覆盖显式字段 + 粘贴与复制/批量同步同口径）、R67 键盘调参历史收敛回归锁（连调 5 次→1 条 / sat=0 调 hue→0 条 / blur 即结算）与新会话保存态回归锁（未保存→已保存 / 回读→已保存）、R68 滑杆标签列宽与对比视图让位契约、R69 高光乘后 clamp 契约模型对齐回归锁（slope>1 饱和区先回 [0,1] 再进暗角/饱和度，代表点手算写死）、R70 viewerInfoRail EOL 归一回归锁（CRLF 文本输入也命中让位规则，防 autocrlf 工作树多行正则失配）、R74 搜索命中原始路径回归锁（matchesListFilters haystack 含 original_path，与 SQL 同口径防轻量写回误剪枝））；像素 golden 门禁在 cargo 侧 `golden_audit`，Rust 单测 154 例（R74 起含导入唯一名「盘∪库」判重与搜索含 original_path 各 1 例；R72 前基线实为 152，数字曾陈旧）；覆盖率：`npm run test:coverage`，门槛配置在 `vitest.config.js`（statements/lines 75、branches 70、functions 50）。
 - Lint：`npm run lint`（ESLint flat config，`eslint.config.mjs`）；0 error 为准，warning 不阻塞。
 - 类型检查：`npm run typecheck`（tsc --noEmit，覆盖 src 下 TS/TSX）。
 - 格式检查：`npm run format:check`（Prettier 基线已于 R40 全仓落库，改动后的文件须保持 prettier 合规；历史 `*.md` 与 `src-tauri/gen/` 在 `.prettierignore` 豁免）。

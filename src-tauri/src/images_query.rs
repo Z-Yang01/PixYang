@@ -138,10 +138,14 @@ fn build_filters(
         conditions.push("i.favorite = 1".into());
     }
     if !q.search.is_empty() {
+        // 对 JS 镜像的已记录分歧（R71，README:67 承诺口径优先）：镜像仅搜
+        // filename/notes/标签名，这里额外纳入 original_path（导入来源原始路径）。
+        // 前端轻量剪枝 matchesListFilters 的 haystack 已同步并入该列。
         conditions.push(
-            "(i.filename LIKE ? ESCAPE '\\' OR i.notes LIKE ? ESCAPE '\\' OR i.id IN (SELECT it.image_id FROM image_tags it JOIN tags t ON t.id = it.tag_id WHERE t.name LIKE ? ESCAPE '\\'))".into(),
+            "(i.filename LIKE ? ESCAPE '\\' OR i.notes LIKE ? ESCAPE '\\' OR i.original_path LIKE ? ESCAPE '\\' OR i.id IN (SELECT it.image_id FROM image_tags it JOIN tags t ON t.id = it.tag_id WHERE t.name LIKE ? ESCAPE '\\'))".into(),
         );
         let pat = like_pattern(&q.search);
+        params.push(Box::new(pat.clone()));
         params.push(Box::new(pat.clone()));
         params.push(Box::new(pat.clone()));
         params.push(Box::new(pat));
@@ -415,6 +419,29 @@ pub(crate) mod tests {
         let search_tag: ImageQuery = serde_json::from_str(r#"{"search": "trip"}"#).unwrap();
         let (_, total) = get_images(&conn, &search_tag).unwrap();
         assert_eq!(total, 2);
+    }
+
+    #[test]
+    fn 搜索命中原始路径_通配符仍转义() {
+        let conn = mem_db();
+        seed_basic(&conn);
+        conn.execute_batch(
+            "INSERT INTO images (filename, filepath, original_path, import_date) VALUES
+               ('dsc.jpg', '/m/dsc.jpg', 'E:/Cam/100NIKON/DSC_0007.JPG', '2026-03-01')",
+        )
+        .unwrap();
+        // original_path 参与检索（README 承诺口径，R71 起与前端剪枝 haystack 同步）
+        let by_orig: ImageQuery = serde_json::from_str(r#"{"search": "100nikon"}"#).unwrap();
+        let (rows, _) = get_images(&conn, &by_orig).unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].filename, "dsc.jpg");
+        // 同一 LIKE 条件下通配符转义不回退：「%」只命中字面 %，不得通配全库
+        let wildcard: ImageQuery = serde_json::from_str(r#"{"search": "%"}"#).unwrap();
+        let (_, total) = get_images(&conn, &wildcard).unwrap();
+        assert_eq!(total, 0);
+        // 跨页全选共用 build_filters：original_path 命中同样生效
+        let ids = get_all_visible_ids(&conn, &by_orig).unwrap();
+        assert_eq!(ids.len(), 1);
     }
 
     #[test]

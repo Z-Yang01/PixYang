@@ -121,8 +121,21 @@ pub fn import_one(
         }
     };
     let taken: std::collections::HashSet<String> = std::collections::HashSet::new();
-    let unique_name =
-        naming::generate_unique_filename(&sub_dir, &safe_name, &taken, |p| p.exists());
+    // 唯一名占用判定须「盘 ∪ 库」（镜像 isPathTaken）：DB 有记录而盘上无文件（失效/损坏
+    // 记录）时只查盘会撞 filepath UNIQUE——INSERT OR IGNORE 把本次导入静默吞掉，
+    // 新文件内容挂进旧记录的旧元数据，且导入计数与列表条数漂移
+    let unique_name = naming::generate_unique_filename(&sub_dir, &safe_name, &taken, |p| {
+        p.exists()
+            || conn
+                .query_row(
+                    "SELECT 1 FROM images WHERE filepath = ?1 COLLATE NOCASE",
+                    [p.to_string_lossy()],
+                    |_| Ok(()),
+                )
+                .optional()
+                .unwrap_or(None)
+                .is_some()
+    });
     let dest_path = sub_dir.join(&unique_name);
     let src_path = str_or_empty(img.get("filepath"));
 
@@ -916,6 +929,55 @@ mod tests {
         .unwrap();
         assert_eq!(r1.filename, "dup.jpg");
         assert_eq!(r2.filename, "dup_1.jpg");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn 导入_库占而盘缺的失效记录派生避让_不静默并入旧记录() {
+        let dir = std::env::temp_dir().join("pixyang_import_db_taken");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("src")).unwrap();
+        let src = make_jpeg(&dir.join("src"), "ghost.jpg", 30, 20);
+        let conn = mem_db();
+        let root = dir.join("root");
+        // 失效记录：filepath 指向托管树内本次导入将命中的目标位，但文件已被外部删除
+        let ghost_path = root
+            .join("2026")
+            .join("09")
+            .join("20")
+            .join("ghost.jpg");
+        conn.execute(
+            "INSERT INTO images (filename, filepath, import_date, notes) VALUES ('ghost.jpg', ?1, '2026-09-20', '旧记录')",
+            rusqlite::params![ghost_path.to_string_lossy()],
+        )
+        .unwrap();
+        assert!(!ghost_path.exists(), "前置：盘上确实没有该文件");
+        let img = json!({
+            "filename": "ghost.jpg",
+            "filepath": src.to_string_lossy(),
+            "importDate": "2026-09-20",
+        });
+        let row = import_one(
+            &conn,
+            &root,
+            &img,
+            None,
+            false,
+            "2026-09-20",
+            &dir.join("thumbs"),
+        )
+        .unwrap()
+        .unwrap();
+        assert_ne!(
+            row.notes.as_deref(),
+            Some("旧记录"),
+            "新导入不得静默并入旧失效记录"
+        );
+        let n: i64 = conn
+            .query_row("SELECT COUNT(*) FROM images", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(n, 2, "应派生 _1 新记录，而不是被 INSERT OR IGNORE 吞掉");
+        assert!(Path::new(&row.filepath).exists());
         let _ = std::fs::remove_dir_all(&dir);
     }
 

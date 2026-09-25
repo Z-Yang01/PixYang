@@ -1850,3 +1850,47 @@
   结论：各环节均已在优秀区间（唯一略慢的"点卡片→查看器"~800ms 中含 800ms 固定 sleep
   是测试脚本节奏而非应用耗时；组件测试与此前 UX 验证均无卡感报告）。
   无需代码变更——本轮为画像存档，供后续回归对照基线。
+- 2026-09-25 R74 图库主链路 bug 猎手（无人值守轮次74·方向：图库查询/相册标签/导入导出/设置）：
+  ① 来源：无人值守任务书——编辑器（R63-R70 修复线）不在本轮，扫图库主链路五维度。
+  ② 实锤 A（file_ops.rs import_one）：唯一名生成只查盘（generate_unique_filename 传空
+  taken 集 + |p| p.exists()），丢掉了 JS 镜像 isPathTaken 的「盘∪库」判重（其注释明言
+  只查盘会漏 DB 有记录而文件不在盘的失效记录）。后果链：失效记录占着目标 filepath →
+  磁盘空闲 → 复制成功 → INSERT OR IGNORE 撞 UNIQUE 被静默吞掉 → SELECT 回旧行当导入
+  结果返回 → 新文件内容挂进旧记录旧元数据（notes/评分/标签全串），导入计数与列表漂移。
+  复现测试：预插 notes='旧记录' 的失效记录（盘上无文件）再导入同名同日期图——修前
+  返回行 notes='旧记录'、总记录数不增。修法：disk_exists 闭包补 DB filepath NOCASE 查询，
+  命中即派生 _1 新记录（与镜像语义逐字对齐）。
+  ③ 实锤 B（README.md:67 vs images_query.rs）：README 承诺「按图片名称、备注、原始路径
+  搜索」，实现（与 JS 镜像一致）只搜 filename/notes/标签名。取证后按任务书「用户预期优先」
+  补 SQL：build_filters 增 i.original_path LIKE ESCAPE 分支（getImages/getAllVisibleIds
+  共用）；前端 matchesListFilters 剪枝 haystack 同步并入 original_path（否则仅按原始路径
+  命中的行在轻量写回后被误判掉出当前筛选）。README 无需改，恢复为真；系对 JS 镜像的
+  已记录分歧（AGENTS.md 目录结构节已注）。
+  ④ 回归锁+变异验证：Rust +2 例（导入_库占而盘缺派生避让、搜索命中原始路径+通配符转义
+  +getAllVisibleIds 同口径）、vitest +1 例（原始路径命中保留/缺失判掉出）。变异：A 改回
+  只查盘 → Rust 1 红（notes='旧记录' 断言炸）；B 撤 SQL 分支 → Rust 1 红；前端撤
+  original_path → vitest 1 红。均复绿。
+  ⑤ 五维度其余取证结论（未改动）：查询内核筛选组合/分页夹取/total 口径与 getStats
+  一致（hidden=0 基线统一）；标签/相册 counts 只数可见图与列表口径一致、删标签/相册
+  连带清理、批量打标有事务边界、重名约束与 JS 镜像同式（相册名本就允许重名，镜像行为）；
+  NEF 配对双回滚、export EXCL 避让 _1.._9999 边界、sync_camera_folder 按
+  original_path/original_raw_path NOCASE 去重均与镜像逐字一致（camera.rs attach 的
+  filepath 查大小写敏感亦镜像原样）；settings 读写为原样字符串、gridSettings 归一化
+  （Number+clamp+fallback）覆盖空串/NaN/超界；err_cn 对本轮触碰路径无未覆盖新错误点。
+  ⑥ 附带勘正/上报：AGENTS.md「59 文件/830 例」「154 lib」为陈旧基线（R70 日志实证
+  vitest 833、cargo lib 152），本轮起 60/834、154（含本轮 +2）；lint 既有 warning 实为
+  10 非 8，UNATTENDED.md §4 已同步。R72 两个文件（ImageGrid.jsx/editSchema.test.js）
+  未过 prettier（非本轮引入的门禁红，stash 对照实证），已按 §1 prettier 白名单例外
+  --write 恢复门禁（纯换行重排零语义）。上报待人工复核见 §⑧。
+  ⑦ 验证：vitest 60 文件/834 例全绿；lint 0 error/10 warning（与改动前 stash 对照一致）；
+  typecheck 干净；format:check 全绿（含修好的 2 个 R72 文件）；cargo lib 154+golden 1
+  全绿；NSIS 重打（见下）+ 哈希链一手核对。
+  提交范围：src-tauri/src/file_ops.rs、src-tauri/src/images_query.rs、src/lib/gallery.js、
+  tests/unit/lib/gallery.test.js、src/components/Browser/ImageGrid.jsx（R72 遗留 prettier）、
+  tests/unit/shared/editSchema.test.js（R72 遗留 prettier）、AGENTS.md、UNATTENDED.md、
+  NIGHTLY_LOG.md。
+  待人工复核：① 搜索是否进一步纳入 raw_path/original_raw_path（现在仅 original_path，
+  与 README「原始路径」字面对应）；② InfoPanel 未展示「原始路径」（README:76 承诺了
+  「存储路径、原始路径」，现只有存储路径）——补 UI 属产品口径，本轮不动；③ 网格日期分组头
+  按 taken_at 优先而侧栏日期筛选按 import_date，两口径并存导致的「点日期桶看到别的日期头」
+  体感是否需要统一（UX 决策）；④ 相册允许重名（镜像语义）是否要加唯一约束。

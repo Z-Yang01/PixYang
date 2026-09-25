@@ -248,6 +248,20 @@ describe('matchesListFilters 轻量写回后成员回归校验（审查批 8 R-3
     expect(matchesListFilters({ filename: 'MOON.jpg' }, { search: ' mo' })).toBe(true);
   });
 
+  it('搜索词命中原始路径即保留（R71：与后端 SQL 检索同口径，防轻量写回误剪枝）', () => {
+    const f = { search: '100nikon' };
+    expect(
+      matchesListFilters(
+        { filename: 'dsc.jpg', notes: '', original_path: 'E:/Cam/100NIKON/DSC_0007.JPG' },
+        f
+      )
+    ).toBe(true);
+    expect(matchesListFilters({ filename: 'dsc.jpg', notes: '', original_path: '' }, f)).toBe(
+      false
+    );
+    expect(matchesListFilters({ filename: 'dsc.jpg', notes: '' }, f)).toBe(false);
+  });
+
   it('收藏页取消收藏判掉出；非收藏页不受 favorite 影响', () => {
     expect(matchesListFilters({ favorite: 0 }, { filterFavorites: true })).toBe(false);
     expect(matchesListFilters({ favorite: 1 }, { filterFavorites: true })).toBe(true);

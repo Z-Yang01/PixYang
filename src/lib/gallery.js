@@ -141,7 +141,8 @@ export function applyLightLocalUpdate(images, id, updates) {
 }
 
 // 轻量写回后复验行与当前筛选的归属（仅覆盖行数据可判定的维度：收藏/单日/区间/搜索）。
-// 搜索的标签名列无法在前端复刻，误判方向是多刷一次重查，不会漏剪枝（审查批 8 R-3）
+// 搜索 haystack 并入 original_path（R71，后端 SQL 同口径）；标签名列仍无法在前端复刻，
+// 误判方向是多刷一次重查，不会漏剪枝（审查批 8 R-3）
 export function matchesListFilters(row, { filterFavorites, filterDate, dateRange, search } = {}) {
   if (!row) return true;
   if (filterFavorites && !row.favorite) return false;
@@ -151,7 +152,7 @@ export function matchesListFilters(row, { filterFavorites, filterDate, dateRange
   if (dateRange?.to && d > dateRange.to) return false;
   const q = (search || '').trim().toLowerCase();
   if (q) {
-    const hay = `${row.filename || ''} ${row.notes || ''}`.toLowerCase();
+    const hay = `${row.filename || ''} ${row.notes || ''} ${row.original_path || ''}`.toLowerCase();
     if (!hay.includes(q)) return false;
   }
   return true;

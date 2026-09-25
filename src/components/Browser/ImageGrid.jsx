@@ -28,7 +28,8 @@ const EMPTY_TAGS = [];
 const preferredThumbOf = (img) =>
   img.thumbnail_edit_path || img.thumbnail_small_path || img.thumbnail_path;
 // 高清档（thumbnail_path，medium 640px）：列数少=卡片大，优先取大图防高 DPI 发糊
-const hiResThumbOf = (img) => img.thumbnail_edit_path || img.thumbnail_path || img.thumbnail_small_path;
+const hiResThumbOf = (img) =>
+  img.thumbnail_edit_path || img.thumbnail_path || img.thumbnail_small_path;
 
 export default function ImageGrid({
   onView,
@@ -559,7 +560,8 @@ export default function ImageGrid({
             );
           }
           const { image, index } = item;
-          const preferred = gridSettings.columns <= 4 ? hiResThumbOf(image) : preferredThumbOf(image);
+          const preferred =
+            gridSettings.columns <= 4 ? hiResThumbOf(image) : preferredThumbOf(image);
           const thumbUrl = preferred ? thumbUrls[preferred] : undefined;
           return (
             <ImageCard

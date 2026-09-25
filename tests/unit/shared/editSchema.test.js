@@ -1,13 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import editSchema from '../../../shared/editSchema.cjs';
 
-const {
-  DEFAULT_EDITS,
-  normalizeEdits,
-  upgradeEdits,
-  fromLegacyImage,
-  SCHEMA_VERSION,
-} = editSchema;
+const { DEFAULT_EDITS, normalizeEdits, upgradeEdits, fromLegacyImage, SCHEMA_VERSION } = editSchema;
 
 describe('editSchema（EditParams v1）', () => {
   it('默认值归一化', () => {
