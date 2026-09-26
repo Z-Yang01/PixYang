@@ -47,7 +47,7 @@
 ## 4. 门禁清单与当前基线
 
 ```
-npm test                # vitest：61 文件 / 849 例
+npm test                # vitest：61 文件 / 850 例（R75 起）
 npm run lint            # 0 error 为准；10 warning 为既有基线（有意设计，勿为消警告而掩盖）
 npm run typecheck       # tsc --noEmit 干净
 npm run format:check    # Prettier 真门禁（R40 起）

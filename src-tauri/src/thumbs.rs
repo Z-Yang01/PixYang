@@ -87,7 +87,7 @@ fn decode(path: &Path) -> Result<DynamicImage, PixError> {
         .map_err(|e| PixError::Io(format!("解码失败: {e}")))
 }
 
-/// 双档缩略图：转正→压平白底→两档缩放→jpeg q80。返回 (small, medium, 显示宽, 显示高)
+/// 双档缩略图：转正→压平白底→两档缩放→jpeg q85。返回 (small, medium, 显示宽, 显示高)
 pub fn generate_tiers(filepath: &Path) -> Result<(Vec<u8>, Vec<u8>, u32, u32), PixError> {
     let orientation = read_exif_orientation(filepath);
     let img = decode(filepath)?;

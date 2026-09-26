@@ -2094,3 +2094,35 @@
   ④ 环境：电源面板 AC 睡眠=从不（用户已配置），今晚无需 keep-awake 辅助。
   验证：见 ①（本轮零生产改动，无需 NSIS 重打包）。
   提交范围：NIGHTLY_LOG.md（仅本条）。
+- 2026-09-27 00:52 R75 新鲜眼审计 R72/R73（无人值守轮次75·审计）：
+  ① 来源：用户指令——对外部会话昨夜入库的 R72（缩略图高清）/R73（编辑速度画像）
+  做恰好一轮新鲜眼审计，实锤即修。哈希勘正：指令把 033418f 标为 R72，实为 R74
+  （图库主链路双实锤修复，自带回归锁与全门禁）；缩略图高清实为 3c7416c，按描述对位审计。
+  ② R72 审计（3c7416c）：thumbs.rs 320/640+q85 实现正确，既有测试断言已同步锁新档位
+  （60x40 源→320x213/640x427）；编辑派生图（R63 的 400px 桥内代理 edit-{id}.jpg）与
+  两档文件（{id}.jpg/{id}_s.jpg）在文件名、写库列、缓存元数据三方分离——无重复生成/
+  覆盖；rebuild all=false 按空值筛选、all=true 只写两档文件不触碰 edit-{id}.jpg，与
+  R72 日志「重建（全部）升级 640 档」口径一致；前端自适应选档三处（loadUrls 收集/
+  映射/渲染）同口径，列数变化经 useGalleryData 的 pageSize 依赖触发 loadImages 重查
+  →images 新引用→loadUrls 重跑，无永久口径脱节。实锤一处：generate_tiers 文档注释
+  仍写「jpeg q80」（R72 质量改 85 未同步注释）——已勘正。
+  ③ 修法：注释勘正 + 补 ImageGrid 自适应选档回归锁（≤4 列取 medium、>4 列取 small、
+  编辑代理任何列数恒优先，toFileUrls 假桥 blob: URL 三向断言）。
+  ④ 回归锁+变异验证：渲染侧改坏（恒 hiRes）→ 新锁红（'blob:medium?v=0' 未切
+  'blob:small'）；loadUrls 侧改坏（useHiRes=true）→ 新锁红；还原复绿 24/24。
+  ⑤ R73 审计（e1ddb5c）：纯 NIGHTLY_LOG 存档，CDP 实测数字（edit_open 12ms/
+  render_preview 全链 12ms/面板可见 212ms 等）来源与语境标注清楚；前端无
+  console.time/performance.now 残留，Rust 无 Instant::now/elapsed 残留——合格，零改动。
+  ⑥ 待人工复核（不阻塞）：a) 高清档列数边界 ≤4 偏保守——默认 5 列在 2x 屏卡片物理
+  像素 ~750-1000px 仍用 320px 源（2-3 倍上采样）；边界抬到 ≤6 可提升清晰度，代价是
+  密排场景缩略图带宽约 3 倍，属调优裁决非缺陷；b) 已编辑图片在 ≤4 列显示 400px 编辑
+  代理（edit_path 优先于 640 medium 系内容正确性优先，R72 有意保留），若要编辑图也
+  享受高清档需代理尺寸跟随档位，属功能裁决。
+  验证：format:check 干净；lint 0E/10W；typecheck 干净；vitest 61 文件/850 例全绿
+  （基线 849+本轮 1 新锁）；cargo 162 lib+1 golden_audit 全绿（单任务）；磁盘 E: 281G
+  无 <4G 风险；vite build 后 NSIS 重打（setup 4,133,841 字节 2026-09-27 00:51，
+  release exe 内嵌 index-CWsfjPqW.js/index-BRVGMQ2R.css 与 dist/index.html 逐值一致，
+  杂哈希 0 命中）。真机取证不适用：本轮零运行时行为变化（注释+测试），自适应行为
+  已由组件锁覆盖，R72 实机取证（5568x3128→320x180/640x360）仍有效。
+  提交范围：src-tauri/src/thumbs.rs、tests/unit/components/Browser/ImageGrid.test.jsx、
+  AGENTS.md、UNATTENDED.md、NIGHTLY_LOG.md（逐个点名）。

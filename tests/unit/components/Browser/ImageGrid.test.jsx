@@ -410,6 +410,52 @@ describe('ImageGrid', () => {
     });
   });
 
+  it('回归：自适应选档——≤4 列取高清档（编辑代理>medium>small），>4 列密排取 small（R72）', async () => {
+    const urlOf = {
+      'C:/thumbs/1_e.jpg': 'blob:edit',
+      'C:/thumbs/1_m.jpg': 'blob:medium',
+      'C:/thumbs/1_s.jpg': 'blob:small',
+    };
+    window.pixyang.toFileUrls.mockImplementation(async (paths) =>
+      Object.fromEntries(paths.filter((p) => urlOf[p]).map((p) => [p, urlOf[p]]))
+    );
+    const img = (over) =>
+      makeImage({
+        thumbnail_edit_path: '',
+        thumbnail_path: 'C:/thumbs/1_m.jpg',
+        thumbnail_small_path: 'C:/thumbs/1_s.jpg',
+        ...over,
+      });
+
+    // ≤4 列（大卡，高 DPI 防发糊）：无编辑代理时取 medium 高清档而非 small
+    seedStore({ images: [img()], gridSettings: { rows: 1, columns: 4, gap: 12, padding: 16 } });
+    const { container, unmount } = render(<ImageGrid />);
+    await vi.waitFor(() => {
+      const src = container.querySelector('.image-card-thumb')?.getAttribute('src');
+      expect(src).toContain('blob:medium');
+      expect(src).not.toContain('blob:small');
+    });
+
+    // >4 列（密排）：取 small 档省带宽
+    seedStore({ images: [img()], gridSettings: { rows: 1, columns: 5, gap: 12, padding: 16 } });
+    await vi.waitFor(() => {
+      const src = container.querySelector('.image-card-thumb')?.getAttribute('src');
+      expect(src).toContain('blob:small');
+    });
+    unmount();
+
+    // 编辑代理不变量：无论列数多少，thumbnail_edit_path 永远优先（编辑结果可见性 > 清晰度）
+    seedStore({
+      images: [img({ thumbnail_edit_path: 'C:/thumbs/1_e.jpg' })],
+      gridSettings: { rows: 1, columns: 5, gap: 12, padding: 16 },
+    });
+    const { container: c2 } = render(<ImageGrid />);
+    await vi.waitFor(() => {
+      const src = c2.querySelector('.image-card-thumb')?.getAttribute('src');
+      expect(src).toContain('blob:edit');
+    });
+  });
+
   it('标签筛选下快捷移除仍走整页重查（结构分支不回退，审查批 8 R-4）', async () => {
     const tag = { id: 5, name: '风景', color: '#818cf8' };
     window.pixyang.getTags.mockResolvedValue([tag]);
