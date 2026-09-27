@@ -2157,3 +2157,15 @@
   EOL 刷新暴露 index.css 1 行 prettier 漂移已落基线。
   验证：vitest 850/850（61 文件，含此前红的 CRLF 用例回绿）；format:check 全过；
   lint 0 error；typecheck/build ✓；cargo 152+golden ✓。
+- 2026-09-27 R76 Cargo.lock 追问复核（用户三追问，全只读侦察）：① 四个提交点
+  （HEAD/HEAD~1/424c04f~1/8072794）Cargo.lock blob 逐字节审计——全部 LF（CR=0, LF=5437），
+  不存在 LF→CRLF 倒退；此前报告的 "CRLF blob ff96247 入库" 是实验伪影（GIT_INDEX_FILE
+  空白临时 index 捕获的 autocrlf 工作树快照，悬空对象未入任何提交）；R75-01b 提交的
+  stat "2 files changed" 里根本没有 Cargo.lock——renormalize 对它是完全 no-op。
+  ② 属性现状：text:unset + eol:lf（-text 生效，eol 对 unset 无意义）；工作树 CR=0/LF=5437。
+  ③ R39 意图核查：a) 期望 blob LF ✓ 从未破坏；b) "blob CRLF" 前提不存在；核心担忧
+  （cargo 构建重写致假脏）实测不存在（工作树 LF + cargo 写 LF）。-text 规则保留价值：
+  隔离 autocrlf 环境差异对构建工具重写文件的干扰，维持不变。
+  47 个 w/-text 逐类：icon.ico + golden png/jpg 共 47 个二进制（EOL 概念不适用）；
+  R39 文本三件套（Cargo.toml/lock/gen）实为 i/lf w/lf attr/-text——一直健康。
+  本轮纯侦察零改动。此前 R75-01b 报告中 "Cargo.lock 分叉显形入库" 表述作废（勘正另起条）。
