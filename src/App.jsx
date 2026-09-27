@@ -41,6 +41,7 @@ export default function App() {
   const filterFavorites = useGalleryStore((s) => s.filterFavorites);
   const filterTag = useGalleryStore((s) => s.filterTag);
   const filterAlbum = useGalleryStore((s) => s.filterAlbum);
+  const filterMinRating = useGalleryStore((s) => s.filterMinRating);
   const selectedIds = useGalleryStore((s) => s.selectedIds);
   const gridSettings = useGalleryStore((s) => s.gridSettings);
   const page = useGalleryStore((s) => s.page);
@@ -135,7 +136,7 @@ export default function App() {
 
   // 筛选变化（含搜索/日期）：清空勾选（勾选集只对当前筛选有意义，避免跨筛选把不可见图片拖进批量操作）；
   // 翻页重置由 store 的筛选 action 完成
-  const filterKey = `${filterTag}|${filterAlbum}|${filterFavorites}|${search}|${filterDate}|${dateRange.from}|${dateRange.to}`;
+  const filterKey = `${filterTag}|${filterAlbum}|${filterFavorites}|${filterMinRating}|${search}|${filterDate}|${dateRange.from}|${dateRange.to}`;
   useEffect(() => {
     useGalleryStore.getState().clearSelection();
   }, [filterKey, location.pathname]);
@@ -266,6 +267,7 @@ export default function App() {
         tagId: state.filterTag,
         albumId: state.filterAlbum,
         favorite: state.filterFavorites,
+        minRating: state.filterMinRating,
         importDate: state.filterDate,
         dateFrom: state.dateRange.from,
         dateTo: state.dateRange.to,
@@ -316,8 +318,14 @@ export default function App() {
       // 改日期会新增/清空日期桶：侧栏日期列表与计数不重拉就停在旧数据（审查批 8 Q-07）
       if ('import_date' in updates) store.loadAppData();
       // 日期/文件名/备注写回可能让行掉出当前筛选：勾选剪枝 + 重查，
-      // 否则被勾选的行隐身留在集合里，批量操作打向视图外图片（审查批 8 R-3）
-      if ('import_date' in updates || 'filename' in updates || 'notes' in updates) {
+      // 否则被勾选的行隐身留在集合里，批量操作打向视图外图片（审查批 8 R-3）；
+      // 评分写回同口径：评分筛选激活时降星会掉出「≥N」视图
+      if (
+        'import_date' in updates ||
+        'filename' in updates ||
+        'notes' in updates ||
+        'rating' in updates
+      ) {
         const cur = useGalleryStore.getState();
         const row = cur.images.find((img) => img.id === id);
         if (row && !matchesListFilters(row, cur)) {

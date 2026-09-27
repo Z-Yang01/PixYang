@@ -2189,3 +2189,43 @@
   属全盘调色板设计决策。
   验证：vitest 851/851（61 文件，+1 锁）；lint 0 error/10 基线；typecheck/build ✓；
   format:check 全过；cargo 162+golden ✓（CARGO_BUILD_JOBS=1 串行）。
+- 2026-09-28 01:05 R78 feat: 评分筛选（功能推荐 #7）——星级资产激活闭环：
+  ① 需求来源：无人值守功能推荐 #7「评分筛选」——星级系统已有（1-5 星可打）但查询内核无
+  rating 条件，用户能打分却不能「筛出 ≥N 星」，全应用最小工作流断点。
+  ② 根因：images_query.rs ImageQuery 只有 tag/album/date/favorite/search；Sidebar 无评分段。
+  ③ 修法：ImageQuery 加 min_rating: Option<u32>（serde camelCase=minRating），build_filters
+  加 `i.rating >= ?` 分支（0/None=不过滤；不夹上界，6+ 合法反序列化恒空集，与前端 store
+  夹取 0-5 分层防御）；get_stats 保持全局口径（与既有 tag/album/date/favorite 徽标口径一致，
+  get_images 的 total 经 build_filters 自动同口径，注释已落）。前端 galleryStore.filterMinRating
+  （默认 0，归一化 0-5 整数）+ gallery.js 三函数（buildImageQuery 显式携带 minRating 键、
+  matchesListFilters 剪枝 (rating||0)<min、hasActiveFilters 收编）；接线 App.jsx（filterKey/
+  navigateViewer/评分写回归属复验触发）、useGalleryData 依赖、useBatchActions（跨页全选
+  快照+getAllImageIds 参数）、ImageGrid（空态文案口径）；Sidebar 新增「按评分筛选」段
+  （全部/≥1..≥5 六档，选中高亮、再点同档取消；星形着色只走 --star/--star-empty token；
+  星行用 i 元素避开 .sidebar-collapsed .nav-item span 隐藏规则）。
+  ④ 回归锁 + 变异验证：Rust +3（MIN_RATING_VECTORS 六组对拍向量 None/0/1/3/5/6 断真实
+  SQL 行数+全选 id 同口径；变异金丝雀直锁 conditions 含 "i.rating >= ?" 且 0/None 零条件；
+  rating∧tag∧album 三条件组合+hidden 不因评分复活）；变异（清空分支体）→ 恰 3 条新锁红
+  （「min_rating 分支缺失」/「向量 {"minRating":1} total 不符」/组合筛选）→ 回退复绿 13/13。
+  前端 +11：gallery.test.js 与 Rust 同表对拍向量（JS 侧断 buildImageQuery 键值+剪枝留存数
+  期望一致）及剪枝边界（null/undefined 归 0）；galleryStore 归一化/复位/透传 3 例；
+  Sidebar 六档交互 5 例（渲染/高亮/再点取消/清除/折叠态）。
+  ⑤ 真机取证：本 worker 会话浏览器通道不可用（"Browser is not available in subagent"），
+  §6 通道 1 不可达；UI 行为以 Sidebar.test.jsx happy-dom 覆盖；点击级冒烟列入待人工复核。
+  ⑥ 附带发现/口径：getStats「同口径」按既有筛选口径执行=徽标恒全库数（若要徽标随筛选
+  收缩属产品口径变更，列上报）；基线 vitest 实为 851（R77 条目），任务书 850 为旧值。
+  验证：vitest 862/862（61 文件，+11）；lint 0 error/10 基线；typecheck ✓；format:check ✓
+  （gallery.js 一处 prettier 漂移 --write 修复）；cargo 165（162+3）+ golden_audit ✓
+  （本轮未动渲染链，golden 不红；CARGO_BUILD_JOBS=1 串行）；NSIS 重打包
+  PixYang_0.1.0_x64-setup.exe 4,122,290 B @2026-09-28 01:00:27，§5 哈希链一手核对：exe 内嵌
+  index-B7ZPJBu3.js / index-CKnKUg-g.css 与 dist/index.html 逐值一致、旧哈希 0 命中；
+  本轮构建噪声为零（Cargo.toml/gen schemas 未被重写）。
+  提交范围：src-tauri/src/images_query.rs；src/lib/gallery.js；src/store/galleryStore.js；
+  src/hooks/useGalleryData.js；src/hooks/useBatchActions.js；src/App.jsx；
+  src/components/Browser/ImageGrid.jsx；src/components/Layout/Sidebar.jsx；
+  src/styles/index.css；tests/unit/lib/gallery.test.js；tests/unit/store/galleryStore.test.js；
+  tests/unit/components/Layout/Sidebar.test.jsx；NIGHTLY_LOG.md
+  待人工复核：① getStats 口径（全局徽标 vs 随筛选收缩，产品决策）；② 点击级真机冒烟
+  （浏览器通道在 subagent 不可用）；③ 评分段六档纵向按钮组的侧栏占高（折叠态为六行图标，
+  如嫌高可改横向紧凑）；④ min_rating 不夹上界属有意设计（API 显式 6+ 得空集，前端已夹
+  0-5），如需 Rust 侧硬夹取请裁决。

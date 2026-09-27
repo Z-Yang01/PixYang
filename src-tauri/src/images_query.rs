@@ -20,6 +20,10 @@ pub struct ImageQuery {
     pub import_date: String,
     #[serde(default)]
     pub favorite: Option<bool>,
+    /// 评分下限（1-5；0 与 None 同义=不过滤，与前端 filterMinRating 默认值同口径）。
+    /// 不夹取上界：6+ 合法反序列化、恒空集（超出 1-5 星域的显式查询语义）
+    #[serde(default)]
+    pub min_rating: Option<u32>,
     #[serde(default)]
     pub search: String,
     #[serde(default)]
@@ -136,6 +140,11 @@ fn build_filters(
     }
     if q.favorite.unwrap_or(false) {
         conditions.push("i.favorite = 1".into());
+    }
+    if let Some(min_rating) = q.min_rating.filter(|v| *v > 0) {
+        // rating 列默认 0（未评分）；NULL ≥ N 恒假，与前端剪枝 (rating||0) < min 同口径
+        conditions.push("i.rating >= ?".into());
+        params.push(Box::new(min_rating));
     }
     if !q.search.is_empty() {
         // 对 JS 镜像的已记录分歧（R71，README:67 承诺口径优先）：镜像仅搜
@@ -259,6 +268,9 @@ pub struct StatsRow {
     pub favorites: i64,
 }
 
+/// 侧边栏徽标的全局统计，不接收任何筛选（与 tag/album/date/favorite 既有口径一致：
+/// 筛选只改变网格视图，徽标恒为全库数）；get_images 的 total 计数经 build_filters
+/// 自动获得 min_rating 同口径
 pub fn get_stats(conn: &Connection) -> rusqlite::Result<StatsRow> {
     let count = |sql: &str| -> rusqlite::Result<i64> { conn.query_row(sql, [], |r| r.get(0)) };
     Ok(StatsRow {
@@ -492,6 +504,118 @@ pub(crate) mod tests {
         assert_eq!(stats.total_tags, 1);
         assert_eq!(stats.total_albums, 0);
         assert_eq!(stats.favorites, 1);
+    }
+
+    /// 评分种子：rating 0/1/3/5 各一张（对拍向量表的期望值以它为基准，
+    /// 与 tests/unit/lib/gallery.test.js「minRating 查询对拍向量」同表锁定）
+    fn seed_rated(conn: &Connection) {
+        conn.execute_batch(
+            "INSERT INTO images (id, filename, filepath, import_date, rating, hidden) VALUES
+               (1, 'r0.jpg', '/r0.jpg', '2026-04-01', 0, 0),
+               (2, 'r1.jpg', '/r1.jpg', '2026-04-01', 1, 0),
+               (3, 'r3.jpg', '/r3.jpg', '2026-04-01', 3, 0),
+               (4, 'r5.jpg', '/r5.jpg', '2026-04-01', 5, 0);",
+        )
+        .unwrap();
+    }
+
+    /// 对拍向量：JSON 向量（前端 buildImageQuery 产出的 camelCase 键）→ 评分种子 [0,1,3,5]
+    /// 中留存行数。JS 侧同表断言 matchesListFilters 剪枝数；本表断言真实 SQL 行数。
+    const MIN_RATING_VECTORS: [(&str, i64); 6] = [
+        ("{}", 4),
+        (r#"{"minRating":0}"#, 4),
+        (r#"{"minRating":1}"#, 3),
+        (r#"{"minRating":3}"#, 2),
+        (r#"{"minRating":5}"#, 1),
+        (r#"{"minRating":6}"#, 0),
+    ];
+
+    #[test]
+    fn 评分筛选_边界None_0_1_5_6_对拍向量() {
+        let conn = mem_db();
+        seed_rated(&conn);
+        for (json, expect) in MIN_RATING_VECTORS {
+            let query: ImageQuery = serde_json::from_str(json).unwrap();
+            let (rows, total) = get_images(&conn, &query).unwrap();
+            assert_eq!(total, expect, "向量 {json} total 不符");
+            assert_eq!(rows.len(), expect as usize, "向量 {json} 行数不符");
+            // 跨页全选共用 build_filters：同向量 id 集与 total 一致
+            let ids = get_all_visible_ids(&conn, &query).unwrap();
+            assert_eq!(ids.len() as i64, expect, "向量 {json} 全选 id 数不符");
+        }
+        // None/0 均不过滤：minRating=0 与「全部」同口径
+        let zero: ImageQuery = serde_json::from_str(r#"{"minRating":0}"#).unwrap();
+        let (rows, _) = get_images(&conn, &zero).unwrap();
+        assert_eq!(rows.len(), 4);
+    }
+
+    #[test]
+    fn 评分分支_SQL条件与参数序_变异金丝雀() {
+        // 直接锁 build_filters 产物：变异（删分支）时本条先红，向量表随后红
+        let query: ImageQuery = serde_json::from_str(r#"{"minRating":3,"favorite":true}"#).unwrap();
+        let mut joins: Vec<&str> = Vec::new();
+        let mut conditions: Vec<String> = Vec::new();
+        let mut params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+        build_filters(&query, &mut joins, &mut conditions, &mut params);
+        assert!(
+            conditions.iter().any(|c| c == "i.rating >= ?"),
+            "min_rating 分支缺失：conditions={conditions:?}"
+        );
+        assert_eq!(params.len(), 1);
+        // 0 与 None 不产生条件（不过滤语义）
+        for json in [r#"{"minRating":0}"#, "{}"] {
+            let q2: ImageQuery = serde_json::from_str(json).unwrap();
+            let mut conditions: Vec<String> = Vec::new();
+            let mut params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+            let mut joins: Vec<&str> = Vec::new();
+            build_filters(&q2, &mut joins, &mut conditions, &mut params);
+            assert!(
+                !conditions.iter().any(|c| c.contains("rating")),
+                "{json} 不应产生 rating 条件"
+            );
+            assert!(params.is_empty());
+        }
+    }
+
+    #[test]
+    fn 评分与标签相册组合筛选() {
+        let conn = mem_db();
+        seed_rated(&conn);
+        // 标签 9 → 图2(r1)、图4(r5)；相册 3 → 图1(r0)、图2(r1)
+        conn.execute_batch(
+            "INSERT INTO tags (id, name) VALUES (9, 'trip');
+             INSERT INTO image_tags VALUES (2, 9), (4, 9);
+             INSERT INTO albums (id, name) VALUES (3, 'album');
+             INSERT INTO album_images VALUES (3, 1, 0), (3, 2, 1);",
+        )
+        .unwrap();
+        let combo_tag: ImageQuery =
+            serde_json::from_str(r#"{"minRating":1,"tagId":9}"#).unwrap();
+        let (rows, total) = get_images(&conn, &combo_tag).unwrap();
+        assert_eq!(total, 2);
+        assert!(rows.iter().all(|r| r.rating >= Some(1)));
+        // rating ∧ tag 收窄：r5 的图4 单独留存
+        let combo_tag5: ImageQuery =
+            serde_json::from_str(r#"{"minRating":3,"tagId":9}"#).unwrap();
+        let (rows, total) = get_images(&conn, &combo_tag5).unwrap();
+        assert_eq!(total, 1);
+        assert_eq!(rows[0].id, 4);
+        // rating ∧ album：图1(r0) 被评分条件剔除，图2(r1) 留存
+        let combo_album: ImageQuery =
+            serde_json::from_str(r#"{"minRating":1,"albumId":3}"#).unwrap();
+        let (rows, total) = get_images(&conn, &combo_album).unwrap();
+        assert_eq!(total, 1);
+        assert_eq!(rows[0].id, 2);
+        // 三条件交集：minRating≥1 ∧ tag9 ∧ album3 → 图2
+        let combo_all: ImageQuery =
+            serde_json::from_str(r#"{"minRating":1,"tagId":9,"albumId":3}"#).unwrap();
+        let ids = get_all_visible_ids(&conn, &combo_all).unwrap();
+        assert_eq!(ids, vec![2]);
+        // 隐藏行不因评分条件复活（hidden 基础条件仍在）
+        conn.execute("UPDATE images SET rating = 5, hidden = 1 WHERE id = 1", [])
+            .unwrap();
+        let (_, total) = get_images(&conn, &combo_album).unwrap();
+        assert_eq!(total, 1);
     }
 }
 

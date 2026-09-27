@@ -21,6 +21,7 @@ function seedStore(over = {}) {
     filterAlbum: null,
     filterDate: '',
     filterFavorites: false,
+    filterMinRating: 0,
     dateRange: { from: '', to: '' },
     ...over,
   });
@@ -137,5 +138,68 @@ describe('Sidebar', () => {
     const s = useGalleryStore.getState();
     expect(s.filterAlbum).toBeNull();
     expect(s.filterFavorites).toBe(false);
+  });
+});
+
+describe('Sidebar 评分筛选', () => {
+  beforeEach(() => {
+    useGalleryStore.setState(initialSnapshot, true);
+    seedStore();
+  });
+
+  afterEach(() => {
+    cleanup();
+  });
+
+  it('渲染全部/≥1..≥5 六档按钮组，默认「全部」为唯一选中态', () => {
+    renderSidebar();
+    expect(screen.getByText('按评分筛选')).toBeInTheDocument();
+    expect(screen.getByTitle('全部评分')).toBeInTheDocument();
+    for (const n of [1, 2, 3, 4, 5]) {
+      expect(screen.getByTitle(`≥ ${n} 星`)).toBeInTheDocument();
+    }
+    expect(screen.getByTitle('全部评分')).toHaveClass('active');
+    for (const n of [1, 2, 3, 4, 5]) {
+      expect(screen.getByTitle(`≥ ${n} 星`)).not.toHaveClass('active');
+    }
+  });
+
+  it('点 ≥3 星写入 filterMinRating=3 并高亮，再点同档取消回 0', () => {
+    renderSidebar();
+    fireEvent.click(screen.getByTitle('≥ 3 星'));
+    expect(useGalleryStore.getState().filterMinRating).toBe(3);
+    expect(useGalleryStore.getState().page).toBe(1);
+    expect(screen.getByTitle('≥ 3 星')).toHaveClass('active');
+    expect(screen.getByTitle('全部评分')).not.toHaveClass('active');
+    fireEvent.click(screen.getByTitle('≥ 3 星'));
+    expect(useGalleryStore.getState().filterMinRating).toBe(0);
+  });
+
+  it('「全部」按钮与「清除」都复位为不过滤', () => {
+    seedStore({ filterMinRating: 4, page: 2 });
+    renderSidebar();
+    fireEvent.click(screen.getByTitle('≥ 2 星'));
+    expect(useGalleryStore.getState().filterMinRating).toBe(2);
+    fireEvent.click(screen.getByText('清除'));
+    expect(useGalleryStore.getState().filterMinRating).toBe(0);
+    fireEvent.click(screen.getByTitle('≥ 5 星'));
+    expect(useGalleryStore.getState().filterMinRating).toBe(5);
+    fireEvent.click(screen.getByTitle('全部评分'));
+    expect(useGalleryStore.getState().filterMinRating).toBe(0);
+  });
+
+  it('评分筛选激活时出现在 hasActiveFilter 口径内：显示「清除所有筛选」且能复位', () => {
+    seedStore({ filterMinRating: 2 });
+    renderSidebar();
+    expect(screen.getByText('清除所有筛选')).toBeInTheDocument();
+    fireEvent.click(screen.getByText('清除所有筛选'));
+    expect(useGalleryStore.getState().filterMinRating).toBe(0);
+  });
+
+  it('折叠态隐藏文字但保留六档星形按钮（i 元素星行不落 span 隐藏规则）', () => {
+    renderSidebar({ collapsed: true });
+    expect(screen.queryByText('按评分筛选')).not.toBeInTheDocument();
+    expect(screen.getByTitle('≥ 5 星')).toBeInTheDocument();
+    expect(screen.getAllByTestId('rating-filter')[0]).toBeInTheDocument();
   });
 });

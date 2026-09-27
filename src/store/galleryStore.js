@@ -39,6 +39,7 @@ const useGalleryStore = create((set, get) => ({
   filterTag: null,
   filterAlbum: null,
   filterFavorites: false,
+  filterMinRating: 0,
   filterDate: '',
   dateRange: { from: '', to: '' },
   page: 1,
@@ -122,6 +123,11 @@ const useGalleryStore = create((set, get) => ({
     set({ dateRange: { from, to }, filterDate: '', filterAlbum: null, page: 1 });
   },
   setFilterFavorites: (v) => set({ filterFavorites: v, page: 1 }),
+  // 评分下限：归一化到 0-5 整数（0=不过滤）；同值再点由 Sidebar 传 0 取消
+  setFilterMinRating: (v) => {
+    const n = Math.trunc(Number(v));
+    set({ filterMinRating: Number.isFinite(n) ? Math.min(5, Math.max(0, n)) : 0, page: 1 });
+  },
   setPage: (page) => set({ page }),
 
   clearFilters: () =>
@@ -129,6 +135,7 @@ const useGalleryStore = create((set, get) => ({
       filterTag: null,
       filterAlbum: null,
       filterFavorites: false,
+      filterMinRating: 0,
       filterDate: '',
       dateRange: { from: '', to: '' },
       search: '',
@@ -142,6 +149,9 @@ const useGalleryStore = create((set, get) => ({
         break;
       case 'album':
         set({ filterAlbum: null, page: 1 });
+        break;
+      case 'rating':
+        set({ filterMinRating: 0, page: 1 });
         break;
       case 'date':
         set({ filterDate: '', page: 1 });
@@ -213,6 +223,7 @@ const useGalleryStore = create((set, get) => ({
             tagId: opts.tagId ?? state.filterTag,
             albumId: opts.albumId ?? state.filterAlbum,
             favorite: opts.favorite ?? state.filterFavorites,
+            minRating: opts.minRating ?? state.filterMinRating,
             importDate: opts.importDate ?? state.filterDate,
             dateFrom: opts.dateFrom ?? state.dateRange.from,
             dateTo: opts.dateTo ?? state.dateRange.to,
@@ -226,6 +237,7 @@ const useGalleryStore = create((set, get) => ({
             tagId: state.filterTag,
             albumId: state.filterAlbum,
             favorite: state.filterFavorites,
+            minRating: state.filterMinRating,
             importDate: state.filterDate,
             dateFrom: state.dateRange.from,
             dateTo: state.dateRange.to,

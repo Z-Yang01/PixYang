@@ -392,6 +392,26 @@ body {
   color: #fff;
 }
 
+/* 评分筛选星形：着色只走主题 token（--star/--star-empty），五套主题自动换肤 */
+.rating-star-row {
+  display: inline-flex;
+  gap: 1px;
+  flex-shrink: 0;
+}
+
+.rating-star {
+  width: 11px;
+  height: 11px;
+}
+
+.rating-star-full {
+  color: var(--star);
+}
+
+.rating-star-empty {
+  color: var(--star-empty);
+}
+
 .sidebar-footer {
   padding: 12px;
   border-top: 1px solid var(--border);

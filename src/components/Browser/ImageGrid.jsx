@@ -56,6 +56,7 @@ export default function ImageGrid({
   const filterDate = useGalleryStore((s) => s.filterDate);
   const dateRange = useGalleryStore((s) => s.dateRange);
   const filterFavorites = useGalleryStore((s) => s.filterFavorites);
+  const filterMinRating = useGalleryStore((s) => s.filterMinRating);
 
   const hasActiveFilters = computeHasActiveFilters({
     search,
@@ -64,6 +65,7 @@ export default function ImageGrid({
     filterDate,
     dateRange,
     filterFavorites,
+    filterMinRating,
   });
   const [allTags, setAllTags] = useState([]);
   const [imageTags, setImageTags] = useState({});
