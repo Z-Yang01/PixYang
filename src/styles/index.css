@@ -1885,7 +1885,7 @@ body:has(.info-panel) .editor-panel {
   --border-color: rgba(28, 31, 38, 0.12);
   --text-primary: #1c1f26;
   --text-secondary: #4b5160;
-  --text-muted: #8b919e;
+  --text-muted: #676f7d;
   --accent-color: #5b6ef5;
   --accent-color-hover: #4256e0;
   --accent-color-glow: rgba(91, 110, 245, 0.12);
@@ -2110,7 +2110,7 @@ body:has(.info-panel) .editor-panel {
   --border-color: rgba(61, 51, 36, 0.14);
   --text-primary: #3d3324;
   --text-secondary: #6b5d47;
-  --text-muted: #9a8a70;
+  --text-muted: #756449;
   --accent-color: #b45309;
   --accent-color-hover: #92400e;
   --accent-color-glow: rgba(180, 83, 9, 0.14);
