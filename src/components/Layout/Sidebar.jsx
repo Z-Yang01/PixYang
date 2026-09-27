@@ -69,7 +69,7 @@ export default function Sidebar({
     <aside className="sidebar">
       <div className="sidebar-header">
         <div className="sidebar-logo">
-          <Images strokeWidth={2} />
+          <Images strokeWidth={1.75} />
         </div>
         {!collapsed && <span className="sidebar-title">PixYang</span>}
         <Button

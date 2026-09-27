@@ -382,9 +382,10 @@ body {
   color: var(--text-muted);
   padding: 1px 7px;
   border-radius: 999px;
-  border: 1px solid var(--border);
+  min-width: 20px;
+  text-align: center;
+  line-height: 1.5;
 }
-
 .nav-item.active .nav-badge {
   background: var(--accent-color);
   border-color: transparent;
@@ -418,6 +419,7 @@ body {
   flex-wrap: wrap;
   flex-shrink: 0;
 }
+
 
 .search-wrap {
   position: relative;

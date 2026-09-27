@@ -2126,3 +2126,11 @@
   已由组件锁覆盖，R72 实机取证（5568x3128→320x180/640x360）仍有效。
   提交范围：src-tauri/src/thumbs.rs、tests/unit/components/Browser/ImageGrid.test.jsx、
   AGENTS.md、UNATTENDED.md、NIGHTLY_LOG.md（逐个点名）。
+- 2026-09-25 R74 图标与布局打磨（含一次自伤恢复）：
+  ① 侧边栏计数徽章胶囊化（圆角 999 + min-width 20 + 居中），活动项徽章保留原实底 accent
+  白字语义（我最初误改为 glow 版，review diff 时还原——原设计对比度更好）；
+  ② sidebar-logo strokeWidth 2→1.75 统一（其余 nav 图标均为 1.75）；
+  ③ topbar-divider CSS 确认已存在（TopBar JSX 在用），我误加的重复定义已撤。
+  教训：python 脚本替换 .nav-badge 块时误吞了原块后续属性行造成 CSS 断裂（styles 契约测试
+  6 例立刻红），修复后 850/850 全绿。此类多属性块替换今后一律用 Edit 工具不用脚本。
+  验证：vitest 850/850（61 文件）；lint 0 error/10 基线；vite build ✓。
