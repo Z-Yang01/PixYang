@@ -177,6 +177,27 @@ describe('themes 与 index.css 对拍', () => {
       expect(contrast(accent, bg), `${t.id} 强调色对比度`).toBeGreaterThanOrEqual(3);
     }
   });
+
+  it('text-muted 在底色与徽章输入底上达 AA（R75-01 浅色/羊皮纸修复回归锁）', () => {
+    // R75-01 将 light --text-muted #8b919e→#676f7d、sepia #9a8a70→#756449（底色 2.95/2.94 →
+    // 4.72/4.99；侧栏徽章 --bg-input 底 2.84/2.81 → 4.55/4.77），dark 本就达标（4.88/4.52）。
+    // 此前 contrast 断言只覆盖 --text-primary/--accent-color，muted 被静默回退无测试拦截。
+    // 其余 9 主题 muted 仍低于 AA（2.7~3.7，R76 审计实测既有债务，全局提对比度属设计决策）
+    // 故只锁当前已达标主题，不得放宽为新主题开洞。
+    for (const id of ['dark', 'light', 'sepia']) {
+      const block = blockOf(id);
+      const muted = tokenValue(block, '--text-muted');
+      expect(muted, `${id} --text-muted 缺失或非 6 位 hex`).toMatch(/^#[0-9a-fA-F]{6}$/);
+      expect(
+        contrast(muted, tokenValue(block, '--bg-primary')),
+        `${id} muted/底色对比度`
+      ).toBeGreaterThanOrEqual(4.5);
+      expect(
+        contrast(muted, tokenValue(block, '--bg-input')),
+        `${id} muted/徽章底对比度`
+      ).toBeGreaterThanOrEqual(4.5);
+    }
+  });
 });
 
 describe('主题双事实源对拍（:root 基线 ↔ [data-theme] 块 ↔ @theme inline ↔ themes.ts 色卡）', () => {

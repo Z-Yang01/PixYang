@@ -2169,3 +2169,23 @@
   47 个 w/-text 逐类：icon.ico + golden png/jpg 共 47 个二进制（EOL 概念不适用）；
   R39 文本三件套（Cargo.toml/lock/gen）实为 i/lf w/lf attr/-text——一直健康。
   本轮纯侦察零改动。此前 R75-01b 报告中 "Cargo.lock 分叉显形入库" 表述作废（勘正另起条）。
+- 2026-09-28 R77 无人值守新鲜眼审计（R74/R75-01/R75-01b/R76 六笔，逐笔实锤核验）：
+  ① 424c04f EOL 根治：索引 0 CRLF/mixed blob；仓库无 .bat/.cmd/.ps1 敏感文件；icon.ico 与
+  golden png/jpg 走 text=auto 二进制探测不受 eol=lf 影响；viewerInfoRail \r→'' 归一实锤正确
+  （\r\r\n 混合形态下旧 replace(/\r\n/) 留孤立 CR 破 ^ 锚定），CRLF 用例在位。合格。
+  ② fc4e0d1 对比度：脚本复算 light 4.72/4.55、sepia 4.99/4.77（底色/badge 底），与提交声称值
+  精确一致；旧值 2.94~3.16 确不达 AA。但发现 muted 此前无任何对比度断言（contrast 只锁
+  text-primary/accent），修复可被静默回退 → 补锁 dark(4.88/4.52)/light/sepia 三主题
+  muted≥4.5（底色+徽章底），变异验证：翻回 #8b919e 立刻红 2.9496<4.5。
+  ③ 8072794 徽章：min-width 20 无折叠态溢出风险（collapsed 下 .nav-badge display:none）；
+  但 R74 删了 .nav-badge 的 border 而活动态 border-color:transparent 成死代码，且 R74 日志
+  "胶囊化"未提删边框（999 圆角 R74 前已存在）——删边框是有意设计还是脚本自愈误删无法从
+  记录判定，列上报决策（恢复边框 或 删死代码，二选一，不动渲染现状）。
+  ④ Cargo.lock：五提交点 blob 全 CR=0/5437 行，内容自 R26 未变，无依赖变更；4d22fe1 勘正
+  表述与字节事实相符。合格。
+  ⑤ 0180562/348704d：prettier 漂移修复与日志收尾，与字节现状一致。合格。
+  遗留债务（上报，不在本轮动）：其余 9 主题（midnight/forest/mist/celadon/sakura/twilight/
+  yuebai/huguang/zhulu/luoxia）muted 对比度 2.73~3.66 均低于 AA 4.5（badge 底最低 4.42），
+  属全盘调色板设计决策。
+  验证：vitest 851/851（61 文件，+1 锁）；lint 0 error/10 基线；typecheck/build ✓；
+  format:check 全过；cargo 162+golden ✓（CARGO_BUILD_JOBS=1 串行）。
