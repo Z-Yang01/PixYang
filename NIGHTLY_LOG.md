@@ -2146,3 +2146,14 @@
   工作树恰好为 LF）。归入 R75-01b EOL/format 存量修复轮处理。
   验证：主题对拍 20/20；vitest 849/850（唯一红=上述预存 CRLF 测试，stash 实证）；
   lint 0 error/10 基线；typecheck ✓；build ✓。
+- 2026-09-25 R75-01b EOL 根治（用户批准，两文件一行测试修复 + gitattributes + renormalize）：
+  ② viewerInfoRail.test.js:13 归一 replace(/\r\n/g,'\n') → replace(/\r/g,'')——
+  文件本身 CRLF 时（autocrlf 检出），R69 的模拟 CRLF 步骤产生 \r\r\n 孤立 CR 使 ^ 失配；
+  四形态矩阵证明 \r\n 场景等价、孤立 \r 场景修复、CSS token 流无损。
+  ③ .gitattributes：* text=auto eol=lf（检出强制 LF，根除 autocrlf 依赖；R39 -text 特例
+  check-attr 验证 text:unset 不受影响）；renormalize 真实影响仅 Cargo.lock 历史分叉显形
+  （HEAD LF blob vs index CRLF blob，-text 按原字节入库后永久稳定）+ 工作树刷新
+  （w/crlf 75 → 0，全仓 311 w/lf + 47 w/-text + 2 w/none）。
+  EOL 刷新暴露 index.css 1 行 prettier 漂移已落基线。
+  验证：vitest 850/850（61 文件，含此前红的 CRLF 用例回绿）；format:check 全过；
+  lint 0 error；typecheck/build ✓；cargo 152+golden ✓。
