@@ -12,7 +12,9 @@ const RAIL_SELECTORS = [
 const blockOfIn = (cssText, selectorText) => {
   // autocrlf=true 工作树会把 index.css 落成 CRLF（blob 是 LF，git status 归一化比对不可见，
   // R69 实证一次）：多行选择器按 \n 拼接做 ^...{ 匹配会整体失配，故匹配前先归一 EOL。
-  const normalized = cssText.replace(/\r\n/g, '\n');
+  // R75-01b：清除全部 \r 而非仅 \r\n——文件本身已是 CRLF 时，测试的 CRLF 模拟会产生
+  // \r\r\n，仅归一 \r\n 会在行首留下孤立 \r 使 ^ 锚定失配（CSS 中 CR 均为空白符，删除无损）。
+  const normalized = cssText.replace(/\r/g, '');
   const escaped = selectorText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   // 行首锚定：否则 `.editor-panel {` 会先命中让位规则里的 `body:has(.info-panel) .editor-panel {`
   const m = normalized.match(new RegExp(`^${escaped}\\s*\\{([^}]*)\\}`, 'm'));
