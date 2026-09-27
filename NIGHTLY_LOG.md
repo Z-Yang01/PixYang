@@ -2134,3 +2134,15 @@
   教训：python 脚本替换 .nav-badge 块时误吞了原块后续属性行造成 CSS 断裂（styles 契约测试
   6 例立刻红），修复后 850/850 全绿。此类多属性块替换今后一律用 Edit 工具不用脚本。
   验证：vitest 850/850（61 文件）；lint 0 error/10 基线；vite build ✓。
+- 2026-09-25 R75-01 主题对比度修复（用户批准的主题 A，两轮拆分第一轮）：
+  ① 浅色 --text-muted #8b919e → #676f7d（4.95 → 4.72 于 bg-primary？实测 4.72 ✓ AA）；
+  ② 羊皮纸 #9a8a70 → #756449（4.99 ✓ AA）；nav-badge（color: var(--text-muted)）
+  随 token 自动达标（4.55/4.77），未做 badge 场景覆盖、未动 --bg-input。
+  diff 仅 1 文件 2 行 token 值。此前一轮发现：prettier --write 会把该文件落成 CRLF
+  并触发 viewerInfoRail CRLF 测试红，本轮改用 Edit 后仍有——
+  stash 实证 HEAD 基线同样红：根因是 core.autocrlf 检出即 CRLF（3850 行全 CRLF），
+  测试的 CRLF 模拟（\n→\r\n 再归一）对本身 CRLF 的文件产生 \r\r\n 孤立 CR，
+  R69 补丁只覆盖 LF 文件单向。属环境级预存问题，与本次改动无关（此前全绿是
+  工作树恰好为 LF）。归入 R75-01b EOL/format 存量修复轮处理。
+  验证：主题对拍 20/20；vitest 849/850（唯一红=上述预存 CRLF 测试，stash 实证）；
+  lint 0 error/10 基线；typecheck ✓；build ✓。
