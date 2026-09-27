@@ -104,6 +104,7 @@ export default function App() {
     handleBatchTag,
     handleBatchUpdate,
     handleSyncEdits,
+    handleApplyPreset,
   } = useBatchActions({ showToast });
 
   useEffect(() => {
@@ -526,6 +527,7 @@ export default function App() {
               onBatchTag={handleBatchTag}
               onBatchUpdate={handleBatchUpdate}
               onSyncEdits={handleSyncEdits}
+              onApplyPreset={handleApplyPreset}
             />
           )}
           <Routes>

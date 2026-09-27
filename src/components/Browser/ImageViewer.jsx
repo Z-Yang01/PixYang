@@ -50,6 +50,7 @@ import {
   fromEditParams,
   opsChanged,
 } from '@/lib/editParams';
+import { applyPresetToOps } from '@/lib/presetApply';
 import useGalleryStore from '@/store/galleryStore';
 import builtinPresetsModule from '../../../shared/builtinPresets.cjs';
 import maskGeometry from '../../../shared/maskGeometry.cjs';
@@ -708,22 +709,13 @@ export default function ImageViewer({
     setSelectedMaskId(null);
   }, [selectedMaskId, pushHistory]);
 
-  // 应用预设：只覆盖预设对象里实际存在的字段（basic 子集/curves/colorGrading/lens.vignette），
-  // 其余影调与几何保留当前值——预设不含的字段不得静默清零（R63 P2-1）；
+  // 应用预设：字段裁剪走共享纯函数 applyPresetToOps（src/lib/presetApply.js，批量应用同源），
+  // 只覆盖预设显式包含的字段，其余影调与几何保留当前值（R63 P2-1）；
   // scope='all' 连旋转/翻转/裁剪一起应用（crop 坐标基于保存时的底图尺寸，跨尺寸图需手动微调）
   const applyPreset = useCallback(
     (presetParams, scope = 'basic') => {
-      const p = presetParams?.basic;
-      if (!p) return;
-      const next = {
-        ...editOpsRef.current,
-        ...p,
-        ...(presetParams.curves ? { curves: presetParams.curves } : {}),
-        ...(presetParams.colorGrading ? { colorGrading: presetParams.colorGrading } : {}),
-        ...(Number.isFinite(presetParams.lens?.vignette)
-          ? { vignette: presetParams.lens.vignette }
-          : {}),
-      };
+      const next = applyPresetToOps(presetParams, editOpsRef.current);
+      if (!next) return;
       if (scope === 'all') {
         const o = presetParams.orientation;
         if (o) {

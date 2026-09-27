@@ -1,13 +1,40 @@
+import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
-import { ListChecks, Download, Trash2, Tag, Star, Heart, X, SlidersHorizontal } from 'lucide-react';
+import {
+  ListChecks,
+  Download,
+  Trash2,
+  Tag,
+  Star,
+  Heart,
+  X,
+  SlidersHorizontal,
+  Wand2,
+} from 'lucide-react';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import useGalleryStore from '@/store/galleryStore';
+import api from '@/lib/api';
+import builtinPresetsModule from '../../../shared/builtinPresets.cjs';
+
+const { BUILTIN_PRESETS } = builtinPresetsModule;
+
+// 与编辑器内置 chips 同构的预设形态（仅 name + 影调域；desc/orientation/crop/masks 不进批量链路）
+function presetPayload(preset) {
+  return {
+    name: preset.name,
+    basic: preset.basic,
+    curves: preset.curves,
+    colorGrading: preset.colorGrading,
+    lens: preset.lens,
+  };
+}
 
 export default function BatchBar({
   onClear,
@@ -18,11 +45,23 @@ export default function BatchBar({
   onBatchTag,
   onBatchUpdate,
   onSyncEdits,
+  onApplyPreset,
 }) {
   const selectedIds = useGalleryStore((s) => s.selectedIds);
   const totalCount = useGalleryStore((s) => s.totalImages);
   const tags = useGalleryStore((s) => s.tags);
   const hasCopiedEdits = useGalleryStore((s) => !!s.copiedEdits);
+  const [userPresets, setUserPresets] = useState([]);
+
+  useEffect(() => {
+    let alive = true;
+    api.getPresets()?.then?.((list) => {
+      if (alive) setUserPresets((list || []).filter((pr) => pr?.params?.basic));
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   if (selectedIds.size === 0) return null;
 
@@ -125,6 +164,39 @@ export default function BatchBar({
           </DropdownMenuContent>
         </DropdownMenu>
       )}
+
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button
+            variant="secondary"
+            size="sm"
+            title="把预设参数套用到所选图片（只写参数不写像素，保留各图裁剪/旋转）"
+          >
+            <Wand2 className="size-4" /> 应用预设
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="start">
+          {BUILTIN_PRESETS.map((bp) => (
+            <DropdownMenuItem
+              key={bp.name}
+              title={bp.desc}
+              onClick={() => onApplyPreset?.(presetPayload(bp))}
+            >
+              {bp.name}
+            </DropdownMenuItem>
+          ))}
+          {userPresets.length > 0 && <DropdownMenuSeparator />}
+          {userPresets.length > 0 && <DropdownMenuLabel>我的预设</DropdownMenuLabel>}
+          {userPresets.map((pr) => (
+            <DropdownMenuItem
+              key={pr.id}
+              onClick={() => onApplyPreset?.(presetPayload({ ...pr.params, name: pr.name }))}
+            >
+              {pr.name}
+            </DropdownMenuItem>
+          ))}
+        </DropdownMenuContent>
+      </DropdownMenu>
 
       <div className="batch-bar-divider" />
 

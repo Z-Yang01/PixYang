@@ -3,6 +3,7 @@ import { toast } from 'sonner';
 import api from '../lib/api';
 import useGalleryStore from '../store/galleryStore';
 import { toEditParams } from '../lib/editParams';
+import { applyPresetToOps } from '../lib/presetApply';
 import { pageAfterDelete, removeIdsFromSet } from '../lib/gallery';
 import { errText, friendlyError } from '../lib/errorText';
 import { offerDeleteUndo } from '../lib/trashUndo';
@@ -214,6 +215,44 @@ export default function useBatchActions({ showToast }) {
     }
   }, []);
 
+  // 批量应用预设：字段裁剪与编辑器内 applyPreset 同源（applyPresetToOps）；基线取中性 ops——
+  // 批量套用即统一风格，各图旧影调不参与合成；preserveGeometry 保留每张图自己的裁剪/旋转
+  // （saveEdits 整体替换 params_json，几何在 Rust 侧回填）。单张失败不中断批次；
+  // 进行中防重入 + 进度 Toast（沿批量同步既有模式）。
+  const applyPresetRunningRef = useRef(false);
+  const handleApplyPreset = useCallback(async (presetParams) => {
+    if (!presetParams?.basic || !api.isBridgeAvailable() || applyPresetRunningRef.current) return;
+    const ids = [...useGalleryStore.getState().selectedIds];
+    if (ids.length === 0) return;
+    const name = presetParams?.name;
+    applyPresetRunningRef.current = true;
+    const toastId = toast.loading(`应用预设中 0/${ids.length}…`);
+    let ok = 0;
+    const failed = [];
+    for (const id of ids) {
+      try {
+        const params = toEditParams(applyPresetToOps(presetParams, {}));
+        const result = await api.saveEdits(id, params, {
+          label: name ? `批量应用预设「${name}」` : '批量应用预设',
+          preserveGeometry: true,
+        });
+        if (result?.error) throw new Error(result.error);
+        ok++;
+      } catch (e) {
+        failed.push(id);
+        console.error('[批量应用预设] 图片失败:', id, e.message);
+      }
+      toast.loading(`应用预设中 ${ok + failed.length}/${ids.length}…`, { id: toastId });
+    }
+    applyPresetRunningRef.current = false;
+    const label = name ? `预设「${name}」` : '预设';
+    if (failed.length === 0) {
+      toast.success(`已应用${label}到 ${ok} 张图片`, { id: toastId });
+    } else {
+      toast.error(`已应用${label} ${ok} 张，${failed.length} 张失败（可重试）`, { id: toastId });
+    }
+  }, []);
+
   // 删除在途互斥：ConfirmDialog 全程保持挂载，await 期间按住 Enter 会重复触发
   // onConfirm → 二次删除 + stats 双减（勾选清理在 await 之后，审查批 8 Q-03）
   const deletingRef = useRef(false);
@@ -281,5 +320,6 @@ export default function useBatchActions({ showToast }) {
     handleBatchTag,
     handleBatchUpdate,
     handleSyncEdits,
+    handleApplyPreset,
   };
 }

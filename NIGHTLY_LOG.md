@@ -2229,3 +2229,51 @@
   （浏览器通道在 subagent 不可用）；③ 评分段六档纵向按钮组的侧栏占高（折叠态为六行图标，
   如嫌高可改横向紧凑）；④ min_rating 不夹上界属有意设计（API 显式 6+ 得空集，前端已夹
   0-5），如需 Rust 侧硬夹取请裁决。
+- 2026-09-28 01:35 R79 feat: 批量应用预设（功能推荐 #3）——网格多选直接套用预设库：
+  ① 需求来源：无人值守功能推荐 #3「批量应用预设」——批量栏已有「编辑器复制→同步」链路
+  （消费 copiedEdits），但预设库（用户预设+内置）脱离编辑会话不可批量套用，统一风格必须
+  先进编辑器复制一次，属工作流断点。
+  ② 根因：applyPreset 的字段裁剪逻辑内嵌在 ImageViewer.jsx（组件闭包依赖 editOpsRef/
+  pushHistory/toast），批量侧无可复用入口；批量选中集只经 galleryStore，预设清单只在
+  编辑器 local state。
+  ③ 修法：抽纯函数 applyPresetToOps(preset, ops) → src/lib/presetApply.js（只覆盖
+  basic 子集/curves/colorGrading/lens.vignette 显式字段，缺 basic 返回 null；几何不在其
+  职责——编辑器 scope='all' 需会话底图尺寸钳制留在 Viewer，批量走 preserveGeometry 由
+  Rust 回填），编辑器 applyPreset 改为消费同源函数（~18 行闭包逻辑收编）；
+  useBatchActions 增 handleApplyPreset（toEditParams(applyPresetToOps(preset, {})) 中性
+  基线——批量套用即统一风格，各图旧影调不参与合成；api.saveEdits 逐张
+  {label:'批量应用预设「name」', preserveGeometry:true}；防重入 ref+进度 Toast，沿批量
+  同步既有模式）；BatchBar 增「应用预设」下拉（Wand2；内置 10 套 chips 同构 payload
+  {name,basic,curves?,colorGrading?,lens?}，「我的预设」组经 api.getPresets() 拉取并过滤
+  params 缺 basic 的脏行；hooks 全部前置早退 return null 之前）；App.jsx 接线
+  onApplyPreset={handleApplyPreset}。
+  ④ 回归锁 + 变异验证：新增 tests/unit/lib/presetApply.test.js 10 例（显式覆盖/非显式
+  保留：影调其余项+曲线+分级+暗角+几何+蒙版/lens 非有限值不覆盖/缺 basic=null/用户预设
+  EditParams 全量键不泄几何/10 内置全量扫描/黑白 mono 复现/纯函数不改入参/缺省中性基线/
+  name 不进 ops）；tests/unit/hooks/useBatchActions.preset.test.jsx 9 例（逐张
+  saveEdits 的 id/preset 字段/preserveGeometry/label 断言、含 curves+分级写入、失败不
+  中断、防重入、三重早退不发 IPC；BatchBar 下拉经 radix pointerDown 真实开启、内置
+  payload 同构、用户预设成组+脏行过滤、无桥仍可用）。变异 A（显式性判断改无条件覆写）
+  → 恰 6 红（新锁 4+既有 R66 编辑器锁 2，证明同源承重）；变异 B（去 ...p 展开）→ 恰
+  8 红（新锁 6+编辑器 2）→ 双双回退复绿。
+  ⑤ 真机取证：与 R78 同约束，subagent 会话浏览器通道不可用；且写路径对真实库（E:\PicX）
+  属红线禁止。UI/交互以 happy-dom 组件+接线测试覆盖（radix 开启法与已上线快捷打标菜单
+  同法同验）；点击级冒烟列待人工复核。
+  ⑥ 附带发现/勘正：任务书「内置 11 套」实为 10 套（shared/ 共 11 个 .cjs 文件，11 是
+  文件数非预设数）；BatchBar 挂载即拉取一次 getPresets（无桥返回 undefined 安全降级，
+  与编辑器 loadPresets 同口径）。
+  验证：vitest 881/881（63 文件，+19）；lint 0 error/10 基线；typecheck ✓；format:check ✓
+  （2 个新测试文件 prettier --write 修复）；cargo 165+golden_audit ✓（本轮未动 Rust 与
+  渲染数学，golden 不红；CARGO_BUILD_JOBS=1 串行）；NSIS 重打包
+  PixYang_0.1.0_x64-setup.exe 4,114,922 B @2026-09-28 01:28，§5 哈希链一手核对：exe 内嵌
+  index-yGOrIuxS.js / index-CKnKUg-g.css 与 dist/index.html 逐值一致、旧 JS 哈希
+  index-B7ZPJBu3.js 0 命中（CSS 未改哈希不变属预期）；本轮构建噪声为零。
+  提交范围：src/lib/presetApply.js（新）；src/components/Browser/ImageViewer.jsx；
+  src/hooks/useBatchActions.js；src/components/Browser/BatchBar.jsx；src/App.jsx；
+  tests/unit/lib/presetApply.test.js（新）；tests/unit/hooks/useBatchActions.preset.test.jsx（新）；
+  NIGHTLY_LOG.md
+  待人工复核：① 真机点击级冒烟（subagent 通道限制+真实库写红线）；② 批量套用语义取
+  「中性基线统一风格」（非预设影调域归零，不读各图旧影调）——若要「保留各图其余影调仅叠
+  加预设字段」需改逐张 getEdits+合并（每张多一次 IPC，且与统一风格目标相悖），推荐维持
+  现状；③ 「应用预设」入口恒显（内置不依赖数据库）vs「同步参数到所选」条件显示，两者
+  策略不同，如需统一口径请裁决。
