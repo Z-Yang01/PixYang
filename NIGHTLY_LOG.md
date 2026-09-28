@@ -2295,7 +2295,10 @@
   ④ 事故记录（如实入库）：本轮变异验证后误用 git restore 恢复 src/styles/index.css，将并行
   会话在该文件的未提交改动（相对 e0d093b 约 +5 行、light 块之前，内容未知）一并抹除；已查
   git 悬挂 blob/VS Code 本地历史/兄弟会话转录，均无源码级备份，不可恢复。已通报协调方安排
-  该会话重生成。教训：脏树上做变异验证必须用临时副本或精确 revert 单行，禁止整文件 restore。
+  该会话重生成。教训（协调方随即升格为铁律，适用本机全部 worker，勘正本行原表述——原记
+  「精确 revert 单行可用」作废）：并行场景禁止 git restore / git checkout <file> /
+  git checkout . / git stash，单文件 restore 与整树回滚同等危险；改坏验证唯一正确姿势：
+  cp 当前文件到 /tmp/nightshift/backup/ 备份 → 直接编辑改坏 → 验证红 → cp 备份回去 → 验证复绿。
   ⑤ 门禁口径（上报）：工作区有并行会话 56 文件 WIP，全量套件结果无法归属本轮，改跑定向
   门禁：vitest themes.test.js 21/21 绿（变异红/复绿见②）、prettier --check 两改动文件过、
   eslint 两改动文件 0 问题；全量 npm test/lint/typecheck/cargo/golden 留待并行轮收口后统一。
