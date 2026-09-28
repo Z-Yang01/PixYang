@@ -2184,9 +2184,10 @@
   ④ Cargo.lock：五提交点 blob 全 CR=0/5437 行，内容自 R26 未变，无依赖变更；4d22fe1 勘正
   表述与字节事实相符。合格。
   ⑤ 0180562/348704d：prettier 漂移修复与日志收尾，与字节现状一致。合格。
-  遗留债务（上报，不在本轮动）：其余 9 主题（midnight/forest/mist/celadon/sakura/twilight/
-  yuebai/huguang/zhulu/luoxia）muted 对比度 2.73~3.66 均低于 AA 4.5（badge 底最低 4.42），
-  属全盘调色板设计决策。
+  遗留债务（上报，不在本轮动）：其余 10 主题（midnight/forest/mist/celadon/sakura/twilight/
+  yuebai/huguang/zhulu/luoxia）muted 对比度未达 AA 4.5（R80 勘正：原记「9 主题 2.73~3.66」计数
+  与区间均有误——mist/celadon/sakura/twilight/yuebai/huguang/zhulu/luoxia 8 个 2.73~3.66，
+  midnight/forest 仅徽章底 4.44/4.42 边缘未达，底色上 4.76/4.77 达标），属全盘调色板设计决策。
   验证：vitest 851/851（61 文件，+1 锁）；lint 0 error/10 基线；typecheck/build ✓；
   format:check 全过；cargo 162+golden ✓（CARGO_BUILD_JOBS=1 串行）。
 - 2026-09-28 01:05 R78 feat: 评分筛选（功能推荐 #7）——星级资产激活闭环：
@@ -2277,3 +2278,24 @@
   加预设字段」需改逐张 getEdits+合并（每张多一次 IPC，且与统一风格目标相悖），推荐维持
   现状；③ 「应用预设」入口恒显（内置不依赖数据库）vs「同步参数到所选」条件显示，两者
   策略不同，如需统一口径请裁决。
+- 2026-09-29 01:2x R80 无人值守新鲜眼审计（派发目标 99394eb+a86ddbd 两笔，恰好一轮）：
+  ① 派发哈希 99394eb（task_meta 待办解析对齐 + icon.ico CRC 回归锁）在本仓库不存在：全部
+  分支/HEAD/reflog/fsck 悬挂提交（仅 blob 无 commit）/全库 grep（task_meta、parseTodos、
+  icon.ico CRC 测试）均无痕迹，src/ 下亦无 task_meta 模块可对齐——疑派发方哈希有误或该笔
+  从未入库，列上报决策（请派发方复核哈希或确认目标仓库），本轮无从审计。
+  ② a86ddbd text-muted AA 锁逐项核验合格：lin/luminance/contrast 三函数与 WCAG 定义逐项
+  一致（sRGB 逆 gamma 0.04045 分段、系数 0.2126/0.7152/0.0722、(L1+.05)/(L2+.05)）；13 主题
+  全量脚本复算 dark 4.8777/4.5186、light 4.7245/4.5528、sepia 4.9864/4.7711，与提交声称
+  4.88/4.52、4.72/4.55、4.99/4.77 精确吻合；变异实测：light muted 翻回 #8b919e 立刻红
+  （expected 2.9496738 ≥ 4.5，与声称 2.9496 一致），还原复绿 21/21。此前 contrast 仅锁
+  text-primary/accent/panel 正文，muted 确为零覆盖，补锁成立。
+  ③ 实锤修正（docs 级）：R77 日志与测试注释「其余 9 主题（2.73~3.66）」计数/区间有误——
+  实为 10 主题未达 AA，mist 等 8 个 2.73~3.66，midnight/forest 仅徽章底 4.44/4.42 边缘未达
+  （底色 4.76/4.77 达标）。已改 NIGHTLY_LOG R77 段与 themes.test.js 注释，断言逻辑未动。
+  ④ 事故记录（如实入库）：本轮变异验证后误用 git restore 恢复 src/styles/index.css，将并行
+  会话在该文件的未提交改动（相对 e0d093b 约 +5 行、light 块之前，内容未知）一并抹除；已查
+  git 悬挂 blob/VS Code 本地历史/兄弟会话转录，均无源码级备份，不可恢复。已通报协调方安排
+  该会话重生成。教训：脏树上做变异验证必须用临时副本或精确 revert 单行，禁止整文件 restore。
+  ⑤ 门禁口径（上报）：工作区有并行会话 56 文件 WIP，全量套件结果无法归属本轮，改跑定向
+  门禁：vitest themes.test.js 21/21 绿（变异红/复绿见②）、prettier --check 两改动文件过、
+  eslint 两改动文件 0 问题；全量 npm test/lint/typecheck/cargo/golden 留待并行轮收口后统一。

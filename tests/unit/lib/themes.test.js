@@ -182,7 +182,8 @@ describe('themes 与 index.css 对拍', () => {
     // R75-01 将 light --text-muted #8b919e→#676f7d、sepia #9a8a70→#756449（底色 2.95/2.94 →
     // 4.72/4.99；侧栏徽章 --bg-input 底 2.84/2.81 → 4.55/4.77），dark 本就达标（4.88/4.52）。
     // 此前 contrast 断言只覆盖 --text-primary/--accent-color，muted 被静默回退无测试拦截。
-    // 其余 9 主题 muted 仍低于 AA（2.7~3.7，R76 审计实测既有债务，全局提对比度属设计决策）
+    // 其余 10 主题 muted 仍低于 AA（R80 实测勘正：mist 等 8 个 2.73~3.66，midnight/forest
+    // 仅徽章底 4.44/4.42 边缘未达——既有债务，全局提对比度属设计决策）
     // 故只锁当前已达标主题，不得放宽为新主题开洞。
     for (const id of ['dark', 'light', 'sepia']) {
       const block = blockOf(id);
