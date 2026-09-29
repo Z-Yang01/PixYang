@@ -169,6 +169,20 @@ describe('suggestByVision 请求与响应', () => {
     await expect(suggestByVision(config, input, hangJson, { timeoutMs: 20 })).rejects.toThrow(
       'AI 请求超时'
     );
+    // 错误响应读体阶段挂起：非 200 的 text() 同样受超时覆盖（回归锁 R81-F1）
+    const hangText = vi.fn((url, init) => ({
+      ok: false,
+      status: 500,
+      text: () =>
+        new Promise((_, rej) => {
+          init.signal.addEventListener('abort', () =>
+            rej(Object.assign(new Error('aborted'), { name: 'AbortError' }))
+          );
+        }),
+    }));
+    await expect(suggestByVision(config, input, hangText, { timeoutMs: 20 })).rejects.toThrow(
+      'AI 请求超时'
+    );
   }, 5000);
 
   it('响应缺 choices：抛结构错', async () => {

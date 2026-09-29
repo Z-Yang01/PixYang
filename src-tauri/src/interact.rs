@@ -196,9 +196,12 @@ pub async fn backup_database(db: State<'_, Db>, window: Window) -> Result<Backup
             path: Some(dest),
             error: None,
         }),
-        Err(e) => {
-            let _ = std::fs::remove_file(&tmp);
-            Ok(backup_failure(Some(err_cn::text(&e))))
-        }
+        // rename 失败（dest 已让位、目标被占用等）：VACUUM 已产出完整备份，
+        // 保留 tmp 并告知路径——删掉它用户就什么都没有了
+        Err(e) => Ok(backup_failure(Some(format!(
+            "{}（完整备份已保留在 {}）",
+            err_cn::text(&e),
+            tmp
+        )))),
     }
 }

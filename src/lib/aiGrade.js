@@ -171,8 +171,17 @@ export async function suggestByVision(config, input, fetchImpl = globalThis.fetc
     throw asUserError(e);
   }
   if (!response.ok) {
+    // 错误响应体同样受读体超时覆盖：服务端挂着不发错误 body 时也能以中文超时收场
     clearTimeout(timer);
-    const body = await response.text().catch(() => '');
+    timer = arm();
+    let body;
+    try {
+      body = await response.text();
+    } catch (e) {
+      clearTimeout(timer);
+      throw asUserError(e);
+    }
+    clearTimeout(timer);
     throw new Error(`接口返回 ${response.status}${body ? `：${body.slice(0, 200)}` : ''}`);
   }
   clearTimeout(timer);
