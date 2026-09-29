@@ -37,6 +37,8 @@ export const EDIT_DEFAULTS = {
   detail: { sharpness: 0, noise: 0 }, // 锐化/降噪 0..100；noise 执行器未实现恒 0
   // 八带分色，每带 -100..100（normalizeHsl 恒补齐 8 项），见 shared/hsl.cjs
   vignette: 0, // -100..100（负压暗/正提亮），pre-crop 语义，见 shared/lens.cjs
+  distortion: 0, // -100..100（径向畸变校正：+ 桶形 / − 枕形），见 shared/lens.cjs lensGeomParams
+  chromatic: 0, // -100..100（横向色散校正：随 r² 增长），见 shared/lens.cjs
   masks: [], // 局部蒙版（radial/linear），pre-crop 像素坐标，见 shared/masks.cjs
 };
 
@@ -95,6 +97,8 @@ export function sanitizeEditOps(input = {}) {
       noise: clamp(Math.round(Number(ops.detail?.noise)) || 0, 0, 100),
     },
     vignette: clamp(Number(ops.vignette) || 0, -100, 100),
+    distortion: clamp(Number(ops.distortion) || 0, -100, 100),
+    chromatic: clamp(Number(ops.chromatic) || 0, -100, 100),
     masks: normalizeMasks(ops.masks),
   };
 }
@@ -121,6 +125,8 @@ export function hasEdits(ops) {
     s.detail.sharpness !== 0 ||
     s.detail.noise !== 0 ||
     s.vignette !== 0 ||
+    s.distortion !== 0 ||
+    s.chromatic !== 0 ||
     hasMaskData(s.masks)
   );
 }
@@ -157,7 +163,12 @@ export function toEditParams(ops) {
     colorGrading: s.colorGrading,
     hsl: s.hsl,
     detail: { sharpness: s.detail.sharpness, noise: s.detail.noise },
-    lens: { profile: '', distortion: 0, vignette: s.vignette, chromatic: 0 },
+    lens: {
+      profile: '',
+      distortion: s.distortion,
+      vignette: s.vignette,
+      chromatic: s.chromatic,
+    },
     masks: s.masks,
   });
 }
@@ -201,6 +212,8 @@ export function fromEditParams(params) {
       noise: clamp(Math.round(Number(p.detail?.noise)) || 0, 0, 100),
     },
     vignette: clamp(Number(p.lens?.vignette) || 0, -100, 100),
+    distortion: clamp(Number(p.lens?.distortion) || 0, -100, 100),
+    chromatic: clamp(Number(p.lens?.chromatic) || 0, -100, 100),
     masks: normalizeMasks(p.masks),
   };
 }

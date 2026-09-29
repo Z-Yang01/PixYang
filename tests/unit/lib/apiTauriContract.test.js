@@ -203,6 +203,16 @@ const ROUTES = [
       cmd === 'edit_open' ? { basePath: 'E:/b.jpg', width: 800, height: 600 } : { ok: true },
   },
   { method: 'getEditHistory', args: [1], cmd: 'get_edit_history', invokeArgs: { id: 1 } },
+  {
+    method: 'undoLastEdit',
+    args: [3],
+    cmd: 'get_last_edit_undo',
+    invokeArgs: { id: 3 },
+    invokeImpl: (cmd) =>
+      cmd === 'get_edits'
+        ? { version: 1, params: { basic: { exposure: 0.2 } } }
+        : { step: 2, label: '保存编辑参数', before: { basic: { exposure: 0 } } },
+  },
   { method: 'editOpen', args: [5], cmd: 'edit_open', invokeArgs: { id: 5 } },
   { method: 'editCancel', args: [5], kind: 'local', result: { ok: true } },
   {

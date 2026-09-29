@@ -19,5 +19,11 @@ export function applyPresetToOps(presetParams, currentOps = {}) {
     ...(Number.isFinite(presetParams.lens?.vignette)
       ? { vignette: presetParams.lens.vignette }
       : {}),
+    ...(Number.isFinite(presetParams.lens?.distortion)
+      ? { distortion: presetParams.lens.distortion }
+      : {}),
+    ...(Number.isFinite(presetParams.lens?.chromatic)
+      ? { chromatic: presetParams.lens.chromatic }
+      : {}),
   };
 }

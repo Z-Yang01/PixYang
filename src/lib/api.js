@@ -49,6 +49,7 @@ for (const name of [
   'editOpen',
   'getEdits',
   'saveEdits',
+  'undoLastEdit',
   'getEditHistory',
   'editBake',
   'editExport',

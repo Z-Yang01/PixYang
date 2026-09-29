@@ -56,6 +56,7 @@ describe('ImageViewer', () => {
     // 先冲刷一轮宏任务，避免挂续的 await 读到已删除的 window.pixyang（偶发 unhandled rejection）
     await new Promise((r) => setTimeout(r, 0));
     delete window.pixyang;
+    delete window.__TAURI__; // 生产桥 mock（撤销测试）不得泄漏到其他用例
   });
 
   it('image 为空时渲染 null', () => {
@@ -140,6 +141,50 @@ describe('ImageViewer', () => {
         flipV: 0,
       });
       expect(onImageUpdated).toHaveBeenCalledWith(3, { rotation: 90, flip_h: 0, flip_v: 0 });
+    });
+  });
+
+  it('查看态：撤销上次编辑保存——桥内组合（读 before → save_edit_params 链）并刷新；空历史不写', async () => {
+    const onImageUpdated = vi.fn();
+    // 生产桥直调 window.__TAURI__（契约测试同款 mock）：三命令按序返回
+    let undoCalls = 0;
+    const invoke = vi.fn().mockImplementation((cmd, args) => {
+      if (cmd === 'get_last_edit_undo') {
+        undoCalls += 1;
+        return Promise.resolve(
+          undoCalls === 1
+            ? { step: 2, label: '保存编辑参数', before: { basic: { exposure: 0 } } }
+            : { error: '没有可撤销的编辑步骤' }
+        );
+      }
+      if (cmd === 'get_edits') {
+        return Promise.resolve({ version: 3, params: { basic: { exposure: 0.5 } } });
+      }
+      if (cmd === 'save_edit_params') return Promise.resolve({ version: 4 });
+      return Promise.resolve({});
+    });
+    window.__TAURI__ = { core: { invoke } };
+    render(<ImageViewer {...baseProps({ onImageUpdated })} />);
+    const btn = screen.getByTitle(/撤销上一次编辑保存/);
+    fireEvent.click(btn);
+    await vi.waitFor(() => {
+      // save_edit_params 收到 before 参数（走既有保存链，预览缩略图由桥内自动重渲）
+      expect(invoke).toHaveBeenCalledWith(
+        'save_edit_params',
+        expect.objectContaining({
+          id: 3,
+          params: expect.objectContaining({
+            basic: expect.objectContaining({ exposure: 0 }),
+          }),
+          command: expect.objectContaining({ label: '撤销「保存编辑参数」' }),
+        })
+      );
+      expect(onImageUpdated).toHaveBeenCalledWith(3, {});
+    });
+    // 空历史：不写参数
+    fireEvent.click(btn);
+    await vi.waitFor(() => {
+      expect(invoke.mock.calls.filter(([cmd]) => cmd === 'save_edit_params').length).toBe(1);
     });
   });
 
@@ -667,6 +712,25 @@ describe('ImageViewer', () => {
     fireEvent.click(document.querySelector('.viewer-close'));
     expect(await screen.findByText('3 / 10')).toBeInTheDocument();
     expect(screen.getByText('100%')).toBeInTheDocument();
+  });
+
+  it('编辑模式：镜头滑杆写 distortion/chromatic 并随保存落库', async () => {
+    mockEditBridge();
+    render(<ImageViewer {...baseProps()} />);
+    await enterEdit();
+    const section = [...document.querySelectorAll('.editor-crop-section')].find(
+      (s2) => s2.querySelector('.editor-crop-header span')?.textContent === '镜头'
+    );
+    expect(section).toBeTruthy();
+    const inputs = section.querySelectorAll('.editor-slider-row input');
+    expect(inputs.length).toBe(2);
+    fireEvent.change(inputs[0], { target: { value: '-35' } });
+    fireEvent.change(inputs[1], { target: { value: '40' } });
+    fireEvent.click(screen.getByTitle('保存编辑参数（原图不动，可随时回到当前效果）'));
+    await vi.waitFor(() => {
+      const params = window.pixyang.saveEdits.mock.calls[0][1];
+      expect(params.lens).toEqual({ profile: '', distortion: -35, vignette: 0, chromatic: 40 });
+    });
   });
 
   it('编辑模式：锐化滑杆写 detail 并随保存落库（预览不呈现属能力矩阵设计）', async () => {

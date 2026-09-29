@@ -111,6 +111,11 @@ export function specToShaderUniforms(spec, imageSize = [0, 0]) {
   // 暗角（pre-crop 椭圆，shader 内线性衰减，公式与 shared/lens.cjs 一致）
   const vignette = clamp(Number(by.lens?.params?.vignette) || 0, -100, 100);
 
+  // 镜头几何校正：畸变/色散系数（shared/lens.cjs lensGeomParams 同式；重采样段，模拟器不含）
+  const lensDistortion = (clamp(Number(by.lens?.params?.distortion) || 0, -100, 100) / 100) * 0.25;
+  const lensChromatic = (clamp(Number(by.lens?.params?.chromatic) || 0, -100, 100) / 100) * 0.01;
+  const lensGeomOn = lensDistortion !== 0 || lensChromatic !== 0 ? 1 : 0;
+
   // 蒙版（pre-crop 像素坐标，shader 内权重 × 调整，公式与 shared/masks.cjs 一致；上限 8 个）
   const maskList = masksLib.normalizeMasks(by.masks?.params?.list || []).slice(0, 8);
   const MASK_COUNT = 8;
@@ -176,6 +181,9 @@ export function specToShaderUniforms(spec, imageSize = [0, 0]) {
     saturation,
     mono,
     vignette,
+    lensDistortion,
+    lensChromatic,
+    lensGeomOn,
   };
 }
 

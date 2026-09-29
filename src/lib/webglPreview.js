@@ -38,6 +38,9 @@ uniform vec3 uGradingDelta1;
 uniform vec3 uGradingDelta2;
 uniform float uSaturation;
 uniform float uMono;
+uniform float uLensDistortion;  // 畸变校正系数 k（±0.25，与 shared/lens.cjs lensGeomScale 同式）
+uniform float uLensChromatic;   // 色散校正系数 ca（±0.01，随 r² 增长）
+uniform float uLensGeomOn;      // 0/1：重采样段开关
 uniform float uVignette;
 uniform float uDetailSharp;     // 0/1：锐化开关（导出端为原图分辨率 USM，预览为画布邻域近似）
 uniform float uDetailNoise;     // 0..1：降噪亮度域混合系数（noise/100·0.85，与执行器同式）
@@ -225,6 +228,27 @@ void main() {
     }
     c = clamp(c, 0.0, 1.0);
   }
+  // 镜头几何校正（畸变/色散）：逆映射逐通道采样，画布分辨率近似（导出双线性同式，不做像素对拍）
+  if (uLensGeomOn > 0.5) {
+    vec2 halfSz = uImageSize * 0.5;
+    vec2 n = (vUv * uImageSize - halfSz) / halfSz;
+    float r2 = dot(n, n);
+    float radial = 1.0 + uLensDistortion * r2;
+    float rR = radial * (1.0 + uLensChromatic * r2);
+    float rB = radial * (1.0 - uLensChromatic * r2);
+    vec2 cR = (n * rR * halfSz + halfSz) / uImageSize;
+    vec2 cG = (n * radial * halfSz + halfSz) / uImageSize;
+    vec2 cB = (n * rB * halfSz + halfSz) / uImageSize;
+    // 出界（含 clamp 拉伸伪影区）置黑，与执行器出界填黑同口径
+    float inR = step(0.0, cR.x) * step(cR.x, 1.0) * step(0.0, cR.y) * step(cR.y, 1.0);
+    float inG = step(0.0, cG.x) * step(cG.x, 1.0) * step(0.0, cG.y) * step(cG.y, 1.0);
+    float inB = step(0.0, cB.x) * step(cB.x, 1.0) * step(0.0, cB.y) * step(cB.y, 1.0);
+    c = vec3(
+      texture(uImage, clamp(cR, vec2(0.0), vec2(1.0))).r * inR,
+      texture(uImage, clamp(cG, vec2(0.0), vec2(1.0))).g * inG,
+      texture(uImage, clamp(cB, vec2(0.0), vec2(1.0))).b * inB
+    );
+  }
   if (uVignette != 0.0) {
     float d = length((vUv - 0.5) * 2.0);
     float f = clamp((d - 0.5) / 0.5, 0.0, 1.0);
@@ -289,6 +313,9 @@ function getUniformLocations(gl, program) {
     'uGradingDelta2',
     'uSaturation',
     'uMono',
+    'uLensDistortion',
+    'uLensChromatic',
+    'uLensGeomOn',
     'uVignette',
     'uDetailSharp',
     'uDetailNoise',
@@ -479,6 +506,9 @@ export async function renderWebGLPreview(canvas, image, uniforms, opts = {}) {
     gl.uniform3fv(locs.uGradingDelta2, uniforms.gradingDelta[2]);
     gl.uniform1f(locs.uSaturation, uniforms.saturation);
     gl.uniform1f(locs.uMono, uniforms.mono);
+    gl.uniform1f(locs.uLensDistortion, uniforms.lensDistortion || 0);
+    gl.uniform1f(locs.uLensChromatic, uniforms.lensChromatic || 0);
+    gl.uniform1f(locs.uLensGeomOn, uniforms.lensGeomOn || 0);
     gl.uniform1f(locs.uVignette, uniforms.vignette);
     gl.uniform1f(locs.uDetailSharp, uniforms.detailSharp || 0);
     gl.uniform1f(locs.uDetailNoise, uniforms.detailNoise || 0);

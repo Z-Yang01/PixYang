@@ -204,6 +204,57 @@ pub fn save_edit_params(
     Ok(json!({ "version": version, "params": incoming }))
 }
 
+/// 持久化历史撤销取数：回退目标 = 最新 step 的 before；缺失（批量/CLI 保存不携带快照）则
+/// 向前找最近一个非空 after；全无则回默认参数（清空编辑，isDefault 标记）。
+/// 撤销写回由调用方走 save_edit_params（复用版本/历史/预览全链）。
+pub fn get_last_edit_undo(conn: &Connection, id: i64) -> Result<Value, PixError> {
+    if images_query::get_image_by_id(conn, id)?.is_none() {
+        return Ok(json!({ "error": "图片不存在" }));
+    }
+    let row: Option<(i64, String)> = conn
+        .query_row(
+            "SELECT step, command_json FROM edit_history WHERE image_id = ?1
+             ORDER BY step DESC LIMIT 1",
+            [id],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .optional()
+        .map_err(PixError::Db)?;
+    let Some((step, command_json)) = row else {
+        return Ok(json!({ "error": "没有可撤销的编辑步骤" }));
+    };
+    let has_basic = |v: &Value| !v.is_null() && v.get("basic").is_some();
+    let command: Value = serde_json::from_str(&command_json).unwrap_or(Value::Null);
+    let label = command
+        .get("label")
+        .and_then(|v| v.as_str())
+        .unwrap_or("编辑")
+        .to_string();
+    let before = command.get("before").cloned().unwrap_or(Value::Null);
+    if has_basic(&before) {
+        return Ok(json!({ "step": step, "label": label, "before": before }));
+    }
+    let rows: Vec<(i64, String)> = {
+        let mut stmt = conn.prepare(
+            "SELECT step, command_json FROM edit_history WHERE image_id = ?1 AND step < ?2
+             ORDER BY step DESC",
+        )?;
+        let it = stmt.query_map([id, step], |r| Ok((r.get(0)?, r.get(1)?)))?;
+        it.collect::<rusqlite::Result<Vec<_>>>()?
+    };
+    for (_, cj) in rows {
+        let cmd: Value = serde_json::from_str(&cj).unwrap_or(Value::Null);
+        let after = cmd.get("after").cloned().unwrap_or(Value::Null);
+        if has_basic(&after) {
+            return Ok(json!({ "step": step, "label": label, "before": after }));
+        }
+    }
+    Ok(json!({
+        "step": step, "label": label,
+        "before": default_edits(), "isDefault": true,
+    }))
+}
+
 /// 镜像 getEditHistory：按 step 升序，command_json 损坏的行 command 为 null
 pub fn get_edit_history(conn: &Connection, id: i64) -> Result<Vec<Value>, PixError> {
     let mut stmt = conn
@@ -920,6 +971,54 @@ mod tests {
         assert_eq!(broken["params"]["schemaVersion"], 1);
         assert_eq!(broken["params"]["basic"]["exposure"], 0);
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn undo_取数三态_before命中_向前找after_回默认() {
+        let conn = edit_mem_db();
+        let src = make_jpeg(&fresh_dir("undo3"), "p.jpg", 8, 8, 100);
+        let id = seed_record(&conn, "p.jpg", &src, ".jpg");
+        // 三笔保存：#1 无快照（批量口径）、#2 无快照但 #1 无 after、#3 带 before/after
+        save_edit_params(
+            &conn,
+            id,
+            &json!({ "basic": { "exposure": 0.4 } }),
+            Some(&json!({ "label": "批量" })),
+        )
+        .unwrap();
+        save_edit_params(
+            &conn,
+            id,
+            &json!({ "basic": { "exposure": 0.8 } }),
+            Some(&json!({ "label": "CLI" })),
+        )
+        .unwrap();
+        save_edit_params(
+            &conn,
+            id,
+            &json!({ "basic": { "exposure": 1.2 } }),
+            Some(&json!({
+                "label": "编辑器保存",
+                "before": json!({ "basic": { "exposure": 0.8 } }),
+                "after": json!({ "basic": { "exposure": 1.2 } }),
+            })),
+        )
+        .unwrap();
+        // 三态一：最新步 before 命中
+        let u = get_last_edit_undo(&conn, id).unwrap();
+        assert_eq!(u["label"], "编辑器保存");
+        assert_eq!(u["before"]["basic"]["exposure"], 0.8);
+        // 模拟撤销后（写入 before 作 after 的链已在 save_edit_params 覆盖），直接清 #3 后验证三态二：
+        conn.execute(
+            "DELETE FROM edit_history WHERE image_id = ?1 AND step = 3",
+            [id],
+        )
+        .unwrap();
+        let u = get_last_edit_undo(&conn, id).unwrap();
+        // #2 before 缺失 → 向前找 #1 的 after——#1 也缺 → 回默认
+        assert_eq!(u["label"], "CLI");
+        assert_eq!(u["isDefault"], true);
+        assert!(u["before"]["basic"].is_object());
     }
 
     #[test]

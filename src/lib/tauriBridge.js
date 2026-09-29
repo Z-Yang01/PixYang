@@ -139,6 +139,19 @@ export const tauriApi = {
       }
     ),
   getEditHistory: (id) => tauriInvoke('get_edit_history', { id }),
+  // 持久化历史撤销：读回回退目标（最新步 before；缺失向前找最近 after；全无回默认参数），
+  // 再走 saveEdits 全链（版本+历史+预览缩略图自动刷新）。空历史返回 {error}
+  undoLastEdit: async (id) => {
+    const last = await tauriInvoke('get_last_edit_undo', { id });
+    if (last?.error) return last;
+    const current = await tauriInvoke('get_edits', { id });
+    const before = current?.params ?? null;
+    return tauriApi.saveEdits(id, last.before, {
+      label: `撤销「${last.label}」`,
+      before,
+      after: last.before,
+    });
+  },
   // 前端语义接缝（桥内闭环，无后端命令）：编辑底图是按 id 复用的 sidecar 校验缓存，
   // 后端无会话注册表，此通道只供查看器统一收口退出/卸载路径
   editCancel: (id) => Promise.resolve({ ok: true }),

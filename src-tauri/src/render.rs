@@ -67,6 +67,65 @@ fn vignette_falloff(d: f64) -> f64 {
     ((d - 0.5) / 0.5).clamp(0.0, 1.0)
 }
 
+/// 镜头几何校正：径向畸变（k）+ 横向色散（ca）逆映射，双线性采样。
+/// 语义与 shared/lens.cjs lensGeomScale 同式（半宽/半高椭圆归一；色散随 r² 增长）。
+/// 逐像素逐通道独立采样（R/G/B 各自半径），src 出界钳到边界。全零参数恒等。
+pub fn apply_lens_geometry_in_place(
+    data: &mut [u8],
+    width: usize,
+    height: usize,
+    distortion: f64,
+    chromatic: f64,
+    channels: usize,
+) {
+    let d = distortion.clamp(-100.0, 100.0);
+    let ca = chromatic.clamp(-100.0, 100.0);
+    let k = (d / 100.0) * 0.25;
+    let caf = (ca / 100.0) * 0.01;
+    if (k == 0.0 && caf == 0.0) || width < 2 || height < 2 || channels < 3 {
+        return;
+    }
+    let src = data.to_vec();
+    let half_w = width as f64 / 2.0;
+    let half_h = height as f64 / 2.0;
+    let c_count = 3.min(channels);
+    let at = |x: usize, y: usize, c: usize| src[(y * width + x) * channels + c] as f64;
+    for y in 0..height {
+        let ny = (y as f64 + 0.5 - half_h) / half_h;
+        for x in 0..width {
+            let nx = (x as f64 + 0.5 - half_w) / half_w;
+            let r2 = nx * nx + ny * ny;
+            let i = (y * width + x) * channels;
+            for c in 0..c_count {
+                // 通道缩放因子（lensGeomScale 同式）
+                let radial = 1.0 + k * r2;
+                let scale = match c {
+                    0 => radial * (1.0 + caf * r2),
+                    2 => radial * (1.0 - caf * r2),
+                    _ => radial,
+                };
+                // 源位置（椭圆归一空间缩放后转回像素坐标）
+                let sx = nx * scale * half_w + half_w - 0.5;
+                let sy = ny * scale * half_h + half_h - 0.5;
+                // 出界填不透明黑（与拉直 rotate_by_angle 同口径）：校正产生的边缘空白由用户裁剪去除
+                if sx < 0.0 || sy < 0.0 || sx > (width - 1) as f64 || sy > (height - 1) as f64 {
+                    data[i + c] = 0;
+                    continue;
+                }
+                let x0 = sx.floor() as usize;
+                let y0 = sy.floor() as usize;
+                let x1 = (x0 + 1).min(width - 1);
+                let y1 = (y0 + 1).min(height - 1);
+                let fx = (sx - x0 as f64).clamp(0.0, 1.0);
+                let fy = (sy - y0 as f64).clamp(0.0, 1.0);
+                let top = at(x0, y0, c) * (1.0 - fx) + at(x1, y0, c) * fx;
+                let bot = at(x0, y1, c) * (1.0 - fx) + at(x1, y1, c) * fx;
+                data[i + c] = (top * (1.0 - fy) + bot * fy).round().clamp(0.0, 255.0) as u8;
+            }
+        }
+    }
+}
+
 pub fn apply_vignette_in_place(
     data: &mut [u8],
     width: usize,

@@ -621,6 +621,12 @@ pub fn get_edit_history(db: State<'_, Db>, id: i64) -> Result<Vec<Value>, String
     edit_session::get_edit_history(&conn, id).map_err(|e| err_cn::text(&e))
 }
 
+#[tauri::command]
+pub fn get_last_edit_undo(db: State<'_, Db>, id: i64) -> Result<Value, String> {
+    let conn = db.open_read().map_err(|e| err_cn::text(&e))?;
+    edit_session::get_last_edit_undo(&conn, id).map_err(|e| err_cn::text(&e))
+}
+
 /// 镜像 ensureEditBase：base 解析顺序 ① raw_path 存在且可提取 → NEF 预览底图（source='nef'）；
 /// ② orientation=1 且无 alpha → 零拷贝直用原图（不落底图文件，EXIF/alpha 天然保留）；
 /// ③ 否则规范化副本。副本/NEF 底图按 mtime+size 侧车校验复用（原图被外部改写后重建）。

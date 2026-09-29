@@ -150,6 +150,16 @@ tests/            vitest（node 环境 + per-file happy-dom pragma）
   ai_api_key/ai_model 配置，CSP connect-src 已放行 https:），模型 JSON 经白名单+值域钳制+normalizeEdits
   兜底后同样走 applyPreset；③外部 agent 通道（CLI/HTTP）未实现。editCancel 是前端语义接缝（桥内
   闭环无后端命令，编辑底图为 sidecar 校验的复用缓存）。
+- **外部 agent CLI 通道**：`pixyang cli <子命令> --out <文件>` 直连内核（无窗口不触发单实例；
+  WAL 多进程并发，写锁被运行实例占用时 5s 超时中文报错）。子命令：analyze / get-edits /
+  save-edits / undo；结果 JSON 写 --out 文件（release 无控制台，文件为唯一可靠回传）+ stdout。
+  Rust 侧无 params→spec 构建器，export 子命令未提供（需要时先移植 shared/renderSpec.cjs）。
+- **持久化编辑撤销**：编辑器历史之外的跨会话撤销——查看器工具栏按钮 → api.undoLastEdit（桥内
+  组合：get_last_edit_undo 读回退目标 → saveEdits 全链）。回退目标语义：最新步 before → 缺失
+  向前找最近 after → 全无回默认参数（isDefault）。
+- **镜头校正**：lens.distortion（径向畸变 k=±0.25）与 chromatic（横向色散 ca=±0.01，随 r² 增长）
+  三端实现（shared/lens.cjs lensGeomScale = GLSL 邻域采样 = 执行器双线性）；出界填黑（与拉直同
+  口径）；重采样非逐点，预览/导出同为视觉近似不做像素对拍。
 - **编辑面板扩展**：HSL 八带分色（editParams 平铺模型 hsl{hue,sat,lum} 恒 8 项，域接入四处=
   presetApply/copySettings/pasteSettings/handleSyncEdits）；detail 锐化+降噪（锐化为执行器近似 USM，
   降噪为亮度域 3×3 高斯混合 `apply_noise_reduction_in_place`，预览为画布分辨率邻域近似——不做像素

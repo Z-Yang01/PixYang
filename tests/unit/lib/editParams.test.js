@@ -49,6 +49,18 @@ describe('sanitizeEditOps', () => {
     expect(straightenGeometry(100, 100, -30).fit.width).toBe(73);
   });
 
+  it('distortion/chromatic：钳制、lens 映射往返、hasEdits 识别', () => {
+    const s = sanitizeEditOps({ distortion: 999, chromatic: -3.7 });
+    expect(s.distortion).toBe(100);
+    expect(s.chromatic).toBe(-3.7);
+    const params = toEditParams({ ...EDIT_DEFAULTS, distortion: -35, chromatic: 40 });
+    expect(params.lens).toEqual({ profile: '', distortion: -35, vignette: 0, chromatic: 40 });
+    const back = fromEditParams(params);
+    expect(back.distortion).toBe(-35);
+    expect(back.chromatic).toBe(40);
+    expect(hasEdits({ ...EDIT_DEFAULTS, chromatic: 25 })).toBe(true);
+  });
+
   it('crop.angle 往返保真', () => {
     const params = toEditParams({
       ...EDIT_DEFAULTS,

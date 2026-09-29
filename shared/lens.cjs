@@ -66,9 +66,33 @@ function vignettePreviewStyle(vignette) {
   };
 }
 
+// ── 镜头几何校正：径向畸变（distortion）+ 横向色散（chromatic）──
+// 逆映射语义（与执行器/GLSL 同式）：对输出像素的椭圆归一半径 r（半宽/半高归一，与暗角同式），
+// 各通道按 src_r = r·(1 + k·r²)·(1 ± ca) 回采样原图：
+//   distortion -100..100 → k = distortion/100 × 0.25（+ 桶形校正：采样点外扩；− 枕形）；
+//   chromatic -100..100 → ca = chromatic/100 × 0.01（+：R 外扩/B 内收；色散随半径增长，
+//   中心无色散，通道项为 1 ± ca·r²）。
+// 两者全零时恒等跳过。重采样依赖邻域（非逐点函数），预览走 GLSL 邻域采样、导出双线性；
+// 两者同为视觉近似，不做像素对拍（同拉直口径）。
+function lensGeomParams(distortion, chromatic) {
+  const d = clamp(Number(distortion) || 0, -100, 100);
+  const ca = clamp(Number(chromatic) || 0, -100, 100);
+  return { k: (d / 100) * 0.25, ca: (ca / 100) * 0.01, on: d !== 0 || ca !== 0 };
+}
+
+// 椭圆归一半径下的通道缩放因子（c: 0=R, 1=G, 2=B；r² 已平方，色散随半径增长、中心恒 1）
+function lensGeomScale(k, ca, r2, channel) {
+  const radial = 1 + k * r2;
+  if (channel === 0) return radial * (1 + ca * r2);
+  if (channel === 2) return radial * (1 - ca * r2);
+  return radial;
+}
+
 module.exports = {
   vignetteFalloff,
   vignettePixel,
   applyVignetteInPlace,
   vignettePreviewStyle,
+  lensGeomParams,
+  lensGeomScale,
 };

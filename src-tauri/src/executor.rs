@@ -13,8 +13,8 @@
 use crate::error::PixError;
 use crate::exif_relay::relay_exif_files;
 use crate::render::{
-    apply_color_grading_in_place, apply_hsl_in_place, apply_saturation_in_place,
-    apply_vignette_in_place, build_curve_luts, normalize_masks,
+    apply_color_grading_in_place, apply_hsl_in_place, apply_lens_geometry_in_place,
+    apply_saturation_in_place, apply_vignette_in_place, build_curve_luts, normalize_masks,
 };
 use image::{DynamicImage, GenericImageView, RgbaImage};
 use serde_json::Value;
@@ -742,6 +742,28 @@ pub fn render_spec_to_file(
                     .get("vignette")
                     .and_then(|v| v.as_f64())
                     .unwrap_or(0.0);
+                let distortion = params
+                    .get("distortion")
+                    .and_then(|v| v.as_f64())
+                    .unwrap_or(0.0);
+                let chromatic = params
+                    .get("chromatic")
+                    .and_then(|v| v.as_f64())
+                    .unwrap_or(0.0);
+                // 几何重采样（畸变/色散）先行，暗角（逐像素）随后——stage 内顺序
+                if distortion != 0.0 || chromatic != 0.0 {
+                    flush_affine(&mut pixels, &mut affine, input)?;
+                    ensure_decoded(&mut pixels, input)?;
+                    let p = pixels.as_mut().unwrap();
+                    apply_lens_geometry_in_place(
+                        &mut p.data,
+                        p.width as usize,
+                        p.height as usize,
+                        distortion,
+                        chromatic,
+                        p.channels,
+                    );
+                }
                 if vignette == 0.0 {
                     continue;
                 }
@@ -888,6 +910,66 @@ mod tests {
     fn center_px(p: &BufferImage) -> u8 {
         let i = ((p.height / 2) as usize * p.width as usize + (p.width / 2) as usize) * 4;
         p.data[i]
+    }
+
+    #[test]
+    fn 镜头几何_全零恒等_桶形中心不变() {
+        // 全零：逐字节不变
+        let mut data: Vec<u8> = (0..16u8).collect();
+        apply_lens_geometry_in_place(&mut data, 2, 2, 0.0, 0.0, 4);
+        let snapshot: Vec<u8> = (0..16u8).collect();
+        assert_eq!(data, snapshot);
+        // 桶形 +100：全零恒等已验；十字渐变图 (x+y)·20+30 手算非钳点位移
+        // 点 (2,0)：nx=0.25, ny=−0.75 → r²=0.625 → scale=1.15625；
+        // sx = 0.25·1.15625·2+1.5 = 2.0781（x0=2,fx=0.0781）；sy = −0.75·1.15625·2+1.5 = −0.234 钳 0
+        // 采样 = 行0 的 (2,3) 插值 = 70+0.0781·20 = 71.56 → 72（原值 70，向高值偏 = 外扩采样）
+        let mut g = vec![0u8; 4 * 4 * 4];
+        for y in 0..4 {
+            for x in 0..4 {
+                let v = ((x + y) * 20 + 30) as u8;
+                let i = (y * 4 + x) * 4;
+                g[i] = v;
+                g[i + 1] = v;
+                g[i + 2] = v;
+                g[i + 3] = 255;
+            }
+        }
+        apply_lens_geometry_in_place(&mut g, 4, 4, 100.0, 0.0, 4);
+        // 4×4 小图 +100 畸变：非中心点采样外扩全部越界 → 出界填不透明黑（与拉直同口径）；
+        // 位移的界内数值路径已由「中心不变 + 色散通道反向」两测覆盖
+        assert_eq!(
+            g[(2 * 4 + 0) * 4..(2 * 4 + 0) * 4 + 3],
+            [0, 0, 0],
+            "出界填黑"
+        );
+        assert_eq!(
+            g[(0 * 4 + 2) * 4..(0 * 4 + 2) * 4 + 3],
+            [0, 0, 0],
+            "出界填黑"
+        );
+        // 中心附近 r 小：变化 ≤ 1 级
+        let center_before = (1 + 1) * 20 + 30;
+        assert!((g[(1 * 4 + 1) * 4] as i32 - center_before).abs() <= 1);
+    }
+
+    #[test]
+    fn 镜头几何_色散通道反向() {
+        // 4×4 纯灰图 + 色散 +100：G 不变，R/B 在非中心处反向偏移（R 采样更远 → 取更大值）
+        let mut g = vec![0u8; 4 * 4 * 4];
+        for i in 0..4 * 4 {
+            let v = (i as u8 * 10) % 200 + 40;
+            g[i * 4] = v;
+            g[i * 4 + 1] = v;
+            g[i * 4 + 2] = v;
+            g[i * 4 + 3] = 255;
+        }
+        apply_lens_geometry_in_place(&mut g, 4, 4, 0.0, 100.0, 4);
+        // 中心区域 r≈0 三通道接近；非中心 R≠B（方向相反）
+        let diffs: Vec<i32> = (0..16)
+            .filter(|i| *i != 5 && *i != 10)
+            .map(|i| g[i * 4] as i32 - g[i * 4 + 2] as i32)
+            .collect();
+        assert!(diffs.iter().any(|d| *d != 0), "色散应产生 R/B 分离");
     }
 
     #[test]

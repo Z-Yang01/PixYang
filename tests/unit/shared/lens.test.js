@@ -87,3 +87,30 @@ describe('vignettePreviewStyle（CSS 渐变参数）', () => {
     expect(bright.background).toContain('rgba(255,255,255,0.3)');
   });
 });
+describe('lensGeomParams / lensGeomScale（镜头几何校正系数）', () => {
+  const { lensGeomParams, lensGeomScale } = require_('../../../shared/lens.cjs');
+
+  it('系数映射：±100 → k=±0.25 / ca=±0.01；全零 off', () => {
+    expect(lensGeomParams(100, 100)).toEqual({ k: 0.25, ca: 0.01, on: true });
+    expect(lensGeomParams(-100, -100)).toEqual({ k: -0.25, ca: -0.01, on: true });
+    expect(lensGeomParams(0, 0)).toEqual({ k: 0, ca: 0, on: false });
+    expect(lensGeomParams(999, -999)).toEqual({ k: 0.25, ca: -0.01, on: true });
+  });
+
+  it('通道缩放：G 仅径向项；色散随 r² 增长、中心恒 1（无色差）', () => {
+    const { k, ca } = lensGeomParams(100, 100);
+    // 中心：径向与色散项都为 0，三通道恒 1
+    expect(lensGeomScale(k, ca, 0, 0)).toBe(1);
+    expect(lensGeomScale(k, ca, 0, 1)).toBe(1);
+    expect(lensGeomScale(k, ca, 0, 2)).toBe(1);
+    const r2 = 1; // 内切椭圆半径处
+    expect(lensGeomScale(k, ca, r2, 1)).toBeCloseTo(1.25, 5);
+    expect(lensGeomScale(k, ca, r2, 0)).toBeCloseTo(1.25 * 1.01, 5);
+    expect(lensGeomScale(k, ca, r2, 2)).toBeCloseTo(1.25 * 0.99, 5);
+    // 半径减半：色散项减为四分之一（r² 律）
+    expect(lensGeomScale(k, ca, 0.25, 0)).toBeCloseTo(1.0625 * (1 + 0.0025), 5);
+    // 枕形（k<0）：径向内收
+    const { k: kn } = lensGeomParams(-100, 0);
+    expect(lensGeomScale(kn, 0, r2, 1)).toBeCloseTo(0.75, 5);
+  });
+});

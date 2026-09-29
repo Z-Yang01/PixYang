@@ -31,6 +31,7 @@ import {
   Undo2,
   Redo2,
   Pipette,
+  History,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
@@ -806,6 +807,30 @@ export default function ImageViewer({
     },
     [pushHistory]
   );
+
+  // 撤销上一次编辑保存（持久化历史，区别于编辑态内存栈撤销）：
+  // api.undoLastEdit 桥内走 saveEdits 全链，预览缩略图由 edit-preview-ready 事件自动回写
+  const [undoBusy, setUndoBusy] = useState(false);
+  const handleUndoLastEdit = useCallback(async () => {
+    if (!api.isBridgeAvailable() || !image || undoBusy) return;
+    setUndoBusy(true);
+    try {
+      const result = await api.undoLastEdit(image.id);
+      if (result?.error) {
+        toast.info(
+          result.error === '没有可撤销的编辑步骤' ? result.error : friendlyError(result.error)
+        );
+        return;
+      }
+      toast.success('已撤销上一次编辑保存');
+      onImageUpdated?.(image.id, {});
+    } catch (e) {
+      console.error('[viewer] 撤销编辑失败:', e.message);
+      toast.error(errText('撤销失败', e));
+    } finally {
+      setUndoBusy(false);
+    }
+  }, [image, undoBusy, onImageUpdated]);
 
   const autoGradeRunningRef = useRef(false);
   const [autoGradeBusy, setAutoGradeBusy] = useState(false);
@@ -1891,6 +1916,17 @@ export default function ImageViewer({
         <Button variant="ghost" size="icon" onClick={applyFlip} title="水平翻转 (H)">
           <FlipHorizontal2 className="size-5" />
         </Button>
+        {!editing && (
+          <Button
+            variant="ghost"
+            size="icon"
+            disabled={undoBusy}
+            title="撤销上一次编辑保存（回退到该步之前的参数，可连续撤销）"
+            onClick={handleUndoLastEdit}
+          >
+            <History className="size-5" />
+          </Button>
+        )}
         {editing && (
           <>
             <Button
@@ -2621,6 +2657,63 @@ export default function ImageViewer({
               {webglFailed
                 ? 'SVG 回退预览不渲染细节效果，导出仍生效'
                 : '锐化/降噪实时预览为画布分辨率近似，导出按原图分辨率计算'}
+            </p>
+          </div>
+
+          {/* 镜头校正：畸变/色散（shared/lens.cjs lensGeomScale 同式；重采样段，SVG 回退不渲染） */}
+          <div className="editor-crop-section">
+            <div className="editor-crop-header">
+              <span>镜头</span>
+            </div>
+            {[
+              { key: 'distortion', label: '畸变', hint: '正=桶形校正，负=枕形校正' },
+              { key: 'chromatic', label: '色散', hint: '去除边缘蓝/红边（横向色差）' },
+            ].map(({ key, label, hint }) => (
+              <label
+                className="editor-slider-row"
+                key={key}
+                title="双击重置该项"
+                onDoubleClick={() => {
+                  const next = { ...editOpsRef.current, [key]: 0 };
+                  pushHistory(next, `重置${label}`);
+                  setEditOps(next);
+                }}
+              >
+                <span>{label}</span>
+                <input
+                  type="range"
+                  min={-100}
+                  max={100}
+                  step={1}
+                  value={editOps[key] ?? 0}
+                  onPointerDown={() => {
+                    sliderDragRef.current = key;
+                  }}
+                  onPointerUp={() => {
+                    if (sliderDragRef.current === key) {
+                      sliderDragRef.current = null;
+                      pushHistory(editOpsRef.current, label);
+                    }
+                  }}
+                  onBlur={settleKeyGesture}
+                  onChange={(e) => {
+                    const next = { ...editOpsRef.current, [key]: Number(e.target.value) };
+                    setEditOps(next);
+                    if (!sliderDragRef.current) recordKeyAdjust(next, label);
+                  }}
+                />
+                <em>
+                  {(() => {
+                    const v = editOps[key] ?? 0;
+                    return v > 0 ? `+${v}` : v;
+                  })()}
+                </em>
+              </label>
+            ))}
+            <p className="editor-crop-hint">
+              {webglFailed
+                ? 'SVG 回退预览不渲染镜头校正，导出仍生效'
+                : '畸变/色散实时预览为画布分辨率近似，导出按原图分辨率计算'}
             </p>
           </div>
 
