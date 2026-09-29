@@ -45,8 +45,6 @@ export default function useGlobalShortcuts(handlers) {
         h.onExportSelected();
       } else if (action === GLOBAL_ACTIONS.DeleteSelected) {
         if (h.hasSelection()) h.onDeleteSelected();
-      } else if (action === GLOBAL_ACTIONS.ClearSelection) {
-        if (h.hasSelection()) h.onClearSelection();
       }
     };
     window.addEventListener('keydown', handleKey);

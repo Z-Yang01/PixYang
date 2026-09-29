@@ -7,7 +7,7 @@ use crate::progress;
 use crate::thumbs;
 use rusqlite::{params, params_from_iter, Connection};
 use serde_json::{json, Value};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 type SqlValue = rusqlite::types::Value;
@@ -381,6 +381,7 @@ pub fn update_image_db(
 
     let (w_sets, w_params, bind_unsupported) = whitelist_sets(updates);
     if bind_unsupported {
+        rollback_moves(&moved_files);
         return Ok(json!({ "error": "更新失败：不支持的更新值类型" }));
     }
     sets.extend(w_sets);
@@ -761,34 +762,43 @@ pub fn find_duplicates(conn: &Connection, _images_root: &Path) -> Result<Value, 
         it.collect::<rusqlite::Result<Vec<_>>>()?
     };
 
-    let mut coarse: Vec<(String, Vec<DupRow>)> = Vec::new();
+    // 粗分组：HashMap 记索引保插入序，避免 2 万张时 O(n²) 线性查找
+    let mut coarse: Vec<Vec<DupRow>> = Vec::new();
+    let mut coarse_idx: HashMap<String, usize> = HashMap::new();
     for r in rows {
         if r.size == 0 {
             continue;
         }
         let key = format!("{}|{}|{}", r.size, r.width, r.height);
-        match coarse.iter_mut().find(|(k, _)| *k == key) {
-            Some((_, items)) => items.push(r),
-            None => coarse.push((key, vec![r])),
+        match coarse_idx.get(&key) {
+            Some(&i) => coarse[i].push(r),
+            None => {
+                coarse_idx.insert(key, coarse.len());
+                coarse.push(vec![r]);
+            }
         }
     }
 
     let mut groups: Vec<Value> = Vec::new();
-    for (_, candidates) in &coarse {
+    for candidates in &coarse {
         if candidates.len() < 2 {
             continue;
         }
-        let mut by_hash: Vec<(String, Vec<&DupRow>)> = Vec::new();
+        let mut by_hash: Vec<Vec<&DupRow>> = Vec::new();
+        let mut hash_idx: HashMap<String, usize> = HashMap::new();
         for r in candidates {
             let Some(hash) = quick_hash(&r.filepath, r.size) else {
                 continue;
             };
-            match by_hash.iter_mut().find(|(k, _)| *k == hash) {
-                Some((_, items)) => items.push(r),
-                None => by_hash.push((hash, vec![r])),
+            match hash_idx.get(&hash) {
+                Some(&i) => by_hash[i].push(r),
+                None => {
+                    hash_idx.insert(hash, by_hash.len());
+                    by_hash.push(vec![r]);
+                }
             }
         }
-        for (_, items) in &by_hash {
+        for items in &by_hash {
             if items.len() >= 2 {
                 let size = items[0].size;
                 groups.push(json!({
@@ -1337,6 +1347,52 @@ mod tests {
         let row = get_image_by_id(&db.write_lock(), id).unwrap().unwrap();
         assert_eq!(row.import_date, "2026-01-01");
         assert_eq!(row.rating, Some(0));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn 日期移动_Db短锁路径_非法值类型_文件回滚库不动() {
+        let dir = temp_dir("pixyang_ui_move_db_badtype");
+        let root = dir.join("root");
+        let old_dir = root.join("2026").join("01").join("01");
+        let new_dir = root.join("2026").join("02").join("03");
+        let jpg = make_jpeg(&old_dir, "a.jpg", 60, 40);
+        let jpg_bytes = std::fs::read(&jpg).unwrap();
+        let nef = old_dir.join("a.NEF");
+        std::fs::write(&nef, b"RAWDATA").unwrap();
+        let conn = mem_db();
+        let id = insert_image(
+            &conn,
+            "a.jpg",
+            &jpg,
+            &nef.to_string_lossy(),
+            "2026-01-01",
+            0,
+        );
+        let db = crate::db::Db::from_connection(conn);
+
+        let result = update_image_db(
+            &db,
+            id,
+            &json!({ "import_date": "2026-02-03", "rating": [1, 2] }),
+            &root,
+            &dir.join("thumbs"),
+        )
+        .unwrap();
+        assert_eq!(result["error"], "更新失败：不支持的更新值类型");
+        assert!(jpg.exists(), "JPG 应回滚到原目录");
+        assert_eq!(std::fs::read(&jpg).unwrap(), jpg_bytes);
+        assert!(nef.exists(), "NEF 应回滚到原目录");
+        assert_eq!(std::fs::read(&nef).unwrap(), b"RAWDATA");
+        assert!(!new_dir.join("a.jpg").exists());
+        assert!(!new_dir.join("a.NEF").exists());
+        let row = get_image_by_id(&db.write_lock(), id).unwrap().unwrap();
+        assert_eq!(row.import_date, "2026-01-01");
+        assert_eq!(row.filepath, jpg.to_string_lossy().to_string());
+        assert_eq!(
+            row.raw_path.as_deref(),
+            Some(nef.to_string_lossy().as_ref())
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 

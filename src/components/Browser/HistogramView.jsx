@@ -2,9 +2,10 @@ import { useMemo } from 'react';
 
 // RGB 三通道叠加直方图（64 桶，screen 混合模拟加色叠加）。
 // 数据由 extractHistogram 从 WebGL 画布回读，参数变化后 settled 帧更新一次。
+// onPick(bin) 存在时可点击：左半设黑场锚点（blacks）、右半设白场锚点（whites）。
 const BINS = 64;
 
-export default function HistogramView({ histogram }) {
+export default function HistogramView({ histogram, onPick }) {
   const pathD = useMemo(() => {
     if (!histogram) return null;
     const max = Math.max(...histogram.r, ...histogram.g, ...histogram.b, 1);
@@ -25,8 +26,20 @@ export default function HistogramView({ histogram }) {
   }, [histogram]);
 
   if (!pathD) return null;
+  const handleClick = (e) => {
+    if (!onPick) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    if (rect.width <= 0) return;
+    const ratio = (e.clientX - rect.left) / rect.width;
+    const bin = Math.max(0, Math.min(BINS - 1, Math.round(ratio * (BINS - 1))));
+    onPick(bin);
+  };
   return (
-    <div className="editor-histogram" aria-hidden="true">
+    <div
+      className={`editor-histogram${onPick ? ' is-pickable' : ''}`}
+      title={onPick ? '点击直方图设锚点：左半设黑场（压黑），右半设白场（提亮）' : undefined}
+      onClick={handleClick}
+    >
       <svg viewBox="0 0 100 100" preserveAspectRatio="none">
         <path
           d={`${pathD.r} L 100 100 L 0 100 Z`}

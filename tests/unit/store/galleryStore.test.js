@@ -260,25 +260,35 @@ describe('galleryStore loadImages 本地写世代（审查批 8 R-2）', () => {
     delete window.pixyang;
   });
 
-  it('在途期间发生本地写：陈旧快照落地被丢弃，本地改动不回滚，loading 不卡死', async () => {
+  it('在途期间发生本地写：陈旧快照被丢弃 + 尾随补查落地最新数据，loading 不卡死', async () => {
     let resolveFirst;
     window.pixyang = {
-      getImages: vi.fn().mockImplementation(
-        () =>
-          new Promise((r) => {
-            resolveFirst = r;
-          })
-      ),
+      getImages: vi
+        .fn()
+        .mockImplementationOnce(
+          () =>
+            new Promise((r) => {
+              resolveFirst = r;
+            })
+        )
+        .mockResolvedValue({
+          images: [{ id: 1, filename: 'a.jpg', rating: 5, notes: 'refreshed' }],
+          total: 1,
+        }),
     };
     useGalleryStore.setState(initialSnapshot, true);
     const p = useGalleryStore.getState().loadImages();
     useGalleryStore.getState().setImages([{ id: 1, filename: 'a.jpg', rating: 5 }]);
     resolveFirst({ images: [{ id: 1, filename: 'a.jpg', rating: 0 }], total: 1 });
     await p;
-    const st = useGalleryStore.getState();
-    expect(st.images[0].rating).toBe(5);
-    expect(st.totalImages).toBe(initialSnapshot.totalImages);
-    expect(st.loading).toBe(false);
+    // 第一响应已按世代号丢弃：本地 rating=5 未被旧快照（rating=0）回滚
+    expect(useGalleryStore.getState().images[0].rating).toBe(5);
+    // 尾随补查落地第二响应（notes=refreshed 证明不是第一响应），loading 复位
+    await vi.waitFor(() => {
+      expect(window.pixyang.getImages).toHaveBeenCalledTimes(2);
+      expect(useGalleryStore.getState().images[0].notes).toBe('refreshed');
+      expect(useGalleryStore.getState().loading).toBe(false);
+    });
   });
 
   it('在途无本地写：正常落地整页快照（对照组）', async () => {

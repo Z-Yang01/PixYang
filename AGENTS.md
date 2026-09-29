@@ -47,14 +47,15 @@ src-tauri/        Rust/Tauri 后端（唯一运行时桌面端）
   src/err_cn.rs   错误文案中文化唯一出口（text/line：中文前缀链 + 24 条有序规则 + （错误码 N）；上屏只出中文）
   src/error.rs    统一错误类型 PixError（命令错误契约；Display 刻意保留「中文前缀: 引擎英文原文」供日志取证）
   src/progress.rs 进度事件（rebuild-progress 等，Tauri Emitter）
-  tauri.conf.json withGlobalTauri=true、frontendDist=../dist、assetProtocol（$CONFIG/pixyang scope）
-shared/           11 个 .cjs；被前端以默认导入消费（19 处），仅由 vite build 的 rollup interop 提供 default
+  tauri.conf.json withGlobalTauri=true、frontendDist=../dist、assetProtocol（$CONFIG/pixyang scope）、CSP connect-src 含 https:（AI 调色端点外呼）
+shared/           12 个 .cjs；被前端以默认导入消费（20+ 处），仅由 vite build 的 rollup interop 提供 default
   editSchema.cjs  EditParams v1 zod schema（非破坏编辑参数唯一事实源，前后端同构）
   renderSpec.cjs  EditParams → RenderSpec 纯函数（渲染指令序列，预览/导出唯一消费格式）
   pipelineOrder.cjs  渲染阶段固定顺序 + 能力矩阵（14 阶段全部支持，仅测试直接消费）
   builtinPresets.cjs  内置风格预设参数集
   maskGeometry.cjs  蒙版手柄/命中几何映射（MaskOverlay 与查看器共用）
   curves.cjs / colorGrading.cjs / hsl.cjs / lens.cjs / masks.cjs / saturation.cjs  各渲染阶段语义唯一实现（执行器 raw pass 与 WebGL2 shader 同公式；负阴影指数分支曾两端反向——预览施加 e、导出施加 1/e，R65 已对齐为预览侧 1/e 变暗，与执行器 libvips 语义一致；见 NIGHTLY_LOG R59/R65）
+  autoGrade.cjs  本地自动调色建议（analyze_image 统计 → basic 域参数；符号对齐执行器 whiteBalance/tone，输出全量九字段整域替换、幂等）
 error/
   README.md       历史归档说明：旧层（Electron/sharp/sql.js）引用 → 现行 Rust 落点对照表
   *.md            严重 bug 建档（Symptom/Root Cause/Fix/Prevention 格式，时点事实不改写）
@@ -140,6 +141,25 @@ tests/            vitest（node 环境 + per-file happy-dom pragma）
   filename/filepath（NEF 跟随还原后主文件主名）；库内 filepath 已被新导入占用 → 整体拒绝撤销（中文报错），
   暂存文件留存待清扫。占位测试用 `share_mode(0)` 独占打开模拟文件占用。
 
+## agent 调色与编辑扩展（2026-09-28）
+
+- **agent 调色三通道**：①本地算法——`analyze_image`（id → 64 桶直方图/均值/亮度分位/裁切占比，
+  内核在 image_stats.rs，统计对象为磁盘原图）→ `shared/autoGrade.cjs suggestGrade`（全量 basic 九字段
+  整域替换、幂等）→ 编辑器「自动调色」走 applyPreset 进历史栈 / 批量走 saveEdits(preserveGeometry)；
+  ②视觉模型——`src/lib/aiGrade.js suggestByVision`（OpenAI 兼容 chat/completions，设置页 ai_base_url/
+  ai_api_key/ai_model 配置，CSP connect-src 已放行 https:），模型 JSON 经白名单+值域钳制+normalizeEdits
+  兜底后同样走 applyPreset；③外部 agent 通道（CLI/HTTP）未实现。editCancel 是前端语义接缝（桥内
+  闭环无后端命令，编辑底图为 sidecar 校验的复用缓存）。
+- **编辑面板扩展**：HSL 八带分色（editParams 平铺模型 hsl{hue,sat,lum} 恒 8 项，域接入四处=
+  presetApply/copySettings/pasteSettings/handleSyncEdits）；detail 锐化+降噪（锐化为执行器近似 USM，
+  降噪为亮度域 3×3 高斯混合 `apply_noise_reduction_in_place`，预览为画布分辨率邻域近似——不做像素
+  对拍，能力矩阵 preview 标 partial）；白平衡吸管（`whiteBalanceFromSample` 反解，预览画布
+  readPixels 采样，返回绝对值幂等）；直方图点选（左半设 blacks/右半设 whites）。以上均沿用
+  sliderDragRef/recordKeyAdjust/epoch 历史约定；自动调色/AI 调色 handler 在 applyPreset 前校验
+  mountedRef/imageIdRef/editingRef（防迟到建议落错图）。
+- **饱和度钳制一致性（D1）**：GLSL 饱和度混合后与导出端同钳（`webglPreview.js` 与
+  `simulateShaderPixel` 均补 clamp），「高饱和×暗角」不再分叉；webgl-parity 基线 31 例见验证段。
+
 ## Rust/Tauri 约定
 
 - Tauri/Rust 为唯一桌面后端（Electron 层已于 2026-09-21 R36 删除）。内核分层保持：
@@ -179,7 +199,7 @@ tests/            vitest（node 环境 + per-file happy-dom pragma）
     放大 GPU 舍入 vs trunc 的量化差，变异证明该残差与高光 clamp 无关）；真缺陷量级
     （mean 16.6~33.7 / max 20~47）各档两界均仍拦下（clamp 变异实测 maxΔ 10 > 4 界），
     判定与 report/log 均标注所用档位。
-  R72 分档重标后基线：基线 8 例（缺省 6+分档 2）与编辑审计 30 例（缺省 26+分档 4）预期全绿，
+  R72 分档重标后基线：基线 31 例（缺省 28+分档 3；2026-09-28 D1 修复轮由 8 例扩充——新增饱和度钳制取证例 20-saturation-vignette-overflow 与 14-contrast-minus-50 舍入边界专档，记录见 tests/webgl-parity/d1-saturation-clamp-parity-record.md）与编辑审计 30 例（缺省 26+分档 4）预期全绿，
   R71 掩蔽重置 + R72 重标的全部数字逐位稳定；掩蔽分区效果实机取证（shadows+60 暗区 +13.4/
   亮区 0、highlights−60 亮区 −16.6/暗区 0，旧全图近似同底图反事实为亮区 +15.0/暗区 +11.6 方向反）
   归档 %TEMP%\pixyang_r72。历史「JS 对拍
@@ -191,7 +211,7 @@ tests/            vitest（node 环境 + per-file happy-dom pragma）
 
 ## 验证
 
-- 测试：`npm test`（vitest，61 个文件 / 850 例；含 R37 桥接全通道契约、R51/R52 主题↔CSS 对拍、R53 右栏让位契约、R54/R55 错误文案中文化、R56 Rust 注册表↔桥命令对拍 + 全仓 `${e.message}` 直插与裸 `x.error` 上屏扫描、R57 主题双事实源对拍（`:root`↔块↔`@theme inline`↔色卡）、R64 曲线 LUT 恒等通道兜底回归锁、R65 负阴影指数对齐回归锁（uniform 1/e 值锁 + SVG 链指数锁；像素锁已随 R71 掩蔽化重导）、R66 预设/粘贴字段域一致性回归锁（预设只覆盖显式字段 + 粘贴与复制/批量同步同口径）、R67 键盘调参历史收敛回归锁（连调 5 次→1 条 / sat=0 调 hue→0 条 / blur 即结算）与新会话保存态回归锁（未保存→已保存 / 回读→已保存）、R68 滑杆标签列宽与对比视图让位契约、R69 高光乘后 clamp 契约模型对齐回归锁（slope>1 饱和区先回 [0,1] 再进暗角/饱和度，代表点手算写死；R71 起该锁经掩蔽 mix 重导）、R70 viewerInfoRail EOL 归一回归锁（CRLF 文本输入也命中让位规则，防 autocrlf 工作树多行正则失配）、R71 高光/阴影亮度掩蔽回归锁（掩蔽带端点 uniform 锁 + 暗区动/亮区不动双向分区锁 + 高光 LR 方向锁 + 像素代表点手算写死 + GLSL mix 源串锁 + 掩蔽 uniform 上传锁；Rust 侧手算表与分区/方向锁）、R74 搜索命中原始路径回归锁（matchesListFilters haystack 含 original_path，与 SQL 同口径防轻量写回误剪枝）、R73 删除暂存区回归锁（trashUndo Toast 6s「撤销」语义与逐行还原调用链 + 单图/批量删除走 trash 通道不走直删 + 设置页 R-8 即时生效文案锁）、R75 缩略图自适应选档回归锁（≤4 列取高清档 medium、>4 列取 small、编辑代理任何列数恒优先，双向变异实证）；像素 golden 门禁在 cargo 侧 `golden_audit`（基线 2026-09-25 R71 随掩蔽语义重锁，Δ 审计归档 tests/golden/r71-tone-mask-relock-audit.md：恰 5 例 tone 用例变化、余 18 例 Δ=0），Rust 单测 162 例（R73 起 +7 trash 锁：移入/还原/NEF 配对/磁盘冲突改名/库冲突拒绝/清扫/占用中止）；覆盖率：`npm run test:coverage`，门槛配置在 `vitest.config.js`（statements/lines 75、branches 70、functions 50）。
+- 测试：`npm test`（vitest，67 个文件 / 921 例；含 R37 桥接全通道契约、R51/R52 主题↔CSS 对拍、R53 右栏让位契约、R54/R55 错误文案中文化、R56 Rust 注册表↔桥命令对拍 + 全仓 `${e.message}` 直插与裸 `x.error` 上屏扫描、R57 主题双事实源对拍（`:root`↔块↔`@theme inline`↔色卡）、R64 曲线 LUT 恒等通道兜底回归锁、R65 负阴影指数对齐回归锁（uniform 1/e 值锁 + SVG 链指数锁；像素锁已随 R71 掩蔽化重导）、R66 预设/粘贴字段域一致性回归锁（预设只覆盖显式字段 + 粘贴与复制/批量同步同口径）、R67 键盘调参历史收敛回归锁（连调 5 次→1 条 / sat=0 调 hue→0 条 / blur 即结算）与新会话保存态回归锁（未保存→已保存 / 回读→已保存）、R68 滑杆标签列宽与对比视图让位契约、R69 高光乘后 clamp 契约模型对齐回归锁（slope>1 饱和区先回 [0,1] 再进暗角/饱和度，代表点手算写死；R71 起该锁经掩蔽 mix 重导）、R70 viewerInfoRail EOL 归一回归锁（CRLF 文本输入也命中让位规则，防 autocrlf 工作树多行正则失配）、R71 高光/阴影亮度掩蔽回归锁（掩蔽带端点 uniform 锁 + 暗区动/亮区不动双向分区锁 + 高光 LR 方向锁 + 像素代表点手算写死 + GLSL mix 源串锁 + 掩蔽 uniform 上传锁；Rust 侧手算表与分区/方向锁）、R74 搜索命中原始路径回归锁（matchesListFilters haystack 含 original_path，与 SQL 同口径防轻量写回误剪枝）、R73 删除暂存区回归锁（trashUndo Toast 6s「撤销」语义与逐行还原调用链 + 单图/批量删除走 trash 通道不走直删 + 设置页 R-8 即时生效文案锁）、R75 缩略图自适应选档回归锁（≤4 列取高清档 medium、>4 列取 small、编辑代理任何列数恒优先，双向变异实证）；像素 golden 门禁在 cargo 侧 `golden_audit`（基线 2026-09-25 R71 随掩蔽语义重锁，Δ 审计归档 tests/golden/r71-tone-mask-relock-audit.md：恰 5 例 tone 用例变化、余 18 例 Δ=0），Rust 单测 175 例（R73 起 +7 trash 锁；2026-09-28 起 +analyze_image 统计 5 例、edit_bake_db 短锁 1 例、降噪内核 2 例）；覆盖率：`npm run test:coverage`，门槛配置在 `vitest.config.js`（statements/lines 75、branches 70、functions 50）。
 - Lint：`npm run lint`（ESLint flat config，`eslint.config.mjs`）；0 error 为准，warning 不阻塞。
 - 类型检查：`npm run typecheck`（tsc --noEmit，覆盖 src 下 TS/TSX）。
 - 格式检查：`npm run format:check`（Prettier 基线已于 R40 全仓落库，改动后的文件须保持 prettier 合规；历史 `*.md` 与 `src-tauri/gen/` 在 `.prettierignore` 豁免）。

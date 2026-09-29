@@ -41,6 +41,7 @@ export default function TopBar({ showFilters = true, onImport, searchInputRef })
   const totalImages = useGalleryStore((s) => s.totalImages);
   const selectedCount = useGalleryStore((s) => s.selectedIds.size);
   const tags = useGalleryStore((s) => s.tags);
+  const albums = useGalleryStore((s) => s.albums);
   const setSearch = useGalleryStore((s) => s.setSearch);
   const toggleSort = useGalleryStore((s) => s.toggleSort);
   const setFilterTag = useGalleryStore((s) => s.setFilterTag);
@@ -61,7 +62,6 @@ export default function TopBar({ showFilters = true, onImport, searchInputRef })
   const getTagName = (id) => tags.find((t) => t.id === id)?.name || '';
   const getAlbumName = (id) => {
     if (!filterAlbum) return '';
-    const albums = useGalleryStore.getState().albums;
     return albums.find((a) => a.id === filterAlbum)?.name || '';
   };
 

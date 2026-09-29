@@ -53,7 +53,7 @@ export default function ConfirmDialog({
               {thirdLabel}
             </AlertDialogAction>
           )}
-          <AlertDialogCancel onClick={onCancel}>取消</AlertDialogCancel>
+          <AlertDialogCancel>取消</AlertDialogCancel>
           <AlertDialogAction
             className={danger ? 'bg-destructive text-white hover:bg-destructive/90' : ''}
             onClick={() => {

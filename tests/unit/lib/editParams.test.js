@@ -1,5 +1,14 @@
 import { describe, it, expect } from 'vitest';
-import { EDIT_DEFAULTS, sanitizeEditOps, hasEdits, CROP_RATIOS } from '@/lib/editParams';
+import {
+  EDIT_DEFAULTS,
+  sanitizeEditOps,
+  hasEdits,
+  CROP_RATIOS,
+  toEditParams,
+  fromEditParams,
+  whiteBalanceFromSample,
+  straightenGeometry,
+} from '@/lib/editParams';
 
 describe('sanitizeEditOps', () => {
   it('默认值与非法值回退', () => {
@@ -12,6 +21,90 @@ describe('sanitizeEditOps', () => {
     expect(sanitizeEditOps({ saturation: 999 }).saturation).toBe(100);
   });
 
+  it('hsl：越界钳制、超长截断到 8 带、非法值归零', () => {
+    const s = sanitizeEditOps({
+      hsl: { hue: [10, 999, -999, 'x', null, 20, 30, 40, 50, 60], sat: [5], lum: undefined },
+    });
+    expect(s.hsl.hue).toEqual([10, 100, -100, 0, 0, 20, 30, 40]);
+    expect(s.hsl.sat).toEqual([5, 0, 0, 0, 0, 0, 0, 0]);
+    expect(s.hsl.lum).toEqual([0, 0, 0, 0, 0, 0, 0, 0]);
+  });
+
+  it('straightenGeometry：外接画布与同比例内接框手算锁定', () => {
+    // 100×100 转 30°：内接同比例方框边长 = 100/(cos30+sin30) ≈ 73.21（经典 rotate-and-crop 值）
+    const sq = straightenGeometry(100, 100, 30);
+    expect(sq.canvas).toEqual({ w: 137, h: 137 });
+    expect(sq.fit.width).toBe(73);
+    expect(sq.fit.height).toBe(73);
+    // 非方形 200×100 转 10°：保比例（w/h = 2）且角点约束取更紧的一侧
+    const rect = straightenGeometry(200, 100, 10);
+    expect(rect.fit.width / rect.fit.height).toBeCloseTo(2, 1);
+    // 角点约束仍满足：w·cos+h·sin ≤ W、w·sin+h·cos ≤ H
+    const c10 = Math.cos((10 * Math.PI) / 180);
+    const s10 = Math.sin((10 * Math.PI) / 180);
+    expect(rect.fit.width * c10 + rect.fit.height * s10).toBeLessThanOrEqual(200);
+    expect(rect.fit.width * s10 + rect.fit.height * c10).toBeLessThanOrEqual(100);
+    // θ=0 无 fit；负角度对称
+    expect(straightenGeometry(100, 100, 0).fit).toBeNull();
+    expect(straightenGeometry(100, 100, -30).fit.width).toBe(73);
+  });
+
+  it('crop.angle 往返保真', () => {
+    const params = toEditParams({
+      ...EDIT_DEFAULTS,
+      crop: { left: 5, top: 6, width: 100, height: 80, angle: -7.5 },
+    });
+    expect(params.crop.angle).toBe(-7.5);
+    expect(fromEditParams(params).crop).toEqual({
+      left: 5,
+      top: 6,
+      width: 100,
+      height: 80,
+      ratio: 'free',
+      angle: -7.5,
+    });
+  });
+
+  it('detail：越界钳制、四舍五入取整、往返保真，hasEdits 识别锐化', () => {
+    const s = sanitizeEditOps({ detail: { sharpness: -5, noise: 77.6 } });
+    expect(s.detail).toEqual({ sharpness: 0, noise: 78 });
+    const params = toEditParams({ ...EDIT_DEFAULTS, detail: { sharpness: 60, noise: 0 } });
+    expect(params.detail).toEqual({ sharpness: 60, noise: 0 });
+    const back = fromEditParams(params);
+    expect(back.detail).toEqual({ sharpness: 60, noise: 0 });
+    expect(hasEdits(EDIT_DEFAULTS)).toBe(false);
+    expect(hasEdits({ ...EDIT_DEFAULTS, detail: { sharpness: 35, noise: 0 } })).toBe(true);
+  });
+
+  it('hsl：toEditParams/fromEditParams 往返保真，hasEdits 识别 hsl 变更', () => {
+    const ops = { ...EDIT_DEFAULTS, hsl: { hue: [50, 0, 0, 0, 0, 0, 0, -30], sat: [], lum: [10] } };
+    const params = toEditParams(ops);
+    expect(params.hsl.hue[0]).toBe(50);
+    expect(params.hsl.hue[7]).toBe(-30);
+    const back = fromEditParams(params);
+    expect(back.hsl.hue).toEqual([50, 0, 0, 0, 0, 0, 0, -30]);
+    expect(back.hsl.sat).toEqual([0, 0, 0, 0, 0, 0, 0, 0]);
+    expect(back.hsl.lum[0]).toBe(10);
+    expect(hasEdits(EDIT_DEFAULTS)).toBe(false);
+    expect(
+      hasEdits({ ...EDIT_DEFAULTS, hsl: { ...EDIT_DEFAULTS.hsl, sat: [25, 0, 0, 0, 0, 0, 0, 0] } })
+    ).toBe(true);
+  });
+
+  it('白平衡吸管：中性灰归零、色偏方向正确、过暗锚点返回 null', () => {
+    // 纯灰：温度/色调都归零（幂等，重复点击不再漂移）
+    expect(whiteBalanceFromSample(128, 128, 128)).toEqual({ temperature: 0, tint: 0 });
+    // 蓝偏（b=180 高）：+temp 变暖校正 → 饱和到 100；绿略高 → 轻微正 tint 压绿
+    const blueCast = whiteBalanceFromSample(100, 120, 180);
+    expect(blueCast.temperature).toBe(100);
+    expect(blueCast.tint).toBe(-1);
+    // 已加 temp+30 渲染的纯灰重采样：反解回 −31/−7（亮度归一固有 ±1~2 近似，头注声明）
+    expect(whiteBalanceFromSample(132, 128, 124)).toEqual({ temperature: -31, tint: -7 });
+    // 过暗通道不可作锚
+    expect(whiteBalanceFromSample(120, 90, 0)).toBeNull();
+    expect(whiteBalanceFromSample(0.2, 0.2, 0.2)).toBeNull();
+  });
+
   it('crop 取整并过滤无效框', () => {
     expect(
       sanitizeEditOps({ crop: { left: 1.6, top: 2.2, width: 10.4, height: 20.5 } }).crop
@@ -21,7 +114,15 @@ describe('sanitizeEditOps', () => {
       width: 10,
       height: 21,
       ratio: 'free',
+      angle: 0,
     });
+    // angle 吸附 0.5 步进并钳 ±45
+    expect(
+      sanitizeEditOps({ crop: { left: 0, top: 0, width: 9, height: 9, angle: 6.3 } }).crop.angle
+    ).toBe(6.5);
+    expect(
+      sanitizeEditOps({ crop: { left: 0, top: 0, width: 9, height: 9, angle: 99 } }).crop.angle
+    ).toBe(45);
     expect(sanitizeEditOps({ crop: { left: 0, top: 0, width: 0, height: 5 } }).crop).toBeNull();
     expect(sanitizeEditOps({ crop: null }).crop).toBeNull();
   });

@@ -1,7 +1,10 @@
 [
   {
     "name": "01-full-combo",
-    "tolerance": { "maxDelta": 18, "meanDelta": 1.5 },
+    "tolerance": {
+      "maxDelta": 18,
+      "meanDelta": 1.5
+    },
     "toleranceBasis": "多阶段组合分档（R70，选项 A）：14 阶段全开，执行器逐阶段 u8 trunc 量化 vs shader 全程 float，残差随阶段叠加线性放大（R60 二分：basic-only 子集已 mean 0.90>缺省档 mean 0.6）。R60/R63/R64/R65 定版实测逐位稳定 mean 1.3921 / max[10,7,18]，档位=量化包络实测上界 {18,1.5}；已知真缺陷量级（03-tone 修复前 mean 16.6/max 20、s08 32.03/45、m05 33.73/47）两界均仍拦下，不掩盖真偏离。",
     "params": {
       "basic": {
@@ -15,9 +18,23 @@
         "temperature": 12,
         "tint": 4
       },
-      "curves": { "rgb": [0, 0, 0.25, 0.18, 0.75, 0.82, 1, 1], "r": [], "g": [], "b": [] },
-      "colorGrading": { "shadows": [215, 35], "midtones": [], "highlights": [40, 25] },
-      "lens": { "profile": "", "distortion": 0, "vignette": -35, "chromatic": 0 },
+      "curves": {
+        "rgb": [0, 0, 0.25, 0.18, 0.75, 0.82, 1, 1],
+        "r": [],
+        "g": [],
+        "b": []
+      },
+      "colorGrading": {
+        "shadows": [215, 35],
+        "midtones": [],
+        "highlights": [40, 25]
+      },
+      "lens": {
+        "profile": "",
+        "distortion": 0,
+        "vignette": -35,
+        "chromatic": 0
+      },
       "masks": [
         {
           "type": "radial",
@@ -71,19 +88,37 @@
   },
   {
     "name": "02-exposure",
-    "params": { "basic": { "exposure": 0.7 } }
+    "params": {
+      "basic": {
+        "exposure": 0.7
+      }
+    }
   },
   {
     "name": "03-tone",
-    "tolerance": { "maxDelta": 4, "meanDelta": 1.5 },
+    "tolerance": {
+      "maxDelta": 4,
+      "meanDelta": 1.5
+    },
     "toleranceBasis": "R72 掩蔽后包络复测（tone 族单阶段档）：R71 亮度掩蔽（smoothstep 带）重置量化包络后，本用例 R71/R72 两轮逐位稳定 mean 1.0304 / max[2,2,2]——掩蔽带沿放大 GPU 舍入 vs 执行器单次 trunc 的量化差，非缺陷；档位=实测上界×余量（max 2×2=4、mean ≈1.05×1.4=1.5，与既有多阶段档 mean 同值），真缺陷量级（修复前 mean 16.6~33.7 / max 20~47）两界均仍拦下；变异验证见 NIGHTLY_LOG R72（高光 f 去 clamp → 本用例红）。",
     "params": {
-      "basic": { "contrast": -20, "highlights": 30, "shadows": -25, "whites": -15, "blacks": 20 }
+      "basic": {
+        "contrast": -20,
+        "highlights": 30,
+        "shadows": -25,
+        "whites": -15,
+        "blacks": 20
+      }
     }
   },
   {
     "name": "04-white-balance",
-    "params": { "basic": { "temperature": -40, "tint": 25 } }
+    "params": {
+      "basic": {
+        "temperature": -40,
+        "tint": 25
+      }
+    }
   },
   {
     "name": "05-curves",
@@ -104,14 +139,25 @@
         "sat": [0, 30, 5, -20],
         "lum": [3, 15, 5, 10]
       },
-      "colorGrading": { "shadows": [], "midtones": [90, 40], "highlights": [] }
+      "colorGrading": {
+        "shadows": [],
+        "midtones": [90, 40],
+        "highlights": []
+      }
     }
   },
   {
     "name": "07-mono-vignette",
     "params": {
-      "basic": { "saturation": -100 },
-      "lens": { "profile": "", "distortion": 0, "vignette": 40, "chromatic": 0 }
+      "basic": {
+        "saturation": -100
+      },
+      "lens": {
+        "profile": "",
+        "distortion": 0,
+        "vignette": 40,
+        "chromatic": 0
+      }
     }
   },
   {
@@ -136,6 +182,229 @@
           }
         }
       ]
+    }
+  },
+  {
+    "name": "09-highlights-minus-100",
+    "params": {
+      "basic": {
+        "highlights": -100
+      }
+    }
+  },
+  {
+    "name": "10-highlights-plus-100",
+    "params": {
+      "basic": {
+        "highlights": 100
+      }
+    }
+  },
+  {
+    "name": "11-shadows-plus-100",
+    "params": {
+      "basic": {
+        "shadows": 100
+      }
+    }
+  },
+  {
+    "name": "12-shadows-minus-100",
+    "params": {
+      "basic": {
+        "shadows": -100
+      }
+    }
+  },
+  {
+    "name": "13-whites-blacks-extremes",
+    "params": {
+      "basic": {
+        "whites": -100,
+        "blacks": 100
+      }
+    }
+  },
+  {
+    "name": "14-contrast-minus-50",
+    "params": {
+      "basic": {
+        "contrast": -50
+      }
+    },
+    "tolerance": {
+      "maxDelta": 2,
+      "meanDelta": 1.5
+    },
+    "toleranceBasis": "contrast=-50 → 斜率 0、仿射偏移恰为 127.5：全部像素落在 u8 舍入边界。导出端 libvips 语义 trunc→127，浏览器画布写入 round→128，100% 像素恒差 1 级（实测 maxΔ=[1,1,1] meanΔ=1.0000，R99 记录）。档位=边界伪差包络 {2,1.5}；真偏离（方向性/结构性色偏）量级远超此界仍拦下。"
+  },
+  {
+    "name": "15-contrast-whites-blacks-plus",
+    "params": {
+      "basic": {
+        "contrast": 50,
+        "whites": 100,
+        "blacks": -100
+      }
+    }
+  },
+  {
+    "name": "16-temperature-plus-100",
+    "params": {
+      "basic": {
+        "temperature": 100
+      }
+    }
+  },
+  {
+    "name": "17-temperature-tint-minus-100",
+    "params": {
+      "basic": {
+        "temperature": -100,
+        "tint": -100
+      }
+    }
+  },
+  {
+    "name": "18-tint-plus-100",
+    "params": {
+      "basic": {
+        "tint": 100
+      }
+    }
+  },
+  {
+    "name": "19-saturation-plus-100",
+    "params": {
+      "basic": {
+        "saturation": 100
+      }
+    }
+  },
+  {
+    "name": "20-saturation-vignette-overflow",
+    "params": {
+      "basic": {
+        "saturation": 60
+      },
+      "lens": {
+        "profile": "",
+        "distortion": 0,
+        "vignette": -50,
+        "chromatic": 0
+      }
+    },
+    "toleranceBasis": "D1 取证例（饱和度正值溢出 × 暗角）：修复前 GLSL 饱和度输出不钳制、与导出端逐阶段钳制分叉（预判超缺省档发红）；修复后两端同钳，预期落缺省档。"
+  },
+  {
+    "name": "21-curves-identity-closed",
+    "params": {
+      "curves": {
+        "rgb": [0, 0, 1, 1],
+        "r": [],
+        "g": [],
+        "b": []
+      }
+    }
+  },
+  {
+    "name": "22-curves-open-diagonal",
+    "params": {
+      "curves": {
+        "rgb": [0.5, 0.5, 0.8, 0.8],
+        "r": [],
+        "g": [],
+        "b": []
+      }
+    }
+  },
+  {
+    "name": "23-curves-inverse",
+    "params": {
+      "curves": {
+        "rgb": [0, 1, 1, 0],
+        "r": [],
+        "g": [],
+        "b": []
+      }
+    }
+  },
+  {
+    "name": "24-curves-vertical-guard",
+    "params": {
+      "curves": {
+        "rgb": [0, 0, 0.5, 0.1, 0.5, 0.9, 1, 1],
+        "r": [],
+        "g": [],
+        "b": []
+      }
+    }
+  },
+  {
+    "name": "25-curves-extreme-s",
+    "params": {
+      "curves": {
+        "rgb": [0, 0, 0.5, 0.02, 0.5, 0.98, 1, 1],
+        "r": [],
+        "g": [],
+        "b": []
+      }
+    }
+  },
+  {
+    "name": "26-curves-g-channel",
+    "params": {
+      "curves": {
+        "rgb": [],
+        "r": [],
+        "g": [0, 0.1, 1, 0.9],
+        "b": []
+      }
+    }
+  },
+  {
+    "name": "27-curves-all-four",
+    "params": {
+      "curves": {
+        "rgb": [0, 0, 0.5, 0.45, 1, 1],
+        "r": [0, 0.05, 1, 1],
+        "g": [0, 0, 1, 0.95],
+        "b": [0, 0.1, 1, 0.9]
+      }
+    }
+  },
+  {
+    "name": "28-grading-full-strength",
+    "params": {
+      "colorGrading": {
+        "shadows": [200, 100]
+      }
+    }
+  },
+  {
+    "name": "29-grading-three-bands",
+    "params": {
+      "colorGrading": {
+        "shadows": [215, 60],
+        "midtones": [90, 60],
+        "highlights": [40, 60]
+      }
+    }
+  },
+  {
+    "name": "30-grading-hue-wrap",
+    "params": {
+      "colorGrading": {
+        "shadows": [360, 50]
+      }
+    }
+  },
+  {
+    "name": "31-grading-sat-zero",
+    "params": {
+      "colorGrading": {
+        "midtones": [90, 0]
+      }
     }
   }
 ]

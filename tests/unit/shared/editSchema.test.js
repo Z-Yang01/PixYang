@@ -33,6 +33,7 @@ describe('editSchema（EditParams v1）', () => {
       w: 10,
       h: 8,
       ratio: 'free',
+      angle: 0,
     });
     expect(normalizeEdits({ crop: null }).crop).toBeNull();
     expect(normalizeEdits(null)).toEqual(DEFAULT_EDITS());

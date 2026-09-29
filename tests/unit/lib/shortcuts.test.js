@@ -68,14 +68,16 @@ describe('matchGlobalShortcut', () => {
     expect(matchGlobalShortcut(keyEvent('/', { shiftKey: true }))).toBe(GLOBAL_ACTIONS.ToggleHelp);
   });
 
-  it('Ctrl+A / Ctrl+E / Delete / Esc', () => {
+  it('Ctrl+A / Ctrl+E / Delete', () => {
     expect(matchGlobalShortcut(keyEvent('a', { ctrlKey: true }))).toBe(GLOBAL_ACTIONS.SelectAll);
     expect(matchGlobalShortcut(keyEvent('e', { metaKey: true }))).toBe(
       GLOBAL_ACTIONS.ExportSelected
     );
     expect(matchGlobalShortcut(keyEvent('Delete'))).toBe(GLOBAL_ACTIONS.DeleteSelected);
     expect(matchGlobalShortcut(keyEvent('Backspace'))).toBeNull();
-    expect(matchGlobalShortcut(keyEvent('Escape'))).toBe(GLOBAL_ACTIONS.ClearSelection);
+    // Escape 的分层关闭（帮助→详情→查看器→清选择）由 useGlobalShortcuts 专属分支处理，
+    // 不进 matchGlobalShortcut 动作表
+    expect(matchGlobalShortcut(keyEvent('Escape'))).toBeNull();
   });
 
   it('Ctrl+Shift 组合不触发全局动作（审查批 3）', () => {

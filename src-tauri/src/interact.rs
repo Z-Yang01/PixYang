@@ -6,13 +6,29 @@ use tauri_plugin_dialog::DialogExt;
 use crate::db::{self, AppPaths, Db};
 use crate::err_cn;
 
-// 托管边界同 Electron isManagedPath：图库根 + 数据库所在目录，Path::starts_with 按组件比较等价于 r + path.sep 前缀
+// 托管边界同 Electron isManagedPath：图库根 + 数据库所在目录，Path::starts_with 按组件比较等价于 r + path.sep 前缀。
+// starts_with 不归一化 .. 组件（E:/root/lib/../.. 对 E:/root 判真），target 须先做组件级归一化再比对
+fn normalize_components(path: &std::path::Path) -> std::path::PathBuf {
+    let mut out = std::path::PathBuf::new();
+    for comp in path.components() {
+        match comp {
+            std::path::Component::ParentDir => {
+                out.pop();
+            }
+            std::path::Component::CurDir => {}
+            other => out.push(other.as_os_str()),
+        }
+    }
+    out
+}
+
 pub(crate) fn is_managed_path(
     images_root: &std::path::Path,
     database_dir: &std::path::Path,
     target: &std::path::Path,
 ) -> bool {
-    target.starts_with(images_root) || target.starts_with(database_dir)
+    let normalized = normalize_components(target);
+    normalized.starts_with(images_root) || normalized.starts_with(database_dir)
 }
 
 // 镜像 shell:open-path 返回契约：成功返回空串，任何失败以错误字符串正常返回
@@ -108,6 +124,28 @@ mod tests {
     }
 
     #[test]
+    fn 组件归一化堵住上级目录穿越() {
+        let (img, db) = roots();
+        // library 内的 .. 向上逃逸到图库外：归一化后必须判不受管
+        assert!(!is_managed_path(
+            &img,
+            &db,
+            &Path::new("E:/Pic/library/../../evil")
+        ));
+        assert!(!is_managed_path(
+            &img,
+            &db,
+            &Path::new("E:/Pic/library/sub/../../evil.jpg")
+        ));
+        // 借 .. 绕一圈仍回到受管范围内：保持受管
+        assert!(is_managed_path(
+            &img,
+            &db,
+            &Path::new("E:/Pic/library/sub/../a.jpg")
+        ));
+    }
+
+    #[test]
     fn 空数据库目录回退时仅图库根受管() {
         let (img, _) = roots();
         let fallback = PathBuf::from(".");
@@ -137,19 +175,30 @@ pub async fn backup_database(db: State<'_, Db>, window: Window) -> Result<Backup
         Some(p) => p.to_string(),
         None => return Ok(backup_failure(None)),
     };
-    // VACUUM INTO 拒绝写入已存在文件，先删以对齐 better-sqlite3 db.backup 的覆盖语义
+    // VACUUM INTO 拒绝写入已存在文件：先写同目录临时名，成功后再替换目标。
+    // 旧实现先删用户选中的既有文件再 VACUUM，源库被锁/磁盘满时选中的文件已凭空丢失
+    let tmp = format!("{dest}.vacuum-tmp");
+    let _ = std::fs::remove_file(&tmp);
+    let conn = db.write_lock();
+    if let Err(e) = conn.execute("VACUUM INTO ?1", params![&tmp]) {
+        let _ = std::fs::remove_file(&tmp);
+        return Ok(backup_failure(Some(err_cn::text(&e))));
+    }
     if let Err(e) = std::fs::remove_file(&dest) {
         if e.kind() != std::io::ErrorKind::NotFound {
+            let _ = std::fs::remove_file(&tmp);
             return Ok(backup_failure(Some(err_cn::text(&e))));
         }
     }
-    let conn = db.write_lock();
-    match conn.execute("VACUUM INTO ?1", params![dest]) {
+    match std::fs::rename(&tmp, &dest) {
         Ok(_) => Ok(BackupResult {
             success: true,
             path: Some(dest),
             error: None,
         }),
-        Err(e) => Ok(backup_failure(Some(err_cn::text(&e)))),
+        Err(e) => {
+            let _ = std::fs::remove_file(&tmp);
+            Ok(backup_failure(Some(err_cn::text(&e))))
+        }
     }
 }

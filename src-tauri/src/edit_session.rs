@@ -404,17 +404,22 @@ fn force_encode_format(spec: &Value, format: &str) -> Value {
 /// 镜像 bakeEditSession 可内核化部分：渲染 spec 到 原名-temp → 原子替代原图。
 /// 输出格式跟随原图扩展名（png→png、webp→webp、其余→jpeg）；temp 扩展名跟随输出，
 /// 源扩展名不受支持时（gif 等）由 save_edits 托管改名到 .jpg。temp 撞托管记录先围栏后渲染。
-pub fn edit_bake(
+/// 烘焙规划产物：阶段 1（锁内）读出的行数据 + 临时路径 + 格式化后的渲染 spec
+pub struct BakePlan {
+    img: images_query::ImageRow,
+    temp_path: PathBuf,
+    forced_spec: Value,
+}
+
+// 阶段 1（锁内）：读行、定临时路径、围栏校验。Ok(Err(terminal)) 为终态业务响应
+fn bake_plan(
     conn: &Connection,
     id: i64,
-    edits: &Value,
     spec: &Value,
-    input: &Path,
-    thumbs_dir: &Path,
-) -> Result<Value, PixError> {
+) -> Result<Result<BakePlan, Value>, PixError> {
     let img = match images_query::get_image_by_id(conn, id)? {
         Some(row) => row,
-        None => return Ok(json!({ "error": "编辑会话不存在" })),
+        None => return Ok(Err(json!({ "error": "编辑会话不存在" }))),
     };
     let out_format = match ext_lower(&img.filepath).as_str() {
         ".png" => "png",
@@ -441,52 +446,66 @@ pub fn edit_bake(
         )
         .optional()?;
     if fenced.is_some() {
-        return Ok(
+        return Ok(Err(
             json!({ "error": format!("临时文件名与图库中另一图片冲突（{}），请重命名冲突图片后重试", file_name_of(&temp_path)) }),
-        );
+        ));
     }
+    let forced_spec = force_encode_format(spec, out_format);
+    Ok(Ok(BakePlan {
+        img,
+        temp_path,
+        forced_spec,
+    }))
+}
 
-    let forced = force_encode_format(spec, out_format);
-    let dims = match executor::render_spec_to_file(&forced, input, &temp_path) {
+// 阶段 2（锁外）：渲染 + 产物校验 + EXIF 回接。Err(terminal) 为终态业务响应（临时文件已清理）
+fn bake_render(plan: &BakePlan, input: &Path) -> Result<(u32, u32), Value> {
+    let temp_path = &plan.temp_path;
+    let dims = match executor::render_spec_to_file(&plan.forced_spec, input, temp_path) {
         Ok(d) => d,
-        Err(e) => return Ok(json!({ "error": format!("渲染失败：{}", err_cn::text(&e)) })),
+        Err(e) => return Err(json!({ "error": format!("渲染失败：{}", err_cn::text(&e)) })),
     };
 
-    let product = image::ImageReader::open(&temp_path)
+    let product = image::ImageReader::open(temp_path)
         .ok()
         .and_then(|r| r.with_guessed_format().ok())
         .and_then(|r| r.into_dimensions().ok());
     match product {
         Some((w, h)) if w == dims.width && h == dims.height => {}
         Some((w, h)) => {
-            let _ = std::fs::remove_file(&temp_path);
-            return Ok(
+            let _ = std::fs::remove_file(temp_path);
+            return Err(
                 json!({ "error": format!("渲染产物校验失败（{w}x{h}，期望 {}x{}），已放弃替代", dims.width, dims.height) }),
             );
         }
         None => {
-            let _ = std::fs::remove_file(&temp_path);
-            return Ok(json!({ "error": "渲染产物校验失败：产物不可解码" }));
+            let _ = std::fs::remove_file(temp_path);
+            return Err(json!({ "error": "渲染产物校验失败：产物不可解码" }));
         }
     }
 
     // EXIF 回接来源改原图：base 为再编码副本/NEF 预览时无原图 EXIF（零拷贝时执行器已从原图回接）
     // 必须先于 save_edits：落库 size 需与回接后的磁盘字节一致
-    if input != Path::new(&img.filepath) {
-        if let Err(e) = crate::exif_relay::relay_exif_files(Path::new(&img.filepath), &temp_path) {
+    if input != Path::new(&plan.img.filepath) {
+        if let Err(e) =
+            crate::exif_relay::relay_exif_files(Path::new(&plan.img.filepath), temp_path)
+        {
             eprintln!("[编辑烘焙] EXIF 回接失败: {e}");
         }
     }
+    Ok((dims.width, dims.height))
+}
 
-    let saved = match save_edits(
-        conn,
-        id,
-        edits,
-        &temp_path,
-        dims.width,
-        dims.height,
-        thumbs_dir,
-    ) {
+// 阶段 3（锁内）：save_edits + 烘焙后缓存整组清除
+fn bake_commit(
+    conn: &Connection,
+    plan: &BakePlan,
+    id: i64,
+    edits: &Value,
+    dims: (u32, u32),
+    thumbs_dir: &Path,
+) -> Result<Value, PixError> {
+    let saved = match save_edits(conn, id, edits, &plan.temp_path, dims.0, dims.1, thumbs_dir) {
         Ok(v) => v,
         Err(e) => {
             return Ok(
@@ -495,7 +514,7 @@ pub fn edit_bake(
         }
     };
     if saved.get("error").is_some() {
-        let _ = std::fs::remove_file(&temp_path);
+        let _ = std::fs::remove_file(&plan.temp_path);
         return Ok(saved);
     }
 
@@ -513,6 +532,50 @@ pub fn edit_bake(
     }
 
     Ok(json!({ "ok": true, "image": saved }))
+}
+
+pub fn edit_bake(
+    conn: &Connection,
+    id: i64,
+    edits: &Value,
+    spec: &Value,
+    input: &Path,
+    thumbs_dir: &Path,
+) -> Result<Value, PixError> {
+    let plan = match bake_plan(conn, id, spec)? {
+        Err(terminal) => return Ok(terminal),
+        Ok(p) => p,
+    };
+    let dims = match bake_render(&plan, input) {
+        Ok(d) => d,
+        Err(terminal) => return Ok(terminal),
+    };
+    bake_commit(conn, &plan, id, edits, dims, thumbs_dir)
+}
+
+/// Db 级短锁编排：锁内规划 → 锁外渲染（全尺寸渲染可达数秒，不阻塞其他写命令）→ 锁内提交。
+/// 与 edit_bake 行为契约一致；临时名围栏在锁内，渲染期间行被并发改动的窗口与 update_image_db 同口径
+pub fn edit_bake_db(
+    db: &crate::db::Db,
+    id: i64,
+    edits: &Value,
+    spec: &Value,
+    input: &Path,
+    thumbs_dir: &Path,
+) -> Result<Value, PixError> {
+    let plan = {
+        let conn = db.write_lock();
+        match bake_plan(&conn, id, spec)? {
+            Err(terminal) => return Ok(terminal),
+            Ok(p) => p,
+        }
+    };
+    let dims = match bake_render(&plan, input) {
+        Ok(d) => d,
+        Err(terminal) => return Ok(terminal),
+    };
+    let conn = db.write_lock();
+    bake_commit(&conn, &plan, id, edits, dims, thumbs_dir)
 }
 
 /// 镜像 exportEditSession 可内核化部分：渲染 spec 到调用方解析好的目标路径，
@@ -917,6 +980,55 @@ mod tests {
         let edits = get_edits(&conn, id).unwrap();
         assert_eq!(edits["params"]["basic"]["exposure"], 0);
         assert_eq!(edits["params"]["orientation"]["rotate"], 0);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn edit_bake_db_短锁路径_渲染替代原图与缓存清理一致() {
+        let dir = fresh_dir("bake_db");
+        let thumbs = dir.join("thumbs");
+        std::fs::create_dir_all(&thumbs).unwrap();
+        let conn = edit_mem_db();
+        let src = make_jpeg(&dir, "photo.jpg", 32, 16, 100);
+        let id = seed_record(&conn, "photo.jpg", &src, ".jpg");
+        save_edit_params(
+            &conn,
+            id,
+            &json!({ "schemaVersion": 1, "basic": { "exposure": 1 } }),
+            None,
+        )
+        .unwrap();
+        let preview = thumbs_dir_edit_preview(&thumbs, id);
+        std::fs::write(&preview, b"p").unwrap();
+        let base_jpg = thumbs.join(format!("edit-{id}-base.jpg"));
+        std::fs::write(&base_jpg, b"b").unwrap();
+        let db = crate::db::Db::from_connection(conn);
+
+        let spec = json!({
+            "specVersion": 1,
+            "stages": [
+                { "kind": "exposure", "params": { "ev": 1 } },
+                { "kind": "encode", "params": { "format": "png" } }
+            ]
+        });
+        let result = edit_bake_db(
+            &db,
+            id,
+            &json!({ "basic": { "exposure": 1 } }),
+            &spec,
+            &src,
+            &thumbs,
+        )
+        .unwrap();
+        assert!(result.get("error").is_none(), "{result}");
+        assert_eq!(result["ok"], true);
+        assert!(!dir.join("photo-temp.png").exists());
+        let after = mean_gray(&src);
+        assert!(after > 150.0, "曝光未写入像素: {after}");
+        assert!(!preview.exists());
+        assert!(!base_jpg.exists());
+        let edits = get_edits(&db.write_lock(), id).unwrap();
+        assert_eq!(edits["params"]["basic"]["exposure"], 0);
         let _ = std::fs::remove_dir_all(&dir);
     }
 

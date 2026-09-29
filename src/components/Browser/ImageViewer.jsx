@@ -30,6 +30,7 @@ import {
   SlidersHorizontal,
   Undo2,
   Redo2,
+  Pipette,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
@@ -53,9 +54,13 @@ import {
 import { applyPresetToOps } from '@/lib/presetApply';
 import useGalleryStore from '@/store/galleryStore';
 import builtinPresetsModule from '../../../shared/builtinPresets.cjs';
+import autoGradeModule from '../../../shared/autoGrade.cjs';
+import { HSL_BAND_LABELS, whiteBalanceFromSample, straightenGeometry } from '@/lib/editParams';
+import { AI_DEFAULT_BASE_URL, pickExifSummary, suggestByVision } from '@/lib/aiGrade';
 import maskGeometry from '../../../shared/maskGeometry.cjs';
 const { displayToImage } = maskGeometry;
 const { BUILTIN_PRESETS } = builtinPresetsModule;
+const { suggestGrade } = autoGradeModule;
 import curvesLib from '../../../shared/curves.cjs';
 const { hasCurveData } = curvesLib;
 import gradingLib from '../../../shared/colorGrading.cjs';
@@ -114,7 +119,6 @@ export default function ImageViewer({
   const dragging = useRef(false);
   const dragStart = useRef({ x: 0, y: 0 });
   const posStart = useRef({ x: 0, y: 0 });
-  const imgRef = useRef(null);
   const posRef = useRef(pos);
   posRef.current = pos;
   const zoomRef = useRef(zoom);
@@ -191,10 +195,13 @@ export default function ImageViewer({
     loadImage();
     const loadId = image?.id;
     if (!image || !api.isBridgeAvailable()) return;
-    api.getImageTags(image.id).then((tags) => {
-      // 快速翻页时丢弃过期标签响应（loadId 在闭包内恒等于 image.id，须比对 ref）
-      if (imageIdRef.current === loadId) setImgTags(tags || []);
-    });
+    api
+      .getImageTags(image.id)
+      .then((tags) => {
+        // 快速翻页时丢弃过期标签响应（loadId 在闭包内恒等于 image.id，须比对 ref）
+        if (imageIdRef.current === loadId) setImgTags(tags || []);
+      })
+      .catch((e) => console.error('[viewer] 标签加载失败:', e.message));
     setZoom(1);
     setPos({ x: 0, y: 0 });
     setRotation(image?.rotation || 0);
@@ -537,7 +544,7 @@ export default function ImageViewer({
   }, [image, editBusy, onImageUpdated, cleanupEditSession, composeOps, raiseEditError]);
 
   // 退出编辑：有未保存的参数变更时先确认（放弃=不写参数，原图/像素均不受影响）
-  // 导出/烘焙在途禁止退出：editCancel 会删编辑底图，渲染中的读取随即失败且结果无人可见（审查批 7 N2）
+  // 导出/烘焙在途禁止退出：退出会拆掉渲染管线，在途结果无人可见且会话状态易撕裂（审查批 7 N2）
   const requestExitEdit = useCallback(() => {
     if (editBusy) {
       toast.info('导出/保存进行中，请稍候');
@@ -598,8 +605,12 @@ export default function ImageViewer({
   const [applyWithGeometry, setApplyWithGeometry] = useState(false);
 
   const loadPresets = useCallback(async () => {
-    const list = await api.getPresets();
-    setPresets(list || []);
+    try {
+      const list = await api.getPresets();
+      setPresets(list || []);
+    } catch (e) {
+      console.error('[viewer] 预设加载失败:', e.message);
+    }
   }, []);
 
   useEffect(() => {
@@ -754,10 +765,151 @@ export default function ImageViewer({
     [pushHistory]
   );
 
+  // 自动调色（agent 建议进历史栈）：分析原图统计 → suggestGrade 出 basic 建议 →
+  // 走 applyPreset 同款路径（只套影调域）。预览即时可见、可撤销，Ctrl+S 才落库——
+  // 人工与 agent 在同一编辑会话里接力
+  // 白平衡吸管：armed 后点击预览画布上的中性区域，反解 temperature/tint
+  const [wbPicking, setWbPicking] = useState(false);
+  const handleWBPick = useCallback(
+    (e) => {
+      const canvas = webglCanvasRef.current;
+      if (!canvas) {
+        toast.info('预览画布未就绪');
+        return;
+      }
+      const rect = canvas.getBoundingClientRect();
+      if (rect.width <= 0 || rect.height <= 0) return;
+      const px = Math.floor(((e.clientX - rect.left) / rect.width) * canvas.width);
+      const py = Math.floor(((e.clientY - rect.top) / rect.height) * canvas.height);
+      if (px < 0 || py < 0 || px >= canvas.width || py >= canvas.height) return;
+      const gl = canvas.getContext('webgl2', { preserveDrawingBuffer: true });
+      if (!gl) return;
+      const pixel = new Uint8Array(4);
+      // GL 像素坐标系 y 向上，与页面坐标相反
+      gl.readPixels(px, canvas.height - 1 - py, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixel);
+      const suggestion = whiteBalanceFromSample(pixel[0], pixel[1], pixel[2]);
+      if (!suggestion) {
+        toast.info('该位置过暗或无细节，请点击应为中性灰（白）的区域');
+        return;
+      }
+      const next = {
+        ...editOpsRef.current,
+        temperature: suggestion.temperature,
+        tint: suggestion.tint,
+      };
+      pushHistory(next, '白平衡吸管');
+      setEditOps(next);
+      setWbPicking(false);
+      toast.success(
+        `白平衡已校正：色温 ${suggestion.temperature}、色调 ${suggestion.tint}（可再手动微调）`
+      );
+    },
+    [pushHistory]
+  );
+
+  const autoGradeRunningRef = useRef(false);
+  const [autoGradeBusy, setAutoGradeBusy] = useState(false);
+  const handleAutoGrade = useCallback(async () => {
+    if (!api.isBridgeAvailable() || !image || editBusy || autoGradeRunningRef.current) return;
+    // 建议 await 期间用户可能已退出编辑并换图/进入另一张的会话：
+    // 迟到的建议落到 B 图 editOps 会被 Ctrl+S 持久化到错误的图，applyPreset 前必须校验会话一致
+    const requestedId = image.id;
+    autoGradeRunningRef.current = true;
+    setAutoGradeBusy(true);
+    try {
+      const analysis = await api.analyzeImage(image.id);
+      if (analysis?.error) {
+        toast.error(friendlyError(analysis.error));
+        return;
+      }
+      if (!mountedRef.current || imageIdRef.current !== requestedId || !editingRef.current) return;
+      applyPreset(suggestGrade(analysis));
+    } catch (e) {
+      console.error('[viewer] 自动调色失败:', e.message);
+      toast.error(errText('自动调色失败', e));
+    } finally {
+      autoGradeRunningRef.current = false;
+      setAutoGradeBusy(false);
+    }
+  }, [image, editBusy, applyPreset]);
+
+  // AI 调色（视觉模型建议进历史栈）：压缩底图 + analyze_image 统计 + EXIF 摘要发给
+  // OpenAI 兼容端点，返回的 basic 建议经白名单/值域钳制后走 applyPreset 同款路径。
+  // 传输面只有 ≤400px JPEG，原图不出库；密钥取自设置页 ai_* 配置
+  // 底图压缩到 400 长边出 JPEG dataURL；底图未就绪/画布不可用时回 null（纯统计文本请求）
+  const captureProxyDataUrl = () => {
+    const img = editImgRef.current;
+    if (!img || !img.naturalWidth) return null;
+    const scale = Math.min(1, 400 / Math.max(img.naturalWidth, img.naturalHeight));
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.max(1, Math.round(img.naturalWidth * scale));
+    canvas.height = Math.max(1, Math.round(img.naturalHeight * scale));
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return null;
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+    try {
+      return canvas.toDataURL('image/jpeg', 0.8);
+    } catch {
+      return null;
+    }
+  };
+
+  const aiRunningRef = useRef(false);
+  const [aiGradeBusy, setAiGradeBusy] = useState(false);
+  const handleAiGrade = useCallback(async () => {
+    if (!api.isBridgeAvailable() || !image || editBusy || aiRunningRef.current) return;
+    const requestedId = image.id;
+    aiRunningRef.current = true;
+    setAiGradeBusy(true);
+    try {
+      const settings = await api.getSettings();
+      const config = {
+        baseUrl: settings?.ai_base_url?.trim() || AI_DEFAULT_BASE_URL,
+        apiKey: settings?.ai_api_key?.trim() || '',
+        model: settings?.ai_model?.trim() || '',
+      };
+      if (!config.apiKey || !config.model) {
+        toast.error('尚未配置 AI 调色：请到「设置 → AI 调色」填写 API 密钥与模型名');
+        return;
+      }
+      const analysis = await api.analyzeImage(image.id);
+      if (analysis?.error) {
+        toast.error(friendlyError(analysis.error));
+        return;
+      }
+      let exif = null;
+      try {
+        exif = pickExifSummary(await api.getExif(image.filepath));
+      } catch {
+        exif = null;
+      }
+      const suggestion = await suggestByVision(config, {
+        imageDataUrl: captureProxyDataUrl(),
+        analysis,
+        exif,
+      });
+      if (!mountedRef.current || imageIdRef.current !== requestedId || !editingRef.current) return;
+      applyPreset(suggestion);
+    } catch (e) {
+      console.error('[viewer] AI 调色失败:', e.message);
+      toast.error(errText('AI 调色失败', e));
+    } finally {
+      aiRunningRef.current = false;
+      setAiGradeBusy(false);
+    }
+  }, [image, editBusy, applyPreset]);
+
   const savePreset = useCallback(async () => {
     const name = presetName.trim();
     if (!name) return;
-    const result = await api.createPreset(name, toEditParams(composeOps()));
+    let result;
+    try {
+      result = await api.createPreset(name, toEditParams(composeOps()));
+    } catch (e) {
+      console.error('[viewer] 预设保存失败:', e.message);
+      toast.error(errText('预设保存失败', e));
+      return;
+    }
     if (result?.error) {
       toast.error(friendlyError(result.error));
       return;
@@ -769,7 +921,13 @@ export default function ImageViewer({
 
   const removePreset = useCallback(
     async (id) => {
-      await api.deletePreset(id);
+      try {
+        await api.deletePreset(id);
+      } catch (e) {
+        console.error('[viewer] 预设删除失败:', e.message);
+        toast.error(errText('预设删除失败', e));
+        return;
+      }
       await loadPresets();
     },
     [loadPresets]
@@ -791,6 +949,8 @@ export default function ImageViewer({
       },
       curves: editOpsRef.current.curves,
       colorGrading: editOpsRef.current.colorGrading,
+      hsl: editOpsRef.current.hsl,
+      detail: editOpsRef.current.detail,
       vignette: editOpsRef.current.vignette,
       orientation: {
         rotate: editOpsRef.current.rotation,
@@ -807,7 +967,7 @@ export default function ImageViewer({
       toast.info('暂无已复制的参数');
       return;
     }
-    // 与批量同步（useBatchActions.handleSyncEdits）同字段同条件：影调十项 + 曲线/分级/暗角；
+    // 与批量同步（useBatchActions.handleSyncEdits）同字段同条件：影调十项 + 曲线/分级/HSL/细节/暗角；
     // 几何（旋转/翻转/裁剪/蒙版）不回贴，保留当前图自己的构图（R63 P2-2）
     const next = {
       ...editOpsRef.current,
@@ -822,12 +982,46 @@ export default function ImageViewer({
       tint: c.tint,
       ...(c.curves ? { curves: c.curves } : {}),
       ...(c.colorGrading ? { colorGrading: c.colorGrading } : {}),
+      ...(c.hsl ? { hsl: c.hsl } : {}),
+      ...(c.detail ? { detail: c.detail } : {}),
       ...(c.vignette ? { vignette: c.vignette } : {}),
     };
     pushHistory(next, '粘贴参数');
     setEditOps(next);
     toast.success('已粘贴参数');
   }, [pushHistory]);
+
+  // 拉直：crop.angle ≠ 0 时裁剪矩形处于「旋转后空间」，自动套同比例最大内接框（去黑角）；
+  // 归零恢复拉直前的裁剪框（一次捕获）；角度态禁框选（框选坐标系未适配旋转）
+  const preStraightenCropRef = useRef(undefined);
+  const applyStraighten = useCallback(
+    (angle) => {
+      if (editBusy || !editSessionRef.current) return;
+      const prevAngle = editOpsRef.current.crop?.angle || 0;
+      let nextCrop;
+      if (!angle) {
+        nextCrop = preStraightenCropRef.current === undefined ? null : preStraightenCropRef.current;
+        preStraightenCropRef.current = undefined;
+      } else {
+        if (!prevAngle) preStraightenCropRef.current = editOpsRef.current.crop ?? null;
+        const { fit } = straightenGeometry(
+          editSessionRef.current.width,
+          editSessionRef.current.height,
+          angle
+        );
+        nextCrop = fit
+          ? { ...fit, ratio: 'free', angle }
+          : editOpsRef.current.crop
+            ? { ...editOpsRef.current.crop, angle }
+            : null;
+      }
+      if (angle && cropMode) setCropMode(false);
+      const next = { ...editOpsRef.current, crop: nextCrop };
+      pushHistory(next, angle ? `拉直 ${angle}°` : '拉直归零');
+      setEditOps(next);
+    },
+    [editBusy, cropMode, pushHistory]
+  );
 
   // 编辑参数统一应用入口（查看态操作 rotation/flip state，编辑态操作 editOps + 历史）
   // 忙态（建立会话/保存/导出/烘焙在途）拒绝变换：opening 期间改查看态旋转会与
@@ -1198,7 +1392,8 @@ export default function ImageViewer({
   }, [closeGuardRef, requestExitEdit]);
 
   // 组件卸载兜底：无论何种路径退出（收藏页取消收藏移除图片、外部关闭等），
-  // 只要有会话就通知主进程清理，杜绝 edit-cache 底图泄漏；
+  // 只要有会话就收口编辑状态。editCancel 是前端语义接缝（桥内闭环，无后端命令）：
+  // 编辑底图是按 id 复用的 sidecar 校验缓存，后端无会话注册表可清；
   // 会话建立中（editOpen 在途）卸载时 editSessionRef 尚未绑定，按 openingId 作废
   useEffect(() => {
     mountedRef.current = true;
@@ -1282,7 +1477,9 @@ export default function ImageViewer({
     []
   );
 
-  // 滚轮缩放（以鼠标位置为中心）；分屏/并排对比时缩放只作用于 After 层，统一禁用
+  // 滚轮缩放（以鼠标位置为中心）；分屏/并排对比时缩放只作用于 After 层，统一禁用。
+  // React 合成 onWheel 走 passive 监听，preventDefault 无效（Ctrl+滚轮会触发浏览器缩放）：
+  // 仿 ImageGrid 用原生非 passive 监听挂 contentRef
   const handleWheel = useCallback(
     (e) => {
       e.preventDefault();
@@ -1295,6 +1492,13 @@ export default function ImageViewer({
     },
     [compareActive]
   );
+
+  useEffect(() => {
+    const el = contentRef.current;
+    if (!el) return;
+    el.addEventListener('wheel', handleWheel, { passive: false });
+    return () => el.removeEventListener('wheel', handleWheel);
+  }, [handleWheel]);
 
   // 点赞
   const handleFavToggle = async (e) => {
@@ -1444,10 +1648,15 @@ export default function ImageViewer({
     : null;
 
   // 编辑态：变换（旋转/翻转/缩放/平移）应用于包裹层，图像自身无变换，裁剪框百分比定位自动跟随
+  const straightenAngle = editing ? editOps.crop?.angle || 0 : 0;
   const editTransform = editing
-    ? `translate(${pos.x}px, ${pos.y}px) rotate(${editOps.rotation}deg) scale(${zoom * (editOps.flipH ? -1 : 1)}, ${zoom * (editOps.flipV ? -1 : 1)})`
+    ? `translate(${pos.x}px, ${pos.y}px) rotate(${editOps.rotation}deg) rotate(${-straightenAngle}deg) scale(${zoom * (editOps.flipH ? -1 : 1)}, ${zoom * (editOps.flipV ? -1 : 1)})`
     : undefined;
   const crop = editing ? editOps.crop : null;
+  const straightenFrame =
+    crop?.angle && editSession
+      ? straightenGeometry(editSession.width, editSession.height, crop.angle)
+      : null;
   const cropPct =
     crop && editSession
       ? {
@@ -1495,21 +1704,54 @@ export default function ImageViewer({
             style={{ background: vignetteStyle.background, mixBlendMode: vignetteStyle.blendMode }}
           />
         )}
-        {edited && compareMode === 'toggle' && crop && cropPct && (
-          <div className="editor-crop-box" style={cropPct} data-crop-box="1">
-            {/* 三分线参考（裁剪构图辅助） */}
-            <div className="crop-guide-lines" aria-hidden="true">
-              <span style={{ left: '33.33%' }} />
-              <span style={{ left: '66.66%' }} />
-              <span style={{ top: '33.33%' }} />
-              <span style={{ top: '66.66%' }} />
+        {edited &&
+          compareMode === 'toggle' &&
+          crop &&
+          cropPct &&
+          !crop.angle &&
+          straightenFrame === null && (
+            <div className="editor-crop-box" style={cropPct} data-crop-box="1">
+              {/* 三分线参考（裁剪构图辅助） */}
+              <div className="crop-guide-lines" aria-hidden="true">
+                <span style={{ left: '33.33%' }} />
+                <span style={{ left: '66.66%' }} />
+                <span style={{ top: '33.33%' }} />
+                <span style={{ top: '66.66%' }} />
+              </div>
+              {['n', 's', 'e', 'w', 'ne', 'nw', 'se', 'sw'].map((h) => (
+                <span key={h} data-crop-handle={h} className={`editor-crop-handle handle-${h}`} />
+              ))}
+              <span className="editor-crop-size">
+                {Math.round(crop.width)}×{Math.round(crop.height)}
+              </span>
             </div>
-            {['n', 's', 'e', 'w', 'ne', 'nw', 'se', 'sw'].map((h) => (
-              <span key={h} data-crop-handle={h} className={`editor-crop-handle handle-${h}`} />
-            ))}
-            <span className="editor-crop-size">
-              {Math.round(crop.width)}×{Math.round(crop.height)}
-            </span>
+          )}
+        {edited && compareMode === 'toggle' && crop?.angle && straightenFrame && (
+          <div
+            className="editor-straighten-frame"
+            style={{
+              position: 'absolute',
+              left: '50%',
+              top: '50%',
+              width: `${(straightenFrame.canvas.w / editSession.width) * 100}%`,
+              height: `${(straightenFrame.canvas.h / editSession.height) * 100}%`,
+              transform: `translate(-50%, -50%) rotate(${-crop.angle}deg)`,
+            }}
+            aria-hidden="true"
+          >
+            <div
+              className="editor-crop-box"
+              style={{
+                left: `${(crop.left / straightenFrame.canvas.w) * 100}%`,
+                top: `${(crop.top / straightenFrame.canvas.h) * 100}%`,
+                width: `${(crop.width / straightenFrame.canvas.w) * 100}%`,
+                height: `${(crop.height / straightenFrame.canvas.h) * 100}%`,
+              }}
+            >
+              <span className="editor-crop-size">
+                {Math.round(crop.width)}×{Math.round(crop.height)}
+              </span>
+            </div>
           </div>
         )}
         {/* 蒙版 overlay：与裁剪编辑互斥（cropMode 时不渲染），仅在有蒙版或拖拽绘制中时出现 */}
@@ -1781,15 +2023,14 @@ export default function ImageViewer({
 
       <div
         className="viewer-content"
-        ref={(el) => {
-          contentRef.current = el;
-          imgRef.current = el;
+        ref={contentRef}
+        onClick={(e) => {
+          e.stopPropagation();
+          if (wbPicking) handleWBPick(e);
         }}
-        onClick={(e) => e.stopPropagation()}
         onDoubleClick={handleDoubleClick}
-        onWheel={handleWheel}
         onMouseDown={handleMouseDown}
-        style={cropMode ? { cursor: 'crosshair' } : undefined}
+        style={cropMode || wbPicking ? { cursor: 'crosshair' } : undefined}
       >
         {editing && !editBaseSrc ? (
           <div
@@ -1827,7 +2068,37 @@ export default function ImageViewer({
       {/* 编辑参数面板 */}
       {editing && editSession && (
         <div className="editor-panel" onClick={(e) => e.stopPropagation()}>
-          {histogram && <HistogramView histogram={histogram} />}
+          {histogram && (
+            <HistogramView
+              histogram={histogram}
+              onPick={(bin) => {
+                if (editBusy) return;
+                // 左半设黑场（越靠左压越深）、右半设白场（越靠右抬越高）；贴中性线无可做
+                const v =
+                  bin < 32
+                    ? -Math.round(((31 - bin) / 31) * 80)
+                    : Math.round(((bin - 32) / 31) * 80);
+                if (v === 0) return;
+                const key = bin < 32 ? 'blacks' : 'whites';
+                const next = { ...editOpsRef.current, [key]: v };
+                pushHistory(next, bin < 32 ? '直方图设黑场' : '直方图设白场');
+                setEditOps(next);
+              }}
+            />
+          )}
+          <div className="editor-footer-row" style={{ marginBottom: 8 }}>
+            <Button
+              variant={wbPicking ? 'default' : 'secondary'}
+              size="sm"
+              className="w-full"
+              disabled={editBusy || cropMode}
+              title="白平衡吸管：点击图中应为中性灰（白）的位置，自动校正色温/色调"
+              onClick={() => setWbPicking((v) => !v)}
+            >
+              <Pipette className="size-4" />
+              {wbPicking ? '点击图中中性区域…（再点此取消）' : '白平衡吸管'}
+            </Button>
+          </div>
           <div className="editor-panel-header">
             <SlidersHorizontal className="size-4" />
             <span>编辑</span>
@@ -2169,6 +2440,190 @@ export default function ImageViewer({
             <p className="editor-crop-hint">按亮度区间着色：先拖色相选色调，再调强度</p>
           </div>
 
+          {/* HSL 八带分色：三端同式（shared/hsl.cjs = shader = 执行器），仅 SVG 回退不渲染 */}
+          <div className="editor-crop-section">
+            <div className="editor-crop-header">
+              <span>HSL 分色</span>
+              <div style={{ display: 'flex', gap: 4 }}>
+                <Button
+                  variant="ghost"
+                  size="xs"
+                  onClick={() => {
+                    const next = { ...editOpsRef.current, hsl: EDIT_DEFAULTS.hsl };
+                    pushHistory(next, '清除 HSL');
+                    setEditOps(next);
+                  }}
+                >
+                  清空
+                </Button>
+              </div>
+            </div>
+            {['hue', 'sat', 'lum'].map((channel) => (
+              <div key={channel}>
+                <p className="editor-crop-hint" style={{ marginTop: 8 }}>
+                  {channel === 'hue' ? '色相' : channel === 'sat' ? '饱和度' : '明亮度'}
+                </p>
+                {HSL_BAND_LABELS.map((bandLabel, bandIdx) => {
+                  const rowKey = `hsl.${channel}[${bandIdx}]`;
+                  const rowLabel = `HSL ${bandLabel}${channel === 'hue' ? '色相' : channel === 'sat' ? '饱和' : '亮度'}`;
+                  const value = editOps.hsl?.[channel]?.[bandIdx] ?? 0;
+                  return (
+                    <label
+                      className="editor-slider-row"
+                      key={rowKey}
+                      title="双击重置该项"
+                      onDoubleClick={() => {
+                        const next = {
+                          ...editOpsRef.current,
+                          hsl: {
+                            ...editOpsRef.current.hsl,
+                            [channel]: editOpsRef.current.hsl[channel].map((v, j) =>
+                              j === bandIdx ? 0 : v
+                            ),
+                          },
+                        };
+                        pushHistory(next, `重置${rowLabel}`);
+                        setEditOps(next);
+                      }}
+                    >
+                      <span>{bandLabel}</span>
+                      <input
+                        type="range"
+                        min={-100}
+                        max={100}
+                        step={1}
+                        value={value}
+                        onPointerDown={() => {
+                          sliderDragRef.current = rowKey;
+                        }}
+                        onPointerUp={() => {
+                          if (sliderDragRef.current === rowKey) {
+                            sliderDragRef.current = null;
+                            pushHistory(editOpsRef.current, rowLabel);
+                          }
+                        }}
+                        onBlur={settleKeyGesture}
+                        onChange={(e) => {
+                          const v = Number(e.target.value);
+                          const next = {
+                            ...editOpsRef.current,
+                            hsl: {
+                              ...editOpsRef.current.hsl,
+                              [channel]: editOpsRef.current.hsl[channel].map((old, j) =>
+                                j === bandIdx ? v : old
+                              ),
+                            },
+                          };
+                          setEditOps(next);
+                          if (!sliderDragRef.current) recordKeyAdjust(next, rowLabel);
+                        }}
+                      />
+                      <em>{value > 0 ? `+${value}` : value}</em>
+                    </label>
+                  );
+                })}
+              </div>
+            ))}
+            <p className="editor-crop-hint">
+              按色彩区间分色调整（红/橙/黄/绿/青/蓝/紫/洋红）；
+              {webglFailed
+                ? 'SVG 回退预览不渲染 HSL 效果，导出仍生效'
+                : '调整实时可见，对导出/烘焙同式生效'}
+            </p>
+          </div>
+
+          {/* 细节：锐化（近似 USM）/降噪（亮度域 3×3 高斯）三路实现，预览为画布分辨率邻域近似 */}
+          <div className="editor-crop-section">
+            <div className="editor-crop-header">
+              <span>细节</span>
+            </div>
+            <label
+              className="editor-slider-row"
+              title="双击重置该项"
+              onDoubleClick={() => {
+                const next = {
+                  ...editOpsRef.current,
+                  detail: { ...editOpsRef.current.detail, sharpness: 0 },
+                };
+                pushHistory(next, '重置锐化');
+                setEditOps(next);
+              }}
+            >
+              <span>锐化</span>
+              <input
+                type="range"
+                min={0}
+                max={100}
+                step={1}
+                value={editOps.detail?.sharpness ?? 0}
+                onPointerDown={() => {
+                  sliderDragRef.current = 'detail.sharpness';
+                }}
+                onPointerUp={() => {
+                  if (sliderDragRef.current === 'detail.sharpness') {
+                    sliderDragRef.current = null;
+                    pushHistory(editOpsRef.current, '锐化');
+                  }
+                }}
+                onBlur={settleKeyGesture}
+                onChange={(e) => {
+                  const next = {
+                    ...editOpsRef.current,
+                    detail: { ...editOpsRef.current.detail, sharpness: Number(e.target.value) },
+                  };
+                  setEditOps(next);
+                  if (!sliderDragRef.current) recordKeyAdjust(next, '锐化');
+                }}
+              />
+              <em>{editOps.detail?.sharpness ?? 0}</em>
+            </label>
+            <label
+              className="editor-slider-row"
+              title="双击重置该项"
+              onDoubleClick={() => {
+                const next = {
+                  ...editOpsRef.current,
+                  detail: { ...editOpsRef.current.detail, noise: 0 },
+                };
+                pushHistory(next, '重置降噪');
+                setEditOps(next);
+              }}
+            >
+              <span>降噪</span>
+              <input
+                type="range"
+                min={0}
+                max={100}
+                step={1}
+                value={editOps.detail?.noise ?? 0}
+                onPointerDown={() => {
+                  sliderDragRef.current = 'detail.noise';
+                }}
+                onPointerUp={() => {
+                  if (sliderDragRef.current === 'detail.noise') {
+                    sliderDragRef.current = null;
+                    pushHistory(editOpsRef.current, '降噪');
+                  }
+                }}
+                onBlur={settleKeyGesture}
+                onChange={(e) => {
+                  const next = {
+                    ...editOpsRef.current,
+                    detail: { ...editOpsRef.current.detail, noise: Number(e.target.value) },
+                  };
+                  setEditOps(next);
+                  if (!sliderDragRef.current) recordKeyAdjust(next, '降噪');
+                }}
+              />
+              <em>{editOps.detail?.noise ?? 0}</em>
+            </label>
+            <p className="editor-crop-hint">
+              {webglFailed
+                ? 'SVG 回退预览不渲染细节效果，导出仍生效'
+                : '锐化/降噪实时预览为画布分辨率近似，导出按原图分辨率计算'}
+            </p>
+          </div>
+
           {/* 局部蒙版：radial/linear，渲染与 WebGL 预览同公式（shared/masks.cjs） */}
           <div className="editor-crop-section">
             <div className="editor-crop-header">
@@ -2269,11 +2724,41 @@ export default function ImageViewer({
                 </button>
               ))}
             </div>
+            <label
+              className="editor-slider-row"
+              title="双击重置；拉直自动套用去黑角的最大同比例裁剪框"
+              onDoubleClick={() => applyStraighten(0)}
+            >
+              <span>拉直</span>
+              <input
+                type="range"
+                min={-45}
+                max={45}
+                step={0.5}
+                value={crop?.angle ?? 0}
+                onPointerDown={() => {
+                  sliderDragRef.current = 'straighten';
+                }}
+                onPointerUp={() => {
+                  if (sliderDragRef.current === 'straighten') {
+                    sliderDragRef.current = null;
+                    pushHistory(editOpsRef.current, '拉直');
+                  }
+                }}
+                onBlur={settleKeyGesture}
+                onChange={(e) => applyStraighten(Number(e.target.value))}
+              />
+              <em>{crop?.angle ?? 0}</em>
+            </label>
             {!cropMode && (
               <Button
                 variant="secondary"
                 size="sm"
                 className="w-full"
+                disabled={!!crop?.angle}
+                title={
+                  crop?.angle ? '拉直状态下裁剪框随角度自动适配；微调请先将拉直归零' : undefined
+                }
                 onClick={() => {
                   setShowBefore(false);
                   setCompareMode('toggle');
@@ -2341,6 +2826,22 @@ export default function ImageViewer({
               </div>
             </div>
             <div className="editor-builtin-row">
+              <button
+                className="editor-builtin-chip"
+                title="按画面直方图分析自动设置影调（进历史栈，可撤销，Ctrl+S 才保存）"
+                disabled={editBusy || autoGradeBusy || aiGradeBusy}
+                onClick={handleAutoGrade}
+              >
+                {autoGradeBusy ? '分析中...' : '自动调色'}
+              </button>
+              <button
+                className="editor-builtin-chip"
+                title="把压缩底图与统计摘要发给视觉模型，由 AI 建议影调（进历史栈，可撤销；需在设置中配置）"
+                disabled={editBusy || autoGradeBusy || aiGradeBusy}
+                onClick={handleAiGrade}
+              >
+                {aiGradeBusy ? 'AI 分析中...' : 'AI 调色'}
+              </button>
               {BUILTIN_PRESETS.map((bp) => (
                 <button
                   key={bp.name}

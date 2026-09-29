@@ -192,6 +192,8 @@ pub fn get_images(conn: &Connection, q: &ImageQuery) -> rusqlite::Result<(Vec<Im
             rusqlite::params_from_iter(params.iter().map(|p| p.as_ref())),
             |r| r.get(0),
         )
+        // 行数据照常返回，计数失败不能静默成 0：分页与总数错乱时无从排查
+        .inspect_err(|e| eprintln!("[查询] 计数失败: {e}"))
         .unwrap_or(0);
 
     let allowed_sorts = ["import_date", "created_at", "filename", "size", "rating"];
@@ -589,14 +591,12 @@ pub(crate) mod tests {
              INSERT INTO album_images VALUES (3, 1, 0), (3, 2, 1);",
         )
         .unwrap();
-        let combo_tag: ImageQuery =
-            serde_json::from_str(r#"{"minRating":1,"tagId":9}"#).unwrap();
+        let combo_tag: ImageQuery = serde_json::from_str(r#"{"minRating":1,"tagId":9}"#).unwrap();
         let (rows, total) = get_images(&conn, &combo_tag).unwrap();
         assert_eq!(total, 2);
         assert!(rows.iter().all(|r| r.rating >= Some(1)));
         // rating ∧ tag 收窄：r5 的图4 单独留存
-        let combo_tag5: ImageQuery =
-            serde_json::from_str(r#"{"minRating":3,"tagId":9}"#).unwrap();
+        let combo_tag5: ImageQuery = serde_json::from_str(r#"{"minRating":3,"tagId":9}"#).unwrap();
         let (rows, total) = get_images(&conn, &combo_tag5).unwrap();
         assert_eq!(total, 1);
         assert_eq!(rows[0].id, 4);

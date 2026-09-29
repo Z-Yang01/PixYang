@@ -6,10 +6,12 @@ import editSchema from '../../shared/editSchema.cjs';
 import curvesLib from '../../shared/curves.cjs';
 import gradingLib from '../../shared/colorGrading.cjs';
 import masksLib from '../../shared/masks.cjs';
+import hslLib from '../../shared/hsl.cjs';
 
 const { normalizePoints, buildCurveTables, hasCurveData } = curvesLib;
 const { normalizeGrading, hasColorGradingData, buildGradingTables } = gradingLib;
 const { normalizeMasks, hasMaskData } = masksLib;
+const { normalizeHsl, hasHslData } = hslLib;
 
 export const EDIT_DEFAULTS = {
   rotation: 0, // 90 的倍数
@@ -27,9 +29,19 @@ export const EDIT_DEFAULTS = {
   tint: 0, // -100..100（绿- 品红+）
   curves: { rgb: [], r: [], g: [], b: [] }, // 点对平铺数组 [x0,y0,...]，0..1，见 shared/curves.cjs
   colorGrading: { shadows: [], midtones: [], highlights: [] }, // 每区间 [hue 0..360, sat 0..100]
+  hsl: {
+    hue: [0, 0, 0, 0, 0, 0, 0, 0],
+    sat: [0, 0, 0, 0, 0, 0, 0, 0],
+    lum: [0, 0, 0, 0, 0, 0, 0, 0],
+  },
+  detail: { sharpness: 0, noise: 0 }, // 锐化/降噪 0..100；noise 执行器未实现恒 0
+  // 八带分色，每带 -100..100（normalizeHsl 恒补齐 8 项），见 shared/hsl.cjs
   vignette: 0, // -100..100（负压暗/正提亮），pre-crop 语义，见 shared/lens.cjs
   masks: [], // 局部蒙版（radial/linear），pre-crop 像素坐标，见 shared/masks.cjs
 };
+
+// 八带中文名（与 shared/hsl.cjs HSL_BANDS 顺序一致），供编辑面板渲染滑杆行
+export const HSL_BAND_LABELS = ['红', '橙', '黄', '绿', '青', '蓝', '紫', '洋红'];
 
 export const CROP_RATIOS = [
   { key: 'free', label: '自由', value: null },
@@ -58,6 +70,7 @@ export function sanitizeEditOps(input = {}) {
             width: Math.round(ops.crop.width),
             height: Math.round(ops.crop.height),
             ratio: ops.crop.ratio || 'free',
+            angle: clamp(Math.round((Number(ops.crop.angle) || 0) * 2) / 2, -45, 45),
           }
         : null,
     exposure: clamp(Number(ops.exposure) || 0, -2, 2),
@@ -76,6 +89,11 @@ export function sanitizeEditOps(input = {}) {
       b: flatPoints(ops.curves?.b),
     },
     colorGrading: normalizeGrading(ops.colorGrading),
+    hsl: normalizeHsl(ops.hsl),
+    detail: {
+      sharpness: clamp(Math.round(Number(ops.detail?.sharpness)) || 0, 0, 100),
+      noise: clamp(Math.round(Number(ops.detail?.noise)) || 0, 0, 100),
+    },
     vignette: clamp(Number(ops.vignette) || 0, -100, 100),
     masks: normalizeMasks(ops.masks),
   };
@@ -99,6 +117,9 @@ export function hasEdits(ops) {
     s.tint !== 0 ||
     hasCurveData(s.curves) ||
     hasColorGradingData(s.colorGrading) ||
+    hasHslData(s.hsl) ||
+    s.detail.sharpness !== 0 ||
+    s.detail.noise !== 0 ||
     s.vignette !== 0 ||
     hasMaskData(s.masks)
   );
@@ -118,6 +139,7 @@ export function toEditParams(ops) {
           w: s.crop.width,
           h: s.crop.height,
           ratio: s.crop.ratio || 'free',
+          angle: s.crop.angle,
         }
       : null,
     basic: {
@@ -133,6 +155,8 @@ export function toEditParams(ops) {
     },
     curves: s.curves,
     colorGrading: s.colorGrading,
+    hsl: s.hsl,
+    detail: { sharpness: s.detail.sharpness, noise: s.detail.noise },
     lens: { profile: '', distortion: 0, vignette: s.vignette, chromatic: 0 },
     masks: s.masks,
   });
@@ -152,6 +176,7 @@ export function fromEditParams(params) {
           width: p.crop.w,
           height: p.crop.h,
           ratio: p.crop.ratio || 'free',
+          angle: p.crop.angle || 0,
         }
       : null,
     exposure: p.basic.exposure,
@@ -170,6 +195,11 @@ export function fromEditParams(params) {
       b: flatPoints(p.curves?.b),
     },
     colorGrading: normalizeGrading(p.colorGrading),
+    hsl: normalizeHsl(p.hsl),
+    detail: {
+      sharpness: clamp(Math.round(Number(p.detail?.sharpness)) || 0, 0, 100),
+      noise: clamp(Math.round(Number(p.detail?.noise)) || 0, 0, 100),
+    },
     vignette: clamp(Number(p.lens?.vignette) || 0, -100, 100),
     masks: normalizeMasks(p.masks),
   };
@@ -178,6 +208,38 @@ export function fromEditParams(params) {
 // 是否有未保存的参数变更（与基线快照比较）
 export function opsChanged(a, b) {
   return JSON.stringify(sanitizeEditOps(a)) !== JSON.stringify(sanitizeEditOps(b));
+}
+
+// ── 拉直（crop.angle）几何：画布外接尺寸 + 同比例最大内接矩形 ──
+// 执行器语义：先按 angle 旋转位图（画布扩至外接矩形，出界填黑），再取 rotated 空间矩形。
+// 本函数给出该空间的画布尺寸与居中自动适配框（去掉黑角的最小裁剪），UI 拖滑杆时直接套用。
+// 内接矩形推导：角点约束 w·cosθ+h·|sinθ| ≤ W 且 w·|sinθ|+h·cosθ ≤ H，取 w=aspect·h 解最小 h。
+export function straightenGeometry(width, height, angleDeg) {
+  const W = Number(width) || 0;
+  const H = Number(height) || 0;
+  const theta = ((Number(angleDeg) || 0) * Math.PI) / 180;
+  const c = Math.cos(theta);
+  const a = Math.abs(Math.sin(theta));
+  const canvas = {
+    w: Math.round(W * c + H * a),
+    h: Math.round(W * a + H * c),
+  };
+  if (W <= 0 || H <= 0 || theta === 0 || Math.cos(2 * theta) <= 0.05) {
+    return { canvas, fit: null };
+  }
+  const aspect = W / H;
+  const h = Math.min(W / (aspect * c + a), H / (aspect * a + c));
+  const w = aspect * h;
+  if (!(w > 0) || !(h > 0)) return { canvas, fit: null };
+  return {
+    canvas,
+    fit: {
+      left: Math.ceil((canvas.w - w) / 2),
+      top: Math.ceil((canvas.h - h) / 2),
+      width: Math.floor(w),
+      height: Math.floor(h),
+    },
+  };
 }
 
 // ── 预览滤镜链（M5）：与分段渲染管线同序同数学的 SVG primitives ──
@@ -243,6 +305,23 @@ export function previewFilterChain(ops) {
   const saturate = s.saturation !== 0 ? 1 + s.saturation / 100 : null;
 
   return { matrix, shadows, highlightsSlope, curves, grading, saturate };
+}
+
+// ── 白平衡吸管：把「当前预览」上采样的像素中性化所需的 temperature/tint ──
+// 增益模型（三端同式）：g_r = 1 + temp/1000、g_b = 1 − temp/1000、g_g = 1 − 0.06·tint/100。
+// 目标增益 G_ch = L/采样值（L = Rec.709，把采样点拉到自身亮度）；按模型最小二乘反解：
+// temperature ≈ 500·(G_r − G_b)，tint ≈ (1 − G_g)·100/0.06。返回绝对值（对已调参数幂等），
+// 采样点任一通道过暗（<0.5/255）不可作中性锚时返回 null。近似误差 ±1~2（例：temp+30 渲染的
+// 纯灰重采样反解得 −31/−7 而非 −30/0，源于亮度归一的固有偏移）。
+export function whiteBalanceFromSample(r, g, b) {
+  const tiny = 0.5; // 8bit 域半级：更暗的通道无细节，不可作中性锚
+  if (![r, g, b].every((v) => Number.isFinite(v) && v > tiny)) return null;
+  const L = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  if (L <= tiny) return null;
+  const gain = (c) => Math.min(L / c, 8); // 增益上限防极暗通道爆表
+  const temperature = clamp(Math.round(500 * (gain(r) - gain(b))), -100, 100);
+  const tint = clamp(Math.round((1 - gain(g)) * (100 / 0.06)), -100, 100);
+  return { temperature, tint };
 }
 
 // 线性段（白场/黑场/对比度/曝光/色温/色调）是否需要主矩阵原语

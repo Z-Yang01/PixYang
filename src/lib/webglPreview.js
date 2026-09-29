@@ -39,6 +39,8 @@ uniform vec3 uGradingDelta2;
 uniform float uSaturation;
 uniform float uMono;
 uniform float uVignette;
+uniform float uDetailSharp;     // 0/1：锐化开关（导出端为原图分辨率 USM，预览为画布邻域近似）
+uniform float uDetailNoise;     // 0..1：降噪亮度域混合系数（noise/100·0.85，与执行器同式）
 uniform float uMaskOn;
 uniform vec2 uImageSize;        // 底图全尺寸（蒙版几何为 pre-crop 像素坐标）
 uniform float uMaskType[8];     // 0 none, 1 radial, 2 linear, 3 range（与 previewUniforms 打包一致）
@@ -185,13 +187,41 @@ void main() {
   }
   float luma = dot(c, vec3(0.213, 0.715, 0.072));
   if (uMono > 0.5) c = vec3(luma);
-  else if (uSaturation != 1.0) c = mix(vec3(luma), c, uSaturation);
+  // 饱和度正值可把通道推过 1.0：导出端逐阶段钳制，预览必须同钳，
+  // 否则「高饱和 × 暗角/蒙版」组合成片与预览分叉（D1）
+  else if (uSaturation != 1.0) c = clamp(mix(vec3(luma), c, uSaturation), 0.0, 1.0);
   if (uMaskOn > 0.5) {
     vec2 px = vUv * uImageSize;
     for (int i = 0; i < 8; i++) {
       if (uMaskType[i] < 0.5) continue;
       float w = maskWeight(i, px, c);
       if (w > 0.0) applyMaskedAdjust(i, w, c);
+    }
+    c = clamp(c, 0.0, 1.0);
+  }
+  // detail：画布分辨率 3×3 邻域近似（导出按原图分辨率计算；同为视觉近似，不做像素对拍）。
+  // 锐化源用原纹理邻域——色调编辑属低频，高频与处理结果一致
+  if (uDetailSharp > 0.5 || uDetailNoise > 0.001) {
+    vec2 texel = 1.0 / uImageSize;
+    vec3 c0 = c;
+    vec3 acc = vec3(0.0);
+    float wsum = 0.0;
+    for (int dy = -1; dy <= 1; dy++) {
+      for (int dx = -1; dx <= 1; dx++) {
+        vec2 uv2 = clamp(vUv + vec2(float(dx), float(dy)) * texel, vec2(0.0), vec2(1.0));
+        float w = (dx == 0 && dy == 0) ? 4.0 : (dx == 0 || dy == 0) ? 2.0 : 1.0;
+        acc += texture(uImage, uv2).rgb * w;
+        wsum += w;
+      }
+    }
+    vec3 neigh = acc / wsum;
+    if (uDetailNoise > 0.001) {
+      float nl = dot(neigh, vec3(0.213, 0.715, 0.072));
+      float cl = dot(c, vec3(0.213, 0.715, 0.072));
+      c += (nl - cl) * uDetailNoise;
+    }
+    if (uDetailSharp > 0.5) {
+      c += (c0 - neigh) * 0.7;
     }
     c = clamp(c, 0.0, 1.0);
   }
@@ -260,6 +290,8 @@ function getUniformLocations(gl, program) {
     'uSaturation',
     'uMono',
     'uVignette',
+    'uDetailSharp',
+    'uDetailNoise',
     'uMaskOn',
     'uImageSize',
     'uMaskType',
@@ -386,8 +418,12 @@ export async function renderWebGLPreview(canvas, image, uniforms, opts = {}) {
           /* 构造失败回退直接上传（可能经浏览器色彩转换） */
         }
       }
-      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, source);
-      if (source !== image) source.close();
+      try {
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, source);
+      } finally {
+        // 上传抛错（上下文丢失/跨源污染）时也不能泄漏 createImageBitmap 句柄
+        if (source !== image) source.close();
+      }
       st.lastSrc = image.src;
       st.lastTexEdge = w;
     }
@@ -444,6 +480,8 @@ export async function renderWebGLPreview(canvas, image, uniforms, opts = {}) {
     gl.uniform1f(locs.uSaturation, uniforms.saturation);
     gl.uniform1f(locs.uMono, uniforms.mono);
     gl.uniform1f(locs.uVignette, uniforms.vignette);
+    gl.uniform1f(locs.uDetailSharp, uniforms.detailSharp || 0);
+    gl.uniform1f(locs.uDetailNoise, uniforms.detailNoise || 0);
     gl.uniform1f(locs.uMaskOn, uniforms.maskOn || 0);
     gl.uniform2fv(locs.uImageSize, uniforms.imageSize || [0, 0]);
     gl.uniform1fv(locs.uMaskType, uniforms.maskType);

@@ -38,6 +38,9 @@ export default function SettingsPage({ onSettingsChanged, onImagesChanged }) {
   const [dupeKeep, setDupeKeep] = useState({});
   const [dupeUrls, setDupeUrls] = useState({});
   const [dbPath, setDbPath] = useState('');
+  const [aiDraft, setAiDraft] = useState({ baseUrl: '', apiKey: '', model: '' });
+  const aiSavedRef = useRef({ baseUrl: '', apiKey: '', model: '' });
+  const [aiSaving, setAiSaving] = useState(false);
   const [resetConfirm, setResetConfirm] = useState(false);
 
   useEffect(() => {
@@ -59,6 +62,7 @@ export default function SettingsPage({ onSettingsChanged, onImagesChanged }) {
   }, [rebuilding, rebuildProgress]);
 
   const hasChanges = JSON.stringify(draft) !== JSON.stringify(savedRef.current);
+  const aiHasChanges = JSON.stringify(aiDraft) !== JSON.stringify(aiSavedRef.current);
 
   // 提示定时器必须随组件卸载清理：卸载后 2500ms 回调仍会 setState，
   // 单测里表现为文件级 teardown 的偶发 uncaught timeout
@@ -80,7 +84,15 @@ export default function SettingsPage({ onSettingsChanged, onImagesChanged }) {
 
   const loadSettings = async () => {
     if (!api.isBridgeAvailable()) return;
-    const settings = await api.getSettings();
+    let settings;
+    try {
+      settings = (await api.getSettings()) || {};
+      setStoragePath(await api.getImagesRoot());
+    } catch (e) {
+      console.error('[设置] 读取设置失败:', e.message);
+      setMessage(errText('读取设置失败', e));
+      return;
+    }
     const next = {
       theme: normalizeTheme(settings.theme),
       rows: clamp(settings.grid_rows, 1, 10, 3),
@@ -90,8 +102,14 @@ export default function SettingsPage({ onSettingsChanged, onImagesChanged }) {
     };
     savedRef.current = next;
     setDraft(next);
-    setStoragePath(await api.getImagesRoot());
     setCameraFolder(settings.camera_folder || '');
+    const ai = {
+      baseUrl: settings.ai_base_url || '',
+      apiKey: settings.ai_api_key || '',
+      model: settings.ai_model || '',
+    };
+    setAiDraft(ai);
+    aiSavedRef.current = ai;
   };
 
   const updateDraft = (patch) => {
@@ -182,7 +200,13 @@ export default function SettingsPage({ onSettingsChanged, onImagesChanged }) {
     if (!api.isBridgeAvailable()) return;
     const dir = await api.selectDirectory();
     if (!dir || dir === cameraFolder) return;
-    await api.setSetting('camera_folder', dir);
+    try {
+      await api.setSetting('camera_folder', dir);
+    } catch (e) {
+      console.error('[设置] 保存相机文件夹失败:', e.message);
+      setMessage(errText('保存失败', e));
+      return;
+    }
     setCameraFolder(dir);
     showSaved('已设置相机文件夹');
   };
@@ -191,7 +215,14 @@ export default function SettingsPage({ onSettingsChanged, onImagesChanged }) {
     if (!api.isBridgeAvailable() || syncing) return;
     setSyncing(true);
     setMessage('正在同步相机文件夹...');
-    const result = await api.syncCameraFolder();
+    // IPC reject 不能把 syncing 卡死：统一转错误分支收尾（同 handleChooseStorage）
+    let result;
+    try {
+      result = await api.syncCameraFolder();
+    } catch (e) {
+      console.error('[设置] 同步相机文件夹异常:', e.message);
+      result = { error: errText('同步失败', e) };
+    }
     setSyncing(false);
 
     if (result?.error) {
@@ -215,7 +246,14 @@ export default function SettingsPage({ onSettingsChanged, onImagesChanged }) {
     setRebuilding(true);
     setRebuildProgress({ done: 0, total: 0 });
     setMessage('正在重建缩略图...');
-    const result = await api.rebuildThumbnails();
+    // IPC reject 不能把 rebuilding/rebuildProgress 卡死
+    let result;
+    try {
+      result = await api.rebuildThumbnails();
+    } catch (e) {
+      console.error('[设置] 重建缩略图异常:', e.message);
+      result = { error: errText('重建失败', e) };
+    }
     setRebuilding(false);
     setRebuildProgress(null);
     if (result?.error) {
@@ -253,7 +291,15 @@ export default function SettingsPage({ onSettingsChanged, onImagesChanged }) {
     if (!api.isBridgeAvailable() || !brokenRecords) return;
     const ids = brokenRecords.map((r) => r.id);
     setBrokenRecords(null);
-    const result = await api.deleteBrokenRecords(ids);
+    let result;
+    try {
+      result = await api.deleteBrokenRecords(ids);
+    } catch (e) {
+      console.error('[设置] 清理失效记录失败:', e.message);
+      setBrokenRecords(brokenRecords);
+      setMessage(errText('清理失败', e));
+      return;
+    }
     onImagesChanged?.();
     if (result?.error) {
       setMessage(friendlyError(result.error));
@@ -299,8 +345,12 @@ export default function SettingsPage({ onSettingsChanged, onImagesChanged }) {
       ...new Set(groups.flatMap((g) => g.items.map((i) => i.thumbnail_path).filter(Boolean))),
     ];
     if (paths.length > 0) {
-      const map = await api.toFileUrls(paths);
-      if (map) setDupeUrls(map);
+      try {
+        const map = await api.toFileUrls(paths);
+        if (map) setDupeUrls(map);
+      } catch (e) {
+        console.error('[设置] 缩略图地址获取失败:', e.message);
+      }
     }
   };
 
@@ -326,7 +376,15 @@ export default function SettingsPage({ onSettingsChanged, onImagesChanged }) {
       );
     }, 0);
     setDupGroups(null);
-    const results = await api.batchDeleteImages(ids);
+    let results;
+    try {
+      results = await api.batchDeleteImages(ids);
+    } catch (e) {
+      console.error('[设置] 删除重复图片失败:', e.message);
+      setDupGroups(dupGroups);
+      setMessage(errText('删除失败', e));
+      return;
+    }
     onImagesChanged?.();
     const mb = (wasted / 1048576).toFixed(1);
     if (!Array.isArray(results) && results?.error) {
@@ -345,7 +403,13 @@ export default function SettingsPage({ onSettingsChanged, onImagesChanged }) {
 
   const handleBackup = async () => {
     if (!api.isBridgeAvailable()) return;
-    const result = await api.backupDatabase();
+    let result;
+    try {
+      result = await api.backupDatabase();
+    } catch (e) {
+      console.error('[设置] 数据库备份失败:', e.message);
+      result = { error: errText('备份失败', e) };
+    }
     if (result?.success) {
       showSaved(`数据库已备份到 ${result.path}`);
     } else {
@@ -355,7 +419,34 @@ export default function SettingsPage({ onSettingsChanged, onImagesChanged }) {
 
   const loadDbPath = async () => {
     if (!api.isBridgeAvailable()) return;
-    setDbPath(await api.getDatabasePath());
+    try {
+      setDbPath(await api.getDatabasePath());
+    } catch (e) {
+      console.error('[设置] 读取数据库路径失败:', e.message);
+    }
+  };
+
+  const handleSaveAi = async () => {
+    if (!api.isBridgeAvailable() || aiSaving) return;
+    setAiSaving(true);
+    const next = {
+      baseUrl: aiDraft.baseUrl.trim(),
+      apiKey: aiDraft.apiKey.trim(),
+      model: aiDraft.model.trim(),
+    };
+    try {
+      await api.setSetting('ai_base_url', next.baseUrl);
+      await api.setSetting('ai_api_key', next.apiKey);
+      await api.setSetting('ai_model', next.model);
+    } catch (e) {
+      console.error('[设置] 保存 AI 配置失败:', e.message);
+      setMessage(errText('保存失败', e));
+      setAiSaving(false);
+      return;
+    }
+    setAiSaving(false);
+    aiSavedRef.current = next;
+    showSaved('AI 配置已保存');
   };
 
   useEffect(() => {
@@ -516,6 +607,58 @@ export default function SettingsPage({ onSettingsChanged, onImagesChanged }) {
           <p className="settings-help">
             从相机文件夹同步导入图库中缺失的图片（JPG + NEF）。NEF
             原图会一并存储管理但不显示；删除图片时会同步删除配对的 NEF。
+          </p>
+        </section>
+
+        <section className="settings-section">
+          <h2>AI 调色（视觉模型）</h2>
+          <div className="settings-grid-controls">
+            <label>
+              API 地址
+              <input
+                type="text"
+                className="form-input"
+                value={aiDraft.baseUrl}
+                onChange={(e) => setAiDraft((p) => ({ ...p, baseUrl: e.target.value }))}
+                placeholder="https://api.openai.com/v1"
+              />
+            </label>
+            <label>
+              API 密钥
+              <input
+                type="password"
+                className="form-input"
+                value={aiDraft.apiKey}
+                onChange={(e) => setAiDraft((p) => ({ ...p, apiKey: e.target.value }))}
+                placeholder="sk-..."
+              />
+            </label>
+            <label>
+              模型名
+              <input
+                type="text"
+                className="form-input"
+                value={aiDraft.model}
+                onChange={(e) => setAiDraft((p) => ({ ...p, model: e.target.value }))}
+                placeholder="gpt-4o-mini"
+              />
+            </label>
+          </div>
+          <div className="button-row" style={{ marginTop: 12 }}>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={handleSaveAi}
+              disabled={aiSaving || !aiHasChanges}
+            >
+              {aiSaving ? '保存中...' : '保存 AI 配置'}
+            </Button>
+          </div>
+          <p className="settings-help">
+            供编辑器「AI 调色」使用（OpenAI 兼容的 chat/completions 接口，本地 Ollama
+            等自建端点亦可）。密钥仅保存在本机数据库；请求只发出不超过 400px
+            的压缩底图与量化统计摘要，原图不会上传。端点需支持浏览器直连（CORS），Ollama 需设置
+            OLLAMA_ORIGINS。
           </p>
         </section>
 

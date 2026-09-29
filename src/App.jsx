@@ -105,27 +105,45 @@ export default function App() {
     handleBatchUpdate,
     handleSyncEdits,
     handleApplyPreset,
+    handleAutoGrade,
   } = useBatchActions({ showToast });
 
   useEffect(() => {
     setModal('batchAction', !!pendingBatchAction);
   }, [setModal, pendingBatchAction]);
 
+  // 网格设置与排序的持久化应用：启动恢复与设置页保存后共用（两处原本逐字重复）。
+  // withTheme 仅启动时置主题——设置页保存路径已有实时预览，无需二次覆盖
+  const applyPersistedSettings = (settings, withTheme) => {
+    const st = useGalleryStore.getState();
+    st.patchGridSettings({
+      rows: Number(settings.grid_rows || 3),
+      columns: Number(settings.grid_columns || 5),
+      gap: Number(settings.grid_gap || 12),
+      padding: Number(settings.content_padding || 16),
+    });
+    st.setSortFromSettings(settings.sort_by, settings.sort_order);
+    if (withTheme)
+      document.documentElement.setAttribute('data-theme', normalizeTheme(settings.theme));
+  };
+
+  const loadPersistedSettings = async (withTheme) => {
+    if (!api.isBridgeAvailable()) return;
+    let settings;
+    try {
+      settings = await api.getSettings();
+    } catch (e) {
+      console.error('[App] 读取设置失败:', e.message);
+      return;
+    }
+    if (!settings) return;
+    applyPersistedSettings(settings, withTheme);
+  };
+
   // 网格设置与排序持久化恢复 + 初始主题
   useEffect(() => {
-    if (!api.isBridgeAvailable()) return;
-    (async () => {
-      const settings = await api.getSettings();
-      if (!settings) return;
-      useGalleryStore.getState().patchGridSettings({
-        rows: Number(settings.grid_rows || 3),
-        columns: Number(settings.grid_columns || 5),
-        gap: Number(settings.grid_gap || 12),
-        padding: Number(settings.content_padding || 16),
-      });
-      useGalleryStore.getState().setSortFromSettings(settings.sort_by, settings.sort_order);
-      document.documentElement.setAttribute('data-theme', normalizeTheme(settings.theme));
-    })();
+    loadPersistedSettings(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // 进入图库/收藏页时刷新统计与共享数据（覆盖启动加载与相册/标签页改动后的返回）
@@ -146,7 +164,14 @@ export default function App() {
   // 仅当图片应在当前页却找不到（已被删除）时关闭查看器，跨页浏览不受刷新影响
   useEffect(() => {
     const current = viewerImageRef.current;
-    if (!current || images.length === 0) return;
+    if (!current) return;
+    // 筛选/删除后当前列表已空：查看器停在不存在的上是幽灵态，直接关闭
+    //（loadImages 在途不清 images，空数组即真实空结果，无瞬断误关）
+    if (images.length === 0) {
+      setViewerImage(null);
+      setViewerIndex(-1);
+      return;
+    }
     const updated = images.find((img) => img.id === current.id);
     if (updated) {
       setViewerImage(updated);
@@ -528,6 +553,7 @@ export default function App() {
               onBatchUpdate={handleBatchUpdate}
               onSyncEdits={handleSyncEdits}
               onApplyPreset={handleApplyPreset}
+              onAutoGrade={handleAutoGrade}
             />
           )}
           <Routes>
@@ -565,20 +591,7 @@ export default function App() {
               element={
                 <SettingsPage
                   onSettingsChanged={() => {
-                    if (!api.isBridgeAvailable()) return;
-                    (async () => {
-                      const settings = await api.getSettings();
-                      if (!settings) return;
-                      useGalleryStore.getState().patchGridSettings({
-                        rows: Number(settings.grid_rows || 3),
-                        columns: Number(settings.grid_columns || 5),
-                        gap: Number(settings.grid_gap || 12),
-                        padding: Number(settings.content_padding || 16),
-                      });
-                      useGalleryStore
-                        .getState()
-                        .setSortFromSettings(settings.sort_by, settings.sort_order);
-                    })();
+                    loadPersistedSettings(false);
                   }}
                   onImagesChanged={handleImageUpdated}
                 />

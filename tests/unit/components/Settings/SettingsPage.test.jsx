@@ -175,3 +175,50 @@ describe('SettingsPage', () => {
     expect(screen.getByText('有未保存的修改')).toBeInTheDocument();
   });
 });
+
+describe('SettingsPage AI 调色配置（Phase 2）', () => {
+  beforeEach(() => {
+    useGalleryStore.setState(initialSnapshot, true);
+    window.pixyang = {
+      getSettings: vi.fn().mockResolvedValue({
+        theme: 'dark',
+        grid_rows: 3,
+        grid_columns: 5,
+        grid_gap: 12,
+        content_padding: 16,
+        ai_base_url: 'https://old.example.com/v1',
+        ai_api_key: 'sk-old',
+        ai_model: 'old-model',
+      }),
+      getImagesRoot: vi.fn().mockResolvedValue('C:/PixData'),
+      getDatabasePath: vi.fn().mockResolvedValue('C:/db/pixyang.db'),
+      setSetting: vi.fn().mockResolvedValue(undefined),
+      toFileUrls: vi.fn().mockResolvedValue({}),
+    };
+  });
+
+  afterEach(() => {
+    cleanup();
+    delete window.pixyang;
+  });
+
+  it('回填存量配置；保存写入 ai_base_url/ai_api_key/ai_model 三键', async () => {
+    renderPage();
+    const baseUrl = await screen.findByPlaceholderText('https://api.openai.com/v1');
+    const apiKey = screen.getByPlaceholderText('sk-...');
+    const model = screen.getByPlaceholderText('gpt-4o-mini');
+    expect(baseUrl.value).toBe('https://old.example.com/v1');
+    expect(apiKey.value).toBe('sk-old');
+    expect(model.value).toBe('old-model');
+    fireEvent.change(baseUrl, { target: { value: 'https://new.example.com/v1' } });
+    fireEvent.change(apiKey, { target: { value: 'sk-new' } });
+    fireEvent.change(model, { target: { value: 'new-model' } });
+    fireEvent.click(screen.getByRole('button', { name: '保存 AI 配置' }));
+    await vi.waitFor(() => {
+      const calls = window.pixyang.setSetting.mock.calls;
+      expect(calls).toContainEqual(['ai_base_url', 'https://new.example.com/v1']);
+      expect(calls).toContainEqual(['ai_api_key', 'sk-new']);
+      expect(calls).toContainEqual(['ai_model', 'new-model']);
+    });
+  });
+});

@@ -1,83 +1,26 @@
 // 相机同步与图片根迁移：镜像 electron/main.js 的 db:sync-camera-folder / fs:set-images-root
 // 编排与 electron/database.js 的 prepareCameraSync / attachRawToImage / setImagesRoot。
-// scan.rs 的 scan_directory_inner(include_raw) 未公开 include_raw 入口：相机口径
-//（含 NEF 独立条目、无配对注记）的枚举在本模块实现。extractExifBatch/readExifInfo
-// 首次移植（exif_read 的字节级解析为私有，日期/朝向所需的最小解析就地实现）。
+// 相机口径枚举（含 NEF 独立条目、无配对注记）走 scan.rs 公开的 scan_directory_include_raw。
+// extractExifBatch/readExifInfo 首次移植（exif_read 的字节级解析为私有，日期/朝向所需的最小解析就地实现）。
 // 串行锁由命令层经 Db(Mutex<Connection>) 持有，内核不做并发处理。
 
 use crate::db::{delete_image_record, images_root, AppPaths, Db, PixError};
 use crate::err_cn;
-use crate::file_ops::EXIF_BATCH;
+use crate::file_ops::{ymd_from_days, EXIF_BATCH};
 use crate::image_group;
 use crate::images_query::{row_from, ImageRow};
 use crate::naming;
-use crate::scan::{CollectedFile, VISIBLE_FORMATS};
+use crate::scan::{scan_directory_include_raw, CollectedFile};
 use rusqlite::{Connection, OptionalExtension};
 use serde_json::{json, Value};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use tauri::State;
 
-const SCAN_MAX_DEPTH: usize = 12;
-const SCAN_MAX_FILES: usize = 20000;
-
 // ── 相机目录扫描（scanImageFiles(dir, true) 口径） ──
 
 fn scan_camera_files(dir: &Path) -> Vec<CollectedFile> {
-    if !dir.is_absolute() {
-        eprintln!("[扫描] 目录路径无效: {}", dir.display());
-        return vec![];
-    }
-    match std::fs::metadata(dir) {
-        Ok(meta) if meta.is_dir() => {}
-        _ => return vec![],
-    }
-    let mut files = Vec::new();
-    scan_into(&mut files, dir, 0);
-    files
-}
-
-fn scan_into(files: &mut Vec<CollectedFile>, dir: &Path, depth: usize) {
-    if depth > SCAN_MAX_DEPTH || files.len() >= SCAN_MAX_FILES {
-        return;
-    }
-    let entries = match std::fs::read_dir(dir) {
-        Ok(entries) => entries,
-        Err(e) => {
-            eprintln!("[扫描] 错误: {} {e}", dir.display());
-            return;
-        }
-    };
-    for entry in entries.flatten() {
-        if files.len() >= SCAN_MAX_FILES {
-            eprintln!("[扫描] 达到上限，截断: {SCAN_MAX_FILES}");
-            break;
-        }
-        let Ok(file_type) = entry.file_type() else {
-            continue;
-        };
-        let full_path = entry.path();
-        if file_type.is_dir() {
-            scan_into(files, &full_path, depth + 1);
-        } else if file_type.is_file() {
-            let name = entry.file_name().to_string_lossy().to_string();
-            let ext = naming::extname(&name).to_lowercase();
-            let supported = VISIBLE_FORMATS.contains(&ext.as_str()) || ext == ".nef";
-            if supported {
-                let size = std::fs::metadata(&full_path).map(|m| m.len()).unwrap_or(0);
-                files.push(CollectedFile {
-                    filename: name,
-                    filepath: full_path.to_string_lossy().into_owned(),
-                    size,
-                    format: ext,
-                    width: 0,
-                    height: 0,
-                    raw_source: None,
-                    raw_filename: None,
-                });
-            }
-        }
-    }
+    scan_directory_include_raw(dir)
 }
 
 // ── EXIF 提取（readExifInfo 口径） ──
@@ -86,20 +29,6 @@ struct ExifInfo {
     date: String,
     taken_at: String,
     orientation: i64,
-}
-
-fn ymd_from_days(days: i64) -> String {
-    let z = days + 719_468;
-    let era = z.div_euclid(146_097);
-    let doe = z - era * 146_097;
-    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
-    let y = yoe + era * 400;
-    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-    let mp = (5 * doy + 2) / 153;
-    let d = doy - (153 * mp + 2) / 5 + 1;
-    let m = if mp < 10 { mp + 3 } else { mp - 9 };
-    let y = if m <= 2 { y + 1 } else { y };
-    format!("{y:04}-{m:02}-{d:02}")
 }
 
 pub fn mtime_ymd(path: &Path) -> String {
@@ -311,10 +240,15 @@ fn attach_raw_to_image(
         std::fs::create_dir_all(parent).map_err(|e| PixError::Io(format!("建目录失败: {e}")))?;
     }
     if raw_dest.exists() {
+        // Windows 文件系统大小写不敏感：占用者查询须与 file_ops 同口径走 NOCASE，
+        // 否则仅大小写不同的托管文件会被误判为无主残留而物理删除
         let owner: Option<(i64, i64, Option<String>)> = conn
             .query_row(
-                "SELECT id, hidden, original_path FROM images WHERE filepath = ?1",
-                [raw_dest.to_string_lossy()],
+                "SELECT id, hidden, original_path FROM images WHERE filepath = ?1 COLLATE NOCASE OR raw_path = ?2 COLLATE NOCASE",
+                [
+                    raw_dest.to_string_lossy(),
+                    raw_dest.to_string_lossy(),
+                ],
                 |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
             )
             .optional()?;

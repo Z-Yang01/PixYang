@@ -26,7 +26,7 @@ export function extractHistogram(glCanvas) {
     hist.r[r]++;
     hist.g[g]++;
     hist.b[b]++;
-    hist.l[(r + g + b) >> 1]++;
+    hist.l[((r + g + b) / 3) | 0]++;
   }
   return hist;
 }

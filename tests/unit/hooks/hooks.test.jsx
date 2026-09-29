@@ -331,7 +331,7 @@ describe('useBatchActions 异步收尾守卫', () => {
     expect([...useGalleryStore.getState().selectedIds].sort()).toEqual([1, 2]);
   });
 
-  it('批量删除：IPC reject 兜成 error toast，勾选清空不卡确认框', async () => {
+  it('批量删除：IPC reject 兜成 error toast，整批失败保留勾选供重试且不卡确认框', async () => {
     useGalleryStore.setState({
       selectedIds: new Set([1, 2]),
       loadImages: vi.fn(async () => {}),
@@ -350,7 +350,8 @@ describe('useBatchActions 异步收尾守卫', () => {
       '批量删除失败：文件被占用或权限不足（错误码 5）',
       'error'
     );
-    expect(useGalleryStore.getState().selectedIds.size).toBe(0);
+    // 一条都没删成：勾选集保留（不弹回旧页），用户可直接重试而不必重新勾选
+    expect([...useGalleryStore.getState().selectedIds].sort()).toEqual([1, 2]);
   });
 
   it('批量删除：勾选集已空时早退，不发 IPC', async () => {

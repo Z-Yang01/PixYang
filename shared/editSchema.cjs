@@ -20,12 +20,13 @@ const CropSchema = z.object({
   w: z.number().min(1).catch(0),
   h: z.number().min(1).catch(0),
   ratio: z.string().catch('free'),
+  angle: z.number().min(-45).max(45).catch(0), // 拉直角度；±45 之外的大角度应走 90° 倍数 orientation
 });
 
 const BasicSchema = z.object({
   exposure: z.number().min(-2).max(2).catch(0), // ±2EV
   contrast: z.number().min(-50).max(50).catch(0), // ±50
-  highlights: z.number().min(-100).max(100).catch(0), // 高光回收
+  highlights: z.number().min(-100).max(100).catch(0), // 高光：+提亮 / −压暗（R71 亮度掩蔽）
   shadows: z.number().min(-100).max(100).catch(0), // 阴影
   whites: z.number().min(-100).max(100).catch(0), // 白色色阶
   blacks: z.number().min(-100).max(100).catch(0), // 黑色色阶

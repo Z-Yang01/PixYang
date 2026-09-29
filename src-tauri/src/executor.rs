@@ -1,13 +1,14 @@
 // 渲染执行器（迁移接缝 5 阶段 3-2）：RenderSpec JSON → image-rs 解码 → 阶段调度 → 编码。
-// 逐语义镜像 electron/render/renderSpecToSharp.cjs：仿射累积（白平衡/曝光/影调线性复合为单次
-// linear）、非线性边界物化（curves/hsl/grading/saturation/masks/lens/detail 前先 flush）、
-// 蒙版 pre-crop 坐标系、crop 经 geometry 映射 + 钳制、EXIF 经 exif_relay 注回产物。
+// 阶段语义唯一事实源在 shared/*.cjs（本文件为其 Rust 直译，逐节头引用）：
+// 仿射累积（白平衡/曝光/影调线性复合为单次 linear）、非线性边界物化
+// （curves/hsl/grading/saturation/masks/lens/detail 前先 flush）、蒙版 pre-crop 坐标系、
+// crop 经 geometry 映射 + 钳制、EXIF 经 exif_relay 注回产物。
 // libvips 探测结论（NIGHTLY_LOG）：linear 对 uchar 截断 + 钳 0..255。R71 起 tone 段的高光/阴影
 // 为亮度掩蔽算子（apply_tone_masked：L=Rec.709 → w=smoothstep 带 → mix(c,f(c),w)），f 沿用原
 // 力度公式、段末单次 trunc——不再折叠进仿射/负阴影 negate 复合（原 gamma(1,g) 探测表语义
 // 随之退役，见 tests 阴影提升_亮度掩蔽_手算表一致）。
-// 已记录分歧（SEAM5_DECISION.md）：灰度源按 RGBA 解码；detail.sharpness 用近似 USM；
-// ICC 不回接；非 90° 倍数旋转跳过；代理分辨率直接编码（无元数据回接，同 JS）。
+// 已记录分歧：灰度源按 RGBA 解码；detail.sharpness 用近似 USM；ICC 不回接；
+// 非 90° 倍数旋转跳过；代理分辨率直接编码（无元数据回接，同 JS）。
 
 use crate::error::PixError;
 use crate::exif_relay::relay_exif_files;
@@ -199,6 +200,110 @@ fn apply_unsharp_approx(
     Ok(())
 }
 
+/// 降噪：亮度域 3×3 高斯（中心权重 4）按强度混合，色度差异保留（各通道同加 delta）。
+/// m = strength/100 × 0.85：100 也不过度平滑。预览端 GLSL 以画布分辨率邻域同式近似。
+fn apply_noise_reduction_in_place(
+    data: &mut [u8],
+    width: u32,
+    height: u32,
+    strength: f64,
+    channels: usize,
+) {
+    let m = (strength / 100.0).clamp(0.0, 1.0) * 0.85;
+    if m <= 0.0 || width < 3 || height < 3 || channels < 3 {
+        return;
+    }
+    let src = data.to_vec();
+    let luma_at = |x: u32, y: u32| -> f64 {
+        let i = ((y * width + x) as usize) * channels;
+        0.2126 * src[i] as f64 + 0.7152 * src[i + 1] as f64 + 0.0722 * src[i + 2] as f64
+    };
+    for y in 0..height {
+        for x in 0..width {
+            let mut acc = 0.0;
+            for dy in -1i64..=1 {
+                for dx in -1i64..=1 {
+                    let nx = (x as i64 + dx).clamp(0, width as i64 - 1) as u32;
+                    let ny = (y as i64 + dy).clamp(0, height as i64 - 1) as u32;
+                    let w = if dx == 0 && dy == 0 {
+                        4.0
+                    } else if dx == 0 || dy == 0 {
+                        2.0
+                    } else {
+                        1.0
+                    };
+                    acc += luma_at(nx, ny) * w;
+                }
+            }
+            let blur_luma = acc / 16.0;
+            let i = ((y * width + x) as usize) * channels;
+            let delta = (blur_luma - luma_at(x, y)) * m;
+            for c in 0..3.min(channels) {
+                data[i + c] = (src[i + c] as f64 + delta).clamp(0.0, 255.0).round() as u8;
+            }
+        }
+    }
+}
+
+/// 拉直旋转：双线性逆映射（中心对齐），画布扩至外接矩形，出界填黑。
+/// +angle 在 y-down 图像坐标系下为逆时针（右缘转至上缘，方向由方向锁单测锁定）；
+/// 前端拉直滑杆如取相反视觉方向，传负角度即可。
+fn rotate_by_angle(p: &mut BufferImage, angle_deg: f64) -> Result<(), PixError> {
+    if angle_deg == 0.0 {
+        return Ok(());
+    }
+    let (sin, cos) = angle_deg.to_radians().sin_cos();
+    let (w, h) = (p.width, p.height);
+    let nw = (w as f64 * cos.abs() + h as f64 * sin.abs()).round() as u32;
+    let nh = (w as f64 * sin.abs() + h as f64 * cos.abs()).round() as u32;
+    if nw == 0 || nh == 0 {
+        return Err(PixError::Io("旋转后尺寸无效".into()));
+    }
+    let src = p.data.clone();
+    let channels = p.channels;
+    let mut out = vec![0u8; nw as usize * nh as usize * channels];
+    let (cx_in, cy_in) = ((w as f64 - 1.0) / 2.0, (h as f64 - 1.0) / 2.0);
+    let (cx_out, cy_out) = ((nw as f64 - 1.0) / 2.0, (nh as f64 - 1.0) / 2.0);
+    for y in 0..nh {
+        for x in 0..nw {
+            let dx = x as f64 - cx_out;
+            let dy = y as f64 - cy_out;
+            // 逆映射：输出坐标转回输入坐标（R(−θ)），双线性采样，出界保持黑
+            let sx = cos * dx - sin * dy + cx_in;
+            let sy = sin * dx + cos * dy + cy_in;
+            let oi = (y as usize * nw as usize + x as usize) * channels;
+            if sx < 0.0 || sy < 0.0 || sx > (w - 1) as f64 || sy > (h - 1) as f64 {
+                // 出界填不透明黑：拉直工作流中用户裁剪框会避开填充区
+                out[oi..oi + channels].copy_from_slice(&[0, 0, 0, 255][..channels]);
+                continue;
+            }
+            let x0 = sx.floor().max(0.0) as u32;
+            let y0 = sy.floor().max(0.0) as u32;
+            let x1 = (x0 + 1).min(w - 1);
+            let y1 = (y0 + 1).min(h - 1);
+            let fx = (sx - x0 as f64).clamp(0.0, 1.0);
+            let fy = (sy - y0 as f64).clamp(0.0, 1.0);
+            let at = |px: u32, py: u32, c: usize| {
+                src[(py as usize * w as usize + px as usize) * channels + c] as f64
+            };
+            let mut out_px = [0u8; 4];
+            for c in 0..3.min(channels) {
+                let top = at(x0, y0, c) * (1.0 - fx) + at(x1, y0, c) * fx;
+                let bot = at(x0, y1, c) * (1.0 - fx) + at(x1, y1, c) * fx;
+                out_px[c] = (top * (1.0 - fy) + bot * fy).round().clamp(0.0, 255.0) as u8;
+            }
+            if channels == 4 {
+                out_px[3] = 255;
+            }
+            out[oi..oi + channels].copy_from_slice(&out_px[..channels]);
+        }
+    }
+    p.data = out;
+    p.width = nw;
+    p.height = nh;
+    Ok(())
+}
+
 fn apply_geometry(
     p: &mut BufferImage,
     rotate: f64,
@@ -246,20 +351,21 @@ fn crop_in_place(p: &mut BufferImage, left: u32, top: u32, w: u32, h: u32) -> Re
     Ok(())
 }
 
-fn resize_inside_no_enlarge(p: &BufferImage, max_side: u32) -> BufferImage {
+fn resize_inside_no_enlarge(p: &BufferImage, max_side: u32) -> Result<BufferImage, PixError> {
     let long = p.width.max(p.height);
     if long <= max_side {
-        return p.clone();
+        return Ok(p.clone());
     }
-    let img = RgbaImage::from_raw(p.width, p.height, p.data.clone()).expect("buffer 尺寸匹配");
+    let img = RgbaImage::from_raw(p.width, p.height, p.data.clone())
+        .ok_or_else(|| PixError::Io("buffer 尺寸不匹配".into()))?;
     let scaled =
         DynamicImage::from(img).resize(max_side, max_side, image::imageops::FilterType::Lanczos3);
-    BufferImage {
+    Ok(BufferImage {
         data: scaled.to_rgba8().into_raw(),
         width: scaled.dimensions().0,
         height: scaled.dimensions().1,
         channels: 4,
-    }
+    })
 }
 
 /// 底图（geometry 前）裁剪矩形 → 变换后坐标系。翻转先于旋转（T = R∘F，与执行器几何同序）
@@ -400,17 +506,7 @@ fn encode_buffer(
                 .map_err(|e| PixError::Io(format!("TIFF 编码失败: {e}")))?;
         }
         _ => {
-            let rgba = dyn_img.to_rgba8();
-            let mut flat = image::RgbImage::new(rgba.width(), rgba.height());
-            for (x, y, px) in rgba.enumerate_pixels() {
-                let a = px.0[3] as f32 / 255.0;
-                let blend = |c: u8| (c as f32 * a + 255.0 * (1.0 - a)).round() as u8;
-                flat.put_pixel(
-                    x,
-                    y,
-                    image::Rgb([blend(px.0[0]), blend(px.0[1]), blend(px.0[2])]),
-                );
-            }
+            let flat = crate::thumbs::flatten_rgba_white(&dyn_img.to_rgba8());
             let encoder =
                 image::codecs::jpeg::JpegEncoder::new_with_quality(&mut out, quality as u8);
             flat.write_with_encoder(encoder)
@@ -479,7 +575,6 @@ pub fn render_spec_to_file(
     let mut pixels: Option<BufferImage> = None;
     let mut affine = Affine::identity();
     let mut base_geom: Option<(u32, u32, f64, bool, bool)> = None;
-    let mut effective_crop: Option<(u32, u32, u32, u32)> = None;
 
     for stage in stages {
         let kind = stage.get("kind").and_then(|k| k.as_str()).unwrap_or("");
@@ -489,7 +584,7 @@ pub fn render_spec_to_file(
                 if let Some(edge) = params.get("proxyLongEdge").and_then(|v| v.as_u64()) {
                     ensure_decoded(&mut pixels, input)?;
                     let p = pixels.as_mut().unwrap();
-                    *p = resize_inside_no_enlarge(p, edge as u32);
+                    *p = resize_inside_no_enlarge(p, edge as u32)?;
                     width = p.width;
                     height = p.height;
                 }
@@ -617,8 +712,17 @@ pub fn render_spec_to_file(
                     .and_then(|v| v.as_f64())
                     .unwrap_or(0.0);
                 let noise = params.get("noise").and_then(|v| v.as_f64()).unwrap_or(0.0);
-                if noise != 0.0 {
-                    eprintln!("[render] 降噪（detail.noise）尚未实现，已跳过");
+                if noise > 0.0 {
+                    flush_affine(&mut pixels, &mut affine, input)?;
+                    ensure_decoded(&mut pixels, input)?;
+                    let p = pixels.as_mut().unwrap();
+                    apply_noise_reduction_in_place(
+                        &mut p.data,
+                        p.width,
+                        p.height,
+                        noise,
+                        p.channels,
+                    );
                 }
                 if sharpness > 0.0 {
                     flush_affine(&mut pixels, &mut affine, input)?;
@@ -677,16 +781,28 @@ pub fn render_spec_to_file(
                 ensure_decoded(&mut pixels, input)?;
                 let cw = params.get("w").and_then(|v| v.as_f64()).unwrap_or(0.0);
                 let ch = params.get("h").and_then(|v| v.as_f64()).unwrap_or(0.0);
+                let angle = params.get("angle").and_then(|v| v.as_f64()).unwrap_or(0.0);
+                if angle != 0.0 {
+                    ensure_decoded(&mut pixels, input)?;
+                    let p = pixels.as_mut().unwrap();
+                    rotate_by_angle(p, angle)?;
+                    width = p.width;
+                    height = p.height;
+                }
                 if cw > 0.0 && ch > 0.0 {
-                    let mapped = match base_geom {
-                        Some((bw, bh, rotate, flip_h, flip_v)) => {
-                            map_crop_through_geometry(&params, bw, bh, rotate, flip_h, flip_v)
+                    // angle ≠ 0：矩形即旋转后空间坐标，直用（不映射回 geometry 前）
+                    let mapped = if angle != 0.0 {
+                        params.clone()
+                    } else {
+                        match base_geom {
+                            Some((bw, bh, rotate, flip_h, flip_v)) => {
+                                map_crop_through_geometry(&params, bw, bh, rotate, flip_h, flip_v)
+                            }
+                            None => params.clone(),
                         }
-                        None => params.clone(),
                     };
                     if let Some((left, top, c_width, c_height)) = clamp_crop(&mapped, width, height)
                     {
-                        effective_crop = Some((left, top, c_width, c_height));
                         let p = pixels.as_mut().unwrap();
                         crop_in_place(p, left, top, c_width, c_height)?;
                         width = c_width;
@@ -707,10 +823,6 @@ pub fn render_spec_to_file(
                 let resize_h = resize
                     .and_then(|r| r.get("height"))
                     .and_then(|v| v.as_u64());
-                if effective_crop.is_none() && base_geom.is_none() {
-                    // 代理分辨率渲染（decode.proxyLongEdge）：直接编码代理像素，无元数据回接
-                    let _ = proxy_marker();
-                }
                 write_encoded(
                     pixels.as_ref(),
                     input,
@@ -733,8 +845,6 @@ pub fn render_spec_to_file(
     Ok(RenderOutput { width, height })
 }
 
-fn proxy_marker() {}
-
 fn ensure_decoded(pixels: &mut Option<BufferImage>, input: &Path) -> Result<(), PixError> {
     if pixels.is_none() {
         let img = image::ImageReader::open(input)
@@ -756,6 +866,151 @@ fn ensure_decoded(pixels: &mut Option<BufferImage>, input: &Path) -> Result<(), 
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
+    // 左白右黑旗（4×2）：旋转方向锁的判别图案（足够大避免小图退化采样）
+    fn flag_image() -> BufferImage {
+        let mut data = Vec::new();
+        for _y in 0..2 {
+            for x in 0..4 {
+                let v = if x < 2 { 255 } else { 0 };
+                data.extend_from_slice(&[v, v, v, 255]);
+            }
+        }
+        BufferImage {
+            data,
+            width: 4,
+            height: 2,
+            channels: 4,
+        }
+    }
+
+    fn center_px(p: &BufferImage) -> u8 {
+        let i = ((p.height / 2) as usize * p.width as usize + (p.width / 2) as usize) * 4;
+        p.data[i]
+    }
+
+    #[test]
+    fn 旋转_零角度恒等() {
+        let mut p = flag_image();
+        let snapshot = p.data.clone();
+        rotate_by_angle(&mut p, 0.0).unwrap();
+        assert_eq!((p.width, p.height), (4, 2));
+        assert_eq!(p.data, snapshot);
+    }
+
+    #[test]
+    fn 旋转_方向锁_加九十度逆时针() {
+        // +90°（逆时针：右缘转至上缘）：左白右黑旗 → 上 2 行黑（原图右半）、下 2 行白（原图左半）
+        let mut p = flag_image();
+        rotate_by_angle(&mut p, 90.0).unwrap();
+        assert_eq!((p.width, p.height), (2, 4));
+        for x in 0..2 {
+            for y in 0..4 {
+                let v = if y < 2 { 0 } else { 255 };
+                let i = (y * 2 + x) * 4;
+                assert_eq!(p.data[i..i + 3], [v, v, v], "pixel ({x},{y})");
+            }
+        }
+    }
+
+    #[test]
+    fn 旋转_四十五度外接矩形与黑边() {
+        // 2×1 转 45°：外接 = ceil((2·cos45 + 1·sin45), (2·sin45 + 1·cos45)) = ceil(2.12, 2.12) = (3, 3)？四舍五入 2.12→2
+        let mut p = flag_image();
+        rotate_by_angle(&mut p, 45.0).unwrap();
+        let c45 = std::f64::consts::FRAC_1_SQRT_2;
+        assert_eq!(
+            (p.width, p.height),
+            (
+                (4.0f64 * c45 + 2.0f64 * c45).round() as u32,
+                (4.0f64 * c45 + 2.0f64 * c45).round() as u32
+            )
+        );
+        // 角落为黑（出界填充）
+        assert_eq!(p.data[0..3], [0, 0, 0]);
+    }
+
+    #[test]
+    fn 旋转_crop阶段集成_角度矩形在旋转后空间() {
+        // render_spec_to_file：4×4 图 + angle=90 + crop 取旋转后空间整幅的左上 2×2
+        let dir = std::env::temp_dir().join(format!("pixyang_rotate_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let input = dir.join("in.png");
+        let output = dir.join("out.png");
+        // 4×4：左半白（列 0-1）右半黑（列 2-3）
+        let mut px = vec![0u8; 4 * 4 * 4];
+        for y in 0..4 {
+            for x in 0..4 {
+                let v = if x < 2 { 255 } else { 0 };
+                let i = ((y * 4 + x) * 4) as usize;
+                px[i] = v;
+                px[i + 1] = v;
+                px[i + 2] = v;
+                px[i + 3] = 255;
+            }
+        }
+        write_test_png(&input, &px, 4, 4);
+        let spec = serde_json::json!({
+            "specVersion": 1,
+            "sourceHash": "t",
+            "colorSpace": { "working": "srgb", "output": "srgb" },
+            "stages": [
+                { "kind": "decode", "params": {} },
+                { "kind": "crop", "params": { "x": 0, "y": 0, "w": 4, "h": 2, "ratio": "free", "angle": 90 } },
+                { "kind": "encode", "params": { "format": "png" } }
+            ],
+            "meta": {}
+        });
+        render_spec_to_file(&spec, &input, &output).unwrap();
+        // +90 逆时针：右缘转至上缘——左白右黑 → 上黑下白；crop 上半幅 (0,0,4,2) 全黑
+        let out = image::ImageReader::open(&output)
+            .unwrap()
+            .with_guessed_format()
+            .unwrap()
+            .decode()
+            .unwrap()
+            .to_rgba8();
+        assert_eq!((out.width(), out.height()), (4, 2));
+        assert_eq!(out.get_pixel(0, 0).0, [0, 0, 0, 255]);
+        assert_eq!(out.get_pixel(3, 1).0, [0, 0, 0, 255]);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn 降噪_灰点向场均值混合_手算一致() {
+        // 3×3 灰场（luma 100）中心一个 luma 200 的灰点：blur_luma = (4·200+12·100)/16 = 125，
+        // m=0.85 → delta = (125−200)·0.85 = −63.75 → 200−63.75 = 136.25 → 136
+        let mut data = [100u8, 100, 100, 255].repeat(9);
+        data[((1 * 3 + 1) * 4)..((1 * 3 + 1) * 4) + 3].copy_from_slice(&[200, 200, 200]);
+        apply_noise_reduction_in_place(&mut data, 3, 3, 100.0, 4);
+        assert_eq!(
+            data[((1 * 3 + 1) * 4)..(1 * 3 + 1) * 4 + 3],
+            [136, 136, 136]
+        );
+        // 角(0,0) 的邻域经边界 clamp：自身累计权重 9，两条边各 3，中心 (1,1) 权重 1：
+        // blur = (9·100 + 3·100 + 3·100 + 1·200)/16 = 106.25，delta = +5.3125 → 105.3125 → 105
+        assert_eq!(data[0..3], [105, 105, 105]);
+    }
+
+    #[test]
+    fn 降噪_色度保留与强度衰减() {
+        // 彩色点 luma 与场一致时 delta=0：色度完全保留
+        let mut data = [100u8, 100, 100, 255].repeat(9);
+        // 中心改成分量 (140, 100, 60)：luma = 0.2126·140+0.7152·100+0.0722·60 = 29.764+71.52+4.332 = 105.616
+        // 角(0,0) 视角含中心：blur 略变但中心自身 luma 同变——直接验证中心：周围全 100（luma 100），
+        // 中心 luma 105.616，blur = (4·105.616 + 12·100)/16 = (422.464+1200)/16 = 101.404，
+        // delta = (101.404−105.616)·0.85 = −3.58 → r=136.4→136? 手算：140−3.58=136.42→136, 100−3.58=96.42→96, 60−3.58=56.42→56
+        data[((1 * 3 + 1) * 4)..((1 * 3 + 1) * 4) + 3].copy_from_slice(&[140, 100, 60]);
+        apply_noise_reduction_in_place(&mut data, 3, 3, 100.0, 4);
+        assert_eq!(data[((1 * 3 + 1) * 4)..(1 * 3 + 1) * 4 + 3], [136, 96, 56]);
+        // 强度衰减：strength 50 → m=0.425，delta = −4.212·0.425 = −1.79 → 138/98/58
+        let mut data2 = [100u8, 100, 100, 255].repeat(9);
+        data2[((1 * 3 + 1) * 4)..((1 * 3 + 1) * 4) + 3].copy_from_slice(&[140, 100, 60]);
+        apply_noise_reduction_in_place(&mut data2, 3, 3, 50.0, 4);
+        assert_eq!(data2[((1 * 3 + 1) * 4)..(1 * 3 + 1) * 4 + 3], [138, 98, 58]);
+    }
+
     use super::*;
 
     fn write_test_png(path: &std::path::Path, pixels: &[u8], w: u32, h: u32) {

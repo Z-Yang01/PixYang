@@ -11,6 +11,7 @@ pub mod exif_read;
 pub mod exif_relay;
 pub mod file_ops;
 pub mod image_group;
+pub mod image_stats;
 pub mod images_query;
 pub mod naming;
 pub mod progress;
@@ -173,11 +174,11 @@ pub fn run() {
             commands::get_database_path,
             commands::get_all_image_ids,
             commands::file_exists,
-            commands::render_edit,
             commands::import_images,
             commands::rename_image,
             commands::export_images,
             commands::export_album_images,
+            commands::analyze_image,
             commands::get_exif,
             commands::scan_directory,
             commands::collect_import_files,

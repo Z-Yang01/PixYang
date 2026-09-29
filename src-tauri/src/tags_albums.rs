@@ -348,12 +348,14 @@ pub fn create_album(
         "INSERT INTO albums (name, description) VALUES (?1, ?2)",
         [&clean_name, &clean_desc],
     )?;
+    // 按插入 id 回读：相册名无 UNIQUE，按名回查在同名并存时会拿到别条的 id
+    let album_id = conn.last_insert_rowid();
     let mut stmt = conn.prepare(
         "SELECT a.id, a.name, a.description, a.cover_image_id, a.created_at,
            NULL AS cover_path, 0 AS image_count
-         FROM albums a WHERE name = ?1 ORDER BY id DESC LIMIT 1",
+         FROM albums a WHERE a.id = ?1",
     )?;
-    let mut rows = stmt.query_map([&clean_name], |r| {
+    let mut rows = stmt.query_map([album_id], |r| {
         Ok(AlbumRow {
             id: r.get(0)?,
             name: r.get(1)?,

@@ -352,9 +352,9 @@ describe('ImageGrid', () => {
 
   it('标签筛选下快捷移除标签：该行离开视图，勾选集同步剪枝（审查批 6 K3）', async () => {
     const tag = { id: 5, name: '风景', color: '#818cf8' };
-    window.pixyang.getTags.mockResolvedValue([tag]);
     window.pixyang.getBatchImageTags.mockResolvedValue({ 1: [tag], 2: [tag] });
     seedStore({
+      tags: [tag],
       images: [makeImage({ id: 1 }), makeImage({ id: 2, filename: 'sunrise.png' })],
       totalImages: 2,
       filterTag: 5,
@@ -373,9 +373,9 @@ describe('ImageGrid', () => {
 
   it('非该标签筛选下移除标签：勾选集保持不动（K3 对照组）', async () => {
     const tag = { id: 5, name: '风景', color: '#818cf8' };
-    window.pixyang.getTags.mockResolvedValue([tag]);
     window.pixyang.getBatchImageTags.mockResolvedValue({ 1: [tag], 2: [tag] });
     seedStore({
+      tags: [tag],
       images: [makeImage({ id: 1 }), makeImage({ id: 2, filename: 'sunrise.png' })],
       totalImages: 2,
       selectedIds: new Set([1, 2]),
@@ -392,11 +392,10 @@ describe('ImageGrid', () => {
 
   it('快捷移除标签（非该标签筛选/无搜索）：走轻量计数刷新不整页重查（审查批 8 R-4）', async () => {
     const tag = { id: 5, name: '风景', color: '#818cf8' };
-    window.pixyang.getTags.mockResolvedValue([tag]);
     window.pixyang.getBatchImageTags.mockResolvedValue({ 1: [tag] });
     const onImageUpdated = vi.fn();
     const onCountsChanged = vi.fn();
-    seedStore({ images: [makeImage({ id: 1 })], totalImages: 1 });
+    seedStore({ tags: [tag], images: [makeImage({ id: 1 })], totalImages: 1 });
     const { container } = render(
       <ImageGrid onImageUpdated={onImageUpdated} onCountsChanged={onCountsChanged} />
     );
@@ -458,11 +457,10 @@ describe('ImageGrid', () => {
 
   it('标签筛选下快捷移除仍走整页重查（结构分支不回退，审查批 8 R-4）', async () => {
     const tag = { id: 5, name: '风景', color: '#818cf8' };
-    window.pixyang.getTags.mockResolvedValue([tag]);
     window.pixyang.getBatchImageTags.mockResolvedValue({ 1: [tag] });
     const onImageUpdated = vi.fn();
     const onCountsChanged = vi.fn();
-    seedStore({ images: [makeImage({ id: 1 })], totalImages: 1, filterTag: 5 });
+    seedStore({ tags: [tag], images: [makeImage({ id: 1 })], totalImages: 1, filterTag: 5 });
     const { container } = render(
       <ImageGrid onImageUpdated={onImageUpdated} onCountsChanged={onCountsChanged} />
     );

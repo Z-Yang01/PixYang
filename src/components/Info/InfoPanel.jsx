@@ -2,8 +2,9 @@ import { useState, useEffect, useRef } from 'react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { FolderOpen, Trash2, X, Heart, HeartOff, Star } from 'lucide-react';
+import { FolderOpen, Trash2, X, Heart, HeartOff } from 'lucide-react';
 import ConfirmDialog from '../Layout/ConfirmDialog';
+import StarRating from '@/components/common/StarRating';
 import { formatSizeDisplay as formatSize } from '@/lib/format';
 import { removeIdsFromSet } from '@/lib/gallery';
 import useGalleryStore from '@/store/galleryStore';
@@ -30,7 +31,6 @@ export default function InfoPanel({ image, onClose, onImageUpdated, onCountsChan
   const [deleteConfirm, setDeleteConfirm] = useState(false);
   const [thumbUrl, setThumbUrl] = useState(null);
   const [exif, setExif] = useState(null);
-  const renameRef = useRef(null);
   const liveImageIdRef = useRef(null);
 
   useEffect(() => {
@@ -56,9 +56,12 @@ export default function InfoPanel({ image, onClose, onImageUpdated, onCountsChan
       setThumbUrl(null);
       return;
     }
-    api.toFileUrl(image.thumbnail_path).then((url) => {
-      if (alive) setThumbUrl(url);
-    });
+    api
+      .toFileUrl(image.thumbnail_path)
+      .then((url) => {
+        if (alive) setThumbUrl(url);
+      })
+      .catch((e) => console.error('[InfoPanel] 缩略图地址获取失败:', e.message));
     return () => {
       alive = false;
     };
@@ -69,9 +72,12 @@ export default function InfoPanel({ image, onClose, onImageUpdated, onCountsChan
     let alive = true;
     setExif(null);
     if (!api.isBridgeAvailable() || !image?.filepath) return;
-    api.getExif(image.filepath).then((data) => {
-      if (alive) setExif(data || {});
-    });
+    api
+      .getExif(image.filepath)
+      .then((data) => {
+        if (alive) setExif(data || {});
+      })
+      .catch((e) => console.error('[InfoPanel] EXIF 读取失败:', e.message));
     return () => {
       alive = false;
     };
@@ -80,7 +86,13 @@ export default function InfoPanel({ image, onClose, onImageUpdated, onCountsChan
   const loadTags = async () => {
     if (!api.isBridgeAvailable() || !image) return;
     const id = image.id;
-    const [imgT, allT] = await Promise.all([api.getImageTags(id), api.getTags()]);
+    let imgT, allT;
+    try {
+      [imgT, allT] = await Promise.all([api.getImageTags(id), api.getTags()]);
+    } catch (e) {
+      console.error('[InfoPanel] 加载标签失败:', e.message);
+      return;
+    }
     if (liveImageIdRef.current !== id) return;
     setImgTags(imgT);
     setAllTags(allT);
@@ -88,7 +100,13 @@ export default function InfoPanel({ image, onClose, onImageUpdated, onCountsChan
 
   const handleAddTag = async (tagId) => {
     if (!api.isBridgeAvailable()) return;
-    await api.addTagToImage(image.id, tagId);
+    try {
+      await api.addTagToImage(image.id, tagId);
+    } catch (e) {
+      console.error('[InfoPanel] 添加标签失败:', e.message);
+      toast.error(errText('添加标签失败', e));
+      return;
+    }
     await loadTags();
     // 加标签不会让已显示的行离开视图，只刷侧栏计数（审查批 8 R-4）
     onCountsChanged?.();
@@ -97,7 +115,13 @@ export default function InfoPanel({ image, onClose, onImageUpdated, onCountsChan
 
   const handleRemoveTag = async (tagId) => {
     if (!api.isBridgeAvailable()) return;
-    await api.removeTagFromImage(image.id, tagId);
+    try {
+      await api.removeTagFromImage(image.id, tagId);
+    } catch (e) {
+      console.error('[InfoPanel] 移除标签失败:', e.message);
+      toast.error(errText('移除标签失败', e));
+      return;
+    }
     await loadTags();
     // 该图正被此标签筛选：行离开视图，勾选集同步剪枝
     const st = useGalleryStore.getState();
@@ -114,7 +138,18 @@ export default function InfoPanel({ image, onClose, onImageUpdated, onCountsChan
 
   const handleNotesSave = async () => {
     if (!api.isBridgeAvailable()) return;
-    await api.updateImage(image.id, { notes });
+    let result;
+    try {
+      result = await api.updateImage(image.id, { notes });
+    } catch (e) {
+      console.error('[InfoPanel] 保存备注失败:', e.message);
+      toast.error(errText('保存备注失败', e));
+      return;
+    }
+    if (result?.error) {
+      toast.error(friendlyError(result.error));
+      return;
+    }
     onImageUpdated?.(image.id, { notes });
   };
 
@@ -125,7 +160,14 @@ export default function InfoPanel({ image, onClose, onImageUpdated, onCountsChan
       return;
     }
     if (importDate === image.import_date) return;
-    const result = await api.updateImage(image.id, { import_date: importDate });
+    let result;
+    try {
+      result = await api.updateImage(image.id, { import_date: importDate });
+    } catch (e) {
+      console.error('[InfoPanel] 修改日期失败:', e.message);
+      setDateErr(errText('修改日期失败', e));
+      return;
+    }
     if (result?.error) {
       setDateErr(friendlyError(result.error));
       return;
@@ -145,7 +187,9 @@ export default function InfoPanel({ image, onClose, onImageUpdated, onCountsChan
     onImageUpdated?.(image.id, moved);
   };
 
+  const renamingRef = useRef(false);
   const handleRename = async () => {
+    if (renamingRef.current) return;
     if (!api.isBridgeAvailable() || !image) return;
     // 空主名提交：恢复展示当前文件名，不留白框（审查批 8 Q-11，对照 handleDateSave）
     if (!editName.trim()) {
@@ -153,13 +197,48 @@ export default function InfoPanel({ image, onClose, onImageUpdated, onCountsChan
       setRenameErr('');
       return;
     }
-    const result = await api.renameImage(image.id, editName.trim());
+    // Enter 与 onBlur 双通道都可能触发：在途互斥防并发两次 rename
+    renamingRef.current = true;
+    let result;
+    try {
+      result = await api.renameImage(image.id, editName.trim());
+    } catch (e) {
+      console.error('[InfoPanel] 重命名失败:', e.message);
+      result = { error: errText('重命名失败', e) };
+    } finally {
+      renamingRef.current = false;
+    }
     if (result.error) {
       setRenameErr(friendlyError(result.error));
     } else {
       setRenameErr('');
       onImageUpdated?.(image.id, { filename: result.newFilename, filepath: result.newPath });
     }
+  };
+
+  const handleRatingChange = async (rating) => {
+    if (!api.isBridgeAvailable()) return;
+    try {
+      await api.updateImage(image.id, { rating });
+    } catch (e) {
+      console.error('[InfoPanel] 评分失败:', e.message);
+      toast.error(errText('评分失败', e));
+      return;
+    }
+    onImageUpdated?.(image.id, { rating });
+  };
+
+  const handleFavoriteToggle = async () => {
+    if (!api.isBridgeAvailable()) return;
+    const favorite = image.favorite ? 0 : 1;
+    try {
+      await api.updateImage(image.id, { favorite });
+    } catch (e) {
+      console.error('[InfoPanel] 收藏失败:', e.message);
+      toast.error(errText('操作失败', e));
+      return;
+    }
+    onImageUpdated?.(image.id, { favorite });
   };
 
   const handleRenameKeyDown = (e) => {
@@ -172,7 +251,11 @@ export default function InfoPanel({ image, onClose, onImageUpdated, onCountsChan
 
   const handleOpenFolder = async () => {
     if (!api.isBridgeAvailable() || !image) return;
-    await api.openPath(dirname(image.filepath));
+    try {
+      await api.openPath(dirname(image.filepath));
+    } catch (e) {
+      console.error('[InfoPanel] 打开目录失败:', e.message);
+    }
   };
 
   const handleDelete = async () => {
@@ -240,7 +323,6 @@ export default function InfoPanel({ image, onClose, onImageUpdated, onCountsChan
               <label className="form-label">文件名</label>
               <div style={{ display: 'flex', gap: 6 }}>
                 <Input
-                  ref={renameRef}
                   className="flex-1"
                   value={editName}
                   onChange={(e) => {
@@ -471,39 +553,17 @@ export default function InfoPanel({ image, onClose, onImageUpdated, onCountsChan
             <div className="info-row">
               <span className="info-label">评分</span>
               <span className="info-value">
-                {[1, 2, 3, 4, 5].map((n) => (
-                  <span
-                    key={n}
-                    style={{
-                      color: n <= (image.rating || 0) ? 'var(--star)' : 'var(--text-muted)',
-                      cursor: 'pointer',
-                      display: 'inline-flex',
-                    }}
-                    onClick={async () => {
-                      const rating = n === image.rating ? 0 : n;
-                      await api.updateImage(image.id, { rating });
-                      onImageUpdated?.(image.id, { rating });
-                    }}
-                  >
-                    <Star
-                      className="size-4"
-                      fill={n <= (image.rating || 0) ? 'currentColor' : 'none'}
-                    />
-                  </span>
-                ))}
+                <StarRating
+                  rating={image.rating || 0}
+                  interactive
+                  size="size-4"
+                  onChange={handleRatingChange}
+                />
               </span>
             </div>
             <div className="info-row">
               <span className="info-label">收藏</span>
-              <Button
-                variant="ghost"
-                size="xs"
-                onClick={async () => {
-                  const favorite = image.favorite ? 0 : 1;
-                  await api.updateImage(image.id, { favorite });
-                  onImageUpdated?.(image.id, { favorite });
-                }}
-              >
+              <Button variant="ghost" size="xs" onClick={handleFavoriteToggle}>
                 {image.favorite ? (
                   <Heart className="size-4" fill="currentColor" />
                 ) : (

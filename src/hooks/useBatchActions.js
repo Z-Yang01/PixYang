@@ -4,6 +4,8 @@ import api from '../lib/api';
 import useGalleryStore from '../store/galleryStore';
 import { toEditParams } from '../lib/editParams';
 import { applyPresetToOps } from '../lib/presetApply';
+import autoGradeModule from '../../shared/autoGrade.cjs';
+const { suggestGrade } = autoGradeModule;
 import { pageAfterDelete, removeIdsFromSet } from '../lib/gallery';
 import { errText, friendlyError } from '../lib/errorText';
 import { offerDeleteUndo } from '../lib/trashUndo';
@@ -49,16 +51,23 @@ export default function useBatchActions({ showToast }) {
       ]);
     const store = useGalleryStore.getState();
     const filterKeyAtRequest = snapshotFilter(store);
-    const ids = await api.getAllImageIds({
-      search: store.search,
-      tagId: store.filterTag,
-      albumId: store.filterAlbum,
-      favorite: store.filterFavorites,
-      minRating: store.filterMinRating,
-      importDate: store.filterDate,
-      dateFrom: store.dateRange.from,
-      dateTo: store.dateRange.to,
-    });
+    let ids;
+    try {
+      ids = await api.getAllImageIds({
+        search: store.search,
+        tagId: store.filterTag,
+        albumId: store.filterAlbum,
+        favorite: store.filterFavorites,
+        minRating: store.filterMinRating,
+        importDate: store.filterDate,
+        dateFrom: store.dateRange.from,
+        dateTo: store.dateRange.to,
+      });
+    } catch (e) {
+      console.error('[batch] 全量 id 查询失败:', e.message);
+      showToast(errText('全选失败', e), 'error');
+      return;
+    }
     if (!ids || ids.length === 0) return;
     // 大库查询可达秒级：期间改筛选会清勾选并重查，晚到的旧筛选 id 集灌回会污染勾选集（批量删除误伤）
     const cur = useGalleryStore.getState();
@@ -183,6 +192,8 @@ export default function useBatchActions({ showToast }) {
           ...copied.basic,
           ...(copied.curves ? { curves: copied.curves } : {}),
           ...(copied.colorGrading ? { colorGrading: copied.colorGrading } : {}),
+          ...(copied.hsl ? { hsl: copied.hsl } : {}),
+          ...(copied.detail ? { detail: copied.detail } : {}),
           ...(copied.vignette ? { vignette: copied.vignette } : {}),
           ...(withGeometry
             ? {
@@ -253,6 +264,43 @@ export default function useBatchActions({ showToast }) {
     }
   }, []);
 
+  // 批量自动调色：逐张分析原图统计（analyze_image 读磁盘原图，所见即烘焙源）→
+  // suggestGrade 出建议 → 基线取中性 ops 整体替换影调域（各图旧影调不参与合成），
+  // preserveGeometry 保留每张图裁剪/旋转。单张失败不中断；防重入 + 进度 Toast 同上
+  const autoGradeRunningRef = useRef(false);
+  const handleAutoGrade = useCallback(async () => {
+    if (!api.isBridgeAvailable() || autoGradeRunningRef.current) return;
+    const ids = [...useGalleryStore.getState().selectedIds];
+    if (ids.length === 0) return;
+    autoGradeRunningRef.current = true;
+    const toastId = toast.loading(`自动调色中 0/${ids.length}…`);
+    let ok = 0;
+    const failed = [];
+    for (const id of ids) {
+      try {
+        const analysis = await api.analyzeImage(id);
+        if (analysis?.error) throw new Error(analysis.error);
+        const params = toEditParams(applyPresetToOps(suggestGrade(analysis), {}));
+        const result = await api.saveEdits(id, params, {
+          label: '自动调色',
+          preserveGeometry: true,
+        });
+        if (result?.error) throw new Error(result.error);
+        ok++;
+      } catch (e) {
+        failed.push(id);
+        console.error('[自动调色] 图片失败:', id, e.message);
+      }
+      toast.loading(`自动调色中 ${ok + failed.length}/${ids.length}…`, { id: toastId });
+    }
+    autoGradeRunningRef.current = false;
+    if (failed.length === 0) {
+      toast.success(`已完成 ${ok} 张自动调色`, { id: toastId });
+    } else {
+      toast.error(`已完成 ${ok} 张，${failed.length} 张失败（可重试）`, { id: toastId });
+    }
+  }, []);
+
   // 删除在途互斥：ConfirmDialog 全程保持挂载，await 期间按住 Enter 会重复触发
   // onConfirm → 二次删除 + stats 双减（勾选清理在 await 之后，审查批 8 Q-03）
   const deletingRef = useRef(false);
@@ -276,17 +324,22 @@ export default function useBatchActions({ showToast }) {
         console.error('[batch] 批量删除失败:', e.message);
         results = { error: errText('批量删除失败', e) };
       }
+      const batchError = !Array.isArray(results) && results?.error;
+      if (batchError) {
+        // 整批失败（一条都没删成）：保留勾选供直接重试，只收确认框；
+        // 此时无任何删除，不翻页不清选择
+        setPendingBatchAction(null);
+        showToast(friendlyError(results.error), 'error');
+        return;
+      }
       store.clearSelection();
       setPendingBatchAction(null);
       // batchDeleteImagesToTrash 只回推成功行（失败行不回推、无 error 元素）：
       // 成功数 = 返回长度，失败数 = 请求数 − 成功数；ghost id 也计入失败而非静默成功（审查批 8 Q-02）
-      const batchError = !Array.isArray(results) && results?.error;
       const list = Array.isArray(results) ? results : [];
-      const failedCount = batchError ? deletedIds.length : deletedIds.length - list.length;
+      const failedCount = deletedIds.length - list.length;
       okCount = list.length;
-      if (batchError) {
-        showToast(friendlyError(results.error), 'error');
-      } else if (failedCount > 0) {
+      if (failedCount > 0) {
         showToast(`已删除 ${okCount} 张，${failedCount} 张失败（文件可能被占用）`, 'error');
       } else {
         offerDeleteUndo(list, `已删除 ${deletedCount} 张图片`, {
@@ -321,5 +374,6 @@ export default function useBatchActions({ showToast }) {
     handleBatchUpdate,
     handleSyncEdits,
     handleApplyPreset,
+    handleAutoGrade,
   };
 }

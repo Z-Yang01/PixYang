@@ -669,6 +669,177 @@ describe('ImageViewer', () => {
     expect(screen.getByText('100%')).toBeInTheDocument();
   });
 
+  it('编辑模式：锐化滑杆写 detail 并随保存落库（预览不呈现属能力矩阵设计）', async () => {
+    mockEditBridge();
+    render(<ImageViewer {...baseProps()} />);
+    await enterEdit();
+    const section = [...document.querySelectorAll('.editor-crop-section')].find(
+      (s2) => s2.querySelector('.editor-crop-header span')?.textContent === '细节'
+    );
+    expect(section).toBeTruthy();
+    const inputs = section.querySelectorAll('.editor-slider-row input');
+    expect(inputs.length).toBe(2);
+    expect(inputs[0].value).toBe('0');
+    fireEvent.change(inputs[0], { target: { value: '55' } });
+    fireEvent.change(inputs[1], { target: { value: '30' } });
+    fireEvent.click(screen.getByTitle('保存编辑参数（原图不动，可随时回到当前效果）'));
+    await vi.waitFor(() => {
+      expect(window.pixyang.saveEdits).toHaveBeenCalledTimes(1);
+      const params = window.pixyang.saveEdits.mock.calls[0][1];
+      expect(params.detail).toEqual({ sharpness: 55, noise: 30 });
+    });
+  });
+
+  it('编辑模式：拉直滑杆——自动套内接框、预览旋转、保存落库含 crop.angle、归零恢复', async () => {
+    mockEditBridge();
+    render(<ImageViewer {...baseProps()} />);
+    await enterEdit();
+    const straighten = [...document.querySelectorAll('.editor-slider-row')].find(
+      (r) => r.querySelector('span')?.textContent === '拉直'
+    );
+    expect(straighten).toBeTruthy();
+    // +6°：crop 自动创建（同比例内接框）+ 预览变换追加反向旋转
+    fireEvent.change(straighten.querySelector('input'), { target: { value: '6' } });
+    await vi.waitFor(() => {
+      const layer = document.querySelector('.editor-transform-layer');
+      expect(layer.style.transform).toContain('rotate(-6deg)');
+      const box = document.querySelector('.editor-straighten-frame .editor-crop-box');
+      expect(box).toBeTruthy();
+    });
+    const saveBtn = screen.getByTitle('保存编辑参数（原图不动，可随时回到当前效果）');
+    fireEvent.click(saveBtn);
+    await vi.waitFor(() => {
+      const params = window.pixyang.saveEdits.mock.calls[0][1];
+      expect(params.crop.angle).toBe(6);
+      expect(params.crop.w).toBeGreaterThan(0);
+    });
+    // 归零：等保存在途态释放后恢复拉直前的无裁剪态
+    await vi.waitFor(() => {
+      expect(
+        screen.getByTitle('保存编辑参数（原图不动，可随时回到当前效果）').textContent
+      ).toContain('参数已保存');
+    });
+    fireEvent.change(straighten.querySelector('input'), { target: { value: '0' } });
+    expect(document.querySelector('.editor-straighten-frame')).toBeNull();
+    // 角度态禁框选
+    fireEvent.change(straighten.querySelector('input'), { target: { value: '4' } });
+    expect(screen.getByTitle(/微调请先将拉直归零/)).toBeDisabled();
+  });
+
+  it('编辑模式：HSL 分色面板——滑杆写 hsl、历史可撤销、保存落库含 hsl', async () => {
+    mockEditBridge();
+    render(<ImageViewer {...baseProps()} />);
+    await enterEdit();
+    const section = screen.getByText('HSL 分色').closest('.editor-crop-section');
+    const inputs = section.querySelectorAll('.editor-slider-row input');
+    expect(inputs.length).toBe(24);
+    // 红·色相 +40 → 预览滑杆即时反映（不直接写库）
+    fireEvent.change(inputs[0], { target: { value: '40' } });
+    expect(inputs[0].value).toBe('40');
+    const saveBtn = screen.getByTitle('保存编辑参数（原图不动，可随时回到当前效果）');
+    expect(saveBtn).toBeEnabled();
+    fireEvent.click(saveBtn);
+    await vi.waitFor(() => {
+      expect(window.pixyang.saveEdits).toHaveBeenCalledTimes(1);
+      const params = window.pixyang.saveEdits.mock.calls[0][1];
+      expect(params.hsl.hue[0]).toBe(40);
+      expect(params.hsl.sat.every((v) => v === 0)).toBe(true);
+    });
+    // 键盘调整走 700ms 收敛窗：等它落一条历史后撤销才可用
+    await new Promise((r) => setTimeout(r, 750));
+    const undo = [...document.querySelectorAll('.editor-panel-footer button')].find(
+      (b) => b.textContent.trim() === '撤销' && !b.disabled
+    );
+    expect(undo).toBeTruthy();
+    fireEvent.click(undo);
+    expect(section.querySelector('.editor-slider-row input').value).toBe('0');
+  });
+
+  it('编辑模式：自动调色——分析建议走预设路径进历史栈，不直接写库', async () => {
+    mockEditBridge();
+    window.pixyang.analyzeImage = vi.fn().mockResolvedValue({
+      mean: { r: 0.3, g: 0.35, b: 0.6, l: 0.416667 },
+      p05: 0.75,
+      p50: 0.8,
+      p95: 0.98,
+      shadowClipPct: 0,
+      highlightClipPct: 0.15,
+    });
+    const updateMock = window.pixyang.updateImage;
+    const saveMock = window.pixyang.saveEdits;
+    render(<ImageViewer {...baseProps()} />);
+    await enterEdit();
+    const exposure = document.querySelector('.editor-slider-row input[type="range"]');
+    expect(Number(exposure.value)).toBe(0);
+    fireEvent.click(screen.getByTitle(/按画面直方图分析自动设置影调/));
+    await vi.waitFor(() => {
+      // suggestGrade 手算锁定：曝光 -0.66（与 shared/useBatchActions 单测同源用例）
+      expect(Number(exposure.value)).toBe(-0.66);
+      expect(window.pixyang.analyzeImage).toHaveBeenCalledWith(3);
+      // 建议只进 UI 历史栈：既不写参数也不动原图元数据，保存由人工 Ctrl+S 决定
+      expect(saveMock).not.toHaveBeenCalled();
+      expect(updateMock).not.toHaveBeenCalled();
+    });
+  });
+
+  it('编辑模式：AI 调色——读取设置经视觉模型建议进历史栈，不直接写库', async () => {
+    mockEditBridge();
+    window.pixyang.getSettings = vi.fn().mockResolvedValue({
+      ai_base_url: 'https://llm.example.com/v1/',
+      ai_api_key: 'sk-test',
+      ai_model: 'vision-model',
+    });
+    window.pixyang.analyzeImage = vi.fn().mockResolvedValue({ p50: 0.5 });
+    window.pixyang.getExif = vi.fn().mockResolvedValue({ camera: 'Nikon Z6', gps: 'x' });
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () =>
+        Promise.resolve({
+          choices: [
+            {
+              message: {
+                content:
+                  '```json\n{"basic":{"exposure":0.5,"contrast":10,"crop":{"x":0},"masks":[1]}}\n```',
+              },
+            },
+          ],
+        }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const saveMock = window.pixyang.saveEdits;
+    render(<ImageViewer {...baseProps()} />);
+    await enterEdit();
+    const exposure = document.querySelector('.editor-slider-row input[type="range"]');
+    fireEvent.click(screen.getByTitle(/由 AI 建议影调/));
+    await vi.waitFor(() => {
+      // 请求面：去尾斜杠的 base + Bearer + 仅 text 部件（happy-dom 底图无 naturalWidth，纯统计请求）
+      const [url, init] = fetchMock.mock.calls[0];
+      expect(url).toBe('https://llm.example.com/v1/chat/completions');
+      expect(init.headers.Authorization).toBe('Bearer sk-test');
+      expect(init.body).toContain('"model":"vision-model"');
+      // 白名单：模型越界给的 crop/masks 被丢弃，exposure 0.5 进滑杆
+      expect(Number(exposure.value)).toBe(0.5);
+      expect(saveMock).not.toHaveBeenCalled();
+      expect(window.pixyang.updateImage).not.toHaveBeenCalled();
+    });
+    vi.unstubAllGlobals();
+  });
+
+  it('编辑模式：AI 调色未配置密钥——不发请求并提示去设置', async () => {
+    mockEditBridge();
+    window.pixyang.getSettings = vi.fn().mockResolvedValue({});
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    render(<ImageViewer {...baseProps()} />);
+    await enterEdit();
+    fireEvent.click(screen.getByTitle(/由 AI 建议影调/));
+    await vi.waitFor(() => {
+      expect(window.pixyang.getSettings).toHaveBeenCalled();
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
+    vi.unstubAllGlobals();
+  });
+
   it('编辑模式：退出/重进裁剪模式保留已画裁剪框', async () => {
     mockEditBridge();
     const rectSpy = mockSquareViewport();

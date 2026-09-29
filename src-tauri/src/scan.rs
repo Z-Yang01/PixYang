@@ -5,6 +5,7 @@
 use crate::error::PixError;
 use crate::naming;
 use serde::Serialize;
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 pub const VISIBLE_FORMATS: [&str; 8] = [
@@ -44,11 +45,17 @@ fn collected(filename: String, filepath: String, size: u64, format: String) -> C
 /// 镜像 fs:scan-directory（scanImageFiles(dir, false)）：递归扫描可见图片并为
 /// jpg 检测同目录同名 NEF。路径无效/非目录/读失败均返回空集（与 JS 一致）。
 pub fn scan_directory(dir: &Path) -> Result<Vec<CollectedFile>, PixError> {
-    Ok(scan_directory_inner(dir, false))
+    let mut files = scan_visible_files(dir, false);
+    annotate_raw_pairs(&mut files);
+    Ok(files)
 }
 
-/// include_raw = true 时 NEF 作为独立条目收集（相机同步口径）
-fn scan_directory_inner(dir: &Path, include_raw: bool) -> Vec<CollectedFile> {
+/// include_raw = true 时 NEF 作为独立条目收集（相机同步口径，无配对注记）
+pub fn scan_directory_include_raw(dir: &Path) -> Vec<CollectedFile> {
+    scan_visible_files(dir, true)
+}
+
+fn scan_visible_files(dir: &Path, include_raw: bool) -> Vec<CollectedFile> {
     if !dir.is_absolute() {
         eprintln!("[扫描] 目录路径无效: {}", dir.display());
         return vec![];
@@ -59,9 +66,6 @@ fn scan_directory_inner(dir: &Path, include_raw: bool) -> Vec<CollectedFile> {
     }
     let mut files = Vec::new();
     scan_into(&mut files, dir, 0, include_raw);
-    if !include_raw {
-        annotate_raw_pairs(&mut files);
-    }
     files
 }
 
@@ -106,27 +110,32 @@ fn scan_into(files: &mut Vec<CollectedFile>, dir: &Path, depth: usize, include_r
 }
 
 /// 镜像 annotateRawPairs：为 jpg/jpeg 条目按 pair_base（大小写不敏感）在同目录
-/// 查找 NEF，命中补 raw_source/raw_filename
+/// 查找 NEF，命中补 raw_source/raw_filename。目录清单按目录缓存，避免每个 jpg 重读一次
 fn annotate_raw_pairs(files: &mut [CollectedFile]) {
+    let mut dir_cache: HashMap<String, Vec<String>> = HashMap::new();
     for f in files.iter_mut() {
         if f.format != ".jpg" && f.format != ".jpeg" {
             continue;
         }
         let dir = crate::image_group::dirname(&f.filepath);
-        let names = match std::fs::read_dir(Path::new(&dir)) {
-            Ok(entries) => entries
-                .flatten()
-                .map(|e| e.file_name().to_string_lossy().to_string())
-                .collect::<Vec<String>>(),
-            Err(e) => {
-                eprintln!("[扫描] 检测 NEF 失败: {dir} {e}");
-                continue;
-            }
+        let matched = {
+            let names = dir_cache.entry(dir.clone()).or_insert_with(|| {
+                match std::fs::read_dir(Path::new(&dir)) {
+                    Ok(entries) => entries
+                        .flatten()
+                        .map(|e| e.file_name().to_string_lossy().to_string())
+                        .collect::<Vec<String>>(),
+                    Err(e) => {
+                        eprintln!("[扫描] 检测 NEF 失败: {dir} {e}");
+                        Vec::new()
+                    }
+                }
+            });
+            let base = naming::pair_base(&f.filename);
+            names.iter().find(|n| {
+                naming::extname(n).to_lowercase() == ".nef" && naming::pair_base(n) == base
+            })
         };
-        let base = naming::pair_base(&f.filename);
-        let matched = names
-            .iter()
-            .find(|n| naming::extname(n).to_lowercase() == ".nef" && naming::pair_base(n) == base);
         if let Some(nef_name) = matched {
             f.raw_source = Some(Path::new(&dir).join(nef_name).to_string_lossy().to_string());
             f.raw_filename = Some(nef_name.clone());
@@ -163,7 +172,7 @@ pub fn collect_import_files(paths: &[PathBuf]) -> Result<Vec<CollectedFile>, Pix
         }
     }
     for d in dirs {
-        files.extend(scan_directory_inner(&d, false));
+        files.extend(scan_visible_files(&d, false));
     }
     annotate_raw_pairs(&mut files);
     Ok(files)

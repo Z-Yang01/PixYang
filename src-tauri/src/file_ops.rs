@@ -16,14 +16,8 @@ use std::path::{Path, PathBuf};
 // 镜像 extractExifBatch 的 BATCH=8：EXIF/导入进度每批处理完发射一次
 pub const EXIF_BATCH: usize = 8;
 
-/// 今天 YYYY-MM-DD（days-since-epoch 民用历算法，免 chrono 依赖）
-pub fn today_ymd() -> String {
-    let secs = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs() as i64)
-        .unwrap_or(0);
-    let days = secs.div_euclid(86400);
-    // Howard Hinnant civil_from_days
+/// days-since-epoch → YYYY-MM-DD（Howard Hinnant civil_from_days，免 chrono 依赖）
+pub fn ymd_from_days(days: i64) -> String {
     let z = days + 719_468;
     let era = z.div_euclid(146_097);
     let doe = z - era * 146_097;
@@ -35,6 +29,15 @@ pub fn today_ymd() -> String {
     let m = if mp < 10 { mp + 3 } else { mp - 9 };
     let y = if m <= 2 { y + 1 } else { y };
     format!("{y:04}-{m:02}-{d:02}")
+}
+
+/// 今天 YYYY-MM-DD
+pub fn today_ymd() -> String {
+    let secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0);
+    ymd_from_days(secs.div_euclid(86400))
 }
 
 /// 镜像 moveFileSafe：rename 优先，EXDEV 回退 copy+delete
@@ -53,27 +56,36 @@ pub fn move_file_safe(from: &Path, to: &Path) -> Result<(), PixError> {
     }
 }
 
-fn is_path_taken(conn: &Connection, full_path: &str, exclude_id: Option<i64>) -> bool {
-    let taken = match exclude_id {
+fn db_path_taken(conn: &Connection, full_path: &str, exclude_id: Option<i64>) -> Option<bool> {
+    let row: rusqlite::Result<Option<()>> = match exclude_id {
         Some(id) => conn
             .query_row(
                 "SELECT 1 FROM images WHERE filepath = ?1 COLLATE NOCASE AND id != ?2",
                 rusqlite::params![full_path, id],
                 |_| Ok(()),
             )
-            .optional()
-            .unwrap_or(None)
-            .is_some(),
+            .optional(),
         None => conn
             .query_row(
                 "SELECT 1 FROM images WHERE filepath = ?1 COLLATE NOCASE",
                 [full_path],
                 |_| Ok(()),
             )
-            .optional()
-            .unwrap_or(None)
-            .is_some(),
+            .optional(),
     };
+    match row {
+        Ok(hit) => Some(hit.is_some()),
+        // 查询失败不能静默当「未占用」：那会让 INSERT OR IGNORE 吞掉本次导入。
+        // 记日志留档，行为维持原样（当未占用，靠盘上 exists 兜底）
+        Err(e) => {
+            eprintln!("[导入] 占用查询失败，按未占用处理: {full_path} {e}");
+            None
+        }
+    }
+}
+
+fn is_path_taken(conn: &Connection, full_path: &str, exclude_id: Option<i64>) -> bool {
+    let taken = db_path_taken(conn, full_path, exclude_id).unwrap_or(false);
     taken || Path::new(full_path).exists()
 }
 
@@ -125,16 +137,7 @@ pub fn import_one(
     // 记录）时只查盘会撞 filepath UNIQUE——INSERT OR IGNORE 把本次导入静默吞掉，
     // 新文件内容挂进旧记录的旧元数据，且导入计数与列表条数漂移
     let unique_name = naming::generate_unique_filename(&sub_dir, &safe_name, &taken, |p| {
-        p.exists()
-            || conn
-                .query_row(
-                    "SELECT 1 FROM images WHERE filepath = ?1 COLLATE NOCASE",
-                    [p.to_string_lossy()],
-                    |_| Ok(()),
-                )
-                .optional()
-                .unwrap_or(None)
-                .is_some()
+        p.exists() || db_path_taken(conn, &p.to_string_lossy(), None).unwrap_or(false)
     });
     let dest_path = sub_dir.join(&unique_name);
     let src_path = str_or_empty(img.get("filepath"));
@@ -293,12 +296,12 @@ pub fn import_images(
     for (_, group) in &groups {
         let jpg = group.jpg.as_ref().map(|j| {
             let mut v = import_file_to_value(j);
-            apply_date_override(&mut v, date_override, today);
+            apply_date_override(&mut v, date_override);
             v
         });
         let nef = group.nef.as_ref().map(|n| {
             let mut v = import_file_to_value(n);
-            apply_date_override(&mut v, date_override, today);
+            apply_date_override(&mut v, date_override);
             v
         });
         prepared.push((jpg, nef));
@@ -355,7 +358,7 @@ fn import_file_to_value(f: &image_group::ImportFile) -> Value {
 }
 
 /// 镜像 db:import-images 的日期链：dateOverride > 文件自带 importDate > EXIF 拍摄日期 > 文件 mtime > 今天
-fn apply_date_override(img: &mut Value, date_override: Option<&str>, today: &str) {
+fn apply_date_override(img: &mut Value, date_override: Option<&str>) {
     if let Some(d) = date_override.filter(|s| !s.is_empty()) {
         img["importDate"] = json!(d);
         return;
@@ -388,7 +391,6 @@ fn apply_date_override(img: &mut Value, date_override: Option<&str>, today: &str
             img["importDate"] = json!(crate::camera::mtime_ymd(Path::new(&src)));
         }
     }
-    let _ = today;
 }
 
 /// 镜像 renameImage：校验→NEF 跟随→磁盘改名（失败回滚）→DB 更新（失败双回滚）
@@ -810,16 +812,16 @@ mod tests {
         drop(f);
 
         let mut img = json!({ "filename": "noexif.jpg", "filepath": src.to_string_lossy() });
-        apply_date_override(&mut img, None, "2026-09-21");
+        apply_date_override(&mut img, None);
         assert_eq!(img["importDate"], "2020-06-15");
 
         let mut overridden = json!({ "filename": "noexif.jpg", "filepath": src.to_string_lossy() });
-        apply_date_override(&mut overridden, Some("2026-01-02"), "2026-09-21");
+        apply_date_override(&mut overridden, Some("2026-01-02"));
         assert_eq!(overridden["importDate"], "2026-01-02");
 
         let mut missing =
             json!({ "filename": "noexif.jpg", "filepath": dir.join("gone.jpg").to_string_lossy() });
-        apply_date_override(&mut missing, None, "2026-09-21");
+        apply_date_override(&mut missing, None);
         assert!(missing["importDate"].as_str().unwrap_or("").is_empty());
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -941,11 +943,7 @@ mod tests {
         let conn = mem_db();
         let root = dir.join("root");
         // 失效记录：filepath 指向托管树内本次导入将命中的目标位，但文件已被外部删除
-        let ghost_path = root
-            .join("2026")
-            .join("09")
-            .join("20")
-            .join("ghost.jpg");
+        let ghost_path = root.join("2026").join("09").join("20").join("ghost.jpg");
         conn.execute(
             "INSERT INTO images (filename, filepath, import_date, notes) VALUES ('ghost.jpg', ?1, '2026-09-20', '旧记录')",
             rusqlite::params![ghost_path.to_string_lossy()],

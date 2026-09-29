@@ -100,14 +100,13 @@ export const tauriApi = {
   },
   openPath: (path) => tauriInvoke('open_path', { path }),
   backupDatabase: () => tauriInvoke('backup_database'),
-  renderEdit: (spec, inputPath, outputPath) =>
-    tauriInvoke('render_edit', { spec, inputPath, outputPath }),
   importImages: (files, dateOverride) =>
     tauriInvoke('import_images', { files, dateOverride: dateOverride ?? null }),
   renameImage: (id, newFilename) => tauriInvoke('rename_image', { id, newFilename }),
   exportImages: (ids, destDir) => tauriInvoke('export_images', { ids, destDir }),
   exportAlbumImages: (albumId, destDir) => tauriInvoke('export_album_images', { albumId, destDir }),
   getExif: (filepath) => tauriInvoke('get_exif', { filepath }),
+  analyzeImage: (id) => tauriInvoke('analyze_image', { id }),
   scanDirectory: (dirPath) => tauriInvoke('scan_directory', { dir: dirPath }),
   collectImportFiles: (paths) => tauriInvoke('collect_import_files', { paths }),
   updateImage: (id, updates) => tauriInvoke('update_image', { id, updates }),
@@ -140,6 +139,8 @@ export const tauriApi = {
       }
     ),
   getEditHistory: (id) => tauriInvoke('get_edit_history', { id }),
+  // 前端语义接缝（桥内闭环，无后端命令）：编辑底图是按 id 复用的 sidecar 校验缓存，
+  // 后端无会话注册表，此通道只供查看器统一收口退出/卸载路径
   editCancel: (id) => Promise.resolve({ ok: true }),
   // 编辑器三通道：spec 桥内构建（sourceHash 仅作 renderSpec 必填占位，Tauri 执行器不消费）；
   // bake/export 的输出格式、maxEdge、命名循环由 Rust 命令内部自理

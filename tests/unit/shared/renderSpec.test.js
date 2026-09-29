@@ -71,13 +71,13 @@ describe('editParamsToRenderSpec（纯函数转换）', () => {
     });
   });
 
-  it('7. crop.angle != 0 抛 not_implemented', () => {
-    expect(() => build({ crop: { x: 0, y: 0, w: 10, h: 10, angle: 15 } })).toThrow();
-    try {
-      build({ crop: { x: 0, y: 0, w: 10, h: 10, angle: 15 } });
-    } catch (e) {
-      expect(e.code).toBe('not_implemented');
-    }
+  it('7. crop.angle 透传进 crop 阶段（拉直；angle=0 缺省）', () => {
+    const spec = build({ crop: { x: 2, y: 3, w: 10, h: 10, angle: 15 } });
+    const cropStage = spec.stages.find((st) => st.kind === 'crop');
+    expect(cropStage.params.angle).toBe(15);
+    expect(cropStage.params).toMatchObject({ x: 2, y: 3, w: 10, h: 10 });
+    const plain = build({ crop: { x: 0, y: 0, w: 10, h: 10 } });
+    expect(plain.stages.find((st) => st.kind === 'crop').params.angle).toBe(0);
   });
 
   it('8. curves/hsl 已支持（无 unsupported 标记）且数据透传', () => {
@@ -115,7 +115,7 @@ describe('editSchema 深合并行为锁死', () => {
   it('deepMerge({a:{b:1}}, {a:null}) → a 回退默认（显式 null 覆盖为默认值，不抛错）', () => {
     // 行为锁死：crop 默认 null，输入 null 时保持 null；输入对象时完整保留
     const n = editSchema.normalizeEdits({ crop: { x: 1, y: 2, w: 10, h: 10 } });
-    expect(n.crop).toEqual({ x: 1, y: 2, w: 10, h: 10, ratio: 'free' });
+    expect(n.crop).toEqual({ x: 1, y: 2, w: 10, h: 10, ratio: 'free', angle: 0 });
     expect(editSchema.normalizeEdits({ crop: null }).crop).toBeNull();
   });
 });

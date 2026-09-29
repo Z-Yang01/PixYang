@@ -10,6 +10,7 @@ import {
 } from '@/components/ui/dialog';
 import { Loader2, FileImage, CheckCircle2, Check, FolderOpen } from 'lucide-react';
 import { formatFileSize, todayStr } from '@/lib/format';
+import { errText } from '@/lib/errorText';
 import api from '@/lib/api';
 
 const PREVIEWABLE = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp'];
@@ -55,7 +56,13 @@ export default function ImportDialog({ onClose, onDone, initialFiles = null }) {
     if (!api.isBridgeAvailable()) return;
     const paths = files.filter((f) => PREVIEWABLE.includes(f.format)).map((f) => f.filepath);
     if (paths.length === 0) return;
-    const urlMap = (await api.toFileUrls(paths)) || {};
+    let urlMap;
+    try {
+      urlMap = (await api.toFileUrls(paths)) || {};
+    } catch (e) {
+      console.error('[导入] 预览地址获取失败:', e.message);
+      return;
+    }
     const next = {};
     for (const [p, url] of Object.entries(urlMap)) {
       if (url) next[p] = url;
@@ -64,14 +71,30 @@ export default function ImportDialog({ onClose, onDone, initialFiles = null }) {
   };
 
   const handleSelectDir = async () => {
-    if (!api.isBridgeAvailable() || importing) return;
-    const dir = await api.selectDirectory();
+    // scanning 也算在途：扫描中允许再点会造成两个 scanDirectory 并发，
+    // 先落地的把 scanning 复位、后落地的可能让文件列表与所选目录错位
+    if (!api.isBridgeAvailable() || importing || scanning) return;
+    let dir;
+    try {
+      dir = await api.selectDirectory();
+    } catch (e) {
+      console.error('[导入] 选择目录失败:', e.message);
+      return;
+    }
     if (dir) {
       setSelectedDir(dir);
       setScanning(true);
       setResult(null);
       setError('');
-      const files = await api.scanDirectory(dir);
+      let files;
+      try {
+        files = await api.scanDirectory(dir);
+      } catch (e) {
+        console.error('[导入] 扫描目录失败:', e.message);
+        setError(errText('扫描目录失败', e));
+        setScanning(false);
+        return;
+      }
       setFoundFiles(files || []);
       setScanning(false);
     }
@@ -165,7 +188,11 @@ export default function ImportDialog({ onClose, onDone, initialFiles = null }) {
             </p>
             <div style={{ display: 'flex', gap: 8 }}>
               <Input value={selectedDir || ''} readOnly placeholder="未选择文件夹..." />
-              <Button variant="secondary" onClick={handleSelectDir} disabled={importing}>
+              <Button
+                variant="secondary"
+                onClick={handleSelectDir}
+                disabled={importing || scanning}
+              >
                 <FolderOpen className="size-4" /> 浏览
               </Button>
             </div>

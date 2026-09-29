@@ -402,28 +402,38 @@ fn finish_export(images: &[images_query::ImageRow], dest_dir: &str) -> Result<Va
     }
 }
 
-// ── 渲染执行器（迁移接缝 5 阶段 3） ──
+// ── 外围与编辑会话通道（多 agent 内核集成） ──
+
+// ── 图像分析（agent 调色的观测面） ──
+
+/// 短锁读行 → 锁外解码统计。统计对象是磁盘原图（参数编辑不落像素，分析所见即烘焙源）
+pub(crate) fn analyze_image_kernel(db: &Db, id: i64) -> Result<Value, crate::error::PixError> {
+    let filepath = {
+        let conn = db.write_lock();
+        match images_query::get_image_by_id(&conn, id)? {
+            Some(row) if row.hidden.unwrap_or(0) == 0 => row.filepath,
+            Some(_) => return Ok(json!({ "error": "隐藏的 NEF 记录不支持分析" })),
+            None => return Ok(json!({ "error": "图片不存在" })),
+        }
+    };
+    let img = image::ImageReader::open(&filepath)
+        .and_then(|r| r.with_guessed_format())
+        .map_err(|e| crate::error::PixError::Io(format!("读取图片失败: {e}")))?
+        .decode()
+        .map_err(|e| crate::error::PixError::Io(format!("解码失败: {e}")))?;
+    serde_json::to_value(crate::image_stats::compute_stats(&img))
+        .map_err(|e| crate::error::PixError::Io(format!("统计序列化失败: {e}")))
+}
 
 #[tauri::command]
-pub async fn render_edit(
-    spec: serde_json::Value,
-    input_path: String,
-    output_path: String,
-) -> Result<(u32, u32), String> {
+pub async fn analyze_image(db: State<'_, Db>, id: i64) -> Result<Value, String> {
+    let db = db.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
-        executor::render_spec_to_file(
-            &spec,
-            std::path::Path::new(&input_path),
-            std::path::Path::new(&output_path),
-        )
-        .map(|o| (o.width, o.height))
-        .map_err(|e| err_cn::text(&e))
+        analyze_image_kernel(&db, id).map_err(|e| err_cn::text(&e))
     })
     .await
     .map_err(|e| format!("后台任务失败：{}", err_cn::text(&e)))?
 }
-
-// ── 外围与编辑会话通道（多 agent 内核集成） ──
 
 // 镜像 fs:get-exif：完整 EXIF 仅限托管根内文件（images_root ∪ 数据库目录），越界返回空对象
 #[tauri::command]
@@ -663,17 +673,7 @@ fn ensure_edit_base(
             .map_err(|e| err_cn::text(&e))?;
         buf.into_inner()
     } else {
-        let rgba = oriented.to_rgba8();
-        let mut flat = image::RgbImage::new(rgba.width(), rgba.height());
-        for (x, y, px) in rgba.enumerate_pixels() {
-            let a = px.0[3] as f32 / 255.0;
-            let blend = |c: u8| (c as f32 * a + 255.0 * (1.0 - a)).round() as u8;
-            flat.put_pixel(
-                x,
-                y,
-                image::Rgb([blend(px.0[0]), blend(px.0[1]), blend(px.0[2])]),
-            );
-        }
+        let flat = thumbs::flatten_rgba_white(&oriented.to_rgba8());
         let mut buf = std::io::Cursor::new(Vec::new());
         let encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut buf, 92);
         flat.write_with_encoder(encoder)
@@ -949,11 +949,8 @@ pub async fn edit_bake(
             id,
             Path::new(&input_path),
         )?;
-        let result = {
-            let conn = db.write_lock();
-            edit_session::edit_bake(&conn, id, &edits, &spec, &base, &paths.thumbs_dir)
-                .map_err(|e| err_cn::text(&e))
-        };
+        let result = edit_session::edit_bake_db(&db, id, &edits, &spec, &base, &paths.thumbs_dir)
+            .map_err(|e| err_cn::text(&e));
         // 镜像 Electron：烘焙后缩略图由 rebuild 重生成（仅缺失者，后台跑，完成发 thumbnails-ready）
         if let Ok(v) = &result {
             if v.get("error").is_none() {
@@ -1175,7 +1172,12 @@ pub async fn batch_delete_images_to_trash(
         let conn = db.write_lock();
         ok_or_error_value(
             "批量删除失败",
-            trash::batch_delete_images_to_trash_core(&conn, &ids, &paths.thumbs_dir, &paths.trash_dir),
+            trash::batch_delete_images_to_trash_core(
+                &conn,
+                &ids,
+                &paths.thumbs_dir,
+                &paths.trash_dir,
+            ),
         )
     })
     .await
@@ -1302,6 +1304,46 @@ mod edit_cmd_tests {
                 { "kind": "encode", "params": { "format": "jpeg", "quality": 80 } }
             ]
         })
+    }
+
+    #[test]
+    fn analyze_image_统计锁定与隐藏拒绝() {
+        let dir = fresh_dir("analyze");
+        // PNG 保存像素精确：直方图桶断言不能走有损 JPEG
+        let src = dir.join("a.png");
+        DynamicImage::from(RgbaImage::from_fn(40, 30, |_, _| {
+            image::Rgba([100, 100, 60, 255])
+        }))
+        .save(&src)
+        .unwrap();
+        let conn = edit_mem_db();
+        let id = seed_record(&conn, "a.png", &src);
+        let db = Db::from_connection(conn);
+
+        let out = analyze_image_kernel(&db, id).unwrap();
+        assert!(out.get("error").is_none(), "{out}");
+        assert_eq!(out["width"], 40);
+        assert_eq!(out["height"], 30);
+        // make_jpeg 颜色 (100,100,60)：桶 r=25 g=25 b=15，亮度桶 (25+25+15)/3=21
+        assert_eq!(out["histogram"]["r"][25], 40 * 30);
+        assert_eq!(out["histogram"]["g"][25], 40 * 30);
+        assert_eq!(out["histogram"]["b"][15], 40 * 30);
+        assert_eq!(out["histogram"]["l"][21], 40 * 30);
+        assert_eq!(out["mean"]["l"], 0.339869);
+        assert_eq!(out["p50"], 0.337255);
+        assert_eq!(out["shadowClipPct"], 0.0);
+        assert_eq!(out["highlightClipPct"], 0.0);
+
+        {
+            let conn = db.write_lock();
+            conn.execute("UPDATE images SET hidden = 1 WHERE id = ?1", [id])
+                .unwrap();
+        }
+        let hidden = analyze_image_kernel(&db, id).unwrap();
+        assert_eq!(hidden["error"], "隐藏的 NEF 记录不支持分析");
+        let missing = analyze_image_kernel(&db, id + 99999).unwrap();
+        assert_eq!(missing["error"], "图片不存在");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

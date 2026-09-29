@@ -154,6 +154,7 @@ const ROUTES = [
     invokeArgs: { id: 2, newFilename: 'n.jpg' },
   },
   { method: 'getExif', args: ['E:/a.jpg'], cmd: 'get_exif', invokeArgs: { filepath: 'E:/a.jpg' } },
+  { method: 'analyzeImage', args: [5], cmd: 'analyze_image', invokeArgs: { id: 5 } },
   {
     method: 'scanDirectory',
     args: ['E:/dir'],

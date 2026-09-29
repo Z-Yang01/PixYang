@@ -28,10 +28,17 @@ describe('extractHistogram（直方图提取）', () => {
     expect(hist.r[63]).toBe(1);
     expect(hist.g[63]).toBe(1);
     expect(hist.b[63]).toBe(1);
-    // 灰 128 → 桶 32；亮度桶 = (32+32+32)>>1 = 48
+    // 灰 128 → 桶 32；亮度桶 = (32+32+32)/3 = 32（三通道平均，必落 64 桶内）
     expect(hist.r[32]).toBe(1);
-    expect(hist.l[48]).toBe(1);
+    expect(hist.l[32]).toBe(1);
     expect(hist.r.reduce((a, b) => a + b, 0)).toBe(4);
+  });
+
+  it('亮度桶不越界：纯白三通道平均落最大桶', () => {
+    const { canvas } = fakeCanvas(new Uint8Array([255, 255, 255, 255]), 1, 1);
+    const hist = extractHistogram(canvas);
+    expect(hist.l[63]).toBe(1);
+    expect(hist.l.slice(0, 63).every((n) => n === 0)).toBe(true);
   });
 
   it('空画布返回 null', () => {

@@ -6,6 +6,8 @@
 // - geometry（rotate/flip）先于 crop；
 // - crop 的 x/y/w/h 坐标是 geometry 应用之前的底图坐标系（与 EditParams/前端裁剪框同源），
 //   执行器负责把矩形随 geometry 参数映射到变换后坐标系再 extract；
+//   例外：crop.angle ≠ 0（拉直）时矩形直接是「geometry + 拉直旋转后」空间坐标，
+//   执行器先按角度旋转位图（双线性、出界填黑）再取矩形，跳过 geometry 映射；
 // - encode 永远最后。
 const PIPELINE_ORDER = [
   'decode', // 解码/RAW 显影（M8 前：常规格式直读）
@@ -53,7 +55,7 @@ const CAPABILITY_MATRIX = {
     preview: 'supported',
     export: 'supported',
     bake: 'supported',
-    note: '高光/阴影为 gamma 近似，M8 换分区曲线',
+    note: 'R71 起高光/阴影为亮度掩蔽算子（Rec.709 带 smoothstep 加权），三端同式',
   },
   curves: {
     preview: 'supported',
@@ -71,7 +73,7 @@ const CAPABILITY_MATRIX = {
     preview: 'partial',
     export: 'supported',
     bake: 'supported',
-    note: '导出为真亮度加权；预览为逐通道 LUT 近似（通道值代替亮度）',
+    note: '导出与 WebGL2 预览均为真亮度加权；仅 SVG 回退链为逐通道 LUT 近似（通道值代替亮度）',
   },
   saturation: { preview: 'supported', export: 'supported', bake: 'supported' },
   masks: {
@@ -82,9 +84,9 @@ const CAPABILITY_MATRIX = {
   },
   detail: {
     preview: 'partial',
-    export: 'partial',
-    bake: 'partial',
-    note: 'sharpness supported；noiseReduction unsupported',
+    export: 'supported',
+    bake: 'supported',
+    note: 'sharpness（近似 USM）与 noiseReduction（亮度域 3×3 高斯）均实现；预览为画布分辨率邻域近似（视觉同效，不做像素对拍）',
   },
   lens: {
     preview: 'partial',
@@ -93,7 +95,11 @@ const CAPABILITY_MATRIX = {
     note: 'vignette supported（预览 CSS 渐变精确对齐）；profile/distortion/chromatic unsupported (M8)',
   },
   geometry: { preview: 'supported', export: 'supported', bake: 'supported' },
-  crop: { preview: 'supported', export: 'supported', bake: 'supported' },
+  crop: {
+    preview: 'partial', // angle 拉直预览未实现（UI/预览为后续切片）；90° 步进几何预览经 CSS
+    export: 'supported', // 含 crop.angle 拉直：双线性旋转（出界填黑）后取矩形
+    bake: 'supported',
+  },
   encode: {
     preview: 'supported',
     export: 'supported',

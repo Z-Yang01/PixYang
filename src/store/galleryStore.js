@@ -29,6 +29,9 @@ let loadImagesSeq = null;
 // images 本地写世代号：loadImages 在途期间发生的本地改动（评分/收藏/日期的 merge 写回）
 // 会被晚到的旧快照整页覆盖回滚；落地时比对世代号，不一致即丢弃该陈旧响应（审查批 8 R-2）
 let imagesLocalRev = 0;
+// 丢弃分支的尾随补查去重标志：防同窗口内叠加多个排队重查；补查本身再被丢弃会重新排队，
+// 本地写停止后必然收敛
+let imagesRefetchQueued = false;
 
 // 图库共享状态：筛选/排序/分页、勾选集、网格设置。
 // Sidebar/TopBar/ImageGrid 直接订阅，消除 App → 子组件的逐层透传。
@@ -87,8 +90,13 @@ const useGalleryStore = create((set, get) => ({
       nextOrder = by === 'filename' ? 'ASC' : 'DESC';
     }
     set({ sortBy: nextSort, sortOrder: nextOrder, page: 1 });
-    api.setSetting('sort_by', nextSort);
-    api.setSetting('sort_order', nextOrder);
+    // 持久化失败只留档：排序本身已生效，下次启动回退默认排序可接受
+    api
+      .setSetting('sort_by', nextSort)
+      ?.catch?.((e) => console.error('[galleryStore] 排序持久化失败:', e?.message));
+    api
+      .setSetting('sort_order', nextOrder)
+      ?.catch?.((e) => console.error('[galleryStore] 排序持久化失败:', e?.message));
   },
 
   setSortFromSettings: (by, order) =>
@@ -246,8 +254,18 @@ const useGalleryStore = create((set, get) => ({
           });
       const result = await api.getImages(options);
       if (!loadImagesSeq.isCurrent(token)) return;
-      // 在途期间有本地写：旧快照落地会把刚生效的评分/收藏/日期 merge 回滚掉，直接丢弃
-      if (imagesLocalRev !== revAtIssue) return;
+      // 在途期间有本地写：旧快照落地会把刚生效的评分/收藏/日期 merge 回滚掉，直接丢弃；
+      // 丢弃后补发一次尾随重查，否则界面停在旧筛选列表直到下一次任意触发（审查批 8 R-2 后续）
+      if (imagesLocalRev !== revAtIssue) {
+        if (!imagesRefetchQueued) {
+          imagesRefetchQueued = true;
+          queueMicrotask(() => {
+            imagesRefetchQueued = false;
+            get().loadImages();
+          });
+        }
+        return;
+      }
       set({ images: result.images, totalImages: result.total });
       // 页码越界（外部删除后总页数变少等）：回钳到最后一页，page 变化由 wiring effect 自动重查
       if (!override && result.images.length === 0 && result.total > 0 && state.page > 1) {

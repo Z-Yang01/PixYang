@@ -19,7 +19,6 @@ export function isEnterSubmit(e) {
 export const GLOBAL_ACTIONS = {
   FocusSearch: 'focusSearch',
   ToggleHelp: 'toggleHelp',
-  ClearSelection: 'clearSelection',
   DeleteSelected: 'deleteSelected',
   SelectAll: 'selectAll',
   ExportSelected: 'exportSelected',
@@ -112,7 +111,6 @@ export function matchGlobalShortcut(e) {
   if (key === '?' || (key === '/' && e.shiftKey)) return GLOBAL_ACTIONS.ToggleHelp;
   if (key === '/') return GLOBAL_ACTIONS.FocusSearch;
   if (key === 'Delete') return GLOBAL_ACTIONS.DeleteSelected;
-  if (key === 'Escape') return GLOBAL_ACTIONS.ClearSelection;
   return null;
 }
 

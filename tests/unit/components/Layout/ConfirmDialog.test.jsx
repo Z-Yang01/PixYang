@@ -45,10 +45,10 @@ describe('ConfirmDialog', () => {
     expect(onCancel).not.toHaveBeenCalled();
   });
 
-  it('点击取消回调 onCancel（onClick 与 radix onOpenChange 双通道各触发一次，共 2 次）', () => {
+  it('点击取消只回调 onCancel 一次（统一走 radix onOpenChange，无 onClick 双通道）', () => {
     const onCancel = vi.fn();
     render(<ConfirmDialog title="T" message="M" onConfirm={vi.fn()} onCancel={onCancel} />);
     fireEvent.click(screen.getByText('取消'));
-    expect(onCancel).toHaveBeenCalledTimes(2);
+    expect(onCancel).toHaveBeenCalledTimes(1);
   });
 });

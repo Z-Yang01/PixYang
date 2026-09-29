@@ -5,7 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Search, Trash2, Tag } from 'lucide-react';
 import ConfirmDialog from '../Layout/ConfirmDialog';
 import { isEnterSubmit } from '@/lib/shortcuts';
-import { friendlyError } from '@/lib/errorText';
+import { friendlyError, errText } from '@/lib/errorText';
 import api from '@/lib/api';
 
 const TAG_COLORS = [
@@ -31,13 +31,24 @@ export default function TagManager({ onSelectTag, onRefresh }) {
 
   const loadTags = async () => {
     if (!api.isBridgeAvailable()) return;
-    const t = await api.getTags();
-    setTags(t);
+    try {
+      const t = await api.getTags();
+      setTags(t || []);
+    } catch (e) {
+      console.error('[tags] 加载标签失败:', e.message);
+    }
   };
 
   const handleCreate = async () => {
     if (!newName.trim() || !api.isBridgeAvailable()) return;
-    const tag = await api.createTag(newName.trim(), newColor);
+    let tag;
+    try {
+      tag = await api.createTag(newName.trim(), newColor);
+    } catch (e) {
+      console.error('[tags] 创建标签失败:', e.message);
+      toast.error(errText('创建标签失败', e));
+      return;
+    }
     // 失败（重名/DB 异常）从静默变为可见：输入框保留原文供改名重试（审查批 8 Q-09）
     if (tag?.error) {
       toast.error(friendlyError(tag.error));
@@ -56,7 +67,14 @@ export default function TagManager({ onSelectTag, onRefresh }) {
     const id = deleteTarget?.id;
     setDeleteTarget(null);
     if (!id || !api.isBridgeAvailable()) return;
-    const result = await api.deleteTag(id);
+    let result;
+    try {
+      result = await api.deleteTag(id);
+    } catch (e) {
+      console.error('[tags] 删除标签失败:', e.message);
+      toast.error(errText('删除标签失败', e));
+      return;
+    }
     if (result?.error) {
       toast.error(friendlyError(result.error));
       return;

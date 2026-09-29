@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import {
   ListChecks,
@@ -46,6 +46,7 @@ export default function BatchBar({
   onBatchUpdate,
   onSyncEdits,
   onApplyPreset,
+  onAutoGrade,
 }) {
   const selectedIds = useGalleryStore((s) => s.selectedIds);
   const totalCount = useGalleryStore((s) => s.totalImages);
@@ -53,15 +54,15 @@ export default function BatchBar({
   const hasCopiedEdits = useGalleryStore((s) => !!s.copiedEdits);
   const [userPresets, setUserPresets] = useState([]);
 
-  useEffect(() => {
-    let alive = true;
-    api.getPresets()?.then?.((list) => {
-      if (alive) setUserPresets((list || []).filter((pr) => pr?.params?.basic));
-    });
-    return () => {
-      alive = false;
-    };
-  }, []);
+  // 打开预设下拉时现拉（而非挂载时拉一次）：BatchBar 在图库页常驻不重挂，
+  // 编辑器里新存的预设不重拉就永远不出现
+  const loadPresets = () => {
+    if (!api.isBridgeAvailable()) return;
+    api
+      .getPresets()
+      ?.then?.((list) => setUserPresets((list || []).filter((pr) => pr?.params?.basic)))
+      .catch?.((e) => console.error('[batch] 预设加载失败:', e.message));
+  };
 
   if (selectedIds.size === 0) return null;
 
@@ -165,7 +166,7 @@ export default function BatchBar({
         </DropdownMenu>
       )}
 
-      <DropdownMenu>
+      <DropdownMenu onOpenChange={(open) => open && loadPresets()}>
         <DropdownMenuTrigger asChild>
           <Button
             variant="secondary"
@@ -176,6 +177,12 @@ export default function BatchBar({
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start">
+          <DropdownMenuItem
+            title="逐张分析画面直方图，自动设置影调（保留各图裁剪/旋转，可再手动微调）"
+            onClick={() => onAutoGrade?.()}
+          >
+            自动调色（按画面分析）
+          </DropdownMenuItem>
           {BUILTIN_PRESETS.map((bp) => (
             <DropdownMenuItem
               key={bp.name}

@@ -67,7 +67,9 @@ export default function ImageGrid({
     filterFavorites,
     filterMinRating,
   });
-  const [allTags, setAllTags] = useState([]);
+  // 标签列表直接订阅 store（loadAppData 随计数刷新）：
+  // 本地挂载时拉一次的旧方案在标签变动后会把过期列表喂给快速标签菜单
+  const allTags = useGalleryStore((s) => s.tags);
   const [imageTags, setImageTags] = useState({});
   const [brokenThumbnails, setBrokenThumbnails] = useState(new Set());
   const [thumbUrls, setThumbUrls] = useState({});
@@ -102,10 +104,6 @@ export default function ImageGrid({
     const { items, counts } = groupImagesByDate(images);
     return { groupedItems: items, dateCounts: counts };
   }, [images]);
-
-  useEffect(() => {
-    loadAllTags();
-  }, []);
 
   // 页内图片 id 列表不变时不重复拉取标签
   const pageIdsKey = useMemo(() => images.map((img) => img.id).join(','), [images]);
@@ -296,12 +294,6 @@ export default function ImageGrid({
     if (el) el.scrollIntoView({ block: 'nearest' });
   }, [activeIndex]);
 
-  const loadAllTags = async () => {
-    if (!api.isBridgeAvailable()) return;
-    const tags = await api.getTags();
-    setAllTags(tags);
-  };
-
   // 批量解析本页 URL：列表优先小缩略图，无则中图/原图兜底
   const urlSeqRef = useRef(null);
   if (!urlSeqRef.current) urlSeqRef.current = createLoadSequencer();
@@ -353,8 +345,13 @@ export default function ImageGrid({
   const loadImageTags = async (imgs) => {
     if (!api.isBridgeAvailable()) return;
     const token = tagSeqRef.current.next();
-    const ids = imgs.map((img) => img.id);
-    const tagMap = await api.getBatchImageTags(ids);
+    let tagMap;
+    try {
+      tagMap = await api.getBatchImageTags(imgs.map((img) => img.id));
+    } catch (e) {
+      console.error('[grid] 标签加载失败:', e.message);
+      return;
+    }
     if (!tagSeqRef.current.isCurrent(token)) return;
     setImageTags(tagMap || {});
   };
@@ -382,7 +379,13 @@ export default function ImageGrid({
   const handleRatingChange = useCallback(
     async (image, rating) => {
       if (!api.isBridgeAvailable()) return;
-      await api.updateImage(image.id, { rating });
+      try {
+        await api.updateImage(image.id, { rating });
+      } catch (e) {
+        console.error('[grid] 评分失败:', e.message);
+        toast.error(errText('评分失败', e));
+        return;
+      }
       onImageUpdated?.(image.id, { rating });
     },
     [onImageUpdated]
@@ -402,12 +405,13 @@ export default function ImageGrid({
     } catch (e) {
       result = { error: errText('删除失败', e) };
     }
-    setSelectedIds(removeIdsFromSet(selectedIdsRef.current, [image.id]));
-    onImageUpdated?.();
+    // 失败先报错退出：图还在库里，不剪勾选、不触发全量刷新（对照 InfoPanel.handleDelete）
     if (result?.error) {
       toast.error(friendlyError(result.error));
       return;
     }
+    setSelectedIds(removeIdsFromSet(selectedIdsRef.current, [image.id]));
+    onImageUpdated?.();
     if (!result) return;
     offerDeleteUndo([result], `已删除「${image.filename}」`, {
       onRestored: () => onImageUpdated?.(),
@@ -419,7 +423,13 @@ export default function ImageGrid({
     async (image) => {
       if (!api.isBridgeAvailable()) return;
       const favorite = image.favorite ? 0 : 1;
-      await api.updateImage(image.id, { favorite });
+      try {
+        await api.updateImage(image.id, { favorite });
+      } catch (e) {
+        console.error('[grid] 收藏失败:', e.message);
+        toast.error(errText('操作失败', e));
+        return;
+      }
       onImageUpdated?.(image.id, { favorite });
     },
     [onImageUpdated]
@@ -431,7 +441,13 @@ export default function ImageGrid({
 
   const submitRename = async (name) => {
     if (!api.isBridgeAvailable() || !renameImage) return;
-    const result = await api.renameImage(renameImage.id, name);
+    let result;
+    try {
+      result = await api.renameImage(renameImage.id, name);
+    } catch (e) {
+      console.error('[grid] 重命名失败:', e.message);
+      return errText('重命名失败', e);
+    }
     if (result?.error) return friendlyError(result.error);
     setRenameImage(null);
     setFileUrls((prev) => {
@@ -469,10 +485,12 @@ export default function ImageGrid({
         }
       }
       // 仅当行的筛选归属可能改变（按该标签筛选中/搜索词命中标签名）才整页重查，
-      // 否则只刷侧栏计数：无参全量刷新每次 6 个 IPC + 整页缩略图重载（审查批 8 R-4）
+      // 否则只刷侧栏计数：无参全量刷新每次 6 个 IPC + 整页缩略图重载（审查批 8 R-4）；
+      // 添加分支同口径：按标签名搜索时新加的标签恰好命中搜索词，行也该出现
       const st = useGalleryStore.getState();
       const q = (st.search || '').trim().toLowerCase();
-      const searchTagHit = hasTag && q && (hasTag.name || '').toLowerCase().includes(q);
+      const tagName = hasTag?.name || allTags.find((t) => t.id === tagId)?.name;
+      const searchTagHit = q && tagName && tagName.toLowerCase().includes(q);
       if (filterTag === tagId || searchTagHit) onImageUpdated?.();
       else onCountsChanged?.();
     },
@@ -481,21 +499,42 @@ export default function ImageGrid({
 
   const handleAddToAlbum = async (imageId, albumId) => {
     if (!api.isBridgeAvailable()) return;
-    await api.addToAlbum(albumId, [imageId]);
+    try {
+      await api.addToAlbum(albumId, [imageId]);
+    } catch (e) {
+      console.error('[grid] 加入相册失败:', e.message);
+      toast.error(errText('加入相册失败', e));
+      return;
+    }
     setAddToAlbumImage(null);
     // 加入相册不会让已显示的行离开相册筛选视图，只需更新侧栏计数（审查批 8 R-4）
     onCountsChanged?.();
   };
 
+  const createAlbumRunningRef = useRef(false);
   const handleCreateAndAdd = async (imageId, name) => {
-    if (!name?.trim() || !api.isBridgeAvailable()) return;
-    const album = await api.createAlbum(name.trim());
+    if (!name?.trim() || !api.isBridgeAvailable() || createAlbumRunningRef.current) return;
+    // 相册名无 UNIQUE：双 Enter 并发会建出同名重复相册，且 createAlbum 按名回查可能串号
+    createAlbumRunningRef.current = true;
+    let album;
+    try {
+      album = await api.createAlbum(name.trim());
+    } catch (e) {
+      console.error('[grid] 创建相册失败:', e.message);
+      toast.error(errText('创建相册失败', e));
+      return;
+    }
     // 失败返回 {error}：无 id 不能继续 addToAlbum(undefined)（审查批 8 Q-09）
     if (album?.error) {
       toast.error(friendlyError(album.error));
+      createAlbumRunningRef.current = false;
       return;
     }
-    if (album) await api.addToAlbum(album.id, [imageId]);
+    try {
+      if (album) await api.addToAlbum(album.id, [imageId]);
+    } finally {
+      createAlbumRunningRef.current = false;
+    }
     setAddToAlbumImage(null);
     onCountsChanged?.();
   };

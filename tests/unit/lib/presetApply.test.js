@@ -167,4 +167,24 @@ describe('applyPresetToOps（预设字段裁剪唯一实现）', () => {
     expect(out.contrast).toBe(12);
     expect(out.exposure).toBeUndefined();
   });
+
+  it('detail：预设显式携带才覆盖，缺省保留当前值', () => {
+    const detail = { sharpness: 45, noise: 0 };
+    const out = applyPresetToOps({ name: 'P', basic: { contrast: 5 }, detail }, {});
+    expect(out.detail).toEqual(detail);
+    const kept = applyPresetToOps({ name: 'P', basic: { contrast: 5 } }, { detail, saturation: 0 });
+    expect(kept.detail).toEqual(detail);
+  });
+
+  it('hsl：预设显式携带才覆盖，缺省保留当前值', () => {
+    const hsl = {
+      hue: [40, 0, 0, 0, 0, 0, 0, -30],
+      sat: [25, 0, 0, 0, 0, 0, 0, 0],
+      lum: [0, 0, 0, 0, 0, 0, 0, 0],
+    };
+    const out = applyPresetToOps({ name: 'P', basic: { contrast: 5 }, hsl }, {});
+    expect(out.hsl.hue[0]).toBe(40);
+    const kept = applyPresetToOps({ name: 'P', basic: { contrast: 5 } }, { hsl, saturation: 0 });
+    expect(kept.hsl).toEqual(hsl);
+  });
 });

@@ -34,14 +34,17 @@ export default function AlbumsView({ onSelectAlbum, onRefresh }) {
     const paths = [...new Set(albums.map((a) => a.cover_path).filter(Boolean))];
     if (paths.length === 0 || !api.isBridgeAvailable()) return;
     let alive = true;
-    api.toFileUrls(paths).then((map) => {
-      if (!alive || !map) return;
-      const next = {};
-      for (const a of albums) {
-        if (a.cover_path && map[a.cover_path]) next[a.id] = map[a.cover_path];
-      }
-      setCoverUrls((prev) => ({ ...prev, ...next }));
-    });
+    api
+      .toFileUrls(paths)
+      .then((map) => {
+        if (!alive || !map) return;
+        const next = {};
+        for (const a of albums) {
+          if (a.cover_path && map[a.cover_path]) next[a.id] = map[a.cover_path];
+        }
+        setCoverUrls((prev) => ({ ...prev, ...next }));
+      })
+      .catch((e) => console.error('[albums] 封面地址获取失败:', e.message));
     return () => {
       alive = false;
     };
@@ -49,14 +52,25 @@ export default function AlbumsView({ onSelectAlbum, onRefresh }) {
 
   const loadAlbums = async () => {
     if (!api.isBridgeAvailable()) return;
-    const a = await api.getAlbums();
-    setAlbums(a);
+    try {
+      const a = await api.getAlbums();
+      setAlbums(a || []);
+    } catch (e) {
+      console.error('[albums] 加载相册失败:', e.message);
+    }
   };
 
   const handleCreate = async () => {
     if (!newName.trim() || !api.isBridgeAvailable()) return;
     // 写失败（{error}/reject）不再静默收表单：保留输入供重试（审查批 8 Q-09）
-    const album = await api.createAlbum(newName.trim(), newDesc.trim());
+    let album;
+    try {
+      album = await api.createAlbum(newName.trim(), newDesc.trim());
+    } catch (e) {
+      console.error('[albums] 创建相册失败:', e.message);
+      toast.error(errText('创建相册失败', e));
+      return;
+    }
     if (album?.error) {
       toast.error(friendlyError(album.error));
       return;
@@ -70,7 +84,14 @@ export default function AlbumsView({ onSelectAlbum, onRefresh }) {
 
   const handleDelete = async (id) => {
     if (!api.isBridgeAvailable()) return;
-    const result = await api.deleteAlbum(id);
+    let result;
+    try {
+      result = await api.deleteAlbum(id);
+    } catch (e) {
+      console.error('[albums] 删除相册失败:', e.message);
+      toast.error(errText('删除相册失败', e));
+      return;
+    }
     if (result?.error) {
       toast.error(friendlyError(result.error));
       return;
@@ -84,12 +105,24 @@ export default function AlbumsView({ onSelectAlbum, onRefresh }) {
     setRenameVal(album.name);
   };
 
+  const renamingRef = useRef(false);
   const handleRename = async () => {
+    if (renamingRef.current) return;
     if (!renameVal.trim() || !renameTarget || !api.isBridgeAvailable()) return;
     // 名称未变：不发无意义的写，也不收起——radix 菜单关闭时焦点会被强行回收一次，
     // 刚 autoFocus 的改名框立刻收到误 blur；若在此收起，用户根本没机会编辑（审查批 6 K1）
     if (renameVal.trim() === renameTarget.name) return;
-    const result = await api.renameAlbum(renameTarget.id, renameVal.trim());
+    // Enter 与 onBlur 双通道都可能触发：在途互斥防并发两次 rename
+    renamingRef.current = true;
+    let result;
+    try {
+      result = await api.renameAlbum(renameTarget.id, renameVal.trim());
+    } catch (e) {
+      console.error('[albums] 重命名相册失败:', e.message);
+      result = { error: errText('重命名失败', e) };
+    } finally {
+      renamingRef.current = false;
+    }
     if (result?.error) {
       toast.error(friendlyError(result.error));
       return;
@@ -274,8 +307,10 @@ export default function AlbumsView({ onSelectAlbum, onRefresh }) {
           confirmLabel="删除"
           danger
           onConfirm={async () => {
-            await handleDelete(deleteTarget.id);
+            // 先收确认框再执行删除：IPC 失败也不能把确认框卡死（同 TagManager）
+            const id = deleteTarget.id;
             setDeleteTarget(null);
+            await handleDelete(id);
           }}
           onCancel={() => setDeleteTarget(null)}
         />

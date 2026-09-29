@@ -24,6 +24,7 @@ for (const name of [
   'collectImportFiles',
   'getPathForFile',
   'getExif',
+  'analyzeImage',
   'toFileUrl',
   'toFileUrls',
   'fileExists',
@@ -94,5 +95,4 @@ for (const name of [
   };
 }
 
-export const isBridgeAvailable = () => !!px() || isTauriAvailable();
 export default api;

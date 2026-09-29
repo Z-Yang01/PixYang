@@ -29,12 +29,8 @@ pub fn apply_orientation(img: &DynamicImage, orientation: u32) -> DynamicImage {
     }
 }
 
-/// 含 alpha 输入压平到白底（JPEG 输出必去 alpha）
-pub fn flatten_white(img: &DynamicImage) -> DynamicImage {
-    if !img.has_alpha() {
-        return img.clone();
-    }
-    let rgba: RgbaImage = img.to_rgba8();
+/// RGBA 逐像素白底压平内核（JPEG 输出必去 alpha；executor/commands 的 JPEG 分支共用）
+pub fn flatten_rgba_white(rgba: &RgbaImage) -> image::RgbImage {
     let mut out = image::RgbImage::new(rgba.width(), rgba.height());
     for (x, y, px) in rgba.enumerate_pixels() {
         let a = px.0[3] as f32 / 255.0;
@@ -45,7 +41,15 @@ pub fn flatten_white(img: &DynamicImage) -> DynamicImage {
             image::Rgb([blend(px.0[0]), blend(px.0[1]), blend(px.0[2])]),
         );
     }
-    DynamicImage::from(out)
+    out
+}
+
+/// 含 alpha 输入压平到白底（JPEG 输出必去 alpha）
+pub fn flatten_white(img: &DynamicImage) -> DynamicImage {
+    if !img.has_alpha() {
+        return img.clone();
+    }
+    DynamicImage::from(flatten_rgba_white(&img.to_rgba8()))
 }
 
 /// fit:'inside' 缩放（含放大，与 sharp 无 withoutEnlargement 一致）

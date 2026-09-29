@@ -82,6 +82,10 @@ export function specToShaderUniforms(spec, imageSize = [0, 0]) {
       : 0
     : 0;
 
+  // detail：锐化开关 + 降噪亮度域混合系数（noise/100·0.85，与执行器 apply_noise_reduction_in_place 同式）
+  const detailSharp = (by.detail?.params?.sharpness || 0) > 0 ? 1 : 0;
+  const detailNoise = ((by.detail?.params?.noise || 0) / 100) * 0.85;
+
   // 分级：预计算 tint 偏移与标度（shader 端做真亮度权重，公式与 shared/colorGrading.cjs 一致）
   const gradeLuts = buildGradeLuts(by.colorGrading?.params || {});
   const gradingScale = [0, 0, 0];
@@ -159,6 +163,8 @@ export function specToShaderUniforms(spec, imageSize = [0, 0]) {
     highlightBand: [0.5, 1],
     curveLut,
     hslOn,
+    detailSharp,
+    detailNoise,
     hslHue: hsl.hue,
     hslSat: hsl.sat,
     hslLum: hsl.lum,
@@ -237,7 +243,8 @@ export function simulateShaderPixel(rgb255, uniforms, uv = [0.5, 0.5]) {
     c = c.map((x) => clamp(x, 0, 1));
   }
   if (uniforms.mono || uniforms.saturation !== 1) {
-    c = saturate01(c, uniforms.mono ? 0 : uniforms.saturation);
+    // 与 GLSL 预览同钳（D1）：导出端逐阶段钳制，模拟器代表点必须同口径
+    c = saturate01(c, uniforms.mono ? 0 : uniforms.saturation).map((x) => clamp(x, 0, 1));
   }
   if (uniforms.maskOn) {
     const px = [uv[0] * uniforms.imageSize[0], uv[1] * uniforms.imageSize[1]];

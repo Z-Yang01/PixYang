@@ -17,12 +17,6 @@ function editParamsToRenderSpec(editParams, { sourceHash, working, output } = {}
   if (!sourceHash) {
     throw new Error('[renderSpec] sourceHash 必填：防止底图更换后 spec 未随之失效');
   }
-  // 任意角度裁剪不支持：normalize 会剥离未知键，须在转换前检查原始输入
-  if (editParams?.crop?.angle) {
-    const err = new Error('[renderSpec] 任意角度裁剪（crop.angle）尚未实现');
-    err.code = 'not_implemented';
-    throw err;
-  }
   const p = normalizeEdits(editParams);
   const workingSpace = working ?? 'srgb';
   if (!SUPPORTED_WORKING.includes(workingSpace)) {
@@ -138,18 +132,22 @@ function stageDeclared(kind, params) {
 
 function buildCropStage(crop) {
   // crop 坐标是底图（geometry 前）像素坐标系——与前端裁剪框（maskGeometry.displayToImage
-  // 退回旋转/翻转后的底图空间）一致；执行器应用几何后按同一映射换算裁剪矩形
+  // 退回旋转/翻转后的底图空间）一致；执行器应用几何后按同一映射换算裁剪矩形。
+  // angle ≠ 0（拉直）时例外：x/y/w/h 直接是「几何+拉直旋转后」空间的坐标，
+  // 执行器先旋转位图再取矩形（跳过 geometry 映射），见 executor crop 阶段
   if (!crop || !(crop.w > 0) || !(crop.h > 0)) {
     return { kind: 'crop', params: null };
   }
-  if (crop.angle) {
-    const err = new Error('[renderSpec] 任意角度裁剪（crop.angle）尚未实现');
-    err.code = 'not_implemented';
-    throw err;
-  }
   return {
     kind: 'crop',
-    params: { x: crop.x, y: crop.y, w: crop.w, h: crop.h, ratio: crop.ratio || 'free', angle: 0 },
+    params: {
+      x: crop.x,
+      y: crop.y,
+      w: crop.w,
+      h: crop.h,
+      ratio: crop.ratio || 'free',
+      angle: crop.angle || 0,
+    },
   };
 }
 
