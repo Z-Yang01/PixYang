@@ -27,31 +27,6 @@ fn parse_id(s: &str) -> Result<i64, Value> {
         .map_err(|_| err(&format!("无效的图片 id: {s}")))
 }
 
-/// 撤销组合（与前端 api.undoLastEdit 同语义）：读最新 step 的 before → save_edit_params 链
-fn undo_conn(conn: &rusqlite::Connection, id: i64) -> Result<Value, crate::error::PixError> {
-    let last = edit_session::get_last_edit_undo(conn, id)?;
-    if last.get("error").is_some() {
-        return Ok(last);
-    }
-    let current = edit_session::get_edits(conn, id)?;
-    let before = current.get("params").cloned().unwrap_or(Value::Null);
-    let label = last
-        .get("label")
-        .and_then(|v| v.as_str())
-        .unwrap_or("编辑")
-        .to_string();
-    edit_session::save_edit_params(
-        conn,
-        id,
-        &last.get("before").cloned().unwrap_or(json!(null)),
-        Some(&json!({
-            "label": format!("撤销「{label}」"),
-            "before": before,
-            "after": last.get("before").cloned().unwrap_or(json!(null)),
-        })),
-    )
-}
-
 /// 执行单个子命令。拆出供单测注入内存库。
 fn dispatch(db: &Db, args: &[String]) -> Value {
     let Some(cmd) = args.first() else {
@@ -102,9 +77,8 @@ fn dispatch(db: &Db, args: &[String]) -> Value {
             }
         }
         "undo" => match parse_id_at(0) {
-            Ok(id) => {
-                undo_conn(&db.write_lock(), id).unwrap_or_else(|e| err(&crate::err_cn::text(&e)))
-            }
+            Ok(id) => edit_session::undo_last_edit_conn(&db.write_lock(), id)
+                .unwrap_or_else(|e| err(&crate::err_cn::text(&e))),
             Err(e) => e,
         },
         other => err(&format!("未知子命令: {other}\n{USAGE}")),

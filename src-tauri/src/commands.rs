@@ -622,9 +622,9 @@ pub fn get_edit_history(db: State<'_, Db>, id: i64) -> Result<Vec<Value>, String
 }
 
 #[tauri::command]
-pub fn get_last_edit_undo(db: State<'_, Db>, id: i64) -> Result<Value, String> {
-    let conn = db.open_read().map_err(|e| err_cn::text(&e))?;
-    edit_session::get_last_edit_undo(&conn, id).map_err(|e| err_cn::text(&e))
+pub fn undo_last_edit(db: State<'_, Db>, id: i64) -> Result<Value, String> {
+    let conn = db.write_lock();
+    edit_session::undo_last_edit_conn(&conn, id).map_err(|e| err_cn::text(&e))
 }
 
 /// 镜像 ensureEditBase：base 解析顺序 ① raw_path 存在且可提取 → NEF 预览底图（source='nef'）；

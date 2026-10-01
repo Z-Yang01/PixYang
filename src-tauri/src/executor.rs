@@ -287,13 +287,11 @@ fn rotate_by_angle(p: &mut BufferImage, angle_deg: f64) -> Result<(), PixError> 
                 src[(py as usize * w as usize + px as usize) * channels + c] as f64
             };
             let mut out_px = [0u8; 4];
-            for c in 0..3.min(channels) {
+            // alpha 一并双线性（透明 PNG 拉直保留透明度；出界填充仍是 [0,0,0,255]）
+            for c in 0..channels.min(4) {
                 let top = at(x0, y0, c) * (1.0 - fx) + at(x1, y0, c) * fx;
                 let bot = at(x0, y1, c) * (1.0 - fx) + at(x1, y1, c) * fx;
                 out_px[c] = (top * (1.0 - fy) + bot * fy).round().clamp(0.0, 255.0) as u8;
-            }
-            if channels == 4 {
-                out_px[3] = 255;
             }
             out[oi..oi + channels].copy_from_slice(&out_px[..channels]);
         }

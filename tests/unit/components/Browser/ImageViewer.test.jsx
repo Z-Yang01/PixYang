@@ -144,23 +144,25 @@ describe('ImageViewer', () => {
     });
   });
 
-  it('查看态：撤销上次编辑保存——桥内组合（读 before → save_edit_params 链）并刷新；空历史不写', async () => {
+  it('查看态：撤销上次编辑保存——undo_last_edit 原子命令并刷新；空历史不写', async () => {
     const onImageUpdated = vi.fn();
-    // 生产桥直调 window.__TAURI__（契约测试同款 mock）：三命令按序返回
+    // 生产桥直调 window.__TAURI__（契约测试同款 mock）：undo_last_edit 首次成功、次次空历史
     let undoCalls = 0;
     const invoke = vi.fn().mockImplementation((cmd, args) => {
-      if (cmd === 'get_last_edit_undo') {
+      if (cmd === 'undo_last_edit') {
         undoCalls += 1;
         return Promise.resolve(
           undoCalls === 1
-            ? { step: 2, label: '保存编辑参数', before: { basic: { exposure: 0 } } }
+            ? { version: 4, label: '撤销「保存编辑参数」' }
             : { error: '没有可撤销的编辑步骤' }
         );
       }
       if (cmd === 'get_edits') {
         return Promise.resolve({ version: 3, params: { basic: { exposure: 0.5 } } });
       }
-      if (cmd === 'save_edit_params') return Promise.resolve({ version: 4 });
+      if (cmd === 'edit_open') {
+        return Promise.resolve({ basePath: 'C:/cache/3-base.jpg', width: 800, height: 600 });
+      }
       return Promise.resolve({});
     });
     window.__TAURI__ = { core: { invoke } };
@@ -168,23 +170,16 @@ describe('ImageViewer', () => {
     const btn = screen.getByTitle(/撤销上一次编辑保存/);
     fireEvent.click(btn);
     await vi.waitFor(() => {
-      // save_edit_params 收到 before 参数（走既有保存链，预览缩略图由桥内自动重渲）
-      expect(invoke).toHaveBeenCalledWith(
-        'save_edit_params',
-        expect.objectContaining({
-          id: 3,
-          params: expect.objectContaining({
-            basic: expect.objectContaining({ exposure: 0 }),
-          }),
-          command: expect.objectContaining({ label: '撤销「保存编辑参数」' }),
-        })
-      );
+      // 原子组合在 Rust 侧闭环（读回退目标 → save_edit_params 链写回，全程持写锁）：
+      // 桥只发一条 undo_last_edit，成功后回调 onImageUpdated 刷新网格
+      expect(invoke).toHaveBeenCalledWith('undo_last_edit', { id: 3 });
       expect(onImageUpdated).toHaveBeenCalledWith(3, {});
     });
-    // 空历史：不写参数
+    // 空历史：返回 {error}，不回调刷新
     fireEvent.click(btn);
     await vi.waitFor(() => {
-      expect(invoke.mock.calls.filter(([cmd]) => cmd === 'save_edit_params').length).toBe(1);
+      expect(invoke.mock.calls.filter(([cmd]) => cmd === 'undo_last_edit').length).toBe(2);
+      expect(onImageUpdated).toHaveBeenCalledTimes(1);
     });
   });
 

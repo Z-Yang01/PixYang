@@ -20,7 +20,7 @@ const PIPELINE_ORDER = [
   'saturation', // 饱和度（-100 = 黑白，mono 显式）
   'masks', // 局部蒙版（radial/linear + 曝光/色温/对比/饱和，shared/masks.cjs）
   'detail', // 锐化/降噪（锐化已实现，降噪未实现时按参数内警告）
-  'lens', // 镜头校正（vignette 已实现，shared/lens.cjs；profile/distortion/chromatic 阶段内警告跳过）
+  'lens', // 镜头校正（vignette/distortion/chromatic 已实现，shared/lens.cjs；profile 预留）
   'geometry', // 旋转/翻转（90° 倍数）
   'crop', // 裁剪（底图坐标系，执行器映射到变换后空间）
   'encode', // 编码输出

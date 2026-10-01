@@ -133,7 +133,8 @@ export default function ImageViewer({
   const [editSession, setEditSession] = useState(null); // { basePath, source, width, height, hasNef }
   const [editBaseSrc, setEditBaseSrc] = useState(null);
   const [editOps, setEditOps] = useState(EDIT_DEFAULTS);
-  const [busyKind, setBusyKind] = useState(''); // opening | saving | exporting | baking
+  const [busyKind, setBusyKind] = useState('');
+  const [undoBusy, setUndoBusy] = useState(false); // 撤销上一次编辑保存在途（enterEdit 也要读，声明须在前） // opening | saving | exporting | baking
   const [editError, setEditError] = useState('');
   // 上屏走中文映射，英文原文留在 title 与控制台供取证
   const [editErrorRaw, setEditErrorRaw] = useState('');
@@ -294,7 +295,7 @@ export default function ImageViewer({
   }, []);
 
   const enterEdit = useCallback(async () => {
-    if (!image || editBusy || editPendingRef.current) return;
+    if (!image || editBusy || editPendingRef.current || undoBusy) return; // 撤销在途改写 DB：以旧基线开新会话会把已撤销参数原样写回
     const requestedId = image.id;
     editPendingRef.current = true; // 会话建立期间禁止翻页/换图（防烘焙覆盖另一张图）
     openingIdRef.current = requestedId;
@@ -348,7 +349,7 @@ export default function ImageViewer({
       openingIdRef.current = null;
       setBusyKind('');
     }
-  }, [image, editBusy, onEnterEdit, raiseEditError]);
+  }, [image, editBusy, undoBusy, onEnterEdit, raiseEditError]);
 
   // ── 撤销/重做：历史栈存完整 ops 快照 ──
   const syncHistInfo = useCallback(() => {
@@ -463,8 +464,10 @@ export default function ImageViewer({
       const ops = composeOps();
       const result = await api.saveEdits(image.id, toEditParams(ops), {
         label: '保存编辑参数',
-        before: savedBaselineRef.current,
-        after: ops,
+        // 历史快照须为 EditParams v1 形状（get_last_edit_undo 的 has_basic 合同）：
+        // 传平铺 ops 会被判无效，撤销时直接回默认参数清空全部编辑
+        before: toEditParams(savedBaselineRef.current ?? EDIT_DEFAULTS),
+        after: toEditParams(ops),
       });
       if (result?.error) {
         raiseEditError(friendlyError(result.error), result.error);
@@ -566,8 +569,9 @@ export default function ImageViewer({
     try {
       const result = await api.saveEdits(image.id, toEditParams(composeOps()), {
         label: '保存并退出',
-        before: savedBaselineRef.current,
-        after: composeOps(),
+        // 同 saveParams：历史快照走 EditParams v1 形状
+        before: toEditParams(savedBaselineRef.current ?? EDIT_DEFAULTS),
+        after: toEditParams(composeOps()),
       });
       if (result?.error) {
         raiseEditError(friendlyError(result.error), result.error);
@@ -810,7 +814,6 @@ export default function ImageViewer({
 
   // 撤销上一次编辑保存（持久化历史，区别于编辑态内存栈撤销）：
   // api.undoLastEdit 桥内走 saveEdits 全链，预览缩略图由 edit-preview-ready 事件自动回写
-  const [undoBusy, setUndoBusy] = useState(false);
   const handleUndoLastEdit = useCallback(async () => {
     if (!api.isBridgeAvailable() || !image || undoBusy) return;
     setUndoBusy(true);
@@ -1025,7 +1028,9 @@ export default function ImageViewer({
       const prevAngle = editOpsRef.current.crop?.angle || 0;
       let nextCrop;
       if (!angle) {
-        nextCrop = preStraightenCropRef.current === undefined ? null : preStraightenCropRef.current;
+        // 本会话从未拉直过（ref 未捕获）：no-op，防双击重置误删普通裁剪框
+        if (preStraightenCropRef.current === undefined) return;
+        nextCrop = preStraightenCropRef.current;
         preStraightenCropRef.current = undefined;
       } else {
         if (!prevAngle) preStraightenCropRef.current = editOpsRef.current.crop ?? null;
@@ -1042,10 +1047,12 @@ export default function ImageViewer({
       }
       if (angle && cropMode) setCropMode(false);
       const next = { ...editOpsRef.current, crop: nextCrop };
-      pushHistory(next, angle ? `拉直 ${angle}°` : '拉直归零');
       setEditOps(next);
+      // 历史与影调滑杆同约定：拖动中只改 ops（pointerup 统一落一条），
+      // 键盘/编程路径进 700ms 收敛窗——每个 0.5° 步进灌一条会撑爆历史栈
+      if (!sliderDragRef.current) recordKeyAdjust(next, '拉直');
     },
-    [editBusy, cropMode, pushHistory]
+    [editBusy, cropMode, recordKeyAdjust]
   );
 
   // 编辑参数统一应用入口（查看态操作 rotation/flip state，编辑态操作 editOps + 历史）
@@ -1760,7 +1767,8 @@ export default function ImageViewer({
               top: '50%',
               width: `${(straightenFrame.canvas.w / editSession.width) * 100}%`,
               height: `${(straightenFrame.canvas.h / editSession.height) * 100}%`,
-              transform: `translate(-50%, -50%) rotate(${-crop.angle}deg)`,
+              // layer 已带内容旋转 -θ：执行器画布在屏幕上是轴对齐 AABB，frame 需 +θ 抵消净旋转
+              transform: `translate(-50%, -50%) rotate(${crop.angle}deg)`,
             }}
             aria-hidden="true"
           >

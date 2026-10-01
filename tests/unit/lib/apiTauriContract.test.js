@@ -206,12 +206,12 @@ const ROUTES = [
   {
     method: 'undoLastEdit',
     args: [3],
-    cmd: 'get_last_edit_undo',
+    cmd: 'undo_last_edit',
     invokeArgs: { id: 3 },
     invokeImpl: (cmd) =>
       cmd === 'get_edits'
-        ? { version: 1, params: { basic: { exposure: 0.2 } } }
-        : { step: 2, label: '保存编辑参数', before: { basic: { exposure: 0 } } },
+        ? { version: 2, params: { basic: { exposure: 0 } } }
+        : { version: 2, label: '撤销「保存编辑参数」' },
   },
   { method: 'editOpen', args: [5], cmd: 'edit_open', invokeArgs: { id: 5 } },
   { method: 'editCancel', args: [5], kind: 'local', result: { ok: true } },

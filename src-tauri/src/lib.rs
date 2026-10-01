@@ -191,7 +191,7 @@ pub fn run() {
             commands::get_edits,
             commands::save_edit_params,
             commands::get_edit_history,
-            commands::get_last_edit_undo,
+            commands::undo_last_edit,
             commands::edit_open,
             commands::edit_bake,
             commands::edit_export,

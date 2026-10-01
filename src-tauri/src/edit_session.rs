@@ -131,6 +131,10 @@ pub fn save_edit_params(
     if images_query::get_image_by_id(conn, id)?.is_none() {
         return Ok(json!({ "error": "图片不存在" }));
     }
+    // 持久化合同：params 必须是对象（GUI 桥经 upgradeEdits 保形；CLI 直连可传任意 JSON）
+    if !params.is_object() {
+        return Ok(json!({ "error": "编辑参数必须为 JSON 对象" }));
+    }
     let preserve = command
         .and_then(|c| c.get("preserveGeometry"))
         .and_then(|v| v.as_bool())
@@ -253,6 +257,32 @@ pub fn get_last_edit_undo(conn: &Connection, id: i64) -> Result<Value, PixError>
         "step": step, "label": label,
         "before": default_edits(), "isDefault": true,
     }))
+}
+
+/// 撤销组合（GUI 撤销命令与 CLI 共用，全程持写锁保证原子性）：
+/// 读回退目标（get_last_edit_undo）→ save_edit_params 链写回（复用版本/历史）。
+pub fn undo_last_edit_conn(conn: &Connection, id: i64) -> Result<Value, PixError> {
+    let last = get_last_edit_undo(conn, id)?;
+    if last.get("error").is_some() {
+        return Ok(last);
+    }
+    let current = get_edits(conn, id)?;
+    let before = current.get("params").cloned().unwrap_or(Value::Null);
+    let label = last
+        .get("label")
+        .and_then(|v| v.as_str())
+        .unwrap_or("编辑")
+        .to_string();
+    save_edit_params(
+        conn,
+        id,
+        &last.get("before").cloned().unwrap_or(json!(null)),
+        Some(&json!({
+            "label": format!("撤销「{label}」"),
+            "before": before,
+            "after": last.get("before").cloned().unwrap_or(json!(null)),
+        })),
+    )
 }
 
 /// 镜像 getEditHistory：按 step 升序，command_json 损坏的行 command 为 null

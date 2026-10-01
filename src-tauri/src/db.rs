@@ -43,6 +43,9 @@ impl Db {
         } else {
             path.to_path_buf()
         };
+        // 写连接同设 busy_timeout：CLI 与 GUI 是两个进程各持一条写连接（WAL），
+        // 无 handler 时写-写冲突立即 SQLITE_BUSY，与 CLI 文档「最多等 5s」的承诺不符
+        conn.busy_timeout(std::time::Duration::from_secs(5))?;
         if path != Path::new(":memory:") {
             conn.pragma_update(None, "journal_mode", "WAL")?;
         }
