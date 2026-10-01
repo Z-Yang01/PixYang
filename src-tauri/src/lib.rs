@@ -89,8 +89,10 @@ pub fn run() {
             // 图片根：设置优先；未设置但旧默认目录（%APPDATA%/pixyang/images）有照片时
             // 沿用旧位置（不搬用户照片，绝对路径仍可访问）
             let legacy_images_dir = db::legacy_data_dir().join("images");
-            let images_root_setting = database.get_setting("images_root").unwrap_or(None);
+            let images_root_setting: Option<String> =
+                database.get_setting("images_root").unwrap_or(None);
             let images_root = images_root_setting
+                .as_deref()
                 .filter(|s| !s.is_empty())
                 .map(std::path::PathBuf::from)
                 .unwrap_or_else(|| {
@@ -101,6 +103,11 @@ pub fn run() {
                     }
                 });
             let _ = std::fs::create_dir_all(&images_root);
+            // 解析结果持久化回 settings（仅当未设置过）：CLI 直连（不经 GUI 启动逻辑）时
+            // images_root(conn, ".") 的 CWD 兜底才有正确落点（审查 H1 缝隙 b）
+            if images_root_setting.as_deref().unwrap_or("").is_empty() {
+                let _ = database.set_setting("images_root", &images_root.to_string_lossy());
+            }
             {
                 let conn = database.write_lock();
                 let removed = file_ops::cleanup_stale_bake_temps(&conn);
