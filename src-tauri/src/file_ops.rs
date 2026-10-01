@@ -141,18 +141,6 @@ pub fn import_one(
     });
     let dest_path = sub_dir.join(&unique_name);
     let src_path = str_or_empty(img.get("filepath"));
-    // 手动导入链（parse_import_files）此前丢弃 size/format → Info 面板永远「未知/0 B」：
-    // 调用方带 enrich（camera_sync）优先，缺失时从落盘副本兜底
-    let size_value = {
-        let v = num_i64(img.get("size"));
-        if v > 0 {
-            v
-        } else {
-            std::fs::metadata(&dest_path)
-                .map(|m| m.len() as i64)
-                .unwrap_or(0)
-        }
-    };
     let format_value = {
         let f = str_or_empty(img.get("format"));
         if !f.is_empty() {
@@ -171,6 +159,21 @@ pub fn import_one(
             return Ok(None);
         }
     }
+
+    // 手动导入链（parse_import_files）此前丢弃 size/format → Info 面板永远「未知/0 B」：
+    // 调用方带 enrich（camera_sync）优先，缺失时从落盘副本兜底。size 兜底必须在复制
+    // 之后读：generate_unique_filename 保证 dest 复制前不存在（审查实锤——放在复制前
+    // 读 metadata 恒失败，手动导入 size 恒 0，兜底为死代码）
+    let size_value = {
+        let v = num_i64(img.get("size"));
+        if v > 0 {
+            v
+        } else {
+            std::fs::metadata(&dest_path)
+                .map(|m| m.len() as i64)
+                .unwrap_or(0)
+        }
+    };
 
     // 配对 NEF：filepath ∪ raw_path 双列 NOCASE 查占用者，可见占用派生避让、隐藏记录收养
     let mut raw_dest_path = String::new();
@@ -754,6 +757,65 @@ mod tests {
             "导入应落 default_root 下: {fp}"
         );
         assert!(Path::new(&fp).is_absolute(), "应为绝对路径: {fp}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn 导入_无size输入_落库size为落盘副本字节数() {
+        // 审查实锤回归锁：手动导入链（parse_import_files）不带 size，兜底读落盘副本——
+        // 若兜底放在复制之前（37ff656 原样），generate_unique_filename 保证 dest 复制前
+        // 不存在，metadata 恒失败 → size 恒 0（Info 面板永远 0 B）
+        let dir = std::env::temp_dir().join(format!("pixyang_size_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let conn = Connection::open(":memory:").unwrap();
+        conn.execute_batch(
+            "CREATE TABLE images (id INTEGER PRIMARY KEY AUTOINCREMENT, filename TEXT NOT NULL,
+             filepath TEXT NOT NULL UNIQUE, original_path TEXT DEFAULT '', raw_path TEXT DEFAULT '',
+             original_raw_path TEXT DEFAULT '', hidden INTEGER DEFAULT 0, orientation INTEGER DEFAULT 1,
+             rotation INTEGER DEFAULT 0, flip_h INTEGER DEFAULT 0, flip_v INTEGER DEFAULT 0,
+             import_date TEXT, taken_at TEXT, size INTEGER DEFAULT 0, width INTEGER, height INTEGER,
+             format TEXT DEFAULT '', thumbnail TEXT, thumbnail_path TEXT, thumbnail_small_path TEXT,
+             thumbnail_edit_path TEXT, rating INTEGER DEFAULT 0, favorite INTEGER DEFAULT 0,
+             notes TEXT DEFAULT '', created_at DATETIME, updated_at DATETIME, duration INTEGER);
+             CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT);",
+        )
+        .unwrap();
+        let src_dir = dir.join("src");
+        std::fs::create_dir_all(&src_dir).unwrap();
+        let img = DynamicImage::from(RgbaImage::from_fn(8, 8, |_, _| {
+            image::Rgba([90, 90, 90, 255])
+        }));
+        let src = src_dir.join("sz.jpg");
+        img.save(&src).unwrap();
+        let src_len = std::fs::metadata(&src).unwrap().len();
+        assert!(src_len > 0);
+
+        let default_root = dir.join("managed_root");
+        std::fs::create_dir_all(&default_root).unwrap();
+        // 显式不带 size/format 键：镜像 parse_import_files 的真实输入形状
+        let files = serde_json::json!([
+            { "filename": "sz.jpg", "filepath": src.to_string_lossy() }
+        ]);
+        let today = crate::file_ops::today_ymd();
+        let rows = super::import_images(
+            &conn,
+            &files,
+            None,
+            &today,
+            &dir.join("thumbs"),
+            None,
+            &default_root,
+        )
+        .unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(
+            rows[0].size,
+            Some(src_len as i64),
+            "无 size 输入应从落盘副本兜底实际字节数"
+        );
+        assert!(rows[0].size.unwrap_or(0) > 0);
+        assert_eq!(rows[0].format.as_deref(), Some("jpg"));
         let _ = std::fs::remove_dir_all(&dir);
     }
 

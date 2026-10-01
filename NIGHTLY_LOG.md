@@ -2302,3 +2302,37 @@
   ⑤ 门禁口径（上报）：工作区有并行会话 56 文件 WIP，全量套件结果无法归属本轮，改跑定向
   门禁：vitest themes.test.js 21/21 绿（变异红/复绿见②）、prettier --check 两改动文件过、
   eslint 两改动文件 0 问题；全量 npm test/lint/typecheck/cargo/golden 留待并行轮收口后统一。
+- 2026-10-02 R82 新鲜眼审计（无人值守轮次82，恰好一轮：入库批次 7bacea8→527ef85 共 12+1 笔
+  逐笔精读，基线 fc4e0d1/8072794 已由 R77 覆盖，editor 批次已由 R81 覆盖）：
+  ① EOL 根治链（7bacea8/424c04f/0180562/348704d/4d22fe1）核验合格：.gitattributes
+  eol=lf 生效（src/main.rs text:auto eol:lf）；R39 三特例 check-attr text:unset（eol 对
+  unset 无意义）；Cargo.lock/Cargo.toml i/lf w/lf attr/-text，R76 勘正（renormalize 对
+  lock 实为 no-op）与 git log 互证——lock 自 R26 零内容变更、零新依赖；viewerInfoRail
+  四形态归一（replace(/\r/g,'')）语义无损。
+  ② SQL 注入面（3465289 原始路径搜索）：安全。Rust 侧参数绑定 + like_pattern 转义
+  \ % _ 配 ESCAPE '\'（四 LIKE 全带）；前端 matchesListFilters 纯 includes 子串，口径
+  分叉方向是「多刷一次重查」非误剪枝（R74 锁在位）。
+  ③ 未评分档三断链修复（3465289/a2723d0/0d662f8）完整性核验合格：全仓清点
+  filterMinRating 全部 12 处消费点（App filterKey/查看器 override、ImageGrid 空态、
+  useBatchActions 快照+全选查询、useGalleryData 依赖、TopBar/Sidebar、store 双查询路
+  径、gallery.js 三函数）filterUnrated 全部同位在列；SQL (rating IS NULL OR =0) 与前端
+  (rating||0)===0 同口径；store 互斥双清防恒空叠加。
+  ④ 实锤一（527ef85 M1 虚报）：提交信息声称 trash 歧义名撤销修复「manifest 原始文件名
+  精确匹配优先于前缀判别 + Rust 歧义名回归锁（Rust 188 例）」——trash.rs 自 R73 起零
+  变更，restore 角色解析仍是纯前缀（raw__/thumb__），全仓无「歧义名」测试（实际 187 例）。
+  危害成立：原图名 raw__x.jpg 撤销时被当 NEF——无配对留在暂存（下轮 sweep 物理删除，
+  撤销「成功」文件永久丢失）；有配对双条目映射同一 raw 目标互相覆盖。本轮补齐该修复
+  （restore 先按 file_name_of(manifest.filepath) 全等匹配原图，再退前缀判别；thumb__
+  丢弃分支改 is_thumb 旗标不再按文件名前缀）+ 3 例回归锁。
+  ⑤ 实锤二（37ff656 size 兜底死代码）：手动导入 size 兜底 metadata(&dest) 放在复制
+  之前，而 generate_unique_filename 保证 dest 复制前不存在 → 手动导入（复制分支）size
+  恒 0，与修复目标「Info 面板永远 0 B」相悖（a4c66f3 只锁了 root 回退未锁 size）。本轮
+  把兜底移到复制后 + 回归锁（无 size 输入 → 落库 size=落盘副本字节数）。
+  ⑥ 变异验证（cp 备份姿势，非 git restore）：撤精确匹配臂 + size 兜底前移两处变异 →
+  4 例新锁全红；还原复绿 23/23。
+  ⑦ 7098ca5 启动持久化 images_root 合格（仅当未设置时写回，不覆盖显式值；legacy 根
+  持久化属行为变化但方向正确，列上报决策）。37ff656 其余项（EXIF taken_at 接线、
+  asset scope 迁移放行、format 兜底、ImportDialog onError 回落）逐项合格。
+  ⑧ 门禁（干净树全量）：vitest 67 文件/940 例 ✓；lint 0 error/10 基线 warning ✓；
+  typecheck ✓；format:check ✓；cargo 191 例（+4）+ golden_audit ✓。AGENTS.md 计数
+  勘正（vitest 939→940、Rust 187→191）。

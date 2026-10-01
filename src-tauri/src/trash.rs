@@ -454,25 +454,35 @@ pub fn restore_image_from_trash_core(
     let suffixes = trash_entry_suffixes(trash, id);
     let mut moved_back: Vec<(PathBuf, PathBuf)> = Vec::new();
     let mut failure = None;
+    // manifest 原始文件名精确匹配优先于前缀判别（审查 M1）：原图名以 raw__/thumb__ 开头时
+    // （如 raw__x.jpg），纯前缀解析会把原图条目误判为 NEF——无配对时被 continue 跳过留在
+    // 暂存（下一轮 sweep 物理删除，撤销「成功」但文件永久丢失）；有配对时双条目映射到同
+    // 一 raw 目标互相覆盖。暂存入位名 = file_name_of(manifest.filepath)，可精确重建，故
+    // 全等匹配命中必为原图；NEF 与原图同名同主名不同扩展，全等不会互相劫持。
+    let orig_suffix = file_name_of(&orig_path);
     for suffix in &suffixes {
         let src = trash.join(format!("{id}__{suffix}"));
+        // is_thumb = 派生文件条目（可再生，同名残留直接丢弃）；原图条目即使文件名
+        // 恰以 thumb__ 开头也不是派生文件，不可进丢弃分支
         let dest = if suffix == "record.json" {
             continue;
+        } else if *suffix == orig_suffix {
+            Some((PathBuf::from(&final_filepath_str), false))
         } else if let Some(raw_name) = suffix.strip_prefix("raw__") {
             match &final_raw_path {
-                Some(p) if !raw_name.is_empty() => Some(PathBuf::from(p)),
+                Some(p) if !raw_name.is_empty() => Some((PathBuf::from(p), false)),
                 _ => continue,
             }
         } else if let Some(name) = suffix.strip_prefix("thumb__") {
-            Some(thumbs_dir.join(name))
+            Some((thumbs_dir.join(name), true))
         } else {
-            Some(PathBuf::from(&final_filepath_str))
+            Some((PathBuf::from(&final_filepath_str), false))
         };
-        let Some(dest) = dest else { continue };
+        let Some((dest, is_thumb)) = dest else { continue };
         if !src.exists() {
             continue;
         }
-        if suffix.starts_with("thumb__") && dest.exists() {
+        if is_thumb && dest.exists() {
             // 派生文件按 id 命名且可再生：同名视为残留副本，直接丢弃暂存份
             let _ = std::fs::remove_file(&src);
             continue;
@@ -866,6 +876,84 @@ mod tests {
             .unwrap()
             .is_some());
         assert!(!trash_exists(&trash, "1__record.json"));
+        let _ = std::fs::remove_dir_all(pics.parent().unwrap());
+    }
+
+    // ── 审查 M1 回归锁：原图名以 raw__/thumb__ 开头的歧义名，撤销回位不丢 ──
+    // 角色解析必须 manifest 原始文件名精确匹配优先于前缀判别：纯前缀解析把原图条目
+    // 误判为 NEF——无配对时留在暂存（下轮 sweep 物理删除＝撤销成功但文件永久丢失），
+    // 有配对时与真实 NEF 条目映射到同一目标互相覆盖。
+
+    #[test]
+    fn 撤销_原图名以raw__开头_无配对_回位不丢暂存() {
+        let (conn, pics, thumbs, trash) = setup("amb_raw_solo");
+        let name = "raw__solo.jpg";
+        conn.execute_batch(&format!(
+            "INSERT INTO images (id, filename, filepath, import_date, raw_path, hash, flag)
+             VALUES (1, '{name}', '{}/{name}', '2026-01-01', '', 'h1', 1);",
+            pics.to_string_lossy().replace('\\', "/"),
+        ))
+        .unwrap();
+        std::fs::write(pics.join(name), b"orig").unwrap();
+
+        delete_image_to_trash_core(&conn, 1, &thumbs, &trash).unwrap();
+        assert!(trash_exists(&trash, "1__raw__solo.jpg"));
+
+        restore_image_from_trash_core(&conn, 1, &thumbs, &trash).unwrap();
+
+        // 原图回原位且内容原样；暂存不留残条（残条 = 下一轮 sweep 物理删除）
+        assert_eq!(std::fs::read(pics.join(name)).unwrap(), b"orig");
+        assert!(trash_entry_suffixes(&trash, 1).is_empty());
+        let _ = std::fs::remove_dir_all(pics.parent().unwrap());
+    }
+
+    #[test]
+    fn 撤销_原图名raw__开头_配对NEF_回位各归其位不互相覆盖() {
+        let (conn, pics, thumbs, trash) = setup("amb_raw_pair");
+        let jpg = "raw__p.jpg";
+        let nef = "raw__p.nef";
+        let base = pics.to_string_lossy().replace('\\', "/");
+        conn.execute_batch(&format!(
+            "INSERT INTO images (id, filename, filepath, import_date, raw_path, hash, flag)
+             VALUES (1, '{jpg}', '{base}/{jpg}', '2026-01-01', '{base}/{nef}', 'h1', 1);"
+        ))
+        .unwrap();
+        std::fs::write(pics.join(jpg), b"orig").unwrap();
+        std::fs::write(pics.join(nef), b"raw").unwrap();
+
+        delete_image_to_trash_core(&conn, 1, &thumbs, &trash).unwrap();
+        assert!(trash_exists(&trash, "1__raw__p.jpg"));
+        assert!(trash_exists(&trash, "1__raw__raw__p.nef"));
+
+        restore_image_from_trash_core(&conn, 1, &thumbs, &trash).unwrap();
+
+        // 原图与 NEF 各自回位且内容不互换（前缀误判会把两条都映射到 NEF 目标互相覆盖）
+        assert_eq!(std::fs::read(pics.join(jpg)).unwrap(), b"orig");
+        assert_eq!(std::fs::read(pics.join(nef)).unwrap(), b"raw");
+        assert!(trash_entry_suffixes(&trash, 1).is_empty());
+        let _ = std::fs::remove_dir_all(pics.parent().unwrap());
+    }
+
+    #[test]
+    fn 撤销_原图名以thumb__开头_回位原图_不落缩略图目录() {
+        let (conn, pics, thumbs, trash) = setup("amb_thumb_orig");
+        let name = "thumb__v.jpg";
+        conn.execute_batch(&format!(
+            "INSERT INTO images (id, filename, filepath, import_date, raw_path, hash, flag)
+             VALUES (1, '{name}', '{}/{name}', '2026-01-01', '', 'h1', 1);",
+            pics.to_string_lossy().replace('\\', "/"),
+        ))
+        .unwrap();
+        std::fs::write(pics.join(name), b"orig").unwrap();
+
+        delete_image_to_trash_core(&conn, 1, &thumbs, &trash).unwrap();
+        restore_image_from_trash_core(&conn, 1, &thumbs, &trash).unwrap();
+
+        // 原图按 manifest 精确匹配回原位，不进缩略图目录（可再生派生文件的丢弃分支
+        // 也不得命中原图条目）
+        assert_eq!(std::fs::read(pics.join(name)).unwrap(), b"orig");
+        assert!(!thumbs.join("v.jpg").exists());
+        assert!(trash_entry_suffixes(&trash, 1).is_empty());
         let _ = std::fs::remove_dir_all(pics.parent().unwrap());
     }
 }
