@@ -749,6 +749,28 @@ describe('ImageViewer', () => {
     });
   });
 
+  it('编辑模式：保存的历史快照 before/after 必须为 EditParams v1 形状（撤销合同，审查 P0）', async () => {
+    mockEditBridge();
+    render(<ImageViewer {...baseProps()} />);
+    await enterEdit();
+    // 调对比度 → 保存：快照不得是平铺 ops（无 basic 键会被撤销取数判无效 → 回默认清空）
+    const contrast = [...document.querySelectorAll('.editor-slider-row')].find(
+      (r) => r.querySelector('span')?.textContent === '对比度'
+    );
+    fireEvent.change(contrast.querySelector('input'), { target: { value: '25' } });
+    fireEvent.click(screen.getByTitle('保存编辑参数（原图不动，可随时回到当前效果）'));
+    await vi.waitFor(() => {
+      expect(window.pixyang.saveEdits).toHaveBeenCalledTimes(1);
+      const command = window.pixyang.saveEdits.mock.calls[0][2];
+      expect(command.before).toEqual(
+        expect.objectContaining({ basic: expect.objectContaining({ exposure: 0, contrast: 0 }) })
+      );
+      expect(command.after).toEqual(
+        expect.objectContaining({ basic: expect.objectContaining({ contrast: 25 }) })
+      );
+    });
+  });
+
   it('编辑模式：拉直滑杆——自动套内接框、预览旋转、保存落库含 crop.angle、归零恢复', async () => {
     mockEditBridge();
     render(<ImageViewer {...baseProps()} />);

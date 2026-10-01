@@ -157,6 +157,11 @@ tests/            vitest（node 环境 + per-file happy-dom pragma）
 - **持久化编辑撤销**：编辑器历史之外的跨会话撤销——查看器工具栏按钮 → api.undoLastEdit（桥内
   组合：get_last_edit_undo 读回退目标 → saveEdits 全链）。回退目标语义：最新步 before → 缺失
   向前找最近 after → 全无回默认参数（isDefault）。
+- **裁剪拉直（crop.angle ±45°）**：坐标合同——angle≠0 时 crop.x/y/w/h 直接是
+  「geometry+拉直旋转后」空间的像素坐标（执行器 rotate_by_angle 双线性旋转+出界填黑后取矩形，
+  跳过 geometry 映射）；前端滑杆变更时自动套同比例最大内接框（editParams straightenGeometry）。
+  历史快照合同：saveEdits 的 command.before/after 必须是 EditParams v1 形状（含 basic 键），
+  平铺 ops 会被 get_last_edit_undo 的 has_basic 判无效 → 撤销直接回默认清空全部编辑（审查 P0）。
 - **镜头校正**：lens.distortion（径向畸变 k=±0.25）与 chromatic（横向色散 ca=±0.01，随 r² 增长）
   三端实现（shared/lens.cjs lensGeomScale = GLSL 邻域采样 = 执行器双线性）；出界填黑（与拉直同
   口径）；重采样非逐点，预览/导出同为视觉近似不做像素对拍。
