@@ -151,6 +151,30 @@ describe('useGalleryData wiring', () => {
     }
   });
 
+  it('filterUnrated 变化触发重查且查询携带 unrated（审查回归：依赖遗漏则档位切换列表不动）', async () => {
+    window.pixyang.getImages = vi.fn().mockResolvedValue({ images: [], total: 0 });
+    render(<HookHarness hook={useGalleryData} hookProps={{}} />);
+    await waitFor(() => expect(window.pixyang.getImages).toHaveBeenCalled());
+    const callsAfterMount = window.pixyang.getImages.mock.calls.length;
+    await act(async () => {
+      useGalleryStore.getState().setFilterUnrated(true);
+    });
+    await waitFor(() => {
+      expect(window.pixyang.getImages.mock.calls.length).toBeGreaterThan(callsAfterMount);
+    });
+    expect(window.pixyang.getImages).toHaveBeenLastCalledWith(
+      expect.objectContaining({ unrated: true })
+    );
+    await act(async () => {
+      useGalleryStore.getState().setFilterUnrated(false);
+    });
+    await waitFor(() => {
+      expect(window.pixyang.getImages).toHaveBeenLastCalledWith(
+        expect.objectContaining({ unrated: false })
+      );
+    });
+  });
+
   it('onThumbnailsReady 回调 bump thumbVersion 并刷新列表', async () => {
     let readyCb;
     window.pixyang.onThumbnailsReady = vi.fn((cb) => {
