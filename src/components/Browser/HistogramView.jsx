@@ -9,6 +9,7 @@ export default function HistogramView({ histogram, onPick }) {
   const pathD = useMemo(() => {
     if (!histogram) return null;
     const max = Math.max(...histogram.r, ...histogram.g, ...histogram.b, 1);
+    // 亮度通道作灰细线参考（数据由 extractHistogram 一并产出，此前未消费）
     const channelPath = (arr) => {
       let d = '';
       for (let i = 0; i < BINS; i++) {
@@ -22,6 +23,7 @@ export default function HistogramView({ histogram, onPick }) {
       r: channelPath(histogram.r),
       g: channelPath(histogram.g),
       b: channelPath(histogram.b),
+      l: channelPath(histogram.l || new Array(BINS).fill(0)),
     };
   }, [histogram]);
 
@@ -60,6 +62,14 @@ export default function HistogramView({ histogram, onPick }) {
           fill="rgba(106,157,255,0.38)"
           stroke="rgba(106,157,255,0.8)"
           strokeWidth="0.6"
+          vectorEffect="non-scaling-stroke"
+        />
+        {/* 亮度：细实线参考（无填充，压在 RGB 之上作明度分布读数） */}
+        <path
+          d={pathD.l}
+          fill="none"
+          stroke="rgba(255,255,255,0.55)"
+          strokeWidth="0.5"
           vectorEffect="non-scaling-stroke"
         />
       </svg>

@@ -124,3 +124,32 @@ describe('TopBar', () => {
     expect(s.sortOrder).toBe('ASC');
   });
 });
+
+describe('TopBar 评分筛选 chip', () => {
+  afterEach(() => {
+    cleanup();
+    useGalleryStore.setState(initialSnapshot, true);
+  });
+
+  it('minRating>0 渲染「≥ N 星」chip，移除走 clearSingleFilter(rating) 双清', () => {
+    seedStore({ filterMinRating: 3 });
+    renderTopBar();
+    const ratingChip = screen.getByText('≥ 3 星');
+    fireEvent.click(ratingChip.querySelector('.filter-chip-remove'));
+    const st = useGalleryStore.getState();
+    expect(st.filterMinRating).toBe(0);
+    expect(st.filterUnrated).toBe(false);
+  });
+
+  it('unrated 渲染「未评分」chip，移除清 unrated；无激活时不渲染任何评分 chip', () => {
+    seedStore({ filterUnrated: true });
+    renderTopBar();
+    const unratedChip = screen.getByText('未评分');
+    fireEvent.click(unratedChip.querySelector('.filter-chip-remove'));
+    expect(useGalleryStore.getState().filterUnrated).toBe(false);
+    seedStore({ filterMinRating: 0, filterUnrated: false });
+    renderTopBar();
+    expect(screen.queryByText('≥ 3 星')).toBeNull();
+    expect(screen.queryByText('未评分')).toBeNull();
+  });
+});

@@ -127,6 +127,7 @@ describe('buildImageQuery', () => {
       tagId: 3,
       albumId: 7,
       favorite: true,
+      unrated: true,
       importDate: '2024-01-01',
       dateFrom: '2024-01-01',
       dateTo: '2024-12-31',
@@ -140,6 +141,7 @@ describe('buildImageQuery', () => {
       tagId: 3,
       albumId: 7,
       favorite: true,
+      unrated: true,
       minRating: 0,
       importDate: '2024-01-01',
       dateFrom: '2024-01-01',
@@ -316,5 +318,17 @@ describe('matchesListFilters 轻量写回后成员回归校验（审查批 8 R-3
     expect(matchesListFilters(null, { filterDate: '2026-01-01' })).toBe(true);
     expect(matchesListFilters({ id: 1 }, {})).toBe(true);
     expect(matchesListFilters({ id: 1 })).toBe(true);
+  });
+});
+
+describe('星级筛选：仅未评分剪枝', () => {
+  it('unrated=true 只留 rating 0/NULL 行；与 hasActiveFilters 收编', () => {
+    const base = { filterUnrated: true };
+    expect(matchesListFilters({ rating: 0 }, base)).toBe(true);
+    expect(matchesListFilters({ rating: null }, base)).toBe(true);
+    expect(matchesListFilters({ rating: 3 }, base)).toBe(false);
+    expect(matchesListFilters({ rating: undefined }, base)).toBe(true);
+    expect(hasActiveFilters({ filterUnrated: true })).toBe(true);
+    expect(hasActiveFilters({ filterUnrated: false })).toBe(false);
   });
 });

@@ -59,6 +59,7 @@ export function buildImageQuery({
   albumId = null,
   favorite = false,
   minRating = 0,
+  unrated = false,
   importDate = '',
   dateFrom = '',
   dateTo = '',
@@ -76,6 +77,8 @@ export function buildImageQuery({
     favorite,
     // Rust ImageQuery.min_rating（serde camelCase）同键名；0=不过滤
     minRating,
+    // Rust ImageQuery.unrated：仅 rating 0/NULL；与 minRating UI 互斥，SQL 层纯 AND
+    unrated,
     importDate,
     dateFrom,
     dateTo,
@@ -127,6 +130,7 @@ export function hasActiveFilters({
   dateRange,
   filterFavorites,
   filterMinRating,
+  filterUnrated,
 } = {}) {
   return !!(
     search ||
@@ -136,7 +140,8 @@ export function hasActiveFilters({
     dateRange?.from ||
     dateRange?.to ||
     filterFavorites ||
-    filterMinRating
+    filterMinRating ||
+    filterUnrated
   );
 }
 
@@ -150,12 +155,13 @@ export function applyLightLocalUpdate(images, id, updates) {
 // 误判方向是多刷一次重查，不会漏剪枝（审查批 8 R-3）
 export function matchesListFilters(
   row,
-  { filterFavorites, filterDate, dateRange, search, filterMinRating } = {}
+  { filterFavorites, filterDate, dateRange, search, filterMinRating, filterUnrated } = {}
 ) {
   if (!row) return true;
   if (filterFavorites && !row.favorite) return false;
   // rating 列默认 0：null/undefined 归零后比较，与 SQL「NULL ≥ N 恒假」同口径
   if (filterMinRating && (row.rating || 0) < filterMinRating) return false;
+  if (filterUnrated && (row.rating || 0) !== 0) return false;
   if (filterDate && row.import_date !== filterDate) return false;
   const d = row.import_date || '';
   if (dateRange?.from && d < dateRange.from) return false;

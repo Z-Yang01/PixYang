@@ -255,6 +255,32 @@ describe('galleryStore 网格设置引用短路（审查批 8 R-1）', () => {
   });
 });
 
+describe('galleryStore 星级筛选：minRating/unrated 互斥与清理', () => {
+  beforeEach(() => {
+    useGalleryStore.setState(initialSnapshot, true);
+  });
+
+  it('setFilterUnrated(true) 清 minRating；setFilterMinRating(>0) 清 unrated', () => {
+    useGalleryStore.getState().setFilterMinRating(3);
+    useGalleryStore.getState().setFilterUnrated(true);
+    expect(useGalleryStore.getState().filterUnrated).toBe(true);
+    expect(useGalleryStore.getState().filterMinRating).toBe(0);
+    useGalleryStore.getState().setFilterMinRating(3);
+    expect(useGalleryStore.getState().filterUnrated).toBe(false);
+    expect(useGalleryStore.getState().filterMinRating).toBe(3);
+  });
+
+  it("clearSingleFilter('rating') 双清；clearFilters 双清", () => {
+    useGalleryStore.setState({ filterMinRating: 2, filterUnrated: true });
+    useGalleryStore.getState().clearSingleFilter('rating');
+    expect(useGalleryStore.getState().filterMinRating).toBe(0);
+    expect(useGalleryStore.getState().filterUnrated).toBe(false);
+    useGalleryStore.setState({ filterUnrated: true });
+    useGalleryStore.getState().clearFilters();
+    expect(useGalleryStore.getState().filterUnrated).toBe(false);
+  });
+});
+
 describe('galleryStore loadImages 本地写世代（审查批 8 R-2）', () => {
   afterEach(() => {
     delete window.pixyang;

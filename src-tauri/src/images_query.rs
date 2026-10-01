@@ -24,6 +24,9 @@ pub struct ImageQuery {
     /// 不夹取上界：6+ 合法反序列化、恒空集（超出 1-5 星域的显式查询语义）
     #[serde(default)]
     pub min_rating: Option<u32>,
+    /// 仅看未评分（rating 为 0 或 NULL）；与 min_rating 语义互斥（前端 UI 互斥，SQL 层纯 AND）
+    #[serde(default)]
+    pub unrated: Option<bool>,
     #[serde(default)]
     pub search: String,
     #[serde(default)]
@@ -145,6 +148,10 @@ fn build_filters(
         // rating 列默认 0（未评分）；NULL ≥ N 恒假，与前端剪枝 (rating||0) < min 同口径
         conditions.push("i.rating >= ?".into());
         params.push(Box::new(min_rating));
+    }
+    if q.unrated.unwrap_or(false) {
+        // rating 列 DEFAULT 0，旧数据可能为 NULL：两者都算未评分（与前端剪枝 (rating||0)===0 同口径）
+        conditions.push("(i.rating IS NULL OR i.rating = 0)".into());
     }
     if !q.search.is_empty() {
         // 对 JS 镜像的已记录分歧（R71，README:67 承诺口径优先）：镜像仅搜
@@ -549,6 +556,44 @@ pub(crate) mod tests {
         let zero: ImageQuery = serde_json::from_str(r#"{"minRating":0}"#).unwrap();
         let (rows, _) = get_images(&conn, &zero).unwrap();
         assert_eq!(rows.len(), 4);
+    }
+
+    #[test]
+    fn 仅未评分_unrated向量_与min_rating互斥语义() {
+        let conn = mem_db();
+        seed_rated(&conn);
+        // unrated=true → 只留 rating 0（rating 列 DEFAULT 0 无 NULL 行，NULL 分支由条件覆盖）
+        let query: ImageQuery = serde_json::from_str(r#"{"unrated":true}"#).unwrap();
+        let (rows, total) = get_images(&conn, &query).unwrap();
+        assert_eq!(total, 1);
+        assert_eq!(rows[0].rating, Some(0));
+        // unrated=false/缺省 → 不过滤
+        for json in [r#"{"unrated":false}"#, "{}"] {
+            let query: ImageQuery = serde_json::from_str(json).unwrap();
+            let (_, total) = get_images(&conn, &query).unwrap();
+            assert_eq!(total, 4, "向量 {json}");
+        }
+        // NULL 行也算未评分：手工造一行 rating NULL
+        conn.execute(
+            "INSERT INTO images (filename, filepath, import_date, rating, hidden) VALUES ('rn.jpg', '/rn.jpg', '2026-04-01', NULL, 0)",
+            [],
+        )
+        .unwrap();
+        let query: ImageQuery = serde_json::from_str(r#"{"unrated":true}"#).unwrap();
+        let (_, total) = get_images(&conn, &query).unwrap();
+        assert_eq!(total, 2, "NULL 与 0 都算未评分");
+        // 变异金丝雀：删分支时先红
+        let mut joins: Vec<&str> = Vec::new();
+        let mut conditions: Vec<String> = Vec::new();
+        let mut params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+        build_filters(&query, &mut joins, &mut conditions, &mut params);
+        assert!(
+            conditions
+                .iter()
+                .any(|c| c == "(i.rating IS NULL OR i.rating = 0)"),
+            "unrated 分支缺失：conditions={conditions:?}"
+        );
+        assert!(params.is_empty());
     }
 
     #[test]

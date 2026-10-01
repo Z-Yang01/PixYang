@@ -43,6 +43,7 @@ const useGalleryStore = create((set, get) => ({
   filterAlbum: null,
   filterFavorites: false,
   filterMinRating: 0,
+  filterUnrated: false, // 仅看未评分（rating 0/NULL）；与 minRating 互斥，避免恒空集叠加
   filterDate: '',
   dateRange: { from: '', to: '' },
   page: 1,
@@ -134,7 +135,13 @@ const useGalleryStore = create((set, get) => ({
   // 评分下限：归一化到 0-5 整数（0=不过滤）；同值再点由 Sidebar 传 0 取消
   setFilterMinRating: (v) => {
     const n = Math.trunc(Number(v));
-    set({ filterMinRating: Number.isFinite(n) ? Math.min(5, Math.max(0, n)) : 0, page: 1 });
+    const rating = Number.isFinite(n) ? Math.min(5, Math.max(0, n)) : 0;
+    // 与「仅未评分」互斥：≥N 恒假于未评分集，叠加只会得到恒空集（undefined = 不动该键）
+    set({ filterMinRating: rating, ...(rating > 0 ? { filterUnrated: false } : {}), page: 1 });
+  },
+
+  setFilterUnrated: (v) => {
+    set({ filterUnrated: !!v, ...(v ? { filterMinRating: 0 } : {}), page: 1 });
   },
   setPage: (page) => set({ page }),
 
@@ -144,6 +151,7 @@ const useGalleryStore = create((set, get) => ({
       filterAlbum: null,
       filterFavorites: false,
       filterMinRating: 0,
+      filterUnrated: false,
       filterDate: '',
       dateRange: { from: '', to: '' },
       search: '',
@@ -159,7 +167,7 @@ const useGalleryStore = create((set, get) => ({
         set({ filterAlbum: null, page: 1 });
         break;
       case 'rating':
-        set({ filterMinRating: 0, page: 1 });
+        set({ filterMinRating: 0, filterUnrated: false, page: 1 });
         break;
       case 'date':
         set({ filterDate: '', page: 1 });
@@ -232,6 +240,7 @@ const useGalleryStore = create((set, get) => ({
             albumId: opts.albumId ?? state.filterAlbum,
             favorite: opts.favorite ?? state.filterFavorites,
             minRating: opts.minRating ?? state.filterMinRating,
+            unrated: opts.unrated ?? state.filterUnrated,
             importDate: opts.importDate ?? state.filterDate,
             dateFrom: opts.dateFrom ?? state.dateRange.from,
             dateTo: opts.dateTo ?? state.dateRange.to,

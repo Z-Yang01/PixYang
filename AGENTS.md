@@ -157,6 +157,9 @@ tests/            vitest（node 环境 + per-file happy-dom pragma）
 - **持久化编辑撤销**：编辑器历史之外的跨会话撤销——查看器工具栏按钮 → api.undoLastEdit（桥内
   组合：get_last_edit_undo 读回退目标 → saveEdits 全链）。回退目标语义：最新步 before → 缺失
   向前找最近 after → 全无回默认参数（isDefault）。
+- **星级筛选**：≥N（filterMinRating）与「仅未评分」（filterUnrated）两档 UI 互斥（store action 内
+  双清防恒空集叠加）；SQL 分支 `(i.rating IS NULL OR i.rating = 0)` 与前端剪枝 (rating||0)===0 同
+  口径；TopBar 评分/未评分 chip 可单独移除（clearSingleFilter('rating') 双清）
 - **裁剪拉直（crop.angle ±45°）**：坐标合同——angle≠0 时 crop.x/y/w/h 直接是
   「geometry+拉直旋转后」空间的像素坐标（执行器 rotate_by_angle 双线性旋转+出界填黑后取矩形，
   跳过 geometry 映射）；前端滑杆变更时自动套同比例最大内接框（editParams straightenGeometry）。

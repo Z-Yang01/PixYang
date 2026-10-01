@@ -203,3 +203,31 @@ describe('Sidebar 评分筛选', () => {
     expect(screen.getAllByTestId('rating-filter')[0]).toBeInTheDocument();
   });
 });
+
+describe('星级筛选：仅未评分档', () => {
+  it('点击「未评分」写 filterUnrated 并清 minRating（互斥）；再点取消', () => {
+    seedStore({ filterMinRating: 3 });
+    renderSidebar();
+    fireEvent.click(screen.getByTitle('仅看未评分图片（与星级档互斥）'));
+    const st = useGalleryStore.getState();
+    expect(st.filterUnrated).toBe(true);
+    expect(st.filterMinRating).toBe(0);
+    fireEvent.click(screen.getByTitle('仅看未评分图片（与星级档互斥）'));
+    expect(useGalleryStore.getState().filterUnrated).toBe(false);
+  });
+
+  it('反向互斥：≥N 档清 unrated；「清除」双清；「全部」active 判定收编', () => {
+    seedStore({ filterUnrated: true });
+    renderSidebar();
+    fireEvent.click(screen.getByTitle('≥ 2 星'));
+    expect(useGalleryStore.getState().filterUnrated).toBe(false);
+    expect(useGalleryStore.getState().filterMinRating).toBe(2);
+    cleanup();
+    seedStore({ filterUnrated: true, filterMinRating: 0 });
+    renderSidebar();
+    // 「清除」多区共用：限定在评分筛选区内查询
+    const section = screen.getByTestId('rating-filter');
+    fireEvent.click([...section.querySelectorAll('button')].find((b) => b.textContent === '清除'));
+    expect(useGalleryStore.getState().filterUnrated).toBe(false);
+  });
+});

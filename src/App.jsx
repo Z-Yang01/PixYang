@@ -42,6 +42,7 @@ export default function App() {
   const filterTag = useGalleryStore((s) => s.filterTag);
   const filterAlbum = useGalleryStore((s) => s.filterAlbum);
   const filterMinRating = useGalleryStore((s) => s.filterMinRating);
+  const filterUnrated = useGalleryStore((s) => s.filterUnrated);
   const selectedIds = useGalleryStore((s) => s.selectedIds);
   const gridSettings = useGalleryStore((s) => s.gridSettings);
   const page = useGalleryStore((s) => s.page);
@@ -155,7 +156,7 @@ export default function App() {
 
   // 筛选变化（含搜索/日期）：清空勾选（勾选集只对当前筛选有意义，避免跨筛选把不可见图片拖进批量操作）；
   // 翻页重置由 store 的筛选 action 完成
-  const filterKey = `${filterTag}|${filterAlbum}|${filterFavorites}|${filterMinRating}|${search}|${filterDate}|${dateRange.from}|${dateRange.to}`;
+  const filterKey = `${filterTag}|${filterAlbum}|${filterFavorites}|${filterMinRating}|${filterUnrated}|${search}|${filterDate}|${dateRange.from}|${dateRange.to}`;
   useEffect(() => {
     useGalleryStore.getState().clearSelection();
   }, [filterKey, location.pathname]);

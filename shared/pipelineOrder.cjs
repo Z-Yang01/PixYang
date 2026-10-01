@@ -61,7 +61,7 @@ const CAPABILITY_MATRIX = {
     preview: 'supported',
     export: 'supported',
     bake: 'supported',
-    note: 'rgb/r/g/b 分段线性曲线；UI 编辑器 planned（内置预设已用）',
+    note: 'rgb/r/g/b 分段线性曲线（CurveEditor 已交付）',
   },
   hsl: {
     preview: 'supported',
@@ -96,7 +96,7 @@ const CAPABILITY_MATRIX = {
   },
   geometry: { preview: 'supported', export: 'supported', bake: 'supported' },
   crop: {
-    preview: 'partial', // angle 拉直预览未实现（UI/预览为后续切片）；90° 步进几何预览经 CSS
+    preview: 'supported', // angle 拉直预览已交付（CSS 旋转 + 旋转坐标系内接框）；90° 步进几何预览经 CSS
     export: 'supported', // 含 crop.angle 拉直：双线性旋转（出界填黑）后取矩形
     bake: 'supported',
   },
