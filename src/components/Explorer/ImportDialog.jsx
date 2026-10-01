@@ -274,7 +274,19 @@ export default function ImportDialog({ onClose, onDone, initialFiles = null }) {
                       >
                         <div className="import-file-thumb">
                           {url ? (
-                            <img src={url} alt={f.filename} loading="lazy" />
+                            <img
+                              src={url}
+                              alt={f.filename}
+                              loading="lazy"
+                              onError={() =>
+                                setFileUrls((prev) => {
+                                  if (prev[f.filepath] === undefined) return prev;
+                                  const next = { ...prev };
+                                  delete next[f.filepath];
+                                  return next;
+                                })
+                              }
+                            />
                           ) : (
                             <FileImage className="size-6" />
                           )}

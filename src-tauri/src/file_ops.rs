@@ -141,6 +141,28 @@ pub fn import_one(
     });
     let dest_path = sub_dir.join(&unique_name);
     let src_path = str_or_empty(img.get("filepath"));
+    // 手动导入链（parse_import_files）此前丢弃 size/format → Info 面板永远「未知/0 B」：
+    // 调用方带 enrich（camera_sync）优先，缺失时从落盘副本兜底
+    let size_value = {
+        let v = num_i64(img.get("size"));
+        if v > 0 {
+            v
+        } else {
+            std::fs::metadata(&dest_path)
+                .map(|m| m.len() as i64)
+                .unwrap_or(0)
+        }
+    };
+    let format_value = {
+        let f = str_or_empty(img.get("format"));
+        if !f.is_empty() {
+            f
+        } else {
+            naming::extname(&unique_name)
+                .trim_start_matches('.')
+                .to_lowercase()
+        }
+    };
 
     if src_path != dest_path.to_string_lossy() {
         if let Err(e) = std::fs::copy(&src_path, &dest_path) {
@@ -231,10 +253,10 @@ pub fn import_one(
             num_i64(img.get("orientation")).max(1),
             date_str,
             str_or_empty(img.get("takenAt")),
-            num_i64(img.get("size")),
+            size_value,
             num_i64(img.get("width")),
             num_i64(img.get("height")),
-            str_or_empty(img.get("format")),
+            format_value,
             thumbnail_value,
         ],
     )
@@ -286,10 +308,13 @@ pub fn import_images(
     today: &str,
     thumbs_dir: &Path,
     app: Option<&tauri::AppHandle>,
+    default_root: &Path,
 ) -> Result<Vec<ImageRow>, PixError> {
     let mut imported = Vec::new();
     let groups = image_group::group_import_files(&parse_import_files(files));
-    let root = crate::db::images_root(conn, &PathBuf::from("."))?;
+    // 库内 images_root 为空（全新安装/未设置过）时的兜底必须是启动解析的托管目录，
+    // 不能是进程 CWD——CWD 下导入的文件在托管树与 asset scope 之外且存相对路径
+    let root = crate::db::images_root(conn, default_root)?;
     let total = groups.len();
     let mut done = 0usize;
     let mut prepared: Vec<(Option<Value>, Option<Value>)> = Vec::with_capacity(total);

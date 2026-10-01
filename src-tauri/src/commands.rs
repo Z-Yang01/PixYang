@@ -325,6 +325,7 @@ pub async fn import_images(
             &file_ops::today_ymd(),
             &paths.thumbs_dir,
             Some(&app),
+            &paths.default_images_dir,
         )
         .map_err(|e| err_cn::text(&e))
     })

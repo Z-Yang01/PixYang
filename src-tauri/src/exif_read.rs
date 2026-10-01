@@ -187,6 +187,8 @@ pub fn exif_to_json(ex: &Exif) -> Json {
     let ascii_or_empty = |tag: Tag| -> String { ascii_field(ex, tag).unwrap_or_default() };
     json!({
         "camera": camera,
+        // 手动导入日期链（file_ops apply_date_override）消费：YYYY-MM-DD HH:MM 归一格式
+        "taken_at": taken_at(ex).unwrap_or_default(),
         "lens": ascii_or_empty(Tag::LensModel),
         "iso": iso,
         "fNumber": f_number,
@@ -415,6 +417,15 @@ mod tests {
             assert_eq!(v[key], "", "字段 {key} 应为空");
         }
         assert_eq!(taken_at(&ex), None);
+    }
+
+    #[test]
+    fn exif_fields_输出含_taken_at键_手动导入日期链接线() {
+        // 回归锁：file_ops apply_date_override 消费 fields["taken_at"]——
+        // 此前 exif_to_json 漏该键导致手动导入的 EXIF 拍摄日期分支为死代码
+        let ex = parse_fields(&[ascii_f(Tag::DateTimeOriginal, "2026:09:20 14:30:05")]);
+        let fields = exif_to_json(&ex);
+        assert_eq!(fields["taken_at"], "2026-09-20 14:30");
     }
 
     #[test]

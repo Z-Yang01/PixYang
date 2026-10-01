@@ -15,7 +15,7 @@ use rusqlite::{Connection, OptionalExtension};
 use serde_json::{json, Value};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
-use tauri::State;
+use tauri::{Manager, State};
 
 // ── 相机目录扫描（scanImageFiles(dir, true) 口径） ──
 
@@ -717,6 +717,7 @@ pub async fn sync_camera_folder(
 pub async fn set_images_root(
     db: State<'_, Db>,
     paths: State<'_, AppPaths>,
+    app: tauri::AppHandle,
     dir_path: String,
 ) -> Result<Value, String> {
     let db = db.inner().clone();
@@ -729,7 +730,17 @@ pub async fn set_images_root(
             &paths.default_images_dir,
             &paths.thumbs_dir,
         ) {
-            Ok(v) => Ok(v),
+            Ok(v) => {
+                // 迁移成功即放行新根：asset scope 只在启动时挂一次，
+                // 不放行则新根下所有原图 URL 403 直到重启（R23 同款运行时扩展）
+                let resolved = v
+                    .get("path")
+                    .and_then(|p| p.as_str())
+                    .map(std::path::PathBuf::from)
+                    .unwrap_or_else(|| std::path::PathBuf::from(&dir_path));
+                let _ = app.asset_protocol_scope().allow_directory(&resolved, true);
+                Ok(v)
+            }
             Err(e) => {
                 eprintln!("[ipc] 迁移图片目录失败: {e}");
                 Ok(json!({ "error": format!("迁移失败：{}", err_cn::text(&e)) }))
