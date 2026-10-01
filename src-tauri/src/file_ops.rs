@@ -695,6 +695,68 @@ pub fn export_image_files(images: &[ImageRow], dest_dir: &str) -> Result<ExportO
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn 导入_空images_root回退用传入default而非cwd_审查H1() {
+        let dir = std::env::temp_dir().join(format!("pixyang_h1_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let conn = Connection::open(":memory:").unwrap();
+        conn.execute_batch(
+            "CREATE TABLE images (id INTEGER PRIMARY KEY AUTOINCREMENT, filename TEXT NOT NULL,
+             filepath TEXT NOT NULL UNIQUE, original_path TEXT DEFAULT '', raw_path TEXT DEFAULT '',
+             original_raw_path TEXT DEFAULT '', hidden INTEGER DEFAULT 0, orientation INTEGER DEFAULT 1,
+             rotation INTEGER DEFAULT 0, flip_h INTEGER DEFAULT 0, flip_v INTEGER DEFAULT 0,
+             import_date TEXT, taken_at TEXT, size INTEGER DEFAULT 0, width INTEGER, height INTEGER,
+             format TEXT DEFAULT '', thumbnail TEXT, thumbnail_path TEXT, thumbnail_small_path TEXT,
+             thumbnail_edit_path TEXT, rating INTEGER DEFAULT 0, favorite INTEGER DEFAULT 0,
+             notes TEXT DEFAULT '', created_at DATETIME, updated_at DATETIME, duration INTEGER);
+             CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT);",
+        )
+        .unwrap();
+        // images_root = ''（全新安装 seed 值）：触发 CWD 回退路径
+        conn.execute(
+            "INSERT INTO settings (key, value) VALUES ('images_root', '')",
+            [],
+        )
+        .unwrap();
+        // 待导入源文件
+        let src_dir = dir.join("src");
+        std::fs::create_dir_all(&src_dir).unwrap();
+        let img = image::DynamicImage::from(image::RgbaImage::from_fn(8, 8, |_, _| {
+            image::Rgba([90, 90, 90, 255])
+        }));
+        let src = src_dir.join("h1.jpg");
+        img.save(&src).unwrap();
+
+        // default_root 指向独立目录（非 CWD）
+        let default_root = dir.join("managed_root");
+        std::fs::create_dir_all(&default_root).unwrap();
+        let files = serde_json::json!([
+            { "filename": "h1.jpg", "filepath": src.to_string_lossy() }
+        ]);
+        let today = crate::file_ops::today_ymd();
+        let rows = super::import_images(
+            &conn,
+            &files,
+            None,
+            &today,
+            &dir.join("thumbs"),
+            None,
+            &default_root,
+        )
+        .unwrap();
+        assert_eq!(rows.len(), 1);
+        // 落库路径必须落在 default_root 下（非 CWD 相对路径）
+        let fp = rows[0].filepath.clone();
+        assert!(
+            fp.starts_with(default_root.to_string_lossy().as_ref()),
+            "导入应落 default_root 下: {fp}"
+        );
+        assert!(Path::new(&fp).is_absolute(), "应为绝对路径: {fp}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     use super::*;
     use image::{DynamicImage, RgbaImage};
 
