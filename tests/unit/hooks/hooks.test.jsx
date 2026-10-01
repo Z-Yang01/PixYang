@@ -346,6 +346,38 @@ describe('useBatchActions 异步收尾守卫', () => {
     expect(showToast).not.toHaveBeenCalled();
   });
 
+  it('全选全部：unrated 档进入查询与竞态快照（断链则全选视图外图片）', async () => {
+    useGalleryStore.setState({ filterUnrated: true });
+    window.pixyang.getAllImageIds = vi.fn().mockResolvedValue([9]);
+    render(<GuardHarness />);
+    await act(async () => {
+      await out.current.handleSelectAllAll();
+    });
+    expect(window.pixyang.getAllImageIds).toHaveBeenCalledWith(
+      expect.objectContaining({ unrated: true })
+    );
+    expect([...useGalleryStore.getState().selectedIds]).toEqual([9]);
+    // 等待期间切换 unrated 档：晚到的旧 id 集被丢弃（快照须含 filterUnrated）
+    let resolveIds;
+    window.pixyang.getAllImageIds = vi.fn(
+      () =>
+        new Promise((r) => {
+          resolveIds = r;
+        })
+    );
+    let task;
+    await act(async () => {
+      task = out.current.handleSelectAllAll();
+    });
+    await act(async () => {
+      useGalleryStore.getState().setFilterUnrated(false);
+      resolveIds([7, 8]);
+      await task;
+    });
+    // 丢弃晚到的旧档 id 集：保留第一段的 [9]，[7,8] 不灌入
+    expect([...useGalleryStore.getState().selectedIds]).toEqual([9]);
+  });
+
   it('全选全部：筛选未变时正常灌入（对照组，守卫不过宽）', async () => {
     window.pixyang.getAllImageIds = vi.fn().mockResolvedValue([1, 2]);
     render(<GuardHarness />);

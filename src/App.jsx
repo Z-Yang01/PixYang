@@ -295,6 +295,7 @@ export default function App() {
         albumId: state.filterAlbum,
         favorite: state.filterFavorites,
         minRating: state.filterMinRating,
+        unrated: state.filterUnrated,
         importDate: state.filterDate,
         dateFrom: state.dateRange.from,
         dateTo: state.dateRange.to,

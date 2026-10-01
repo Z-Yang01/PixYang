@@ -57,6 +57,7 @@ export default function ImageGrid({
   const dateRange = useGalleryStore((s) => s.dateRange);
   const filterFavorites = useGalleryStore((s) => s.filterFavorites);
   const filterMinRating = useGalleryStore((s) => s.filterMinRating);
+  const filterUnrated = useGalleryStore((s) => s.filterUnrated);
 
   const hasActiveFilters = computeHasActiveFilters({
     search,
@@ -66,6 +67,7 @@ export default function ImageGrid({
     dateRange,
     filterFavorites,
     filterMinRating,
+    filterUnrated,
   });
   // 标签列表直接订阅 store（loadAppData 随计数刷新）：
   // 本地挂载时拉一次的旧方案在标签变动后会把过期列表喂给快速标签菜单
