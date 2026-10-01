@@ -342,6 +342,16 @@ export default function useBatchActions({ showToast }) {
       const failedCount = deletedIds.length - list.length;
       okCount = list.length;
       if (failedCount > 0) {
+        // 部分失败：成功入暂存的那部分同样给 6 秒撤销入口（不可让已删张数无 UI 恢复途径）
+        if (okCount > 0) {
+          offerDeleteUndo(list, `已删除 ${okCount} 张（其余 ${failedCount} 张失败）`, {
+            onRestored: async () => {
+              const s2 = useGalleryStore.getState();
+              await Promise.all([s2.loadImages(), s2.loadStats(), s2.loadAppData()]);
+            },
+            onFailed: (n, msg) => showToast(msg || `撤销失败（${n} 张）`, 'error'),
+          });
+        }
         showToast(`已删除 ${okCount} 张，${failedCount} 张失败（文件可能被占用）`, 'error');
       } else {
         offerDeleteUndo(list, `已删除 ${deletedCount} 张图片`, {

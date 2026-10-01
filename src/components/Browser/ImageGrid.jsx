@@ -466,8 +466,18 @@ export default function ImageGrid({
       if (!api.isBridgeAvailable()) return;
       const tags = imageTagsRef.current[imageId] || [];
       const hasTag = tags.find((t) => t.id === tagId);
+      try {
+        if (hasTag) {
+          await api.removeTagFromImage(imageId, tagId);
+        } else {
+          await api.addTagToImage(imageId, tagId);
+        }
+      } catch (err) {
+        console.error('[grid] 快捷标签失败:', err.message);
+        toast.error(errText('快捷标签失败', err));
+        return;
+      }
       if (hasTag) {
-        await api.removeTagFromImage(imageId, tagId);
         setImageTags((prev) => ({
           ...prev,
           [imageId]: prev[imageId]?.filter((t) => t.id !== tagId) || [],
@@ -477,7 +487,6 @@ export default function ImageGrid({
           setSelectedIds(removeIdsFromSet(selectedIdsRef.current, [imageId]));
         }
       } else {
-        await api.addTagToImage(imageId, tagId);
         const tag = allTags.find((t) => t.id === tagId);
         if (tag) {
           setImageTags((prev) => ({
@@ -674,7 +683,7 @@ export default function ImageGrid({
       {deleteTarget && (
         <ConfirmDialog
           title="删除图片"
-          message={`确定要删除「${deleteTarget.filename}」吗？此操作不可撤销，图片文件（含配对的 NEF）将被永久删除。`}
+          message={`确定要删除「${deleteTarget.filename}」吗？图片将移入回收暂存区，可在删除后的提示中撤销（6 秒内），24 小时后自动清理。`}
           confirmLabel="删除"
           danger
           onConfirm={confirmDelete}

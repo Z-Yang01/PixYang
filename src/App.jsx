@@ -665,7 +665,7 @@ export default function App() {
         {pendingBatchAction?.type === 'delete' && (
           <ConfirmDialog
             title="批量删除图片"
-            message={`确定要删除当前筛选下的 ${selectedIds.size} 张图片吗？此操作不可撤销，图片文件（含配对的 NEF）将被永久删除。`}
+            message={`确定要删除当前筛选下的 ${selectedIds.size} 张图片吗？图片将移入回收暂存区，可在删除后的提示中撤销（6 秒内），24 小时后自动清理。`}
             confirmLabel={`删除 ${selectedIds.size} 张`}
             danger
             onConfirm={executeBatchDelete}

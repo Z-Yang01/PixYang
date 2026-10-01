@@ -60,8 +60,11 @@ export default function AlbumsView({ onSelectAlbum, onRefresh }) {
     }
   };
 
+  const creatingRef = useRef(false);
   const handleCreate = async () => {
-    if (!newName.trim() || !api.isBridgeAvailable()) return;
+    if (!newName.trim() || !api.isBridgeAvailable() || creatingRef.current) return;
+    // 相册名无 UNIQUE：双 Enter 并发会建出同名重复相册（同 ImageGrid createAlbumRunningRef 口径）
+    creatingRef.current = true;
     // 写失败（{error}/reject）不再静默收表单：保留输入供重试（审查批 8 Q-09）
     let album;
     try {
@@ -73,11 +76,13 @@ export default function AlbumsView({ onSelectAlbum, onRefresh }) {
     }
     if (album?.error) {
       toast.error(friendlyError(album.error));
+      creatingRef.current = false;
       return;
     }
     setNewName('');
     setNewDesc('');
     setShowCreate(false);
+    creatingRef.current = false;
     await loadAlbums();
     onRefresh?.();
   };
