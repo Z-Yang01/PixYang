@@ -14,18 +14,26 @@ use std::path::Path;
 pub const THUMB_SMALL_SIZE: u32 = 320;
 pub const THUMB_MEDIUM_SIZE: u32 = 640;
 
-/// 镜像 EXIF orientation 2-8 的像素转正（sharp .rotate() 无参语义）
-pub fn apply_orientation(img: &DynamicImage, orientation: u32) -> DynamicImage {
+/// 镜像 EXIF orientation 2-8 的像素转正（sharp .rotate() 无参语义）。
+/// orientation 1/0（无需转正，最高频路径）返回 Cow 借用避免整图克隆。
+pub fn apply_orientation(
+    img: &DynamicImage,
+    orientation: u32,
+) -> std::borrow::Cow<'_, DynamicImage> {
     use image::imageops;
     match orientation {
-        2 => DynamicImage::from(imageops::flip_horizontal(img)),
-        3 => DynamicImage::from(imageops::rotate180(img)),
-        4 => DynamicImage::from(imageops::flip_vertical(img)),
-        5 => DynamicImage::from(imageops::flip_horizontal(&imageops::rotate90(img))),
-        6 => DynamicImage::from(imageops::rotate90(img)),
-        7 => DynamicImage::from(imageops::flip_horizontal(&imageops::rotate270(img))),
-        8 => DynamicImage::from(imageops::rotate270(img)),
-        _ => img.clone(),
+        2 => std::borrow::Cow::Owned(DynamicImage::from(imageops::flip_horizontal(img))),
+        3 => std::borrow::Cow::Owned(DynamicImage::from(imageops::rotate180(img))),
+        4 => std::borrow::Cow::Owned(DynamicImage::from(imageops::flip_vertical(img))),
+        5 => std::borrow::Cow::Owned(DynamicImage::from(imageops::flip_horizontal(
+            &imageops::rotate90(img),
+        ))),
+        6 => std::borrow::Cow::Owned(DynamicImage::from(imageops::rotate90(img))),
+        7 => std::borrow::Cow::Owned(DynamicImage::from(imageops::flip_horizontal(
+            &imageops::rotate270(img),
+        ))),
+        8 => std::borrow::Cow::Owned(DynamicImage::from(imageops::rotate270(img))),
+        _ => std::borrow::Cow::Borrowed(img),
     }
 }
 
@@ -146,13 +154,20 @@ pub fn find_largest_jpeg(buffer: &[u8]) -> Option<(usize, usize)> {
 }
 
 fn find_sub(haystack: &[u8], needle: &[u8], from: usize) -> Option<usize> {
-    if from >= haystack.len() {
+    if from >= haystack.len() || needle.is_empty() {
         return None;
     }
-    haystack[from..]
-        .windows(needle.len())
-        .position(|w| w == needle)
-        .map(|i| i + from)
+    // 首字节预筛：NEF 预览段扫描对 50MB+ 文件逐 windows 切片比较过重，
+    // 先跳过首字节不匹配位置再比较全模式（memchr 思路的朴素等价，零依赖）
+    let first = needle[0];
+    let mut i = from;
+    while i + needle.len() <= haystack.len() {
+        if haystack[i] == first && &haystack[i..i + needle.len()] == needle {
+            return Some(i);
+        }
+        i += 1;
+    }
+    None
 }
 
 /// 提取 NEF 内嵌全尺寸 JPEG 预览并重写为规范 JPEG（q92），过小（<320 宽）返回 None

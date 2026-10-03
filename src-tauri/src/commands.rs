@@ -359,14 +359,8 @@ pub async fn export_images(
     let db = db.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
         let conn = db.write_lock();
-        let mut images = Vec::with_capacity(ids.len());
-        for id in ids {
-            if let Some(row) =
-                images_query::get_image_by_id(&conn, id).map_err(|e| err_cn::text(&e))?
-            {
-                images.push(row);
-            }
-        }
+        // 批量 IN 查询替代逐 id N+1（大相册导出前逐条查询放大连接往返）
+        let images = images_query::get_images_by_ids(&conn, &ids).map_err(|e| err_cn::text(&e))?;
         finish_export(&images, &dest_dir)
     })
     .await

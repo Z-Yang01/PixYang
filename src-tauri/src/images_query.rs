@@ -39,7 +39,7 @@ pub struct ImageQuery {
     pub offset: Option<f64>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct ImageRow {
     pub id: i64,
     pub filename: String,
@@ -234,6 +234,32 @@ pub fn get_images(conn: &Connection, q: &ImageQuery) -> rusqlite::Result<(Vec<Im
         )?
         .collect::<rusqlite::Result<Vec<ImageRow>>>()?;
     Ok((rows, total))
+}
+
+/// 批量按 id 取行（导出/批量读路径用，替代逐 id N+1）。
+/// 返回按入参顺序排列、缺失 id 跳过；超过 900 个分块（SQLite 变量数上限口径同 update_images）。
+pub fn get_images_by_ids(conn: &Connection, ids: &[i64]) -> rusqlite::Result<Vec<ImageRow>> {
+    if ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    let mut out = Vec::with_capacity(ids.len());
+    for chunk in ids.chunks(900) {
+        let placeholders = chunk.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+        let sql = format!("SELECT * FROM images WHERE id IN ({placeholders})");
+        let mut stmt = conn.prepare(&sql)?;
+        let by_id: std::collections::HashMap<i64, ImageRow> = stmt
+            .query_map(rusqlite::params_from_iter(chunk), row_from)?
+            .collect::<rusqlite::Result<Vec<ImageRow>>>()?
+            .into_iter()
+            .map(|r| (r.id, r))
+            .collect();
+        for id in chunk {
+            if let Some(row) = by_id.get(id) {
+                out.push(row.clone());
+            }
+        }
+    }
+    Ok(out)
 }
 
 pub fn get_image_by_id(conn: &Connection, id: i64) -> rusqlite::Result<Option<ImageRow>> {
@@ -538,6 +564,22 @@ pub(crate) mod tests {
         (r#"{"minRating":5}"#, 1),
         (r#"{"minRating":6}"#, 0),
     ];
+
+    #[test]
+    fn 按ids批量取行_保序跳缺失_审查L10() {
+        let conn = mem_db();
+        seed_rated(&conn); // id 1-4
+                           // 保序：入参乱序 → 返回同序；缺失 id 跳过
+        let rows = get_images_by_ids(&conn, &[3, 99, 1]).unwrap();
+        assert_eq!(rows.iter().map(|r| r.id).collect::<Vec<_>>(), vec![3, 1]);
+        // 空入参短路
+        assert!(get_images_by_ids(&conn, &[]).unwrap().is_empty());
+        // 超 900 分块不炸（902 个不存在 id + 2 个存在）
+        let mut big: Vec<i64> = (100..1000).collect();
+        big.push(1);
+        big.push(3);
+        assert_eq!(get_images_by_ids(&conn, &big).unwrap().len(), 2);
+    }
 
     #[test]
     fn 评分筛选_边界None_0_1_5_6_对拍向量() {
