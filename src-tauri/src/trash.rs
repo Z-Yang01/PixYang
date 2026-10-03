@@ -13,7 +13,7 @@ pub const RETENTION_SECS: u64 = 24 * 60 * 60;
 
 /// 暂存清单：images 全 28 列快照（get_image_by_id 投影 ImageRow 缺
 /// thumbnail_edit_path/hash/flag，撤销不能依赖前端回传行，必须落盘 manifest）
-#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct TrashRecord {
     pub id: i64,
     pub filename: String,
@@ -45,39 +45,50 @@ pub struct TrashRecord {
     pub updated_at: Option<String>,
 }
 
-#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 struct EditSnapshot {
     version: i64,
     params_json: String,
 }
 
-#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 struct HistorySnapshot {
     step: i64,
     command_json: String,
 }
 
 /// 完整撤销快照：主记录 + 标签/相册/编辑关联（delete_image_record 五表清理的逆）
-#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct TrashManifest {
     pub image: TrashRecord,
     pub tag_ids: Vec<i64>,
     pub album_ids: Vec<i64>,
     pub edit: Option<EditSnapshot>,
     pub edit_history: Vec<HistorySnapshot>,
+    /// 移入暂存的文件清单（显式角色/回位路径/原始 mtime）：还原按此遍历，
+    /// 不从 trash 文件名反推角色；mtime_ms 回写恢复真实修改时间。
+    /// 旧 manifest（无 files）serde default 兜底继续按文件名解析
+    #[serde(default)]
+    pub files: Vec<TrashedFile>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct TrashedFile {
+    /// 原图 original / 配对 NEF raw / 派生缩略图 thumb
+    pub role: String,
+    pub trash_name: String,
+    pub restore_to: String,
+    #[serde(default)]
+    pub mtime_ms: u64,
 }
 
 fn read_manifest_data(conn: &Connection, id: i64) -> Result<TrashManifest, PixError> {
-    let image = read_full_record(conn, id)?.ok_or_else(|| {
-        PixError::Io("图片记录不存在".into())
-    })?;
+    let image = read_full_record(conn, id)?.ok_or_else(|| PixError::Io("图片记录不存在".into()))?;
     let mut tag_ids = Vec::new();
     let mut stmt = conn
         .prepare("SELECT tag_id FROM image_tags WHERE image_id = ?1 ORDER BY tag_id")
         .map_err(PixError::from)?;
-    let rows = stmt
-        .query_map([id], |r| r.get(0))
-        .map_err(PixError::from)?;
+    let rows = stmt.query_map([id], |r| r.get(0)).map_err(PixError::from)?;
     for r in rows {
         tag_ids.push(r.map_err(PixError::from)?);
     }
@@ -85,9 +96,7 @@ fn read_manifest_data(conn: &Connection, id: i64) -> Result<TrashManifest, PixEr
     let mut stmt = conn
         .prepare("SELECT album_id FROM album_images WHERE image_id = ?1 ORDER BY album_id")
         .map_err(PixError::from)?;
-    let rows = stmt
-        .query_map([id], |r| r.get(0))
-        .map_err(PixError::from)?;
+    let rows = stmt.query_map([id], |r| r.get(0)).map_err(PixError::from)?;
     for r in rows {
         album_ids.push(r.map_err(PixError::from)?);
     }
@@ -125,6 +134,7 @@ fn read_manifest_data(conn: &Connection, id: i64) -> Result<TrashManifest, PixEr
         album_ids,
         edit,
         edit_history,
+        files: Vec::new(), // move_image_to_trash 移入时按实际存在的文件填充
     })
 }
 
@@ -213,6 +223,15 @@ fn move_file(src: &Path, dst: &Path) -> std::io::Result<()> {
     }
 }
 
+fn mtime_ms(path: &Path) -> u64 {
+    std::fs::metadata(path)
+        .and_then(|m| m.modified())
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
+}
+
 // Windows CopyFileEx/rename 会保留源 mtime（老照片可能是多年前），而清扫按 mtime 判期；
 // 移入时刻必须把暂存文件 mtime 归一，否则刚移入的文件会被下一轮清扫立即误删。
 fn normalize_mtime(path: &Path) {
@@ -242,17 +261,32 @@ pub fn move_image_to_trash(
     std::fs::create_dir_all(trash).map_err(|e| PixError::Io(format!("暂存目录创建失败: {e}")))?;
     let mut moved: Vec<(PathBuf, PathBuf)> = Vec::new();
 
+    let mut files: Vec<TrashedFile> = Vec::new();
     let orig = PathBuf::from(&record.filepath);
     if orig.exists() {
         let dest = trash.join(format!("{}__{}", record.id, file_name_of(&orig)));
+        let src_mtime = mtime_ms(&orig);
         move_file_into_trash(&orig, &dest)?;
+        files.push(TrashedFile {
+            role: "original".into(),
+            trash_name: file_name_of(&dest),
+            restore_to: orig.to_string_lossy().into_owned(),
+            mtime_ms: src_mtime,
+        });
         moved.push((orig, dest));
     }
     if let Some(raw) = record.raw_path.as_deref().filter(|s| !s.is_empty()) {
         let raw = PathBuf::from(raw);
         if raw.exists() {
             let dest = trash.join(format!("{}__raw__{}", record.id, file_name_of(&raw)));
+            let src_mtime = mtime_ms(&raw);
             move_file_into_trash(&raw, &dest)?;
+            files.push(TrashedFile {
+                role: "raw".into(),
+                trash_name: file_name_of(&dest),
+                restore_to: raw.to_string_lossy().into_owned(),
+                mtime_ms: src_mtime,
+            });
             moved.push((raw, dest));
         }
     }
@@ -261,14 +295,22 @@ pub fn move_image_to_trash(
         if p.exists() {
             let dest = trash.join(format!("{}__thumb__{}", record.id, name));
             move_file_into_trash(&p, &dest)?;
+            files.push(TrashedFile {
+                role: "thumb".into(),
+                trash_name: file_name_of(&dest),
+                restore_to: p.to_string_lossy().into_owned(),
+                mtime_ms: 0, // 派生缩略图可再生，mtime 无外部语义
+            });
             moved.push((p, dest));
         }
     }
 
     let manifest_path = trash.join(format!("{}__record.json", record.id));
-    let json = serde_json::to_string_pretty(manifest)
+    let mut manifest_with_files = manifest.clone();
+    manifest_with_files.files = files;
+    let manifest_json = serde_json::to_string_pretty(&manifest_with_files)
         .map_err(|e| PixError::Io(format!("暂存记录序列化失败: {e}")))?;
-    if let Err(e) = std::fs::write(&manifest_path, json) {
+    if let Err(e) = std::fs::write(&manifest_path, manifest_json) {
         rollback_moves(&moved);
         return Err(PixError::Io(format!("暂存记录写入失败: {e}")));
     }
@@ -356,7 +398,11 @@ fn free_name_in_dir(dir: &Path, conflict: &Path) -> String {
         .unwrap_or_default();
     let mut n = 1;
     loop {
-        let tag = if n == 1 { " (恢复)".to_string() } else { format!(" (恢复{n})") };
+        let tag = if n == 1 {
+            " (恢复)".to_string()
+        } else {
+            format!(" (恢复{n})")
+        };
         let name = format!("{stem}{tag}{ext}");
         if !dir.join(&name).exists() {
             return name;
@@ -386,7 +432,9 @@ pub fn restore_image_from_trash_core(
     };
     let record = &manifest.image;
     let id_taken: i64 = conn
-        .query_row("SELECT COUNT(*) FROM images WHERE id = ?1", [id], |r| r.get(0))
+        .query_row("SELECT COUNT(*) FROM images WHERE id = ?1", [id], |r| {
+            r.get(0)
+        })
         .map_err(PixError::from)?;
     if id_taken > 0 {
         return Err(PixError::Io("该图片已存在于图库，无法重复撤销".into()));
@@ -478,7 +526,9 @@ pub fn restore_image_from_trash_core(
         } else {
             Some((PathBuf::from(&final_filepath_str), false))
         };
-        let Some((dest, is_thumb)) = dest else { continue };
+        let Some((dest, is_thumb)) = dest else {
+            continue;
+        };
         if !src.exists() {
             continue;
         }
@@ -496,6 +546,27 @@ pub fn restore_image_from_trash_core(
     if let Some(e) = failure {
         rollback_moves(&moved_back);
         return Err(e);
+    }
+
+    // 原始 mtime 回写（L1）：入暂存时 mtime 归一为移入时刻（清扫按 mtime 判期，
+    // 老照片会被立即误删），撤销回位后经 manifest.files 恢复真实修改时间。
+    // 旧 manifest（无 files 或 mtime_ms=0）跳过——保持旧路径行为
+    for f in &manifest.files {
+        if f.mtime_ms == 0 {
+            continue;
+        }
+        let target = match f.role.as_str() {
+            "original" => Some(PathBuf::from(&final_filepath_str)),
+            "raw" => final_raw_path.as_ref().map(PathBuf::from),
+            _ => None,
+        };
+        if let Some(p) = target.filter(|p| p.exists()) {
+            if let Ok(fh) = std::fs::OpenOptions::new().write(true).open(&p) {
+                let _ = fh.set_times(std::fs::FileTimes::new().set_modified(
+                    std::time::UNIX_EPOCH + std::time::Duration::from_millis(f.mtime_ms),
+                ));
+            }
+        }
     }
 
     let filepath_out = final_filepath_str;
@@ -662,7 +733,9 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(row.id, 1);
-        assert!(crate::images_query::get_image_by_id(&conn, 1).unwrap().is_none());
+        assert!(crate::images_query::get_image_by_id(&conn, 1)
+            .unwrap()
+            .is_none());
         assert!(!pics.join("a.jpg").exists());
         assert!(!pics.join("a.nef").exists());
         assert!(!thumbs.join("1.jpg").exists());
@@ -708,7 +781,10 @@ mod tests {
         let img = crate::images_query::get_image_by_id(&conn, 1)
             .unwrap()
             .unwrap();
-        assert_eq!(img.filepath, format!("{}/a.jpg", pics.to_string_lossy().replace('\\', "/")));
+        assert_eq!(
+            img.filepath,
+            format!("{}/a.jpg", pics.to_string_lossy().replace('\\', "/"))
+        );
         assert!(pics.join("a.jpg").exists());
         assert_eq!(std::fs::read(pics.join("a.jpg")).unwrap(), b"old");
         assert!(pics.join("a.nef").exists());
@@ -721,15 +797,27 @@ mod tests {
 
         // 关联表（标签/相册/编辑/历史）与全列快照一并还原
         let tags: i64 = conn
-            .query_row("SELECT COUNT(*) FROM image_tags WHERE image_id = 1", [], |r| r.get(0))
+            .query_row(
+                "SELECT COUNT(*) FROM image_tags WHERE image_id = 1",
+                [],
+                |r| r.get(0),
+            )
             .unwrap();
         assert_eq!(tags, 1);
         let albums: i64 = conn
-            .query_row("SELECT COUNT(*) FROM album_images WHERE image_id = 1", [], |r| r.get(0))
+            .query_row(
+                "SELECT COUNT(*) FROM album_images WHERE image_id = 1",
+                [],
+                |r| r.get(0),
+            )
             .unwrap();
         assert_eq!(albums, 1);
         let edit_params: String = conn
-            .query_row("SELECT params_json FROM edits WHERE image_id = 1", [], |r| r.get(0))
+            .query_row(
+                "SELECT params_json FROM edits WHERE image_id = 1",
+                [],
+                |r| r.get(0),
+            )
             .unwrap();
         assert_eq!(edit_params, "{}");
         let history: String = conn
@@ -754,6 +842,38 @@ mod tests {
     }
 
     #[test]
+    fn 撤销_新manifest回位后原始mtime恢复_审查L1() {
+        let (conn, pics, thumbs, trash) = setup("restore_mtime");
+        let orig = pics.join("a.jpg");
+        std::fs::write(&orig, b"old").unwrap();
+        let stamp = std::time::UNIX_EPOCH + std::time::Duration::from_secs(1_592_222_400);
+        {
+            let f = std::fs::OpenOptions::new().write(true).open(&orig).unwrap();
+            f.set_times(std::fs::FileTimes::new().set_modified(stamp))
+                .unwrap();
+        }
+        conn.execute_batch(&format!(
+            "INSERT INTO images (id, filename, filepath, import_date, hash) VALUES
+             (1, 'a.jpg', '{}', '2026-01-01', 'h1');",
+            orig.to_string_lossy().replace("\\", "/")
+        ))
+        .unwrap();
+        delete_image_to_trash_core(&conn, 1, &thumbs, &trash).unwrap();
+
+        // 入暂存后 trash 文件 mtime 已被归一（≠ 原始值）
+        let trashed = trash.join("1__a.jpg");
+        let trashed_mtime = std::fs::metadata(&trashed).unwrap().modified().unwrap();
+        assert_ne!(trashed_mtime, stamp, "入暂存应归一 mtime（清扫判期需要）");
+
+        restore_image_from_trash_core(&conn, 1, &thumbs, &trash).unwrap();
+
+        // 回位后原始 mtime 经 manifest.files 回写恢复
+        let after = std::fs::metadata(&orig).unwrap().modified().unwrap();
+        assert_eq!(after, stamp, "撤销回位应恢复原始 mtime");
+        let _ = std::fs::remove_dir_all(pics.parent().unwrap());
+    }
+
+    #[test]
     fn 撤销_原路径被新文件占用_改名还原_不覆盖新文件() {
         let (conn, pics, thumbs, trash) = setup("conflict_disk");
         insert_image(&conn, &pics, true);
@@ -768,10 +888,7 @@ mod tests {
         // 新文件原样保留；旧文件以 (恢复) 名回位，记录同步改名
         assert_eq!(std::fs::read(pics.join("a.jpg")).unwrap(), b"new-import");
         assert!(pics.join("a (恢复).jpg").exists());
-        assert_eq!(
-            std::fs::read(pics.join("a (恢复).jpg")).unwrap(),
-            b"old"
-        );
+        assert_eq!(std::fs::read(pics.join("a (恢复).jpg")).unwrap(), b"old");
         let img = crate::images_query::get_image_by_id(&conn, 1)
             .unwrap()
             .unwrap();
@@ -814,7 +931,10 @@ mod tests {
         delete_image_to_trash_core(&conn, 1, &thumbs, &trash).unwrap();
 
         let now = SystemTime::now();
-        assert_eq!(sweep_trash(&trash, now, Duration::from_secs(RETENTION_SECS)), 0);
+        assert_eq!(
+            sweep_trash(&trash, now, Duration::from_secs(RETENTION_SECS)),
+            0
+        );
         assert!(trash_exists(&trash, "1__a.jpg"));
         assert!(trash_exists(&trash, "1__record.json"));
 
@@ -841,8 +961,12 @@ mod tests {
         assert_eq!(rows.len(), 2);
         assert!(trash_exists(&trash, "1__a.jpg"));
         assert!(trash_exists(&trash, "2__b.jpg"));
-        assert!(crate::images_query::get_image_by_id(&conn, 1).unwrap().is_none());
-        assert!(crate::images_query::get_image_by_id(&conn, 2).unwrap().is_none());
+        assert!(crate::images_query::get_image_by_id(&conn, 1)
+            .unwrap()
+            .is_none());
+        assert!(crate::images_query::get_image_by_id(&conn, 2)
+            .unwrap()
+            .is_none());
 
         // 直删通道（损坏记录清理/重复删除仍走）行为不变：物理删除不留暂存
         conn.execute_batch(&format!(
