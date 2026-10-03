@@ -65,9 +65,11 @@ pub struct TrashManifest {
     pub album_ids: Vec<i64>,
     pub edit: Option<EditSnapshot>,
     pub edit_history: Vec<HistorySnapshot>,
-    /// 移入暂存的文件清单（显式角色/回位路径/原始 mtime）：还原按此遍历，
-    /// 不从 trash 文件名反推角色；mtime_ms 回写恢复真实修改时间。
-    /// 旧 manifest（无 files）serde default 兜底继续按文件名解析
+    /// 移入暂存的文件清单（显式角色/回位路径/原始 mtime）。当前消费方仅为撤销
+    /// 回位后的原始 mtime 回写；角色判定与回位路径仍由 restore 按 trash 文件名
+    /// 解析（M1 全等+前缀），与本清单互为双通道——restore_to/trash_name 是审计
+    /// 元数据，不参与路径重建（回位目标取实算路径，兼容磁盘冲突改名）。
+    /// 旧 manifest（无 files）serde default 兜底，还原行为与升级前一致
     #[serde(default)]
     pub files: Vec<TrashedFile>,
 }
@@ -852,10 +854,20 @@ mod tests {
             f.set_times(std::fs::FileTimes::new().set_modified(stamp))
                 .unwrap();
         }
+        // 配对 NEF：mtime 回写的 raw 分支（final_raw_path 映射）同样要恢复原始 mtime
+        let raw = pics.join("a.nef");
+        std::fs::write(&raw, b"raw").unwrap();
+        let stamp_raw = stamp + std::time::Duration::from_secs(3_600);
+        {
+            let f = std::fs::OpenOptions::new().write(true).open(&raw).unwrap();
+            f.set_times(std::fs::FileTimes::new().set_modified(stamp_raw))
+                .unwrap();
+        }
         conn.execute_batch(&format!(
-            "INSERT INTO images (id, filename, filepath, import_date, hash) VALUES
-             (1, 'a.jpg', '{}', '2026-01-01', 'h1');",
-            orig.to_string_lossy().replace("\\", "/")
+            "INSERT INTO images (id, filename, filepath, import_date, raw_path, hash) VALUES
+             (1, 'a.jpg', '{}', '2026-01-01', '{}', 'h1');",
+            orig.to_string_lossy().replace("\\", "/"),
+            raw.to_string_lossy().replace("\\", "/")
         ))
         .unwrap();
         delete_image_to_trash_core(&conn, 1, &thumbs, &trash).unwrap();
@@ -867,9 +879,53 @@ mod tests {
 
         restore_image_from_trash_core(&conn, 1, &thumbs, &trash).unwrap();
 
-        // 回位后原始 mtime 经 manifest.files 回写恢复
+        // 回位后原始 mtime 经 manifest.files 回写恢复（原图 + 配对 NEF 两分支）
         let after = std::fs::metadata(&orig).unwrap().modified().unwrap();
         assert_eq!(after, stamp, "撤销回位应恢复原始 mtime");
+        let after_raw = std::fs::metadata(&raw).unwrap().modified().unwrap();
+        assert_eq!(after_raw, stamp_raw, "配对 NEF 回位应恢复原始 mtime");
+        let _ = std::fs::remove_dir_all(pics.parent().unwrap());
+    }
+
+    #[test]
+    fn 撤销_旧manifest无files字段serde兜底可还原_审查向后兼容() {
+        let (conn, pics, thumbs, trash) = setup("restore_legacy");
+        let orig = pics.join("a.jpg");
+        std::fs::write(&orig, b"old").unwrap();
+        let stamp = std::time::UNIX_EPOCH + std::time::Duration::from_secs(1_592_222_400);
+        {
+            let f = std::fs::OpenOptions::new().write(true).open(&orig).unwrap();
+            f.set_times(std::fs::FileTimes::new().set_modified(stamp))
+                .unwrap();
+        }
+        conn.execute_batch(&format!(
+            "INSERT INTO images (id, filename, filepath, import_date, hash) VALUES
+             (1, 'a.jpg', '{}', '2026-01-01', 'h1');",
+            orig.to_string_lossy().replace("\\", "/")
+        ))
+        .unwrap();
+        delete_image_to_trash_core(&conn, 1, &thumbs, &trash).unwrap();
+
+        // 把 manifest 降级为升级前格式（删除 files 字段），模拟旧版本写入的暂存记录
+        let manifest_path = trash.join("1__record.json");
+        let mut v: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&manifest_path).unwrap()).unwrap();
+        assert!(
+            v["files"].as_array().is_some_and(|a| !a.is_empty()),
+            "前置：新 manifest 应含非空 files"
+        );
+        v.as_object_mut().unwrap().remove("files");
+        std::fs::write(&manifest_path, serde_json::to_string(&v).unwrap()).unwrap();
+
+        restore_image_from_trash_core(&conn, 1, &thumbs, &trash).unwrap();
+
+        // 旧格式走文件名解析路径还原成功；无 mtime 信息故不回写（保持旧版行为）
+        assert!(pics.join("a.jpg").exists());
+        assert!(crate::images_query::get_image_by_id(&conn, 1)
+            .unwrap()
+            .is_some());
+        let after = std::fs::metadata(&orig).unwrap().modified().unwrap();
+        assert_ne!(after, stamp, "旧 manifest 无 files，不应回写 mtime");
         let _ = std::fs::remove_dir_all(pics.parent().unwrap());
     }
 
