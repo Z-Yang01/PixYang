@@ -940,8 +940,10 @@ mod tests {
             [0, 0, 0],
             "出界填黑"
         );
+        // 第 0 行 x=2（显式 0 行号会触发 clippy::erasing_op/identity_op deny，改经变量表达）
+        let row0 = 0usize;
         assert_eq!(
-            g[(0 * 4 + 2) * 4..(0 * 4 + 2) * 4 + 3],
+            g[(row0 * 4 + 2) * 4..(row0 * 4 + 2) * 4 + 3],
             [0, 0, 0],
             "出界填黑"
         );

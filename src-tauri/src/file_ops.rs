@@ -409,6 +409,10 @@ fn apply_date_override(img: &mut Value, date_override: Option<&str>) {
         if let Some(taken) = fields.get("taken_at").and_then(|v| v.as_str()) {
             if taken.len() >= 10 {
                 img["importDate"] = json!(taken[..10].to_string());
+                // 拍摄时间同步落 taken_at 列（import_one 直取 img["takenAt"]，Info 面板
+                // 「拍摄时间」行消费）：相机导入 enrich 一路携带该值，手动导入此前只喂
+                // importDate、列恒空，同一张图两种导入途径信息面不一致
+                img["takenAt"] = json!(taken);
                 dated = true;
             }
         }
@@ -972,6 +976,44 @@ mod tests {
             json!({ "filename": "noexif.jpg", "filepath": dir.join("gone.jpg").to_string_lossy() });
         apply_date_override(&mut missing, None);
         assert!(missing["importDate"].as_str().unwrap_or("").is_empty());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn 手动导入exif拍摄时间_除importDate外同步落takenAt列() {
+        // 全链回归锁：exif_fields 的 taken_at 此前只喂 importDate，img["takenAt"] 恒缺 →
+        // import_one 落库 taken_at 列恒空，Info 面板「拍摄时间」行对手动导入的图永不显示
+        // （相机导入 enrich 路径有该值，同图两途径信息面不一致）
+        let dir = std::env::temp_dir().join("pixyang_takenat_col");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        // TIFF 裸容器（exif_from_container_bytes 支持）携带 DateTimeOriginal
+        let taken_field = exif::Field {
+            tag: exif::Tag::DateTimeOriginal,
+            ifd_num: exif::In::PRIMARY,
+            value: exif::Value::Ascii(vec![b"2026:09:20 14:30:05".to_vec()]),
+        };
+        let mut writer = exif::experimental::Writer::new();
+        writer.push_field(&taken_field);
+        let mut buf = std::io::Cursor::new(Vec::new());
+        writer.write(&mut buf, false).unwrap();
+        let src = dir.join("withexif.tif");
+        std::fs::write(&src, buf.into_inner()).unwrap();
+
+        let mut img = json!({ "filename": "withexif.tif", "filepath": src.to_string_lossy() });
+        apply_date_override(&mut img, None);
+        assert_eq!(img["importDate"], "2026-09-20");
+        assert_eq!(img["takenAt"], "2026-09-20 14:30");
+
+        // 无 EXIF 的图不落 takenAt（mtime 回退无拍摄时间语义，import_one 落空串）
+        let noexif = make_jpeg(&dir, "plain.jpg", 8, 8);
+        let mut plain = json!({ "filename": "plain.jpg", "filepath": noexif.to_string_lossy() });
+        apply_date_override(&mut plain, None);
+        assert!(
+            plain.get("takenAt").is_none(),
+            "无 EXIF 不应杜撰拍摄时间: {:?}",
+            plain["takenAt"]
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 
