@@ -533,6 +533,7 @@ export default function ImageGrid({
     } catch (e) {
       console.error('[grid] 创建相册失败:', e.message);
       toast.error(errText('创建相册失败', e));
+      createAlbumRunningRef.current = false; // reject 路径必须解锁，否则一次桥异常后永久锁死（R85）
       return;
     }
     // 失败返回 {error}：无 id 不能继续 addToAlbum(undefined)（审查批 8 Q-09）

@@ -473,4 +473,32 @@ describe('ImageGrid', () => {
       expect(onCountsChanged).not.toHaveBeenCalled();
     });
   });
+
+  it('回归：createAndAdd reject（桥异常）不锁死 createAlbumRunningRef，二次创建仍达桥（R85）', async () => {
+    const errSpy = vi.spyOn(toast, 'error').mockImplementation(() => {});
+    try {
+      seedStore({ images: [makeImage()], totalImages: 1 });
+      const { container } = render(<ImageGrid />);
+      await screen.findByText('sunset');
+      fireEvent.contextMenu(container.querySelector('.image-card'));
+      fireEvent.click(await screen.findByRole('menuitem', { name: /添加到相册/ }));
+      const input = await screen.findByPlaceholderText('输入新相册名称');
+      fireEvent.change(input, { target: { value: '新相册' } });
+      // 第一次：createAlbum reject——守卫必须在 catch 复位
+      window.pixyang.createAlbum.mockRejectedValueOnce(new Error('bridge down'));
+      fireEvent.click(screen.getByText('创建', { selector: 'button' }));
+      await vi.waitFor(() => {
+        expect(errSpy).toHaveBeenCalledWith('创建相册失败：操作未成功');
+      });
+      // 第二次：守卫未锁死，仍到达桥（建出相册即收尾）
+      window.pixyang.createAlbum.mockResolvedValueOnce({ id: 7 });
+      fireEvent.click(screen.getByText('创建', { selector: 'button' }));
+      await vi.waitFor(() => {
+        expect(window.pixyang.createAlbum).toHaveBeenCalledTimes(2);
+        expect(window.pixyang.addToAlbum).toHaveBeenCalledWith(7, [1]);
+      });
+    } finally {
+      errSpy.mockRestore();
+    }
+  });
 });

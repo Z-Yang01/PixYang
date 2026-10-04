@@ -72,6 +72,7 @@ export default function AlbumsView({ onSelectAlbum, onRefresh }) {
     } catch (e) {
       console.error('[albums] 创建相册失败:', e.message);
       toast.error(errText('创建相册失败', e));
+      creatingRef.current = false; // reject 路径必须解锁，否则一次桥异常后表单永久锁死（R85）
       return;
     }
     if (album?.error) {

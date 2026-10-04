@@ -107,9 +107,15 @@ pub fn apply_lens_geometry_in_place(
                 // 源位置（椭圆归一空间缩放后转回像素坐标）
                 let sx = nx * scale * half_w + half_w - 0.5;
                 let sy = ny * scale * half_h + half_h - 0.5;
-                // 出界填不透明黑（与拉直 rotate_by_angle 同口径）：校正产生的边缘空白由用户裁剪去除
+                // 出界填不透明黑（与拉直 rotate_by_angle 同口径 [0,0,0,255]）：
+                // 校正产生的边缘空白由用户裁剪去除
                 if sx < 0.0 || sy < 0.0 || sx > (width - 1) as f64 || sy > (height - 1) as f64 {
                     data[i + c] = 0;
+                    // RGBA 出界补 alpha=255：此前保留源 alpha，透明源图出界区非「不透明黑」，
+                    // 与同段注释及 rotate_by_angle 填充口径漂移（R85）
+                    if channels == 4 {
+                        data[i + 3] = 255;
+                    }
                     continue;
                 }
                 let x0 = sx.floor() as usize;

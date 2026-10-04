@@ -142,7 +142,39 @@ float weighted(float adj[8], float h) {
 }
 
 void main() {
-  vec3 c = texture(uImage, vUv).rgb;
+  // 镜头几何校正（畸变/色散）：逆映射重采样必须位于管线最前——执行器 stage 顺序为
+  // 颜色各段 → detail → lens（对已处理图像重采样）→ vignette（pipelineOrder.cjs）。
+  // 单 pass 预览的等价形式 = 「在重映射位置采样原图，再走完整颜色管线」；
+  // 若把重采样放在尾部用原始纹理替换已处理颜色，会丢弃全部颜色/蒙版/细节调整
+  //（R85 审查修复：畸变/色散与任意其他编辑同用时预览≠导出）。
+  vec2 uvR = vUv;
+  vec2 uvG = vUv;
+  vec2 uvB = vUv;
+  float inR = 1.0;
+  float inG = 1.0;
+  float inB = 1.0;
+  if (uLensGeomOn > 0.5) {
+    vec2 halfSz = uImageSize * 0.5;
+    vec2 n = (vUv * uImageSize - halfSz) / halfSz;
+    float r2 = dot(n, n);
+    float radial = 1.0 + uLensDistortion * r2;
+    float rR = radial * (1.0 + uLensChromatic * r2);
+    float rB = radial * (1.0 - uLensChromatic * r2);
+    uvR = (n * rR * halfSz + halfSz) / uImageSize;
+    uvG = (n * radial * halfSz + halfSz) / uImageSize;
+    uvB = (n * rB * halfSz + halfSz) / uImageSize;
+    // 出界先记录、clamp 后采样边缘：处理链结束后于暗角前统一置黑
+    //（与执行器同段顺序一致：lens 段填黑 → 同段 vignette 随后可提亮黑边）
+    inR = step(0.0, uvR.x) * step(uvR.x, 1.0) * step(0.0, uvR.y) * step(uvR.y, 1.0);
+    inG = step(0.0, uvG.x) * step(uvG.x, 1.0) * step(0.0, uvG.y) * step(uvG.y, 1.0);
+    inB = step(0.0, uvB.x) * step(uvB.x, 1.0) * step(0.0, uvB.y) * step(uvB.y, 1.0);
+  }
+  // 基础采样走重映射位置（色散时逐通道各异；关断时三 UV 恒等回 vUv）
+  vec3 c = vec3(
+    texture(uImage, clamp(uvR, vec2(0.0), vec2(1.0))).r,
+    texture(uImage, clamp(uvG, vec2(0.0), vec2(1.0))).g,
+    texture(uImage, clamp(uvB, vec2(0.0), vec2(1.0))).b
+  );
   c = clamp(c * uAffineSlope + uAffineOffset, 0.0, 1.0);
   // 亮度掩蔽 tone（out = mix(c, f(c), w(L))，L=Rec.709）：阴影取仿射后值、高光取阴影后值，
   // 与执行器 apply_tone_masked 同序同公式（f 只管力度、w 只管定位）
@@ -194,7 +226,9 @@ void main() {
   // 否则「高饱和 × 暗角/蒙版」组合成片与预览分叉（D1）
   else if (uSaturation != 1.0) c = clamp(mix(vec3(luma), c, uSaturation), 0.0, 1.0);
   if (uMaskOn > 0.5) {
-    vec2 px = vUv * uImageSize;
+    // 蒙版几何是 pre-crop 像素坐标，执行器在 lens 之前的坐标系上取权重：
+    // 预览须用重映射后的源位置（G 通道为准），不得用输出位置 vUv
+    vec2 px = uvG * uImageSize;
     for (int i = 0; i < 8; i++) {
       if (uMaskType[i] < 0.5) continue;
       float w = maskWeight(i, px, c);
@@ -211,7 +245,8 @@ void main() {
     float wsum = 0.0;
     for (int dy = -1; dy <= 1; dy++) {
       for (int dx = -1; dx <= 1; dx++) {
-        vec2 uv2 = clamp(vUv + vec2(float(dx), float(dy)) * texel, vec2(0.0), vec2(1.0));
+        // 邻域中心用重映射后的源位置：执行器 detail 在 lens 之前的坐标系上取 3×3
+        vec2 uv2 = clamp(uvG + vec2(float(dx), float(dy)) * texel, vec2(0.0), vec2(1.0));
         float w = (dx == 0 && dy == 0) ? 4.0 : (dx == 0 || dy == 0) ? 2.0 : 1.0;
         acc += texture(uImage, uv2).rgb * w;
         wsum += w;
@@ -228,27 +263,9 @@ void main() {
     }
     c = clamp(c, 0.0, 1.0);
   }
-  // 镜头几何校正（畸变/色散）：逆映射逐通道采样，画布分辨率近似（导出双线性同式，不做像素对拍）
-  if (uLensGeomOn > 0.5) {
-    vec2 halfSz = uImageSize * 0.5;
-    vec2 n = (vUv * uImageSize - halfSz) / halfSz;
-    float r2 = dot(n, n);
-    float radial = 1.0 + uLensDistortion * r2;
-    float rR = radial * (1.0 + uLensChromatic * r2);
-    float rB = radial * (1.0 - uLensChromatic * r2);
-    vec2 cR = (n * rR * halfSz + halfSz) / uImageSize;
-    vec2 cG = (n * radial * halfSz + halfSz) / uImageSize;
-    vec2 cB = (n * rB * halfSz + halfSz) / uImageSize;
-    // 出界（含 clamp 拉伸伪影区）置黑，与执行器出界填黑同口径
-    float inR = step(0.0, cR.x) * step(cR.x, 1.0) * step(0.0, cR.y) * step(cR.y, 1.0);
-    float inG = step(0.0, cG.x) * step(cG.x, 1.0) * step(0.0, cG.y) * step(cG.y, 1.0);
-    float inB = step(0.0, cB.x) * step(cB.x, 1.0) * step(0.0, cB.y) * step(cB.y, 1.0);
-    c = vec3(
-      texture(uImage, clamp(cR, vec2(0.0), vec2(1.0))).r * inR,
-      texture(uImage, clamp(cG, vec2(0.0), vec2(1.0))).g * inG,
-      texture(uImage, clamp(cB, vec2(0.0), vec2(1.0))).b * inB
-    );
-  }
+  // 镜头重采样出界置黑（在暗角前，与执行器 lens 段「先填黑、vignette 随后」同序）：
+  // 处理链结束后乘回入界标记，clamp 采样到的边缘色不外泄
+  c *= vec3(inR, inG, inB);
   if (uVignette != 0.0) {
     float d = length((vUv - 0.5) * 2.0);
     float f = clamp((d - 0.5) / 0.5, 0.0, 1.0);

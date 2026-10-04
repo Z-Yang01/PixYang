@@ -154,8 +154,9 @@ tests/            vitest（node 环境 + per-file happy-dom pragma）
   WAL 多进程并发，写锁被运行实例占用时 5s 超时中文报错）。子命令：analyze / get-edits /
   save-edits / undo；结果 JSON 写 --out 文件（release 无控制台，文件为唯一可靠回传）+ stdout。
   Rust 侧无 params→spec 构建器，export 子命令未提供（需要时先移植 shared/renderSpec.cjs）。
-- **持久化编辑撤销**：编辑器历史之外的跨会话撤销——查看器工具栏按钮 → api.undoLastEdit（桥内
-  组合：get_last_edit_undo 读回退目标 → saveEdits 全链）。回退目标语义：最新步 before → 缺失
+- **持久化编辑撤销**：编辑器历史之外的跨会话撤销——查看器工具栏按钮 → api.undoLastEdit（Rust
+  原子命令 `undo_last_edit`：读回退目标 → save_edit_params 链写回，全程持写锁；CLI `pixyang cli
+  undo` 共用同一 undo_last_edit_conn，GUI/CLI 双端单实现）。回退目标语义：最新步 before → 缺失
   向前找最近 after → 全无回默认参数（isDefault）。
 - **星级筛选**：≥N（filterMinRating）与「仅未评分」（filterUnrated）两档 UI 互斥（store action 内
   双清防恒空集叠加）；SQL 分支 `(i.rating IS NULL OR i.rating = 0)` 与前端剪枝 (rating||0)===0 同
@@ -167,7 +168,10 @@ tests/            vitest（node 环境 + per-file happy-dom pragma）
   平铺 ops 会被 get_last_edit_undo 的 has_basic 判无效 → 撤销直接回默认清空全部编辑（审查 P0）。
 - **镜头校正**：lens.distortion（径向畸变 k=±0.25）与 chromatic（横向色散 ca=±0.01，随 r² 增长）
   三端实现（shared/lens.cjs lensGeomScale = GLSL 邻域采样 = 执行器双线性）；出界填黑（与拉直同
-  口径）；重采样非逐点，预览/导出同为视觉近似不做像素对拍。
+  口径 [0,0,0,255]，RGBA 出界 alpha 补 255）；重采样非逐点，预览/导出同为视觉近似不做像素对拍。
+  预览管线序合同：重采样位于最前（重映射 UV 采样原图 → 完整颜色链 → 出界置黑 → 暗角；蒙版/detail
+  位置用重映射后源位置），与执行器 stage 序（颜色→detail→lens→vignette）同构——禁止尾部用原始
+  纹理替换已处理颜色（R85 回归锁：webglPreview 源串顺序断言）。
 - **编辑面板扩展**：HSL 八带分色（editParams 平铺模型 hsl{hue,sat,lum} 恒 8 项，域接入四处=
   presetApply/copySettings/pasteSettings/handleSyncEdits）；detail 锐化+降噪（锐化为执行器近似 USM，
   降噪为亮度域 3×3 高斯混合 `apply_noise_reduction_in_place`，预览为画布分辨率邻域近似——不做像素
@@ -229,7 +233,7 @@ tests/            vitest（node 环境 + per-file happy-dom pragma）
 
 ## 验证
 
-- 测试：`npm test`（vitest，67 个文件 / 940 例；含 2026-09-29~10-01 批次：agent 调色契约、星级筛选 minRating/unrated 全链、拉直/镜头几何、undo 快照合同、CLI 通道、含 R37 桥接全通道契约、R51/R52 主题↔CSS 对拍、R53 右栏让位契约、R54/R55 错误文案中文化、R56 Rust 注册表↔桥命令对拍 + 全仓 `${e.message}` 直插与裸 `x.error` 上屏扫描、R57 主题双事实源对拍（`:root`↔块↔`@theme inline`↔色卡）、R64 曲线 LUT 恒等通道兜底回归锁、R65 负阴影指数对齐回归锁（uniform 1/e 值锁 + SVG 链指数锁；像素锁已随 R71 掩蔽化重导）、R66 预设/粘贴字段域一致性回归锁（预设只覆盖显式字段 + 粘贴与复制/批量同步同口径）、R67 键盘调参历史收敛回归锁（连调 5 次→1 条 / sat=0 调 hue→0 条 / blur 即结算）与新会话保存态回归锁（未保存→已保存 / 回读→已保存）、R68 滑杆标签列宽与对比视图让位契约、R69 高光乘后 clamp 契约模型对齐回归锁（slope>1 饱和区先回 [0,1] 再进暗角/饱和度，代表点手算写死；R71 起该锁经掩蔽 mix 重导）、R70 viewerInfoRail EOL 归一回归锁（CRLF 文本输入也命中让位规则，防 autocrlf 工作树多行正则失配）、R71 高光/阴影亮度掩蔽回归锁（掩蔽带端点 uniform 锁 + 暗区动/亮区不动双向分区锁 + 高光 LR 方向锁 + 像素代表点手算写死 + GLSL mix 源串锁 + 掩蔽 uniform 上传锁；Rust 侧手算表与分区/方向锁）、R74 搜索命中原始路径回归锁（matchesListFilters haystack 含 original_path，与 SQL 同口径防轻量写回误剪枝）、R73 删除暂存区回归锁（trashUndo Toast 6s「撤销」语义与逐行还原调用链 + 单图/批量删除走 trash 通道不走直删 + 设置页 R-8 即时生效文案锁）、R75 缩略图自适应选档回归锁（≤4 列取高清档 medium、>4 列取 small、编辑代理任何列数恒优先，双向变异实证）；像素 golden 门禁在 cargo 侧 `golden_audit`（基线 2026-09-25 R71 随掩蔽语义重锁，Δ 审计归档 tests/golden/r71-tone-mask-relock-audit.md：恰 5 例 tone 用例变化、余 18 例 Δ=0），Rust 单测 191 例（R73 起 +7 trash 锁；2026-09-28~10-01 起 +analyze_image 统计 5 例、edit_bake_db 短锁 1 例、降噪内核 2 例、拉直旋转 4 例、镜头几何 2 例、undo 三态 1 例、CLI 3 例、EXIF 接线 1 例、空 root 导入回归 1 例；R82 审查起 +trash 歧义名撤销 3 例（原图名 raw__/thumb__ 开头精确匹配回位）+ 导入无 size 输入落盘副本兜底 1 例）；覆盖率：`npm run test:coverage`，门槛配置在 `vitest.config.js`（statements/lines 75、branches 70、functions 50）。
+- 测试：`npm test`（vitest，67 个文件 / 943 例；含 2026-09-29~10-01 批次：agent 调色契约、星级筛选 minRating/unrated 全链、拉直/镜头几何、undo 快照合同、CLI 通道、含 R37 桥接全通道契约、R51/R52 主题↔CSS 对拍、R53 右栏让位契约、R54/R55 错误文案中文化、R56 Rust 注册表↔桥命令对拍 + 全仓 `${e.message}` 直插与裸 `x.error` 上屏扫描、R57 主题双事实源对拍（`:root`↔块↔`@theme inline`↔色卡）、R64 曲线 LUT 恒等通道兜底回归锁、R65 负阴影指数对齐回归锁（uniform 1/e 值锁 + SVG 链指数锁；像素锁已随 R71 掩蔽化重导）、R66 预设/粘贴字段域一致性回归锁（预设只覆盖显式字段 + 粘贴与复制/批量同步同口径）、R67 键盘调参历史收敛回归锁（连调 5 次→1 条 / sat=0 调 hue→0 条 / blur 即结算）与新会话保存态回归锁（未保存→已保存 / 回读→已保存）、R68 滑杆标签列宽与对比视图让位契约、R69 高光乘后 clamp 契约模型对齐回归锁（slope>1 饱和区先回 [0,1] 再进暗角/饱和度，代表点手算写死；R71 起该锁经掩蔽 mix 重导）、R70 viewerInfoRail EOL 归一回归锁（CRLF 文本输入也命中让位规则，防 autocrlf 工作树多行正则失配）、R71 高光/阴影亮度掩蔽回归锁（掩蔽带端点 uniform 锁 + 暗区动/亮区不动双向分区锁 + 高光 LR 方向锁 + 像素代表点手算写死 + GLSL mix 源串锁 + 掩蔽 uniform 上传锁；Rust 侧手算表与分区/方向锁）、R74 搜索命中原始路径回归锁（matchesListFilters haystack 含 original_path，与 SQL 同口径防轻量写回误剪枝）、R73 删除暂存区回归锁（trashUndo Toast 6s「撤销」语义与逐行还原调用链 + 单图/批量删除走 trash 通道不走直删 + 设置页 R-8 即时生效文案锁）、R75 缩略图自适应选档回归锁（≤4 列取高清档 medium、>4 列取 small、编辑代理任何列数恒优先，双向变异实证）；像素 golden 门禁在 cargo 侧 `golden_audit`（基线 2026-09-25 R71 随掩蔽语义重锁，Δ 审计归档 tests/golden/r71-tone-mask-relock-audit.md：恰 5 例 tone 用例变化、余 18 例 Δ=0），Rust 单测 195 例（R73 起 +7 trash 锁；2026-09-28~10-01 起 +analyze_image 统计 5 例、edit_bake_db 短锁 1 例、降噪内核 2 例、拉直旋转 4 例、镜头几何 2 例、undo 三态 1 例、CLI 3 例、EXIF 接线 1 例、空 root 导入回归 1 例；R82 审查起 +trash 歧义名撤销 3 例（原图名 raw__/thumb__ 开头精确匹配回位）+ 导入无 size 输入落盘副本兜底 1 例；R85 审查起镜头几何用例补出界 alpha=255 口径断言）；R85 前端 +3（镜头重采样管线序 GLSL 源串顺序锁、相册创建 reject 解锁 AlbumsView/ImageGrid 双锁）；覆盖率：`npm run test:coverage`，门槛配置在 `vitest.config.js`（statements/lines 75、branches 70、functions 50）。
 - Lint：`npm run lint`（ESLint flat config，`eslint.config.mjs`）；0 error 为准，warning 不阻塞。
 - 类型检查：`npm run typecheck`（tsc --noEmit，覆盖 src 下 TS/TSX）。
 - 格式检查：`npm run format:check`（Prettier 基线已于 R40 全仓落库，改动后的文件须保持 prettier 合规；历史 `*.md` 与 `src-tauri/gen/` 在 `.prettierignore` 豁免）。

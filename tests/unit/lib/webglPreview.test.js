@@ -207,6 +207,45 @@ describe('renderWebGLPreview', () => {
       uploaded.some((c) => Array.isArray(c.args[1]) && c.args[1][0] === 0.5 && c.args[1][1] === 1)
     ).toBe(true);
   });
+
+  it('镜头重采样位于管线最前：先按重映射 UV 采样原图再走颜色链（R85 合同）', async () => {
+    const { canvas, gl } = makeCanvas();
+    globalThis.createImageBitmap = vi.fn().mockResolvedValue({ close: vi.fn() });
+    expect(await renderWebGLPreview(canvas, testImage, baseUniforms())).toBe(true);
+    const frag = gl.__calls.find(
+      (c) => c.prop === 'shaderSource' && String(c.args[1]).includes('uLensGeomOn')
+    );
+    expect(frag).toBeTruthy();
+    const src = String(frag.args[1]);
+    // 顺序合同（执行器 stage 序：颜色 → detail → lens → vignette，pipelineOrder.cjs）：
+    // 重映射 UV → 逐通道基础采样 → 仿射（颜色链起点）→ 出界置黑 → 暗角
+    const remapPos = src.indexOf('uvR = (n * rR * halfSz + halfSz) / uImageSize;');
+    const basePos = src.indexOf('vec3 c = vec3(');
+    const affinePos = src.indexOf('c * uAffineSlope');
+    const fillPos = src.indexOf('c *= vec3(inR, inG, inB);');
+    const vignettePos = src.indexOf('if (uVignette != 0.0)');
+    for (const [name, pos] of [
+      ['重映射', remapPos],
+      ['基础采样', basePos],
+      ['仿射', affinePos],
+      ['出界填黑', fillPos],
+      ['暗角', vignettePos],
+    ]) {
+      expect(pos, name).toBeGreaterThan(-1);
+    }
+    expect(basePos).toBeGreaterThan(remapPos);
+    expect(affinePos).toBeGreaterThan(basePos);
+    expect(fillPos).toBeGreaterThan(affinePos);
+    expect(vignettePos).toBeGreaterThan(fillPos);
+    // 禁止回退：尾部用原始纹理采样整体替换已处理颜色（R85 前旧形态——
+    // 畸变/色散与任意颜色/蒙版/细节编辑同用时预览丢失全部调整，导出正常）
+    expect(src).not.toContain('clamp(cR, vec2(0.0), vec2(1.0))).r * inR');
+    expect(src).not.toContain('c = vec3(\n      texture(uImage, clamp(cR');
+    // 位置相关算子消费重映射后的源位置（执行器在 lens 前坐标系取蒙版权重/邻域）
+    expect(src).toContain('vec2 px = uvG * uImageSize;');
+    expect(src).not.toContain('vec2 px = vUv * uImageSize;');
+    expect(src).toContain('clamp(uvG + vec2(float(dx), float(dy)) * texel');
+  });
 });
 
 describe('上下文丢失与释放（审查批 8 P-1）', () => {

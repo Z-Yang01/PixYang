@@ -124,4 +124,29 @@ describe('AlbumsView', () => {
       errSpy.mockRestore();
     }
   });
+
+  it('创建 reject（桥异常）不锁死防重入守卫：二次点击仍达桥（R85 回归）', async () => {
+    const errSpy = vi.spyOn(toast, 'error').mockImplementation(() => {});
+    try {
+      renderView();
+      await screen.findByText('旅行');
+      fireEvent.click(screen.getByText('新建相册'));
+      const input = screen.getByPlaceholderText(/旅行照片/);
+      fireEvent.change(input, { target: { value: '新相册' } });
+      // 第一次：createAlbum reject（Q-09 路径）——creatingRef 必须在 catch 复位
+      window.pixyang.createAlbum.mockRejectedValueOnce(new Error('bridge down'));
+      fireEvent.click(screen.getByText('创建相册'));
+      await vi.waitFor(() => {
+        expect(errSpy).toHaveBeenCalledWith('创建相册失败：操作未成功');
+      });
+      expect(screen.getByDisplayValue('新相册')).toBeInTheDocument(); // 表单不收、输入保留
+      // 第二次：守卫未锁死，仍到达桥并成功收尾
+      fireEvent.click(screen.getByText('创建相册'));
+      await vi.waitFor(() => {
+        expect(window.pixyang.createAlbum).toHaveBeenCalledTimes(2);
+      });
+    } finally {
+      errSpy.mockRestore();
+    }
+  });
 });

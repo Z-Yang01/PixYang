@@ -929,7 +929,9 @@ mod tests {
                 g[i] = v;
                 g[i + 1] = v;
                 g[i + 2] = v;
-                g[i + 3] = 255;
+                // 源 alpha 故意取 7：出界必须补 255（与拉直 [0,0,0,255] 同口径），
+                // 界内像素 alpha 不参与重采样应原样保留
+                g[i + 3] = 7;
             }
         }
         apply_lens_geometry_in_place(&mut g, 4, 4, 100.0, 0.0, 4);
@@ -940,6 +942,7 @@ mod tests {
             [0, 0, 0],
             "出界填黑"
         );
+        assert_eq!(g[(2 * 4 + 0) * 4 + 3], 255, "出界 alpha 补 255（R85 口径）");
         // 第 0 行 x=2（显式 0 行号会触发 clippy::erasing_op/identity_op deny，改经变量表达）
         let row0 = 0usize;
         assert_eq!(
@@ -947,9 +950,16 @@ mod tests {
             [0, 0, 0],
             "出界填黑"
         );
+        assert_eq!(
+            g[(row0 * 4 + 2) * 4 + 3],
+            255,
+            "出界 alpha 补 255（R85 口径）"
+        );
         // 中心附近 r 小：变化 ≤ 1 级
         let center_before = (1 + 1) * 20 + 30;
         assert!((g[(1 * 4 + 1) * 4] as i32 - center_before).abs() <= 1);
+        // 界内像素 alpha 不参与重采样：保留源值 7
+        assert_eq!(g[(1 * 4 + 1) * 4 + 3], 7, "界内 alpha 不改写");
     }
 
     #[test]
