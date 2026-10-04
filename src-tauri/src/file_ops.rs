@@ -1018,6 +1018,51 @@ mod tests {
     }
 
     #[test]
+    fn 手动导入exif拍摄时间_import_one落库taken_at列() {
+        // 端到端回归锁（R86 补实 R84 修复的落库环节）：apply_date_override 富化的 takenAt
+        // 必须经 import_one 写入 taken_at 列（Info 面板「拍摄时间」行 / taken_at 优先排序
+        // 消费）——R84 的回归锁止步于 img["takenAt"]，import_one str_or_empty 直取环节
+        // 此前无测试覆盖
+        let dir = std::env::temp_dir().join("pixyang_takenat_db_col");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("src")).unwrap();
+        // TIFF 裸容器携带 DateTimeOriginal（与 apply_date_override 层回归锁同构造）
+        let taken_field = exif::Field {
+            tag: exif::Tag::DateTimeOriginal,
+            ifd_num: exif::In::PRIMARY,
+            value: exif::Value::Ascii(vec![b"2026:09:20 14:30:05".to_vec()]),
+        };
+        let mut writer = exif::experimental::Writer::new();
+        writer.push_field(&taken_field);
+        let mut buf = std::io::Cursor::new(Vec::new());
+        writer.write(&mut buf, false).unwrap();
+        let src = dir.join("src").join("withexif.tif");
+        std::fs::write(&src, buf.into_inner()).unwrap();
+
+        let conn = mem_db();
+        let mut img = json!({ "filename": "withexif.tif", "filepath": src.to_string_lossy() });
+        apply_date_override(&mut img, None); // 镜像 import_images 的整批 EXIF 富化步骤
+        let row = import_one(
+            &conn,
+            &dir.join("root"),
+            &img,
+            None,
+            false,
+            "2026-09-20",
+            &dir.join("thumbs"),
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(row.import_date, "2026-09-20");
+        assert_eq!(
+            row.taken_at.as_deref(),
+            Some("2026-09-20 14:30"),
+            "EXIF 拍摄时间必须落 taken_at 列（R86 端到端锁）"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn 启动清扫_删残留temp双形态_保留托管与无关文件() {
         let dir = std::env::temp_dir().join("pixyang_bake_temp_clean");
         let _ = std::fs::remove_dir_all(&dir);
