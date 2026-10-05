@@ -118,9 +118,13 @@ export default function ImageGrid({
     loadImageTags(images);
   }, [pageIdsKey]);
 
+  // 选档开关必须独立进依赖：设置页等积变化（rows*columns 不变，如 3x5→5x3）不触发重查，
+  // images 引用不变；若只靠 [images]，跨 4/5 列选档边界时新档位永不请求——渲染侧已切档
+  // 而缓存无新档 URL，缩略图卡死到下次数据刷新（新鲜眼审计实锤修复）
+  const useHiResThumbs = gridSettings.columns <= 4;
   useEffect(() => {
     loadUrls(images);
-  }, [images]);
+  }, [images, useHiResThumbs]);
 
   // 缩略图版本变化（重新生成/后台补生成）后清除损坏标记，让新图重新尝试
   useEffect(() => {
@@ -309,8 +313,7 @@ export default function ImageGrid({
     const token = urlSeqRef.current.next();
     const needThumbPaths = [];
     const needOrigPaths = [];
-    const useHiRes = gridSettings.columns <= 4;
-    const pickThumb = useHiRes ? hiResThumbOf : preferredThumbOf;
+    const pickThumb = useHiResThumbs ? hiResThumbOf : preferredThumbOf;
     for (const img of imgs) {
       const preferredThumb = pickThumb(img);
       if (preferredThumb && thumbUrlsRef.current[preferredThumb] === undefined) {

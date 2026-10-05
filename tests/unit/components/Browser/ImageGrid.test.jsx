@@ -455,6 +455,57 @@ describe('ImageGrid', () => {
     });
   });
 
+  it('回归：等积列数变化（rows*columns 不变）跨 4/5 列选档边界必须重拉新档位（仅改 gridSettings）', async () => {
+    // 实锤口径：设置页 3x5(15)→5x3(15) 等积变化不触发 loadImages 重查（useGalleryData
+    // 依赖是 pageSize 乘积），images 引用不变；loadUrls 若只依赖 [images] 则新档位永不
+    // 请求，渲染侧已切档而缓存无新档 URL → 缩略图卡死（修复：useHiResThumbs 进依赖）。
+    // 用直接 setState 只改 gridSettings：images 引用保持不变，才能证明确实是新依赖触发。
+    const urlOf = {
+      'C:/thumbs/1_m.jpg': 'blob:medium',
+      'C:/thumbs/1_s.jpg': 'blob:small',
+    };
+    window.pixyang.toFileUrls.mockImplementation(async (paths) =>
+      Object.fromEntries(paths.filter((p) => urlOf[p]).map((p) => [p, urlOf[p]]))
+    );
+    const seedGrid = (rows, columns) =>
+      useGalleryStore.setState({ gridSettings: { rows, columns, gap: 12, padding: 16 } });
+    const img = () =>
+      makeImage({
+        thumbnail_edit_path: '',
+        thumbnail_path: 'C:/thumbs/1_m.jpg',
+        thumbnail_small_path: 'C:/thumbs/1_s.jpg',
+      });
+
+    // 方向一（密排→高清）：5 列(3x5) 起步取 small，等积改 3 列(5x3) 必须拉到 medium
+    seedStore({ images: [img()], gridSettings: { rows: 3, columns: 5, gap: 12, padding: 16 } });
+    const { container, unmount } = render(<ImageGrid />);
+    await vi.waitFor(() => {
+      expect(container.querySelector('.image-card-thumb')?.getAttribute('src')).toContain(
+        'blob:small'
+      );
+    });
+    seedGrid(5, 3);
+    await vi.waitFor(() => {
+      const src = container.querySelector('.image-card-thumb')?.getAttribute('src');
+      expect(src).toContain('blob:medium');
+      expect(src).not.toContain('blob:small');
+    });
+    unmount();
+
+    // 方向二（高清→密排）：3 列(5x3) 起步取 medium，等积改 5 列(3x5) 必须拉到 small
+    seedStore({ images: [img()], gridSettings: { rows: 5, columns: 3, gap: 12, padding: 16 } });
+    const { container: c2 } = render(<ImageGrid />);
+    await vi.waitFor(() => {
+      expect(c2.querySelector('.image-card-thumb')?.getAttribute('src')).toContain('blob:medium');
+    });
+    seedGrid(3, 5);
+    await vi.waitFor(() => {
+      const src = c2.querySelector('.image-card-thumb')?.getAttribute('src');
+      expect(src).toContain('blob:small');
+      expect(src).not.toContain('blob:medium');
+    });
+  });
+
   it('标签筛选下快捷移除仍走整页重查（结构分支不回退，审查批 8 R-4）', async () => {
     const tag = { id: 5, name: '风景', color: '#818cf8' };
     window.pixyang.getBatchImageTags.mockResolvedValue({ 1: [tag] });
