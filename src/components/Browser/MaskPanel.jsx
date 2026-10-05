@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { matchSliderNavKey } from '@/lib/shortcuts';
 
 const MASK_ADJ_SLIDERS = [
   {
@@ -159,6 +160,7 @@ export default function MaskPanel({
             step: 1,
             get: () => selected.rotation,
             set: (v) => ({ rotation: v }),
+            reset: 0, // 回默认 = 归零（其余几何是位置/尺寸语义，无中性默认，只给粗调）
           },
         ]
       : selected.type === 'range'
@@ -220,8 +222,29 @@ export default function MaskPanel({
           ]
     : [];
 
-  const sliderRow = ({ key, label, min = 0, max, step, get, set, fmt }) => (
-    <label className="editor-slider-row" key={key}>
+  // 滑杆键盘快捷键（与主滑杆同口径，R92）：Shift+←/→ 粗调（step×10）进 onKeyCommit
+  // 的 700ms 收敛通道；Ctrl+Del 回默认（reset 有定义时）立即走 onCommit 结算——
+  // 与主滑杆「回默认直接入历史」一致，且先结算在途键盘手势，历史时序不乱
+  const onRowNavKey = (e, { value, min, max, step, set, reset }) => {
+    const hit = matchSliderNavKey(e, { value, min, max, step });
+    if (!hit) return;
+    e.preventDefault();
+    const target = hit.type === 'coarse' ? hit.value : reset;
+    if (target === undefined) return; // 位置/尺寸几何无中性默认：Ctrl+Del 不动作
+    const next = applyNext((list) =>
+      list.map((m) => (m.id === selectedId ? { ...m, ...set(target) } : m))
+    );
+    if (dragRef.current) return;
+    if (hit.type === 'reset') onCommit?.('蒙版调整', next);
+    else keyCommit('蒙版调整', next);
+  };
+
+  const sliderRow = ({ key, label, min = 0, max, step, get, set, reset, fmt }) => (
+    <label
+      className="editor-slider-row"
+      key={key}
+      title={reset === undefined ? 'Shift+←/→ 粗调' : 'Shift+←/→ 粗调；Ctrl+Del 回默认'}
+    >
       <span>{label}</span>
       <input
         type="range"
@@ -238,6 +261,7 @@ export default function MaskPanel({
             onCommit?.('蒙版调整', latestRef.current);
           }
         }}
+        onKeyDown={(e) => onRowNavKey(e, { value: Number(get()) || 0, min, max, step, set, reset })}
         onChange={(e) => {
           const v = Number(e.target.value);
           const next = applyNext((list) =>
@@ -268,7 +292,10 @@ export default function MaskPanel({
       {selected && (
         <div className="editor-mask-editor">
           {geoRows.map(sliderRow)}
-          <label className="editor-slider-row">
+          <label
+            className="editor-slider-row"
+            title={selected.type === 'linear' ? undefined : 'Shift+←/→ 粗调；Ctrl+Del 回默认'}
+          >
             <span>羽化</span>
             <input
               type="range"
@@ -293,6 +320,16 @@ export default function MaskPanel({
                   onCommit?.('蒙版调整', latestRef.current);
                 }
               }}
+              onKeyDown={(e) =>
+                onRowNavKey(e, {
+                  value: Number(selected.feather) || 0,
+                  min: 0,
+                  max: 1,
+                  step: 0.05,
+                  set: (v) => ({ feather: v }),
+                  reset: 0, // 回默认 = 无羽化（中性值）
+                })
+              }
               onChange={(e) => {
                 const v = Number(e.target.value);
                 const next = updateSelected({ feather: v });
@@ -311,7 +348,7 @@ export default function MaskPanel({
           </label>
           <p className="editor-crop-hint">调整（按蒙版权重生效）</p>
           {MASK_ADJ_SLIDERS.map(({ key, label, min, max, step, fmt }) => (
-            <label className="editor-slider-row" key={key}>
+            <label className="editor-slider-row" key={key} title="Shift+←/→ 粗调；Ctrl+Del 回默认">
               <span>{label}</span>
               <input
                 type="range"
@@ -328,6 +365,16 @@ export default function MaskPanel({
                     onCommit?.('蒙版调整', latestRef.current);
                   }
                 }}
+                onKeyDown={(e) =>
+                  onRowNavKey(e, {
+                    value: selected.adjustments?.[key] ?? 0,
+                    min,
+                    max,
+                    step,
+                    set: (v) => ({ adjustments: { ...selected.adjustments, [key]: v } }),
+                    reset: 0, // 回默认 = 中性 0（与主面板同字段语义一致）
+                  })
+                }
                 onChange={(e) => {
                   const next = setAdj(key, Number(e.target.value));
                   if (!dragRef.current) keyCommit('蒙版调整', next);

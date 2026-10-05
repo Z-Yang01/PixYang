@@ -1808,3 +1808,124 @@ describe('键盘调参历史收敛与新会话保存态（R67 P3-1/P3-6）', () 
     expect(document.querySelector('.editor-phase-tag').textContent).toBe('已保存');
   });
 });
+
+describe('R92 滑杆快捷键补全与注释（主滑杆口径推广到 HSL/分级/拉直）', () => {
+  function mockBridgeR92(over = {}) {
+    window.pixyang = {
+      getImageTags: vi.fn().mockResolvedValue([]),
+      toFileUrl: vi.fn().mockImplementation((p) => Promise.resolve(p ? `file:///${p}` : null)),
+      editOpen: vi.fn().mockResolvedValue({
+        id: 3,
+        source: 'jpg',
+        basePath: 'C:/cache/3-base.jpg',
+        width: 1920,
+        height: 1080,
+        hasNef: false,
+        savedEdits: null,
+        ...over,
+      }),
+      getPresets: vi
+        .fn()
+        .mockResolvedValue([{ id: 9, name: '我的风格', params: { basic: { exposure: 1 } } }]),
+      editCancel: vi.fn().mockResolvedValue({ ok: true }),
+      saveEdits: vi.fn().mockResolvedValue({ version: 1, params: {} }),
+    };
+  }
+
+  const rangeSetter = () =>
+    Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+  const setInput = (range, value) => {
+    rangeSetter().call(range, value);
+    range.dispatchEvent(new Event('input', { bubbles: true }));
+  };
+  const enterEditR92 = async () => {
+    fireEvent.click(screen.getByTitle(/编辑模式/));
+    await screen.findByText('编辑');
+  };
+
+  beforeEach(() => {
+    mockBridgeR92();
+  });
+
+  afterEach(() => {
+    cleanup();
+    delete window.pixyang;
+  });
+
+  it('HSL 带滑杆：Shift+→ 粗调（step×10）进收敛窗，Ctrl+Del 该带归零', async () => {
+    render(<ImageViewer {...baseProps()} />);
+    await enterEditR92();
+    // 色相通道第 1 带「红」：带名在色相/饱和/明亮度三通道各出现一次，取第一个
+    const row = screen.getAllByText('红')[0].closest('.editor-slider-row');
+    const range = row.querySelector('input[type="range"]');
+    setInput(range, '30');
+    // Shift+→ 粗调：30 + 10×1 = 40
+    fireEvent.keyDown(range, { key: 'ArrowRight', shiftKey: true });
+    await vi.waitFor(() => expect(Number(range.value)).toBe(40));
+    expect(row.querySelector('em').textContent).toBe('+40');
+    // Ctrl+Delete 回默认 = 该带归零（与双击重置同一实现）
+    fireEvent.keyDown(range, { key: 'Delete', ctrlKey: true });
+    await vi.waitFor(() => expect(Number(range.value)).toBe(0));
+    expect(row.querySelector('em').textContent).toBe('0');
+  });
+
+  it('颜色分级：色相/强度滑杆 Shift 粗调，Ctrl+Del 清除该区间（与双击同口径）', async () => {
+    render(<ImageViewer {...baseProps()} />);
+    await enterEditR92();
+    const hue = screen.getByLabelText('阴影色相');
+    const sat = screen.getByLabelText('阴影强度');
+    setInput(sat, '20');
+    fireEvent.keyDown(hue, { key: 'ArrowRight', shiftKey: true });
+    await vi.waitFor(() => expect(Number(hue.value)).toBe(10));
+    fireEvent.keyDown(sat, { key: 'ArrowRight', shiftKey: true });
+    await vi.waitFor(() => expect(Number(sat.value)).toBe(30));
+    // Ctrl+Delete 回默认 = 清除该区间（色相与强度同时归零）
+    fireEvent.keyDown(hue, { key: 'Delete', ctrlKey: true });
+    await vi.waitFor(() => {
+      expect(Number(hue.value)).toBe(0);
+      expect(Number(sat.value)).toBe(0);
+    });
+  });
+
+  it('拉直滑杆：Shift 粗调 ±5°、Ctrl+Del 归零，数值带符号显示', async () => {
+    render(<ImageViewer {...baseProps()} />);
+    await enterEditR92();
+    const row = screen.getByText('拉直').closest('.editor-slider-row');
+    const range = row.querySelector('input[type="range"]');
+    const em = row.querySelector('em');
+    expect(em.textContent).toBe('0');
+    setInput(range, '2');
+    await vi.waitFor(() => expect(em.textContent).toBe('+2')); // 带符号（R92 与 ±45 域一致）
+    // Shift+→ 粗调：2 + 5(=0.5×10) = 7
+    fireEvent.keyDown(range, { key: 'ArrowRight', shiftKey: true });
+    await vi.waitFor(() => {
+      expect(Number(range.value)).toBe(7);
+      expect(em.textContent).toBe('+7');
+    });
+    // 负值照常带负号
+    setInput(range, '-3');
+    await vi.waitFor(() => expect(em.textContent).toBe('-3'));
+    // Ctrl+Delete 回默认 = 归零（恢复拉直前状态）
+    fireEvent.keyDown(range, { key: 'Delete', ctrlKey: true });
+    await vi.waitFor(() => {
+      expect(Number(range.value)).toBe(0);
+      expect(em.textContent).toBe('0');
+    });
+  });
+
+  it('含几何预设入口 title 注明拉直角度丢弃（仅提示，不改行为）', async () => {
+    render(<ImageViewer {...baseProps()} />);
+    await enterEditR92();
+    const toggle = screen.getByText('含几何');
+    expect(toggle.title).toContain('裁剪坐标基于保存时的底图尺寸');
+    expect(toggle.title).toContain('拉直角度');
+    expect(toggle.title).toContain('丢弃当前拉直角度');
+    // 预设名按钮默认仅影调；开启含几何后同样注明拉直角度丢弃
+    await screen.findByText('我的风格');
+    expect(screen.getByText('我的风格').title).toBe('应用预设（仅影调）');
+    fireEvent.click(toggle); // 开启含几何
+    expect(screen.getByText('我的风格').title).toContain('丢弃当前拉直角度');
+    fireEvent.click(toggle); // 关闭 → 回到仅影调
+    expect(screen.getByText('我的风格').title).toBe('应用预设（仅影调）');
+  });
+});

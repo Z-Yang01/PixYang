@@ -170,4 +170,31 @@ describe('CurveEditor（曲线编辑器）', () => {
     expect(last.rgb).toEqual([]);
     expect(last.g).toEqual([]);
   });
+
+  // R92：每通道锚点上限 16——仅 UI 编辑层钳制，schema 不设限（存量超限数据不截断）
+  const sixteenPoints = Array.from({ length: 16 }, (_, i) => [i / 15, i / 15]).flat();
+
+  it('达 16 点上限：空处点击不再添加锚点，svg 出现上限 title 提示', () => {
+    const { onChange, svg } = setup({ rgb: sixteenPoints, r: [], g: [], b: [] });
+    expect(svg.textContent).toContain('上限');
+    // 空处点击（距任一锚点 > 12px 命中半径）：不加新点
+    fireEvent.mouseDown(svg, { clientX: 50, clientY: 25 });
+    expect(onChange).not.toHaveBeenCalled();
+    // 命中已有锚点仍可拖拽（上限只挡添加）：命中 (0.5,0.5)≈屏幕 (50,53)
+    fireEvent.mouseDown(svg, { clientX: 50, clientY: 53 });
+    fireEvent.mouseMove(window, { clientX: 50, clientY: 30 });
+    flushRaf();
+    const last = onChange.mock.calls.at(-1)[0];
+    expect(last.rgb).toHaveLength(32); // 仍是 16 点，只是 y 被拖动
+  });
+
+  it('未达上限（15 点）正常添加第 16 点，且无上限 title', () => {
+    const fifteen = sixteenPoints.slice(0, -2); // 去掉末点 (1,1)：15 点，端点 (0,0) 保留
+    const { onChange, svg } = setup({ rgb: fifteen, r: [], g: [], b: [] });
+    expect(svg.textContent).not.toContain('上限');
+    fireEvent.mouseDown(svg, { clientX: 95, clientY: 50 });
+    const last = onChange.mock.calls.at(-1)[0];
+    expect(last.rgb).toHaveLength(32); // 15 → 16 点
+    expect(onChange).toHaveBeenCalledTimes(1);
+  });
 });

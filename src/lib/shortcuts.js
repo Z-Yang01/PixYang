@@ -15,6 +15,24 @@ export function isEnterSubmit(e) {
   return e?.key === 'Enter' && !(e.isComposing || e.nativeEvent?.isComposing || e.keyCode === 229);
 }
 
+// 编辑滑杆键盘导航的唯一判定（R70 主滑杆口径，R92 起主滑杆/蒙版/HSL/颜色分级/拉直共用）：
+// Shift+←/→ 粗调（step×10，钳到 [min,max]）；Ctrl+Home/Delete/Backspace 回默认。
+// 只识别意图不提交：调用方按各自通道落地（键盘进 700ms 收敛窗 / 回默认立即入历史）。
+export function matchSliderNavKey(e, { value, min, max, step }) {
+  if (e.shiftKey && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
+    const dir = e.key === 'ArrowRight' ? 1 : -1;
+    return { type: 'coarse', value: Math.min(max, Math.max(min, value + dir * step * 10)) };
+  }
+  if (
+    e.ctrlKey &&
+    !e.shiftKey &&
+    (e.key === 'Home' || e.key === 'Delete' || e.key === 'Backspace')
+  ) {
+    return { type: 'reset' };
+  }
+  return null;
+}
+
 /** 全局（非查看器）动作 */
 export const GLOBAL_ACTIONS = {
   FocusSearch: 'focusSearch',

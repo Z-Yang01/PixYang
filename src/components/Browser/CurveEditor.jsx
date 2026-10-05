@@ -12,9 +12,13 @@ const CHANNELS = [
 
 const clamp01 = (v) => Math.min(1, Math.max(0, v));
 const HIT_PX = 12;
+// 每通道锚点上限（R92）：仅 UI 编辑层钳制。schema 不设上限——存量数据可能超限，
+// 截断会改变其渲染结果；normalizePoints 保持宽容，只挡新锚点的添加。
+const MAX_CURVE_POINTS = 16;
 
 // 曲线编辑器（受控组件）：空曲线按恒等对角线显示，首次拖拽即写入显式点。
-// 交互：点击空处添加锚点（y 吸附当前曲线值）、拖拽调整、锚点拖出面板删除、端点 x 锁定。
+// 交互：点击空处添加锚点（y 吸附当前曲线值）、拖拽调整、锚点拖出面板删除、端点 x 锁定；
+// 每通道锚点上限 MAX_CURVE_POINTS（达上限拒绝再添加，悬停 svg 有 title 提示）。
 // 曲线语义与渲染端共用 shared/curves.cjs（分段线性）。
 // onCommit 在手势结束（mouseup/拖出删除）时回调——由父组件把终态推入历史栈；
 // epoch 变化（外部撤销/跳转）立即中断进行中的拖拽，防止旧 dragRef 写回污染已跳转状态。
@@ -66,7 +70,8 @@ export default function CurveEditor({ curves, onCommit, onChange, epoch = 0 }) {
       dragRef.current = { points: pts, index: hit };
       return;
     }
-    // 空处点击：在该 x 处沿当前曲线加锚点（不跳变）
+    // 空处点击：在该 x 处沿当前曲线加锚点（不跳变）；已达上限则拒绝添加（悬停见 title 提示）
+    if (pts.length >= MAX_CURVE_POINTS) return;
     const x = clamp01((e.clientX - rect.left) / rect.width);
     const y = clamp01(evalAt(pts, x));
     let idx = pts.findIndex((p) => p[0] > x);
@@ -144,6 +149,7 @@ export default function CurveEditor({ curves, onCommit, onChange, epoch = 0 }) {
   }, [writePoints, onCommit]);
 
   const pts = displayPoints();
+  const atCap = pts.length >= MAX_CURVE_POINTS;
   const pathD = pts
     .map(
       (p, i) => `${i === 0 ? 'M' : 'L'} ${(p[0] * 100).toFixed(2)} ${((1 - p[1]) * 100).toFixed(2)}`
@@ -184,6 +190,9 @@ export default function CurveEditor({ curves, onCommit, onChange, epoch = 0 }) {
           <line key={`v${v}`} x1={v} y1="0" x2={v} y2="100" className="editor-curve-grid" />
         ))}
         <line x1="0" y1="100" x2="100" y2="0" className="editor-curve-diagonal" />
+        {atCap && (
+          <title>{`锚点已达上限（${MAX_CURVE_POINTS}）：将锚点拖出面板删除后可继续添加`}</title>
+        )}
         <path
           d={pathD}
           fill="none"

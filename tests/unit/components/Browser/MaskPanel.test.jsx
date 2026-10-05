@@ -205,4 +205,54 @@ describe('MaskPanel（蒙版面板）', () => {
     const nextMasks = onChange.mock.calls[0][0];
     expect(nextMasks.find((m) => m.id === 'm3').center).toBe(0.6);
   });
+
+  // R92：蒙版滑杆补主滑杆同款快捷键——Shift+←/→ 粗调走 onKeyCommit（700ms 收敛通道），
+  // Ctrl+Del 回默认走 onCommit（立即入历史，与主滑杆回默认口径一致）
+  it('Shift+←/→ 粗调（step×10）：调整滑杆与几何滑杆均走 onKeyCommit', () => {
+    const { onCommit, onKeyCommit, onChange } = setup([radial()], 'm1');
+    const adj = screen.getByLabelText(/^色温/);
+    fireEvent.keyDown(adj, { key: 'ArrowRight', shiftKey: true });
+    expect(onKeyCommit).toHaveBeenCalledTimes(1);
+    expect(onKeyCommit.mock.calls[0][1].find((m) => m.id === 'm1').adjustments.temperature).toBe(
+      10
+    );
+    expect(onCommit).not.toHaveBeenCalled();
+    // 几何滑杆（中心 X，step 1 → 粗调 ±10）
+    const cx = screen.getByLabelText(/^中心 X/);
+    fireEvent.keyDown(cx, { key: 'ArrowRight', shiftKey: true });
+    expect(onKeyCommit).toHaveBeenCalledTimes(2);
+    expect(onKeyCommit.mock.calls[1][1].find((m) => m.id === 'm1').cx).toBe(210);
+    // 粗调同时实时更新了列表（onChange）
+    expect(onChange.mock.calls.at(-1)[0].find((m) => m.id === 'm1').cx).toBe(210);
+  });
+
+  it('Ctrl+Del 回默认：调整/羽化/旋转归零走 onCommit；位置滑杆无默认不动作', () => {
+    const { onCommit, onKeyCommit } = setup(
+      [
+        radial({
+          adjustments: { exposure: -0.5, contrast: 20, saturation: 0, temperature: 10, tint: 0 },
+          feather: 0.8,
+          rotation: 30,
+        }),
+      ],
+      'm1'
+    );
+    const adj = screen.getByLabelText(/^对比度/);
+    fireEvent.keyDown(adj, { key: 'Delete', ctrlKey: true });
+    expect(onCommit).toHaveBeenCalledTimes(1);
+    expect(onCommit.mock.calls[0][0]).toBe('蒙版调整');
+    expect(onCommit.mock.calls[0][1].find((m) => m.id === 'm1').adjustments.contrast).toBe(0);
+    expect(onKeyCommit).not.toHaveBeenCalled(); // 回默认不进收敛窗，立即结算
+    const feather = screen.getByLabelText(/^羽化/);
+    fireEvent.keyDown(feather, { key: 'Delete', ctrlKey: true });
+    expect(onCommit.mock.calls[1][1].find((m) => m.id === 'm1').feather).toBe(0);
+    const rotation = screen.getByLabelText(/^旋转/);
+    fireEvent.keyDown(rotation, { key: 'Delete', ctrlKey: true });
+    expect(onCommit.mock.calls[2][1].find((m) => m.id === 'm1').rotation).toBe(0);
+    // 位置/尺寸几何（中心 X）无中性默认：Ctrl+Del 无动作
+    const cx = screen.getByLabelText(/^中心 X/);
+    fireEvent.keyDown(cx, { key: 'Delete', ctrlKey: true });
+    expect(onCommit).toHaveBeenCalledTimes(3);
+    expect(onKeyCommit).not.toHaveBeenCalled();
+  });
 });

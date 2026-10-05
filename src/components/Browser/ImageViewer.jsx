@@ -39,6 +39,7 @@ import {
   VIEWER_ACTIONS,
   ratingFromViewerAction,
   isEnterSubmit,
+  matchSliderNavKey,
 } from '@/lib/shortcuts';
 import api from '@/lib/api';
 import { errRaw, errText, friendlyError, rawErrorText } from '@/lib/errorText';
@@ -2341,29 +2342,25 @@ export default function ImageViewer({
                   if (!sliderDragRef.current) recordKeyAdjust(next, label);
                 }}
                 onKeyDown={(e) => {
-                  // Shift+←/→：粗调（10 步）；Ctrl+Home/End：直接回默认值（键盘版双击重置）
-                  if (e.shiftKey && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
-                    e.preventDefault();
-                    const dir = e.key === 'ArrowRight' ? 1 : -1;
-                    const jumped = Math.min(
-                      max,
-                      Math.max(min, Number(editOps[key]) + dir * step * 10)
-                    );
-                    const next = { ...editOpsRef.current, [key]: jumped };
+                  // Shift+←/→：粗调（10 步）；Ctrl+Home/Del/Backspace：直接回默认值（键盘版双击重置）。
+                  // 判定与蒙版/HSL/分级/拉直共用 matchSliderNavKey 唯一实现（R92）
+                  const hit = matchSliderNavKey(e, {
+                    value: Number(editOps[key]),
+                    min,
+                    max,
+                    step,
+                  });
+                  if (!hit) return;
+                  e.preventDefault();
+                  if (hit.type === 'coarse') {
+                    const next = { ...editOpsRef.current, [key]: hit.value };
                     setEditOps(next);
                     if (!sliderDragRef.current) recordKeyAdjust(next, label);
                     return;
                   }
-                  if (
-                    e.ctrlKey &&
-                    !e.shiftKey &&
-                    (e.key === 'Home' || e.key === 'Delete' || e.key === 'Backspace')
-                  ) {
-                    e.preventDefault();
-                    const next = { ...editOpsRef.current, [key]: EDIT_DEFAULTS[key] };
-                    pushHistory(next, `重置${label}`);
-                    setEditOps(next);
-                  }
+                  const next = { ...editOpsRef.current, [key]: EDIT_DEFAULTS[key] };
+                  pushHistory(next, `重置${label}`);
+                  setEditOps(next);
                 }}
               />
               <em>{fmt(editOps[key])}</em>
@@ -2395,7 +2392,9 @@ export default function ImageViewer({
               onChange={(nextCurves) => setEditOps((o) => ({ ...o, curves: nextCurves }))}
               epoch={editEpoch}
             />
-            <p className="editor-crop-hint">点击添加锚点并拖拽，将锚点拖出面板删除</p>
+            <p className="editor-crop-hint">
+              点击添加锚点并拖拽，将锚点拖出面板删除（每通道最多 16 个锚点）
+            </p>
           </div>
 
           {/* 颜色分级：分离色调（渲染端真亮度加权，预览逐通道近似，见 shared/colorGrading.cjs） */}
@@ -2440,11 +2439,40 @@ export default function ImageViewer({
                   pushHistory(editOpsRef.current, `分级·${label}`);
                 }
               };
+              // 键盘快捷键（与主滑杆同口径，R92）：Shift+←/→ 粗调进 700ms 收敛窗；
+              // Ctrl+Del 回默认 = 清除该区间（与双击重置同一实现）
+              const onGradeNavKey = (slider, e) => {
+                const hit = matchSliderNavKey(e, {
+                  value: slider === 'hue' ? hue : sat,
+                  min: 0,
+                  max: slider === 'hue' ? 360 : 100,
+                  step: 1,
+                });
+                if (!hit) return;
+                e.preventDefault();
+                if (hit.type === 'reset') {
+                  const next = {
+                    ...editOpsRef.current,
+                    colorGrading: { ...editOpsRef.current.colorGrading, [key]: [] },
+                  };
+                  pushHistory(next, `清除分级·${label}`);
+                  setEditOps(next);
+                  return;
+                }
+                const next = setRange(
+                  slider === 'hue' ? hit.value : hue,
+                  slider === 'sat' ? hit.value : sat
+                );
+                setEditOps(next);
+                // 与 onChange 同口径：sat=0 的纯色相调整无渲染效果不入历史（R63 P3-1）
+                const effective = slider === 'hue' ? sat > 0 : true;
+                if (!sliderDragRef.current && effective) recordKeyAdjust(next, `分级·${label}`);
+              };
               return (
                 <div
                   key={key}
                   className="editor-grade-row"
-                  title="双击清除该区间"
+                  title="双击清除该区间；Shift+←/→ 粗调；Ctrl+Del 回默认"
                   onDoubleClick={() => {
                     const next = {
                       ...editOpsRef.current,
@@ -2471,6 +2499,7 @@ export default function ImageViewer({
                     }}
                     onPointerUp={commit}
                     onBlur={settleKeyGesture}
+                    onKeyDown={(e) => onGradeNavKey('hue', e)}
                     onChange={(e) => {
                       const next = setRange(Number(e.target.value), sat);
                       setEditOps(next);
@@ -2490,6 +2519,7 @@ export default function ImageViewer({
                     }}
                     onPointerUp={commit}
                     onBlur={settleKeyGesture}
+                    onKeyDown={(e) => onGradeNavKey('sat', e)}
                     onChange={(e) => {
                       const next = setRange(hue, Number(e.target.value));
                       setEditOps(next);
@@ -2533,7 +2563,7 @@ export default function ImageViewer({
                     <label
                       className="editor-slider-row"
                       key={rowKey}
-                      title="双击重置该项"
+                      title="双击重置该项；Shift+←/→ 粗调；Ctrl+Del 回默认"
                       onDoubleClick={() => {
                         const next = {
                           ...editOpsRef.current,
@@ -2565,6 +2595,26 @@ export default function ImageViewer({
                           }
                         }}
                         onBlur={settleKeyGesture}
+                        onKeyDown={(e) => {
+                          // 与主滑杆同口径（R92）：Shift+←/→ 粗调进 700ms 收敛窗；
+                          // Ctrl+Del 回默认 = 该带归零（与双击重置同一实现）
+                          const hit = matchSliderNavKey(e, { value, min: -100, max: 100, step: 1 });
+                          if (!hit) return;
+                          e.preventDefault();
+                          const v = hit.type === 'coarse' ? hit.value : 0;
+                          const next = {
+                            ...editOpsRef.current,
+                            hsl: {
+                              ...editOpsRef.current.hsl,
+                              [channel]: editOpsRef.current.hsl[channel].map((old, j) =>
+                                j === bandIdx ? v : old
+                              ),
+                            },
+                          };
+                          setEditOps(next);
+                          if (hit.type === 'reset') pushHistory(next, `重置${rowLabel}`);
+                          else if (!sliderDragRef.current) recordKeyAdjust(next, rowLabel);
+                        }}
                         onChange={(e) => {
                           const v = Number(e.target.value);
                           const next = {
@@ -2846,7 +2896,7 @@ export default function ImageViewer({
             </div>
             <label
               className="editor-slider-row"
-              title="双击重置；拉直自动套用去黑角的最大同比例裁剪框"
+              title="双击重置；Shift+←/→ 粗调；Ctrl+Del 回默认；拉直自动套用去黑角的最大同比例裁剪框"
               onDoubleClick={() => applyStraighten(0)}
             >
               <span>拉直</span>
@@ -2866,9 +2916,28 @@ export default function ImageViewer({
                   }
                 }}
                 onBlur={settleKeyGesture}
+                onKeyDown={(e) => {
+                  // 与主滑杆同口径（R92）：粗调（5°=step×10）与回默认（归零）都走
+                  // applyStraighten 同一实现，键盘路径由其内进 700ms 收敛窗
+                  const hit = matchSliderNavKey(e, {
+                    value: crop?.angle ?? 0,
+                    min: -45,
+                    max: 45,
+                    step: 0.5,
+                  });
+                  if (!hit) return;
+                  e.preventDefault();
+                  applyStraighten(hit.type === 'coarse' ? hit.value : 0);
+                }}
                 onChange={(e) => applyStraighten(Number(e.target.value))}
               />
-              <em>{crop?.angle ?? 0}</em>
+              <em>
+                {
+                  (crop?.angle ?? 0) > 0
+                    ? `+${crop.angle}`
+                    : (crop?.angle ?? 0) /* 带符号显示，与 ±45 域其余滑杆一致（R92） */
+                }
+              </em>
             </label>
             {!cropMode && (
               <Button
@@ -2928,7 +2997,7 @@ export default function ImageViewer({
                   size="xs"
                   className={applyWithGeometry ? 'is-active' : ''}
                   onClick={() => setApplyWithGeometry((v) => !v)}
-                  title="开启后，点击预设会连旋转/翻转/裁剪一起应用（裁剪坐标基于保存时的底图尺寸）"
+                  title="开启后，点击预设会连旋转/翻转/裁剪一起应用（裁剪坐标基于保存时的底图尺寸）；拉直角度跨图不适配，不随预设应用，套用预设裁剪也会丢弃当前拉直角度"
                 >
                   含几何
                 </Button>
@@ -2996,7 +3065,11 @@ export default function ImageViewer({
                 <button
                   className="editor-preset-name"
                   onClick={() => applyPreset(pr.params, applyWithGeometry ? 'all' : 'basic')}
-                  title={applyWithGeometry ? '应用全部（含旋转/翻转/裁剪）' : '应用预设（仅影调）'}
+                  title={
+                    applyWithGeometry
+                      ? '应用全部（含旋转/翻转/裁剪；拉直角度跨图不适配不随预设应用，套用预设裁剪将丢弃当前拉直角度）'
+                      : '应用预设（仅影调）'
+                  }
                 >
                   {pr.name}
                 </button>

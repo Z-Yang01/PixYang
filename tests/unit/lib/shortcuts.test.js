@@ -6,6 +6,7 @@ import {
   matchGlobalShortcut,
   matchGridShortcut,
   matchViewerShortcut,
+  matchSliderNavKey,
   ratingFromViewerAction,
   GLOBAL_ACTIONS,
   GRID_ACTIONS,
@@ -177,5 +178,50 @@ describe('viewer Ctrl+S 保存参数（R67）', () => {
     expect(viewer.items.some((it) => it.keys.includes('Ctrl/⌘') && it.keys.includes('S'))).toBe(
       true
     );
+  });
+});
+
+describe('matchSliderNavKey（R92：编辑滑杆 Shift 粗调 / Ctrl+Del 回默认的唯一判定）', () => {
+  const domain = { value: 0, min: -100, max: 100, step: 1 };
+
+  it('Shift+←/→ 粗调 = step×10，钳到 [min,max]', () => {
+    expect(matchSliderNavKey(keyEvent('ArrowRight', { shiftKey: true }), domain)).toEqual({
+      type: 'coarse',
+      value: 10,
+    });
+    expect(matchSliderNavKey(keyEvent('ArrowLeft', { shiftKey: true }), domain)).toEqual({
+      type: 'coarse',
+      value: -10,
+    });
+    // 域边界钳制
+    expect(
+      matchSliderNavKey(keyEvent('ArrowRight', { shiftKey: true }), { ...domain, value: 95 })
+    ).toEqual({ type: 'coarse', value: 100 });
+    // 小数 step（拉直 0.5 → 粗调 5°）
+    expect(
+      matchSliderNavKey(keyEvent('ArrowRight', { shiftKey: true }), {
+        value: 2,
+        min: -45,
+        max: 45,
+        step: 0.5,
+      })
+    ).toEqual({ type: 'coarse', value: 7 });
+  });
+
+  it('Ctrl+Home/Delete/Backspace 映射 reset；Shift 不混淆判定', () => {
+    for (const key of ['Home', 'Delete', 'Backspace']) {
+      expect(matchSliderNavKey(keyEvent(key, { ctrlKey: true }), domain)).toEqual({
+        type: 'reset',
+      });
+    }
+    // Ctrl+Shift+Del 不是 reset（与主滑杆口径一致：reset 要求无 Shift）
+    expect(
+      matchSliderNavKey(keyEvent('Delete', { ctrlKey: true, shiftKey: true }), domain)
+    ).toBeNull();
+    // Ctrl+← 不是粗调
+    expect(matchSliderNavKey(keyEvent('ArrowLeft', { ctrlKey: true }), domain)).toBeNull();
+    // 无修饰方向键不归本判定（交给浏览器原生步进）
+    expect(matchSliderNavKey(keyEvent('ArrowLeft'), domain)).toBeNull();
+    expect(matchSliderNavKey(keyEvent('x', { shiftKey: true }), domain)).toBeNull();
   });
 });
