@@ -2389,3 +2389,37 @@
   待裁决；③ 预设仅存「转换组合」不存「原样复制」档——如需「复制也是一种预设」待裁决；
   ④ 批量导出对话框出现后，相册导出与快捷键 Ctrl+E 均改走弹层（原为直通目录选择），
   交互路径变化请确认符合预期。
+- 2026-10-06 01:10 R90 新鲜眼审计（无人值守轮次90，恰好一轮：e0d093b(R79)..07680a1(R87)
+  区间 24 笔逐笔精读——R81-R87 各审计轮本身也在被审范围，这些轮次由并行 worker 自审入库）：
+  ① R81 7ca0e39 合格：backup rename 失败路径保留 tmp（fs::rename 借用不消耗 tmp，错误信息
+  路径可用）+ aiGrade 非 2xx 读体 re-arm 定时器，hangText 变异锁在位。
+  ② R82 527ef85+8d12bab 合格：restore 精确匹配臂顺序正确（orig_suffix 全等 → raw__ 前缀 →
+  thumb__ 前缀，is_thumb 旗标隔离可再生丢弃分支），3 例歧义名回归锁真实承重；8d12bab 对
+  527ef85 M1 虚报的勘正与补偿属实。37ff656 size 兜底死代码修复正确。
+  ③ R83 8e9ac7d+130bc44 合格：manifest files serde default 双向兼容 + mtime 回写 roles
+  （original→实算路径/raw→final_raw_path）与磁盘冲突改名协同正确；注释已对齐实现。
+  ④ R84 2fa3d1e 合格：taken_at 全链核验（taken_at_from_raw 强校验月日/占位拒绝/ASCII 安全
+  切片，无 panic 面；apply_date_override 双落 importDate+takenAt 与相机路径同格式）+
+  executor row0 改写语义恒等。R86 82898bb 补的落库端到端锁断言到 taken_at 列，合格。
+  ⑤ R85 be3af57 合格：预览重采样归位管线最前的 GLSL 源串顺序锁 + 相册创建 reject 解锁
+  双组件锁 + 出界 alpha=255 口径，四项均带变异实证；AGENTS 撤销链文档已同步。
+  ⑥ 其余批次抽查独立复核：3465289 SQL 面（like_pattern 转义 \ % _ + 四 LIKE 全带 ESCAPE
+  '\'，参数化）安全；817679b get_images_by_ids 保序/跳缺失/900 分块与逐 id 等价（重复 id
+  语义一致）、find_sub 首字节预筛逐位置等价、apply_orientation Cow 三消费点借用正确；
+  7098ca5 仅空值写回不覆盖显式设置；f5bb447 setSearch trim 两端口径对齐；9219ae9/4de0c18/
+  73a8db6 编辑器批次合同经 R81/R85 两轮审计加后续回归锁交叉覆盖，本轮未发现新实锤。
+  ⑦ 实锤一（trash delete 侧同轮撞名吞文件，唯一数据丢失级发现）：move_image_to_trash 按
+  角色拼出暂存名 {id}__{原图名} / {id}__raw__{NEF名} / {id}__thumb__{派生名}，而
+  move_file_into_trash 先 remove_file(dest) 再移——原图名恰为 thumb__{自身 id 派生名}
+  （如 thumb__1.jpg 自带派生 1.jpg）或 raw__{配对 NEF 名}（如原图 raw__p.nef 配 NEF
+  p.nef）时，后移条目把先移入的原图从暂存区物理销毁：删除「成功」、原图静默永久丢失且
+  无从撤销（R82 修的 M1 是 restore 侧角色解析，覆盖不到 delete 侧销毁）。修复：新增
+  move_into_trash_tracked（撞本轮已用暂存名即报错）+ 三个移动相位任一失败整体回滚
+  （顺带兑现函数级合同「任一步失败则回滚」——旧代码仅在 manifest 写失败时回滚）。
+  回归锁 2 例：删除_原图名撞自身派生缩略图暂存名 / 删除_原图名撞配对nef暂存名——断言
+  删除报错 + 原图/NEF/派生文件原样回位 + 暂存零残留 + 库记录未删。
+  变异验证（cp 备份姿势，禁 git restore）：守卫改恒 false → 2 锁全红（删除「成功」吞
+  文件，与危害陈述一致）；cp 备份还原 → trash 14/14 全绿。
+  ⑧ 门禁（干净树全量）：cargo 204 例（+2）+ golden_audit ✓ / clippy --all-targets 0 error
+  / cargo fmt --check ✓；vitest 966 例 ✓ / eslint 0 error / tsc ✓ / prettier ✓。
+  AGENTS.md 计数 Rust 202→204。

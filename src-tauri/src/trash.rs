@@ -252,8 +252,38 @@ fn move_file_into_trash(src: &Path, dest: &Path) -> Result<(), PixError> {
     Ok(())
 }
 
+/// 单文件入暂存并登记清单。撞名守卫（R90 审查实锤）：同一轮删除内不同角色的暂存名
+/// 可能相同——原图名恰为 raw__{配对 NEF 名}（如原图 raw__p.nef 配 NEF p.nef）或
+/// thumb__{自身 id 派生名}（如原图 thumb__1.jpg 自带派生 1.jpg）时，两条目算出同一个
+/// `{id}__…` 暂存路径，而 move_file_into_trash 先清后移会把先移入的文件物理销毁——
+/// 删除「成功」、原图静默永久丢失且无从撤销。撞名必须报错中止，由调用方整体回滚。
+fn move_into_trash_tracked(
+    moved: &mut Vec<(PathBuf, PathBuf)>,
+    files: &mut Vec<TrashedFile>,
+    src: &Path,
+    dest: &Path,
+    role: &str,
+    src_mtime_ms: u64,
+) -> Result<(), PixError> {
+    if moved.iter().any(|(_, d)| d == dest) {
+        return Err(PixError::Io(format!(
+            "暂存区命名冲突（{}）：本轮已有同名条目，中止删除以防先移入的文件被覆盖销毁",
+            file_name_of(dest)
+        )));
+    }
+    move_file_into_trash(src, dest)?;
+    files.push(TrashedFile {
+        role: role.into(),
+        trash_name: file_name_of(dest),
+        restore_to: src.to_string_lossy().into_owned(),
+        mtime_ms: src_mtime_ms,
+    });
+    moved.push((src.to_path_buf(), dest.to_path_buf()));
+    Ok(())
+}
+
 /// 移入暂存区：原图/NEF/派生文件改名带 `{id}__` 前缀搬入 trash，最后写 manifest。
-/// 任一步失败则回滚已移动文件并返回 Err（记录保持未删，删除中止）。
+/// 任一步失败（含同轮撞名守卫）则回滚已移动文件并返回 Err（记录保持未删，删除中止）。
 pub fn move_image_to_trash(
     manifest: &TrashManifest,
     thumbs_dir: &Path,
@@ -268,42 +298,35 @@ pub fn move_image_to_trash(
     if orig.exists() {
         let dest = trash.join(format!("{}__{}", record.id, file_name_of(&orig)));
         let src_mtime = mtime_ms(&orig);
-        move_file_into_trash(&orig, &dest)?;
-        files.push(TrashedFile {
-            role: "original".into(),
-            trash_name: file_name_of(&dest),
-            restore_to: orig.to_string_lossy().into_owned(),
-            mtime_ms: src_mtime,
-        });
-        moved.push((orig, dest));
+        if let Err(e) =
+            move_into_trash_tracked(&mut moved, &mut files, &orig, &dest, "original", src_mtime)
+        {
+            rollback_moves(&moved);
+            return Err(e);
+        }
     }
     if let Some(raw) = record.raw_path.as_deref().filter(|s| !s.is_empty()) {
         let raw = PathBuf::from(raw);
         if raw.exists() {
             let dest = trash.join(format!("{}__raw__{}", record.id, file_name_of(&raw)));
             let src_mtime = mtime_ms(&raw);
-            move_file_into_trash(&raw, &dest)?;
-            files.push(TrashedFile {
-                role: "raw".into(),
-                trash_name: file_name_of(&dest),
-                restore_to: raw.to_string_lossy().into_owned(),
-                mtime_ms: src_mtime,
-            });
-            moved.push((raw, dest));
+            if let Err(e) =
+                move_into_trash_tracked(&mut moved, &mut files, &raw, &dest, "raw", src_mtime)
+            {
+                rollback_moves(&moved);
+                return Err(e);
+            }
         }
     }
     for name in derived_file_names(record.id) {
         let p = thumbs_dir.join(&name);
         if p.exists() {
             let dest = trash.join(format!("{}__thumb__{}", record.id, name));
-            move_file_into_trash(&p, &dest)?;
-            files.push(TrashedFile {
-                role: "thumb".into(),
-                trash_name: file_name_of(&dest),
-                restore_to: p.to_string_lossy().into_owned(),
-                mtime_ms: 0, // 派生缩略图可再生，mtime 无外部语义
-            });
-            moved.push((p, dest));
+            // 派生缩略图可再生，mtime 无外部语义
+            if let Err(e) = move_into_trash_tracked(&mut moved, &mut files, &p, &dest, "thumb", 0) {
+                rollback_moves(&moved);
+                return Err(e);
+            }
         }
     }
 
@@ -1134,6 +1157,72 @@ mod tests {
         assert_eq!(std::fs::read(pics.join(name)).unwrap(), b"orig");
         assert!(!thumbs.join("v.jpg").exists());
         assert!(trash_entry_suffixes(&trash, 1).is_empty());
+        let _ = std::fs::remove_dir_all(pics.parent().unwrap());
+    }
+
+    // ── R90 审查回归锁：同一轮删除内暂存名撞名不得先清后移吞掉先移入的文件 ──
+    // 原图名恰为 thumb__{自身 id 派生名}（如 thumb__1.jpg 自带派生 1.jpg）或
+    // raw__{配对 NEF 名}（如原图 raw__p.nef 配 NEF p.nef）时，两个角色算出同一个
+    // `{id}__…` 暂存路径；旧实现先清后移会把先移入的原图物理销毁——删除「成功」、
+    // 文件静默永久丢失且无从撤销。守卫必须报错中止并整体回滚（记录未删、文件全回位）。
+
+    #[test]
+    fn 删除_原图名撞自身派生缩略图暂存名_中止且回滚不吞文件() {
+        let (conn, pics, thumbs, trash) = setup("delname_thumb");
+        // id=1 的派生缩略图名是 1.jpg：原图恰名 thumb__1.jpg → 撞 1__thumb__1.jpg
+        let name = "thumb__1.jpg";
+        conn.execute_batch(&format!(
+            "INSERT INTO images (id, filename, filepath, import_date, raw_path, hash, flag)
+             VALUES (1, '{name}', '{}/{name}', '2026-01-01', '', 'h1', 1);",
+            pics.to_string_lossy().replace('\\', "/"),
+        ))
+        .unwrap();
+        std::fs::write(pics.join(name), b"orig").unwrap();
+        std::fs::write(thumbs.join("1.jpg"), b"thumb").unwrap();
+
+        let res = delete_image_to_trash_core(&conn, 1, &thumbs, &trash);
+        assert!(res.is_err(), "撞名必须中止删除，而非静默覆盖先移入的原图");
+
+        // 整体回滚：原图与派生文件原样回位、暂存零残留、库记录未删
+        assert_eq!(std::fs::read(pics.join(name)).unwrap(), b"orig");
+        assert_eq!(std::fs::read(thumbs.join("1.jpg")).unwrap(), b"thumb");
+        assert!(
+            std::fs::read_dir(&trash).unwrap().next().is_none(),
+            "回滚后暂存区不得残留任何条目"
+        );
+        assert!(crate::images_query::get_image_by_id(&conn, 1)
+            .unwrap()
+            .is_some());
+        let _ = std::fs::remove_dir_all(pics.parent().unwrap());
+    }
+
+    #[test]
+    fn 删除_原图名撞配对nef暂存名_中止且回滚不吞文件() {
+        let (conn, pics, thumbs, trash) = setup("delname_raw");
+        // 原图名恰为 raw__ + 配对 NEF 名：原图与 NEF 都算出 1__raw__p.nef
+        let jpg = "raw__p.nef";
+        let nef = "p.nef";
+        let base = pics.to_string_lossy().replace('\\', "/");
+        conn.execute_batch(&format!(
+            "INSERT INTO images (id, filename, filepath, import_date, raw_path, hash, flag)
+             VALUES (1, '{jpg}', '{base}/{jpg}', '2026-01-01', '{base}/{nef}', 'h1', 1);"
+        ))
+        .unwrap();
+        std::fs::write(pics.join(jpg), b"orig").unwrap();
+        std::fs::write(pics.join(nef), b"raw").unwrap();
+
+        let res = delete_image_to_trash_core(&conn, 1, &thumbs, &trash);
+        assert!(
+            res.is_err(),
+            "撞名必须中止删除，而非让 NEF 覆盖先移入的原图"
+        );
+
+        assert_eq!(std::fs::read(pics.join(jpg)).unwrap(), b"orig");
+        assert_eq!(std::fs::read(pics.join(nef)).unwrap(), b"raw");
+        assert!(std::fs::read_dir(&trash).unwrap().next().is_none());
+        assert!(crate::images_query::get_image_by_id(&conn, 1)
+            .unwrap()
+            .is_some());
         let _ = std::fs::remove_dir_all(pics.parent().unwrap());
     }
 }
