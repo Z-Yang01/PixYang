@@ -239,7 +239,10 @@ export default function MaskPanel({
     else keyCommit('蒙版调整', next);
   };
 
-  const sliderRow = ({ key, label, min = 0, max, step, get, set, reset, fmt }) => (
+  // step 缺省 = 1（R94）：与 input 原生方向键步进一致；线性几何滑杆（x0/y0/x1/y1）未声明
+  // step，若按 undefined 参与 matchSliderNavKey 的 step×10 粗调会算出 NaN（sanitize 后变 0，
+  // 起点瞬移到左缘还灌错误历史条目）
+  const sliderRow = ({ key, label, min = 0, max, step = 1, get, set, reset, fmt }) => (
     <label
       className="editor-slider-row"
       key={key}

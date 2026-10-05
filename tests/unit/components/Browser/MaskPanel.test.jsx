@@ -255,4 +255,32 @@ describe('MaskPanel（蒙版面板）', () => {
     expect(onCommit).toHaveBeenCalledTimes(3);
     expect(onKeyCommit).not.toHaveBeenCalled();
   });
+
+  // R94：线性蒙版几何滑杆（x0/y0/x1/y1）原本未声明 step，粗调按 step×10 算出 NaN
+  // （经 sanitize 归一为 0——起点瞬移到左缘 + 灌入错误历史条目）。锁：缺省 step 视同 1，
+  // 与 input 原生方向键步进口径一致；Ctrl+Del 无中性默认仍不动作。
+  it('线性几何滑杆 Shift+←/→ 粗调步进有效（缺省 step=1，R94）', () => {
+    const { onCommit, onKeyCommit, onChange } = setup([linear], 'm2');
+    const x0 = screen.getByLabelText(/^起点 X/);
+    fireEvent.keyDown(x0, { key: 'ArrowRight', shiftKey: true });
+    expect(onKeyCommit).toHaveBeenCalledTimes(1);
+    expect(onKeyCommit.mock.calls[0][1].find((m) => m.id === 'm2').x0).toBe(10);
+    expect(onChange.mock.calls.at(-1)[0].find((m) => m.id === 'm2').x0).toBe(10);
+    // 反向粗调：隔离渲染下 props 不回写，第二次按键仍以 x0=0 为基准 → -10
+    fireEvent.keyDown(x0, { key: 'ArrowLeft', shiftKey: true });
+    expect(onKeyCommit.mock.calls[1][1].find((m) => m.id === 'm2').x0).toBe(-10);
+    // 终点 Y 同口径（y1=210 → +10）
+    const y1 = screen.getByLabelText(/^终点 Y/);
+    fireEvent.keyDown(y1, { key: 'ArrowRight', shiftKey: true });
+    expect(onKeyCommit.mock.calls[2][1].find((m) => m.id === 'm2').y1).toBe(220);
+    // 位置语义无中性默认：Ctrl+Del 不动作
+    fireEvent.keyDown(x0, { key: 'Delete', ctrlKey: true });
+    expect(onCommit).not.toHaveBeenCalled();
+    expect(onKeyCommit).toHaveBeenCalledTimes(3);
+    // 钳域：x0 距 min(-W) 不足一步时钳到 min（第二个 setup 同用例内挂载，用 container 定位）
+    const { container: c2, onKeyCommit: kc2 } = setup([{ ...linear, x0: -395 }], 'm2');
+    const x0b = c2.querySelector('input[type="range"]');
+    fireEvent.keyDown(x0b, { key: 'ArrowLeft', shiftKey: true });
+    expect(kc2.mock.calls[0][1].find((m) => m.id === 'm2').x0).toBe(-400);
+  });
 });
