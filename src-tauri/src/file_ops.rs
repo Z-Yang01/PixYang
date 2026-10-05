@@ -1306,6 +1306,109 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    // ── R102 跨模块集成审计：自我包含导出（目标目录含待导出文件自身）──
+    // Copy 与 Convert 两模式都必须避让绝不覆盖源文件：Copy 走 EXCL+避让（a_1.jpg），
+    // Convert 先探名后渲染（同名 dest==src 必已存在 → 避让），源字节原样不动。
+
+    #[test]
+    fn 导出_目标目录含源文件自身_复制模式避让不覆盖源() {
+        let dir = std::env::temp_dir().join("pixyang_export_self_copy");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let jpg = make_jpeg(&dir, "a.jpg", 32, 20);
+        let before = std::fs::read(&jpg).unwrap();
+        let rows = vec![export_row("a.jpg", &jpg, None)];
+        let o = export_image_files(&rows, dir.to_str().unwrap()).unwrap();
+        assert_eq!(o.copied, 1);
+        assert!(o.failed.is_empty());
+        // 源文件原样；副本落避让名
+        assert_eq!(std::fs::read(&jpg).unwrap(), before);
+        assert!(dir.join("a_1.jpg").exists());
+        assert_eq!(std::fs::read(dir.join("a_1.jpg")).unwrap(), before);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn 导出_目标目录含源文件自身_转换模式避让不覆盖源() {
+        let dir = std::env::temp_dir().join("pixyang_export_self_conv");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let jpg = make_jpeg(&dir, "a.jpg", 32, 20);
+        let before = std::fs::read(&jpg).unwrap();
+        // jpeg → jpeg：目标名与源完全同名，必须避让而非渲染覆盖源
+        let opts = BatchExportOptions::from_json(Some(&json!({
+            "mode": "convert", "format": "jpeg", "quality": 80
+        })))
+        .unwrap();
+        let rows = vec![export_row("a.jpg", &jpg, None)];
+        let o = export_image_files_with(&rows, dir.to_str().unwrap(), &opts).unwrap();
+        assert_eq!(o.copied, 1);
+        assert!(o.failed.is_empty());
+        assert_eq!(
+            std::fs::read(&jpg).unwrap(),
+            before,
+            "源文件不得被渲染产物覆盖"
+        );
+        let copy = dir.join("a_1.jpg");
+        assert!(copy.exists(), "同名目标应避让到 a_1.jpg");
+        assert!(image::ImageReader::open(&copy).unwrap().decode().is_ok());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // ── R102 跨模块集成审计：exif_relay × convert 导出 ──
+    // 同格式（jpeg→jpeg）导出回接原图 EXIF；跨格式（jpeg→png）管线不得把 JPEG APP1
+    // 语义注进 PNG（relay_exif 按签名分派，跨格式原样）。
+
+    #[test]
+    fn 导出_转换模式_exif回接_jpeg同格式回接_png跨格式不注入() {
+        let dir = std::env::temp_dir().join("pixyang_export_conv_exif");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("src")).unwrap();
+        let plain = make_jpeg(&dir.join("src"), "plain.jpg", 24, 16);
+        let exif_payload = b"Exif\0\0MM\x00\x2a-fake-tiff".to_vec();
+        let plain_bytes = std::fs::read(&plain).unwrap();
+        let with_exif = crate::exif_relay::inject_jpeg_exif(&plain_bytes, &[exif_payload.clone()]);
+        let src = dir.join("src").join("withx.jpg");
+        std::fs::write(&src, &with_exif).unwrap();
+
+        // jpeg → jpeg：同格式回接
+        let dest_jpg = dir.join("out_jpg");
+        std::fs::create_dir_all(&dest_jpg).unwrap();
+        let opts_jpg = BatchExportOptions::from_json(Some(&json!({
+            "mode": "convert", "format": "jpeg", "quality": 90
+        })))
+        .unwrap();
+        let rows = vec![export_row("withx.jpg", &src, None)];
+        let o = export_image_files_with(&rows, dest_jpg.to_str().unwrap(), &opts_jpg).unwrap();
+        assert_eq!(o.copied, 1);
+        let product = std::fs::read(dest_jpg.join("withx.jpg")).unwrap();
+        assert_eq!(
+            crate::exif_relay::jpeg_exif_segments(&product),
+            vec![exif_payload],
+            "同格式转换导出应回接原图 EXIF"
+        );
+
+        // jpeg → png：跨格式不注入（产物无 APP1 语义、无 eXIf 块）
+        let dest_png = dir.join("out_png");
+        std::fs::create_dir_all(&dest_png).unwrap();
+        let opts_png = BatchExportOptions::from_json(Some(&json!({
+            "mode": "convert", "format": "png"
+        })))
+        .unwrap();
+        let o = export_image_files_with(&rows, dest_png.to_str().unwrap(), &opts_png).unwrap();
+        assert_eq!(o.copied, 1);
+        let png_product = std::fs::read(dest_png.join("withx.png")).unwrap();
+        assert!(
+            crate::exif_relay::png_exif_tiff(&png_product).is_none(),
+            "跨格式导出不得向 PNG 注入 JPEG EXIF"
+        );
+        assert!(
+            !png_product.windows(4).any(|w| w == b"eXIf"),
+            "PNG 产物不得出现 eXIf 块"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     #[test]
     fn today_ymd_格式正确() {
         let t = today_ymd();

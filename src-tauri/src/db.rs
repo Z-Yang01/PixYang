@@ -364,7 +364,14 @@ pub fn ensure_business_schema(conn: &Connection) -> Result<(), rusqlite::Error> 
     conn.execute_batch(BUSINESS_TABLES)?;
     migrate_images_columns(conn);
     conn.execute_batch(SETTINGS_DEFAULTS)?;
-    conn.execute_batch(BUSINESS_INDEXES)
+    // 索引是纯性能面：极端旧库/外来形状的 images 表（缺 filename 时逐列回迁守卫主动
+    // 放弃改表）必然让部分索引建不出来——此前 Db::open 整体失败，应用被钉死在启动屏
+    // 且无任何自救入口。降级为无索引运行 + 日志留档（与 delete_image_files 单文件
+    // 失败吞掉继续同一哲学）；正常库建索引失败仍会在日志可见，不静默。
+    if let Err(e) = conn.execute_batch(BUSINESS_INDEXES) {
+        eprintln!("[db migrate] 索引创建失败（降级为无索引运行）: {e}");
+    }
+    Ok(())
 }
 
 /// 旧版（Electron）userData 路径（app name 'pixyang'）——迁移来源，保留只读兼容
@@ -939,6 +946,106 @@ mod path_tests {
         assert_eq!(n, cols_after_first, "重复打开不得再加列");
         drop(conn);
         drop(db2);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // ── R102 跨模块集成审计：极端旧库（异形 images 表）× 索引自举 ──
+    // images 表缺 filename 时逐列回迁守卫主动放弃改表（防把外来表改坏），随后
+    // BUSINESS_INDEXES 引用的 import_date 等列必然缺失——索引是纯性能面，失败不得
+    // 让 Db::open 整体报错把应用钉死在启动屏（降级运行 + 日志留档，与
+    // delete_image_files 单文件失败吞掉继续同一哲学）。变异验证：回退容错分支本条先红。
+
+    #[test]
+    fn open_异形images表缺filename_降级启动_外来数据原样保留() {
+        let dir = std::env::temp_dir().join("pixyang_db_schema_alien");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let p = dir.join("t.db");
+        {
+            let conn = Connection::open(&p).unwrap();
+            conn.execute_batch(
+                "CREATE TABLE images (x INTEGER);
+                 INSERT INTO images VALUES (7);",
+            )
+            .unwrap();
+        }
+        let db = Db::open(&p).expect("异形 images 表不得阻断启动（索引可降级）");
+        // settings / tags / albums 等其余业务面照常自举可用
+        db.set_setting("theme", "dark").unwrap();
+        assert_eq!(db.get_setting("theme").unwrap().as_deref(), Some("dark"));
+        let conn = db.open_read().unwrap();
+        for t in ["tags", "albums", "image_tags", "album_images", "presets"] {
+            let n: i64 = conn
+                .query_row(
+                    "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name = ?1",
+                    [t],
+                    |r| r.get(0),
+                )
+                .unwrap();
+            assert_eq!(n, 1, "缺业务表: {t}");
+        }
+        // 外来表数据一行不少：异形表绝不被改写
+        let x: i64 = conn
+            .query_row("SELECT x FROM images", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(x, 7);
+        drop(conn);
+        drop(db);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn open_多列错型旧库_缺列回迁额外列保留_错型列经亲和仍可查() {
+        let dir = std::env::temp_dir().join("pixyang_db_schema_weird");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let p = dir.join("t.db");
+        {
+            let conn = Connection::open(&p).unwrap();
+            // 列序打乱 + 额外列 legacy_col + 错型列（rating TEXT）：
+            // 回迁只补缺列、绝不动既有列（含错型与额外列）
+            conn.execute_batch(
+                "CREATE TABLE images (
+                    legacy_extra TEXT DEFAULT '',
+                    rating TEXT DEFAULT '0',
+                    filepath TEXT UNIQUE,
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    filename TEXT NOT NULL
+                 );
+                 INSERT INTO images (filename, filepath, rating, legacy_extra)
+                 VALUES ('a.jpg', '/a.jpg', '3', 'keep');",
+            )
+            .unwrap();
+        }
+        let db = Db::open(&p).unwrap();
+        let conn = db.open_read().unwrap();
+        let n: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM pragma_table_info('images') WHERE name IN
+                 ('hidden','taken_at','import_date','hash','updated_at','flag')",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(n, 6, "缺列应全部回迁");
+        // 额外列与旧数据原样保留；错型 rating 列不做任何改写
+        let row: (String, String, String) = conn
+            .query_row(
+                "SELECT legacy_extra, rating, filename FROM images WHERE filepath = '/a.jpg'",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .unwrap();
+        assert_eq!(row, ("keep".into(), "3".into(), "a.jpg".into()));
+        // TEXT 亲和列上的评分谓词（TEXT 存值亲和转换后照常匹配）
+        let hit: i64 = conn
+            .query_row("SELECT COUNT(*) FROM images WHERE rating >= 3", [], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        assert_eq!(hit, 1);
+        drop(conn);
+        drop(db);
         let _ = std::fs::remove_dir_all(&dir);
     }
 

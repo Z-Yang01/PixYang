@@ -1225,4 +1225,67 @@ mod tests {
             .is_some());
         let _ = std::fs::remove_dir_all(pics.parent().unwrap());
     }
+
+    // ── R102 跨模块集成审计：trash × edit_session ──
+    // 编辑会话中途（未保存）删除原图：编辑态（edits 行/历史/预览/底图缓存）随删除整链
+    // 入暂存，期间编辑写链必须被「记录缺席」围栏拦住；撤销后编辑态整链回位且版本续接，
+    // 重建的 base 侧车（不在派生清单、不入暂存）与回写后的原始 mtime 继续匹配。
+
+    #[test]
+    fn 集成_编辑会话中途删除入暂存_编辑写围栏_撤销后编辑态整链可用() {
+        let (conn, pics, thumbs, trash) = setup("edit_session");
+        insert_image(&conn, &pics, false);
+        // 编辑态：params version=3 + 一笔历史 + 预览/底图缓存
+        conn.execute_batch(
+            "UPDATE edits SET version = 3, params_json = '{\"basic\":{\"exposure\":0.5}}' WHERE image_id = 1;
+             INSERT INTO edit_history (image_id, step, command_json) VALUES (1, 1, '{\"label\":\"曝光\"}');",
+        )
+        .unwrap();
+        write_thumbs(&thumbs);
+        std::fs::write(thumbs.join("edit-1-base.jpg"), b"base").unwrap();
+        let preview = thumbs.join("edit-1.jpg");
+        assert!(preview.exists());
+
+        delete_image_to_trash_core(&conn, 1, &thumbs, &trash).unwrap();
+
+        // 删除后：编辑文件随派生清单入暂存（base 侧车不在派生清单、属无害残留，
+        // 不入断言），记录与 edits/edit_history 五表清空
+        assert!(!preview.exists());
+        assert!(!thumbs.join("edit-1-base.jpg").exists());
+        assert!(crate::images_query::get_image_by_id(&conn, 1)
+            .unwrap()
+            .is_none());
+        // 编辑写链被围栏：记录缺席时保存返回错误对象，不静默成功
+        let fenced = crate::edit_session::save_edit_params(
+            &conn,
+            1,
+            &serde_json::json!({ "basic": { "exposure": 1.0 } }),
+            None,
+        )
+        .unwrap();
+        assert_eq!(fenced["error"], "图片不存在");
+        assert!(crate::edit_session::get_edits(&conn, 1).unwrap().is_null());
+
+        // 撤销：编辑态整链回位，版本自快照续接（3 → 4），预览/底图回到 thumbs
+        restore_image_from_trash_core(&conn, 1, &thumbs, &trash).unwrap();
+        assert!(preview.exists());
+        assert!(thumbs.join("edit-1-base.jpg").exists());
+        let edits = crate::edit_session::get_edits(&conn, 1).unwrap();
+        assert_eq!(edits["version"], 3);
+        assert_eq!(edits["params"]["basic"]["exposure"], 0.5);
+        let hist = crate::edit_session::get_edit_history(&conn, 1).unwrap();
+        assert_eq!(hist.len(), 1);
+        assert_eq!(hist[0]["command"]["label"], "曝光");
+
+        let after = crate::edit_session::save_edit_params(
+            &conn,
+            1,
+            &serde_json::json!({ "basic": { "exposure": 1.0 } }),
+            Some(&serde_json::json!({ "label": "编辑器保存" })),
+        )
+        .unwrap();
+        assert!(after.get("error").is_none(), "{after}");
+        assert_eq!(after["version"], 4, "撤销后版本应自快照 3 续接");
+        let _ = std::fs::remove_dir_all(pics.parent().unwrap());
+    }
 }

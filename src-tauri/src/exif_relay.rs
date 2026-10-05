@@ -232,6 +232,44 @@ mod tests {
         assert_eq!(relay_exif(&jpeg_src, &png_stub()), png_stub());
     }
 
+    // ── R102 跨模块集成审计：畸形 EXIF 源 × convert 导出回接 ──
+    // 长度域撒谎/非法段长/非 Exif APP1 的源不得让解析越界或误收，畸形源经 relay
+    // 原样放行产物（不炸、不产出半截段）；超 APP1 容量的载荷注入时跳过不注。
+
+    #[test]
+    fn 畸形exif源_长度域越界_非法段长_非exif_app1_不误收不炸() {
+        // len=0xff=255 但缓冲只剩数字节：必须在段边界安全截停
+        let mut truncated = vec![0xff, 0xd8];
+        truncated.extend_from_slice(&[0xff, 0xe1, 0x00, 0xff, 0x45, 0x78]);
+        assert!(jpeg_exif_segments(&truncated).is_empty());
+        // len < 2：非法段长直接截停
+        let short_len = vec![0xff, 0xd8, 0xff, 0xe1, 0x00, 0x00, 0xff, 0xd9];
+        assert!(jpeg_exif_segments(&short_len).is_empty());
+        // APP1 但非 "Exif\0\0" 头（如 JPX 载荷）：不误收
+        let mut jpx = vec![0xff, 0xd8];
+        jpx.extend_from_slice(&[0xff, 0xe1, 0x00, 0x0a, b'J', b'P', b'X', b' ', 0x00, 0x00]);
+        jpx.extend_from_slice(&[0xff, 0xd9]);
+        assert!(jpeg_exif_segments(&jpx).is_empty());
+        // 畸形源经 relay：解析为空 → 产物原样返回（不炸、不改字节）
+        let dst = fake_jpeg(None);
+        assert_eq!(relay_exif(&truncated, &dst), dst);
+        // PNG 侧：截断的 eXIf 块长度域越界 → 不取不炸
+        let mut evil_png = png_stub();
+        evil_png.extend_from_slice(&[0x00, 0xff, 0xff, 0xff]); // len 巨大
+        evil_png.extend_from_slice(b"eXIf");
+        assert!(png_exif_tiff(&evil_png).is_none());
+        assert_eq!(relay_exif(&evil_png, &png_stub()), png_stub());
+    }
+
+    #[test]
+    fn 注入_超app1容量载荷跳过_正常载荷不受影响() {
+        let dst = fake_jpeg(None);
+        let huge = vec![0xaau8; 65540];
+        let out = inject_jpeg_exif(&dst, &[huge, EXIF.to_vec()]);
+        // 超限载荷跳过，正常 EXIF 照注
+        assert_eq!(jpeg_exif_segments(&out), vec![EXIF.to_vec()]);
+    }
+
     fn png_stub() -> Vec<u8> {
         let mut png = PNG_SIG.to_vec();
         png.extend_from_slice(&(13u32).to_be_bytes());
