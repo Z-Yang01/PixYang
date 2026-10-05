@@ -1,22 +1,125 @@
 [
-  { "name": "s01-exposure-plus", "params": { "basic": { "exposure": 0.8 } } },
-  { "name": "s02-exposure-minus", "params": { "basic": { "exposure": -0.8 } } },
-  { "name": "s03-contrast-plus", "params": { "basic": { "contrast": 40 } } },
-  { "name": "s04-contrast-minus", "params": { "basic": { "contrast": -40 } } },
-  { "name": "s05-highlights-plus", "params": { "basic": { "highlights": 60 } } },
-  { "name": "s06-highlights-minus", "params": { "basic": { "highlights": -60 } } },
-  { "name": "s07-shadows-plus", "params": { "basic": { "shadows": 60 } } },
-  { "name": "s08-shadows-minus", "params": { "basic": { "shadows": -60 } } },
-  { "name": "s09-whites-plus", "params": { "basic": { "whites": 50 } } },
-  { "name": "s10-blacks-minus", "params": { "basic": { "blacks": -50 } } },
-  { "name": "s11-temp-warm", "params": { "basic": { "temperature": 50 } } },
-  { "name": "s12-temp-cool", "params": { "basic": { "temperature": -50 } } },
-  { "name": "s13-tint-minus", "params": { "basic": { "tint": -40 } } },
-  { "name": "s14-saturation-minus", "params": { "basic": { "saturation": -60 } } },
+  {
+    "name": "s01-exposure-plus",
+    "params": {
+      "basic": {
+        "exposure": 0.8
+      }
+    }
+  },
+  {
+    "name": "s02-exposure-minus",
+    "params": {
+      "basic": {
+        "exposure": -0.8
+      }
+    }
+  },
+  {
+    "name": "s03-contrast-plus",
+    "params": {
+      "basic": {
+        "contrast": 40
+      }
+    }
+  },
+  {
+    "name": "s04-contrast-minus",
+    "params": {
+      "basic": {
+        "contrast": -40
+      }
+    }
+  },
+  {
+    "name": "s05-highlights-plus",
+    "params": {
+      "basic": {
+        "highlights": 60
+      }
+    }
+  },
+  {
+    "name": "s06-highlights-minus",
+    "params": {
+      "basic": {
+        "highlights": -60
+      }
+    }
+  },
+  {
+    "name": "s07-shadows-plus",
+    "params": {
+      "basic": {
+        "shadows": 60
+      }
+    }
+  },
+  {
+    "name": "s08-shadows-minus",
+    "params": {
+      "basic": {
+        "shadows": -60
+      }
+    }
+  },
+  {
+    "name": "s09-whites-plus",
+    "params": {
+      "basic": {
+        "whites": 50
+      }
+    }
+  },
+  {
+    "name": "s10-blacks-minus",
+    "params": {
+      "basic": {
+        "blacks": -50
+      }
+    }
+  },
+  {
+    "name": "s11-temp-warm",
+    "params": {
+      "basic": {
+        "temperature": 50
+      }
+    }
+  },
+  {
+    "name": "s12-temp-cool",
+    "params": {
+      "basic": {
+        "temperature": -50
+      }
+    }
+  },
+  {
+    "name": "s13-tint-minus",
+    "params": {
+      "basic": {
+        "tint": -40
+      }
+    }
+  },
+  {
+    "name": "s14-saturation-minus",
+    "params": {
+      "basic": {
+        "saturation": -60
+      }
+    }
+  },
   {
     "name": "s15-curves-rgb-s",
     "params": {
-      "curves": { "rgb": [0, 0.03, 0.25, 0.18, 0.75, 0.82, 1, 0.97], "r": [], "g": [], "b": [] }
+      "curves": {
+        "rgb": [0, 0.03, 0.25, 0.18, 0.75, 0.82, 1, 0.97],
+        "r": [],
+        "g": [],
+        "b": []
+      }
     }
   },
   {
@@ -42,23 +145,55 @@
   },
   {
     "name": "s18-grading-shadows",
-    "params": { "colorGrading": { "shadows": [200, 50], "midtones": [], "highlights": [] } }
+    "params": {
+      "colorGrading": {
+        "shadows": [200, 50],
+        "midtones": [],
+        "highlights": []
+      }
+    }
   },
   {
     "name": "s19-grading-midtones",
-    "params": { "colorGrading": { "shadows": [], "midtones": [90, 40], "highlights": [] } }
+    "params": {
+      "colorGrading": {
+        "shadows": [],
+        "midtones": [90, 40],
+        "highlights": []
+      }
+    }
   },
   {
     "name": "s20-grading-highlights",
-    "params": { "colorGrading": { "shadows": [], "midtones": [], "highlights": [40, 45] } }
+    "params": {
+      "colorGrading": {
+        "shadows": [],
+        "midtones": [],
+        "highlights": [40, 45]
+      }
+    }
   },
   {
     "name": "s21-vignette-minus",
-    "params": { "lens": { "profile": "", "distortion": 0, "vignette": -60, "chromatic": 0 } }
+    "params": {
+      "lens": {
+        "profile": "",
+        "distortion": 0,
+        "vignette": -60,
+        "chromatic": 0
+      }
+    }
   },
   {
     "name": "s22-vignette-plus",
-    "params": { "lens": { "profile": "", "distortion": 0, "vignette": 60, "chromatic": 0 } }
+    "params": {
+      "lens": {
+        "profile": "",
+        "distortion": 0,
+        "vignette": 60,
+        "chromatic": 0
+      }
+    }
   },
   {
     "name": "s23-mask-radial",
@@ -131,36 +266,86 @@
   {
     "name": "m01-basic-combo",
     "params": {
-      "basic": { "exposure": 0.5, "contrast": 20, "saturation": 15, "temperature": 15, "tint": -8 }
+      "basic": {
+        "exposure": 0.5,
+        "contrast": 20,
+        "saturation": 15,
+        "temperature": 15,
+        "tint": -8
+      }
     }
   },
   {
     "name": "m02-tone-curve-grading",
-    "tolerance": { "maxDelta": 18, "meanDelta": 1.5 },
+    "tolerance": {
+      "maxDelta": 18,
+      "meanDelta": 1.5
+    },
     "toleranceBasis": "多阶段组合分档（R70，选项 A）：执行器逐阶段 u8 trunc 量化叠加超单阶段缺省档包络（R63/R64/R65 定版逐位稳定 mean 1.3198 / max[4,4,5]），档位=量化包络实测上界 {18,1.5}，非缺陷豁免；单阶段缺省档 {2,0.6} 不适用。",
     "params": {
-      "basic": { "highlights": -30, "shadows": 25, "whites": 10, "blacks": -8 },
-      "curves": { "rgb": [0, 0, 0.5, 0.55, 1, 1], "r": [], "g": [], "b": [] },
-      "colorGrading": { "shadows": [215, 35], "midtones": [90, 25], "highlights": [] }
+      "basic": {
+        "highlights": -30,
+        "shadows": 25,
+        "whites": 10,
+        "blacks": -8
+      },
+      "curves": {
+        "rgb": [0, 0, 0.5, 0.55, 1, 1],
+        "r": [],
+        "g": [],
+        "b": []
+      },
+      "colorGrading": {
+        "shadows": [215, 35],
+        "midtones": [90, 25],
+        "highlights": []
+      }
     }
   },
   {
     "name": "m03-stack-vignette",
-    "tolerance": { "maxDelta": 18, "meanDelta": 1.5 },
+    "tolerance": {
+      "maxDelta": 18,
+      "meanDelta": 1.5
+    },
     "toleranceBasis": "多阶段组合分档（R70，选项 A）：执行器逐阶段 u8 trunc 量化叠加（R63/R64/R65 定版逐位稳定 mean 0.3241 / max≤3；mean 在缺省档内但 max 3>2），档位=量化包络实测上界 {18,1.5}，非缺陷豁免。",
     "params": {
-      "basic": { "exposure": 0.4, "contrast": 15 },
-      "curves": { "rgb": [0, 0, 0.25, 0.18, 0.75, 0.82, 1, 1], "r": [], "g": [], "b": [] },
-      "colorGrading": { "shadows": [215, 35], "midtones": [], "highlights": [40, 25] },
-      "lens": { "profile": "", "distortion": 0, "vignette": -35, "chromatic": 0 }
+      "basic": {
+        "exposure": 0.4,
+        "contrast": 15
+      },
+      "curves": {
+        "rgb": [0, 0, 0.25, 0.18, 0.75, 0.82, 1, 1],
+        "r": [],
+        "g": [],
+        "b": []
+      },
+      "colorGrading": {
+        "shadows": [215, 35],
+        "midtones": [],
+        "highlights": [40, 25]
+      },
+      "lens": {
+        "profile": "",
+        "distortion": 0,
+        "vignette": -35,
+        "chromatic": 0
+      }
     }
   },
   {
     "name": "m04-global-plus-masks",
-    "tolerance": { "maxDelta": 18, "meanDelta": 1.5 },
+    "tolerance": {
+      "maxDelta": 18,
+      "meanDelta": 1.5
+    },
     "toleranceBasis": "多阶段组合分档（R70，选项 A）：执行器逐阶段 u8 trunc 量化叠加超缺省档（R63/R64/R65 定版逐位稳定 mean 0.6731 / max≤3），档位=量化包络实测上界 {18,1.5}，非缺陷豁免。",
     "params": {
-      "basic": { "contrast": 15, "shadows": 20, "temperature": 10 },
+      "basic": {
+        "contrast": 15,
+        "shadows": 20,
+        "temperature": 10
+      },
       "masks": [
         {
           "type": "radial",
@@ -200,8 +385,140 @@
   },
   {
     "name": "m05-heavy-tone",
-    "tolerance": { "maxDelta": 4, "meanDelta": 1.5 },
+    "tolerance": {
+      "maxDelta": 4,
+      "meanDelta": 1.5
+    },
     "toleranceBasis": "R72 掩蔽后包络复测（tone 族单阶段档）：R71 亮度掩蔽（smoothstep 带）重置量化包络后，本用例 R71/R72 两轮逐位稳定 mean 1.0550 / max[2,2,2]——掩蔽带沿放大 GPU 舍入 vs 执行器单次 trunc 的量化差，非缺陷（R65 修复前该例 mean 33.73/max47 为真方向反转，量级差一个数量级以上）；档位=实测上界×余量（max 2×2=4、mean ≈1.05×1.4=1.5，与既有多阶段档 mean 同值），真缺陷量级两界均仍拦下；变异验证见 NIGHTLY_LOG R72（高光 f 去 clamp → 本用例红）。",
-    "params": { "basic": { "shadows": -80, "highlights": 80, "whites": -30, "blacks": 30 } }
+    "params": {
+      "basic": {
+        "shadows": -80,
+        "highlights": 80,
+        "whites": -30,
+        "blacks": 30
+      }
+    }
+  },
+  {
+    "name": "s26-lens-distortion-plus-60",
+    "params": {
+      "lens": {
+        "profile": "",
+        "distortion": 60,
+        "vignette": 0,
+        "chromatic": 0
+      }
+    },
+    "toleranceBasis": "R96 首测非零畸变对拍（桶形 k=+0.15）。出界口径经 R96 实锤修复（GLSL 出界判据改执行器纹素中心界 [0.5, size−0.5]；修复前薄环 maxΔ=255/1044px，变异验证见 NIGHTLY_LOG R96）后落缺省档：实测 max[1,1,1] / mean 0.0061（GPU 双线性量化包络）。"
+  },
+  {
+    "name": "s27-lens-distortion-minus-60",
+    "params": {
+      "lens": {
+        "profile": "",
+        "distortion": -60,
+        "vignette": 0,
+        "chromatic": 0
+      }
+    },
+    "toleranceBasis": "R96 首测非零畸变对拍（枕形 k=−0.15，与 s26 反向）。出界口径同 s26（R96 修复）。实测 max[1,1,1] / mean 0.0080，落缺省档。"
+  },
+  {
+    "name": "s28-lens-chromatic-plus-50",
+    "params": {
+      "lens": {
+        "profile": "",
+        "distortion": 0,
+        "vignette": 0,
+        "chromatic": 50
+      }
+    },
+    "toleranceBasis": "R96 首测非零色散对拍（ca=+0.005，R 外扩/B 内收）。G 通道缩放恒 1，属恒等映射：R96 实锤修复 GLSL n 往返 f32 噪声把恰在纹素中心上的恒等行误判出界（修复前顶行801px 假黑环 maxΔG=127，变异验证见 R96）。实测 max[1,0,1] / mean 0.0055，落缺省档。"
+  },
+  {
+    "name": "s29-lens-chromatic-minus-50",
+    "params": {
+      "lens": {
+        "profile": "",
+        "distortion": 0,
+        "vignette": 0,
+        "chromatic": -50
+      }
+    },
+    "toleranceBasis": "R96 首测非零色散对拍（ca=−0.005，与 s28 反向：B 外扩/R 内收）。G 恒等回退同 s28。实测 max[1,0,1] / mean 0.0055，落缺省档。"
+  },
+  {
+    "name": "s30-lens-combo-strong",
+    "params": {
+      "lens": {
+        "profile": "",
+        "distortion": 40,
+        "vignette": -70,
+        "chromatic": 35
+      }
+    },
+    "toleranceBasis": "R96 镜头三参数同开（畸变 +40 / 暗角 −70 / 色散 +35）：验证执行器 stage 内顺序「几何重采样→暗角」与 GLSL「重采样→…→置黑→暗角」组合一致。实测 max[1,1,1] / mean 0.0938，落缺省档。"
+  },
+  {
+    "name": "s31-vignette-plus-100",
+    "params": {
+      "lens": {
+        "profile": "",
+        "distortion": 0,
+        "vignette": 100,
+        "chromatic": 0
+      }
+    },
+    "toleranceBasis": "R96 暗角强参对拍（+100 提亮上界；既有矩阵仅 ±35~±60）。两端同式（lens.cjs vignettePixel：out = in + k·falloff·(255−in)）。实测 max[1,1,1] / mean 0.0024，落缺省档。"
+  },
+  {
+    "name": "s32-vignette-minus-100",
+    "params": {
+      "lens": {
+        "profile": "",
+        "distortion": 0,
+        "vignette": -100,
+        "chromatic": 0
+      }
+    },
+    "toleranceBasis": "R96 暗角强参对拍（−100 压暗下界）。实测 max[1,1,1] / mean 0.0008，落缺省档。"
+  },
+  {
+    "name": "s33-detail-noise-60",
+    "params": {
+      "detail": {
+        "sharpness": 0,
+        "noise": 60
+      }
+    },
+    "toleranceBasis": "R96 首测降噪对拍：两端同式（noise/100·0.85 亮度域 3×3 高斯混合，边界钳制同口径）。实测 max[1,1,1] / mean 0.0031，落缺省档。detail.sharpness 为声明近似口径不入矩阵（预览单 pass 架构只能对原图纹理做固定 3×3×0.7 近似 USM，导出为 σ=0.8+s/50 高斯；R96 观测 sharpness 25→mean 1.4991/max[5,5,23]、100→2.0594/max[6,7,36]，像素对拍闭合需多 pass 预览架构，见 NIGHTLY_LOG R96）。"
+  },
+  {
+    "name": "s34-straighten-plus-5",
+    "params": {
+      "crop": {
+        "x": 81,
+        "y": 81,
+        "w": 723,
+        "h": 904,
+        "ratio": "free",
+        "angle": 5
+      }
+    },
+    "toleranceBasis": "R96 首测拉直对拍（crop.angle=+5，裁剪矩形=前端 straightenGeometry(800,1000,5) 去黑角最大内接框 [81,81,723,904]）。旋转数学为单端实现（预览走 CSS transform，无 canvas 级实现可对拍），判定方式：run.cjs 在 Node 内逐式复刻执行器 rotate_by_angle+取矩形（f64 逐位同式），对「shader 出帧 + 前端 fit 矩形坐标」vs「执行器旋转+裁剪」逐像素比对——fit 坐标或 spec 消费分歧即非零差。实测 max[0,0,0] / mean 0（逐位一致，兼证去黑角框无黑角泄漏）。"
+  },
+  {
+    "name": "s35-straighten-minus-6",
+    "params": {
+      "crop": {
+        "x": 95,
+        "y": 95,
+        "w": 710,
+        "h": 888,
+        "ratio": "free",
+        "angle": -6
+      }
+    },
+    "toleranceBasis": "R96 拉直反向角对拍（crop.angle=−6，fit=[95,95,710,888]，与 s34 反向构成方向锁）。判定方式同 s34。实测 max[0,0,0] / mean 0（逐位一致）。"
   }
 ]

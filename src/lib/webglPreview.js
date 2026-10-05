@@ -160,14 +160,29 @@ void main() {
     float radial = 1.0 + uLensDistortion * r2;
     float rR = radial * (1.0 + uLensChromatic * r2);
     float rB = radial * (1.0 - uLensChromatic * r2);
-    uvR = (n * rR * halfSz + halfSz) / uImageSize;
-    uvG = (n * radial * halfSz + halfSz) / uImageSize;
-    uvB = (n * rB * halfSz + halfSz) / uImageSize;
+    // 重映射后的源位置（纹素中心坐标，pos−0.5 即执行器 sx/sy）
+    vec2 posR = n * rR * halfSz + halfSz;
+    vec2 posG = n * radial * halfSz + halfSz;
+    vec2 posB = n * rB * halfSz + halfSz;
+    uvR = posR / uImageSize;
+    uvG = posG / uImageSize;
+    uvB = posB / uImageSize;
     // 出界先记录、clamp 后采样边缘：处理链结束后于暗角前统一置黑
-    //（与执行器同段顺序一致：lens 段填黑 → 同段 vignette 随后可提亮黑边）
-    inR = step(0.0, uvR.x) * step(uvR.x, 1.0) * step(0.0, uvR.y) * step(uvR.y, 1.0);
-    inG = step(0.0, uvG.x) * step(uvG.x, 1.0) * step(0.0, uvG.y) * step(uvG.y, 1.0);
-    inB = step(0.0, uvB.x) * step(uvB.x, 1.0) * step(0.0, uvB.y) * step(uvB.y, 1.0);
+    //（与执行器同段顺序一致：lens 段填黑 → 同段 vignette 随后可提亮黑边）。
+    // 出界口径与执行器逐式对齐（R96 对拍实锤修复）：采样中心落在首/末纹素中心之外
+    //（pos ∉ [0.5, size−0.5]，即执行器 sx∈[0, size−1] 之外）即出界。此前 uv∈[0,1]
+    // 旧口径比执行器宽半纹素，边缘半纹素带预览取钳制边缘纹素、执行器填黑——
+    // s26-lens-distortion-plus-60 实测薄环 maxΔ=255（nΔ≥3 仅 0.13% 像素）。
+    inR = step(0.5, posR.x) * step(posR.x, uImageSize.x - 0.5) * step(0.5, posR.y) * step(posR.y, uImageSize.y - 0.5);
+    inG = step(0.5, posG.x) * step(posG.x, uImageSize.x - 0.5) * step(0.5, posG.y) * step(posG.y, uImageSize.y - 0.5);
+    inB = step(0.5, posB.x) * step(posB.x, uImageSize.x - 0.5) * step(0.5, posB.y) * step(posB.y, uImageSize.y - 0.5);
+    // 畸变为零时 G 通道缩放恒为 1（radial = 1 + 0·r²）：直接回退 vUv 恒等。
+    // 否则 n 的除/乘往返 f32 噪声会把恰好落在首/末纹素中心上的恒等映射行（pos=0.5 或
+    // size−0.5）误判出界成黑行，而执行器 f64 同参 sx 恰为整数坐标恒在界内——
+    // s28/s29（chromatic±50）顶行 801px 假黑环的根因。仅 G 有此退化（R/B 随色散缩放≠1）。
+    float gIdentity = step(abs(uLensDistortion), 0.0);
+    uvG = mix(uvG, vUv, gIdentity);
+    inG = max(inG, gIdentity);
   }
   // 基础采样走重映射位置（色散时逐通道各异；关断时三 UV 恒等回 vUv）
   vec3 c = vec3(

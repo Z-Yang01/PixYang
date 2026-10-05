@@ -2486,3 +2486,64 @@
     提交范围：NIGHTLY_LOG.md（pathspec 点名，零生产源码/测试改动）。未 push。
   待人工复核：① cases.json「R99 记录」出处勘正（⑤）；② 对拍矩阵扩容覆盖畸变/色散/detail/拉直
     （⑥）；③ R59 遗留「对拍升级 CI 门禁」维持挂账（本轮 61/61 全绿，具备升级条件，仍属口径决策）。
+- 2026-10-06 03:05 R96 webgl-parity 对拍矩阵扩容（无人值守轮次96·验证轮）：基线 783960f(R95)
+  干净树（仅 .zcodeignore 未跟踪）。R95 ⑥ 待复核项②落地：畸变/色散/detail/拉直首次进入像素
+  对拍矩阵，61→71 例。
+  ① 扩矩阵（cases-edit-audit.json 追加 s26-s35，每阶段至少 1 例非平凡参数；参数域先读
+    shared/lens.cjs/editSchema 确认）：s26/s27 畸变 ±60（k=±0.15 桶形/枕形）、s28/s29 色散
+    ±50（ca=±0.005，R 外扩/B 内收及其反向）、s30 三参组合（畸变+40/暗角−70/色散+35，验执行器
+    stage 内「几何重采样→暗角」序）、s31/s32 暗角 ±100 强参（既有仅 ±35~±60）、s33 detail
+    降噪 60、s34/s35 拉直 crop.angle +5°/−6°（裁剪矩形=前端 straightenGeometry(800,1000,angle)
+    去黑角最大内接框 [81,81,723,904]/[95,95,710,888]）。
+  ② 工具链扩展（run.cjs，取证工具）：拉直用例页内只抓帧（裁剪/拉直预览走 CSS transform 不进
+    shader，页内 diff 必 dims 失败）→ Node 侧逐式复刻执行器 rotate_by_angle（f64 与
+    executor.rs 运算顺序逐位一致：外接画布+双线性逆映射+出界填 [0,0,0,255]）+取 fit 矩形 →
+    落盘 web/<case>.rgba，由既有 Rust diff 步骤复核并回填判定（延迟判定）。旋转数学本身单端
+    实现，镜像比对的对象是「shader 出帧+前端 fit 矩形坐标」vs「执行器旋转+裁剪」——fit 坐标
+    或 spec 消费分歧即非零差。
+  ③ 实锤修复一处（webglPreview.js GLSL，两端公式对齐；Rust 零改动）：新增 lens 用例首跑即
+    红——s26 maxΔ=[255,255,255]（mean 0.1812，nΔ≥3 仅 3132px=0.13%）薄环。根因（worst 点
+    取证：sy=−0.497 落 (−0.5,0) 带）：出界判据两端不一致——执行器按纹素中心
+    sx∈[0,size−1]（pos∉[0.5,size−0.5] 即填黑），GLSL 旧判据 uv∈[0,1] 宽半纹素，边缘半纹素带
+    预览取钳制边缘纹素、执行器填黑。修复：GLSL inR/inG/inB 改 pos 空间纹素中心界。二轮
+    s28/s29 又红 maxΔG=127/801px：色散时 G 通道缩放恒 1 属恒等映射，n 的除/乘往返 f32 噪声
+    把恰在纹素中心上的恒等行（pos=0.5±3e−8）误判出界成假黑行（执行器 f64 sx 恰为整数坐标
+    恒界内）。修复：畸变为零时 G 回退 vUv 恒等（gIdentity=step(abs(uLensDistortion),0)）。
+    变异验证双向：①R 通道界回旧口径→s26 红 maxΔR=255/1044px；②gIdentity 置 0→s28 红
+    maxΔG=127/801px——两处均 load-bearing。回归锁：webglPreview.test.js 源串锁 +4 断言
+    （纹素中心界、禁旧 uv∈[0,1] 口径、gIdentity 三串），无新增测试用例数（982 不变）。
+    修复后 s26-s30 全部落缺省档 {max 2, mean 0.6}。
+  ④ 逐例判定（无头 Edge + ANGLE Intel UHD D3D11 同 R95，encode=png、回读 2d-drawImage，页内
+    diff 与 Rust diff 双重测量同值）：s26 [1,1,1]/0.0061、s27 [1,1,1]/0.0080、s28 [1,0,1]/0.0055、
+    s29 [1,0,1]/0.0055（G 逐位 0=恒等回退实证）、s30 [1,1,1]/0.0938、s31 [1,1,1]/0.0024、
+    s32 [1,1,1]/0.0008、s33 [1,1,1]/0.0031（均缺省档；基线数字已入各用例 toleranceBasis）、
+    s34 [0,0,0]/0、s35 [0,0,0]/0（拉直两例逐位零差——fit 矩形坐标与执行器旋转+裁剪逐位一致，
+    兼证去黑角框无黑角泄漏；±两向构成方向锁）。
+  ⑤ detail.sharpness 观测（不入矩阵，临时用例量化的声明近似口径）：预览单 pass 架构只能对
+    原图纹理做固定 3×3×0.7 近似 USM（uDetailSharp 为 0/1 开关、不随滑杆强度缩放），导出为
+    σ=0.8+sharpness/50 高斯 k=1——邻域算子无法在单 pass 内作用于已处理像素，属架构性近似
+    （代码三处声明「不做像素对拍」在案）。实测：sharpness 25→mean 1.4991/max[5,5,23]、
+    100→mean 2.0594/max[6,7,36]。像素对拍闭合需多 pass 预览架构（render-to-texture），
+    列待人工复核决策（非本轮实锤缺陷，不动容差不入红例）。
+  ⑥ 文档勘正（R95 ⑤ 待复核项①）：cases.json 14-contrast-minus-50 toleranceBasis「R99 记录」
+    全库确无 R99 轮次出处；数字（maxΔ=[1,1,1] meanΔ=1.0000）与档位 {2,1.5} 与
+    tests/webgl-parity/d1-saturation-clamp-parity-record.md「新增专档 1 例」逐字一致，已改注
+    真实出处并记 R95 勘误缘由。AGENTS.md 同步：镜头校正条目补 R96 出界判据与对拍口径
+    （原「重采样不做像素对拍」表述收窄——畸变/色散已有像素对拍；detail.sharpness 维持不做）、
+    编辑审计 30→40 例、vitest 981→982 例（R94 起实际值）。
+  - 全矩阵复跑：基线 31 例逐例与 R95 归档逐位一致（01 [7,6,7]/0.6009、03 [2,2,2]/1.0304、
+    14 [1,1,1]/1.0000 等）——GLSL 改动对 61 例既有矩阵零漂移（既有用例 lens 全零不进重采样
+    分支，结构使然且经实测确认）；71/71 全 PASS（缺省 64+分档 7）。
+  - 验证：vitest 69 文件/982 例 ✓；cargo test --jobs 1：lib 204 例 ✓ + golden_audit ✓（Rust
+    零改动）；eslint 0E（10 警告均既有 exhaustive-deps，不在改动文件）+ tsc ✓ +
+    prettier ✓（触生产 JS 故三门全跑）；Rust 未触，clippy/fmt 不适用。对拍自起 vite preview/
+    无头 Edge/CDP driver 由脚本清杀，终验 msedge.exe=0（tasklist 命中的 20 项为
+    msedgewebview2.exe——他应用 WebView2 运行时，非本轮实例）、无 preview/CDP LISTENING、
+    dist/parity 已清理；%TEMP%\pixyang_parity 取证帧与 43 个历史 profile 目录按惯例留存。
+    禁 git restore/checkout/stash 全程遵守（变异验证经源码改写+还原，未用 git 命令回退）。
+    提交范围：AGENTS.md、NIGHTLY_LOG.md、src/lib/webglPreview.js、tests/unit/lib/
+    webglPreview.test.js、tests/webgl-parity/{cases.json,cases-edit-audit.json,run.cjs}
+    （pathspec 点名）。未 push。
+  待人工复核：① detail.sharpness 像素对拍闭合是否立项多 pass 预览架构（⑤，含观测量级）；
+    ② R59 遗留「对拍升级 CI 门禁」维持挂账（本轮 71/71 全绿）；③ run.cjs 拉直镜像为 Node 侧
+    逐式复刻（旋转数学单端实现使然），若未来预览出 canvas 级几何实现应替换为真对拍。

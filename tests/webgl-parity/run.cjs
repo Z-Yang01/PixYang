@@ -267,10 +267,8 @@ function runExample(mode) {
   return r.stdout;
 }
 
-async function genSpecs(cases) {
-  const { fromEditParams, toEditParams, sanitizeEditOps } = await import(
-    pathToFileURL(path.join(REPO, 'src', 'lib', 'editParams.js')).href
-  );
+async function genSpecs(cases, editParamsMod) {
+  const { fromEditParams, toEditParams, sanitizeEditOps } = editParamsMod;
   const req = createRequire(__filename);
   const renderSpec = req(path.join(REPO, 'shared', 'renderSpec.cjs'));
   const dir = path.join(TMP, 'specs');
@@ -294,6 +292,88 @@ async function genSpecs(cases) {
     fs.writeFileSync(path.join(dir, `${c.name}.json`), JSON.stringify(spec));
     log(`spec: ${c.name}（${spec.stages.length} stages）`);
   }
+}
+
+// 拉直（crop.angle ≠ 0）用例的抓帧表达式：画布保持底图全尺寸（裁剪/拉直预览走 CSS transform，
+// 不进 shader——见 previewUniforms.js 头注「几何/裁剪不进 shader」），页内 diff 会因两端尺寸
+// 不同而 dims 失败，故只抓帧落盘，几何镜像与判定由 run.cjs Node 侧完成（见 mirrorStraighten）。
+const GRAB_FN = `(async () => {
+  const canvas = document.querySelector('.editor-webgl-canvas');
+  if (!canvas) return { error: 'editor-webgl-canvas 不存在（WebGL 回退或编辑未进入）' };
+  const gl = canvas.getContext('webgl2');
+  const dbg = gl ? gl.getExtension('WEBGL_debug_renderer_info') : null;
+  const renderer = gl && dbg ? String(gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL)) : 'unknown';
+  const grab2d = (src, w, h) => {
+    const t = document.createElement('canvas'); t.width = w; t.height = h;
+    const ctx = t.getContext('2d', { willReadFrequently: true });
+    ctx.drawImage(src, 0, 0);
+    return ctx.getImageData(0, 0, w, h);
+  };
+  const web = grab2d(canvas, canvas.width, canvas.height);
+  let s = ''; const d = web.data; const CH = 0x8000;
+  for (let i = 0; i < d.length; i += CH) s += String.fromCharCode.apply(null, d.subarray(i, i + CH));
+  return { renderer, canvas: [canvas.width, canvas.height], dumpB64: btoa(s) };
+})()`;
+
+// 拉直用例 web 侧几何镜像：把执行器 crop.angle 语义（rotate_by_angle：画布扩至外接矩形、
+// 双线性逆映射、出界填 [0,0,0,255]，再取 fit 矩形）在 Node 内逐式复刻（f64、运算顺序与
+// executor.rs 逐位一致）。旋转数学本身是单端实现（预览经 CSS transform，无 canvas 级实现
+// 可对拍），本镜像的目的：把「shader 色彩链出帧 + 前端 straightenGeometry fit 矩形坐标」
+// 与「执行器旋转+裁剪」放进同一几何逐像素比对——超量化级的差即 spec 消费/fit 坐标分歧。
+// fit 矩形取自前端同源模块 straightenGeometry（与写进 spec 的 crop 参数同一来源）。
+function mirrorRotateByAngle(src, w, h, angleDeg) {
+  const th = (angleDeg * Math.PI) / 180;
+  const sin = Math.sin(th);
+  const cos = Math.cos(th);
+  const nw = Math.round(w * Math.abs(cos) + h * Math.abs(sin));
+  const nh = Math.round(w * Math.abs(sin) + h * Math.abs(cos));
+  if (nw <= 0 || nh <= 0) throw new Error('旋转后尺寸无效');
+  const out = Buffer.alloc(nw * nh * 4);
+  const cxIn = (w - 1) / 2;
+  const cyIn = (h - 1) / 2;
+  const cxOut = (nw - 1) / 2;
+  const cyOut = (nh - 1) / 2;
+  const at = (px, py, c) => src[(py * w + px) * 4 + c];
+  for (let y = 0; y < nh; y++) {
+    for (let x = 0; x < nw; x++) {
+      const dx = x - cxOut;
+      const dy = y - cyOut;
+      // 逆映射：输出坐标转回输入坐标（R(−θ)），双线性采样，出界填不透明黑
+      const sx = cos * dx - sin * dy + cxIn;
+      const sy = sin * dx + cos * dy + cyIn;
+      const oi = (y * nw + x) * 4;
+      if (sx < 0 || sy < 0 || sx > w - 1 || sy > h - 1) {
+        out[oi] = 0;
+        out[oi + 1] = 0;
+        out[oi + 2] = 0;
+        out[oi + 3] = 255;
+        continue;
+      }
+      const x0 = Math.floor(sx);
+      const y0 = Math.floor(sy);
+      const x1 = Math.min(x0 + 1, w - 1);
+      const y1 = Math.min(y0 + 1, h - 1);
+      const fx = Math.min(Math.max(sx - x0, 0.0), 1.0);
+      const fy = Math.min(Math.max(sy - y0, 0.0), 1.0);
+      for (let c = 0; c < 4; c++) {
+        const top = at(x0, y0, c) * (1.0 - fx) + at(x1, y0, c) * fx;
+        const bot = at(x0, y1, c) * (1.0 - fx) + at(x1, y1, c) * fx;
+        out[oi + c] = Math.round(Math.min(Math.max(top * (1.0 - fy) + bot * fy, 0.0), 255.0));
+      }
+    }
+  }
+  return { data: out, width: nw, height: nh };
+}
+
+function mirrorStraighten(rgba, w, h, angle, fit) {
+  const rot = mirrorRotateByAngle(rgba, w, h, angle);
+  const { left, top, width, height } = fit;
+  const cropped = Buffer.alloc(width * height * 4);
+  for (let y = 0; y < height; y++) {
+    const srcRow = ((top + y) * rot.width + left) * 4;
+    rot.data.copy(cropped, y * width * 4, srcRow, srcRow + width * 4);
+  }
+  return cropped;
 }
 
 const INJECT_FN = `(() => {
@@ -391,7 +471,7 @@ const DIFF_FN = `(async () => {
   return out;
 })()`;
 
-async function driveCase(cdp, sessionId, c, baseUrl) {
+async function driveCase(cdp, sessionId, c, baseUrl, geomOnly = false) {
   const url = `${baseUrl}/?parity=${c.name}#/`;
   await cdp.send('Page.navigate', { url }, sessionId);
   await cdp.onceEvent('Page.loadEventFired', sessionId);
@@ -425,7 +505,7 @@ async function driveCase(cdp, sessionId, c, baseUrl) {
   nav('button[title^="编辑模式"]');
   await step('.editor-webgl-canvas', 'WebGL 画布没有出现（可能回退 CSS/SVG）');
   await evalJS(cdp, sessionId, `new Promise(r => setTimeout(r, 500))`);
-  return evalJS(cdp, sessionId, DIFF_FN);
+  return evalJS(cdp, sessionId, geomOnly ? GRAB_FN : DIFF_FN);
 }
 
 async function main() {
@@ -446,10 +526,15 @@ async function main() {
     if (b.status !== 0) throw new Error(`vite build 失败:\n${b.stdout}\n${b.stderr}`);
   }
 
+  // 前端同源模块一次加载：genSpecs 用其 spec 转换，拉直镜像用其 straightenGeometry
+  const editParamsMod = await import(
+    pathToFileURL(path.join(REPO, 'src', 'lib', 'editParams.js')).href
+  );
+
   log('Rust: 生成底图 …');
   runExample('gen');
   log('由前端同一套模块计算 spec …');
-  await genSpecs(cases);
+  await genSpecs(cases, editParamsMod);
   log('Rust: 执行器渲染同 spec …');
   runExample('render');
 
@@ -556,20 +641,49 @@ async function main() {
       pass: true,
       mode: { headless: !HEADED, forceColorProfileSrgb: FORCE_SRGB, readPixels: READPIX },
     };
+    // 拉直用例（crop.angle ≠ 0）：页内只抓帧，判定延后到 Rust diff 复核（几何镜像后比对）
+    const isStraightenCase = (c) => !!(c.params && c.params.crop && Number(c.params.crop.angle));
+    const straightenPending = [];
     for (const c of cases) {
       log(`用例 ${c.name}: 驱动真实 App + WebGL 出帧 …`);
+      const geomOnly = isStraightenCase(c);
       let stats;
       try {
-        stats = await driveCase(cdp, sessionId, c, baseUrl);
+        stats = await driveCase(cdp, sessionId, c, baseUrl, geomOnly);
       } catch (e) {
         stats = { error: `${e.message} ‖ 页面日志: ${recentPageLog()}` };
       }
       if (stats.dumpB64) {
-        fs.writeFileSync(
-          path.join(TMP, 'web', `${c.name}.rgba`),
-          Buffer.from(stats.dumpB64, 'base64')
-        );
+        const webBuf = Buffer.from(stats.dumpB64, 'base64');
         delete stats.dumpB64;
+        if (geomOnly && !stats.error) {
+          const [w, h] = stats.canvas;
+          if (!Number.isFinite(w) || !Number.isFinite(h) || w * h * 4 !== webBuf.length) {
+            stats.error = `拉直抓帧尺寸异常 canvas=${JSON.stringify(stats.canvas)} bytes=${webBuf.length}`;
+          } else {
+            const angle = Number(c.params.crop.angle);
+            const { fit } = editParamsMod.straightenGeometry(w, h, angle);
+            if (!fit) {
+              stats.error = `straightenGeometry 未给出 fit（angle=${angle}）`;
+            } else {
+              try {
+                const mirrored = mirrorStraighten(webBuf, w, h, angle, fit);
+                fs.writeFileSync(path.join(TMP, 'web', `${c.name}.rgba`), mirrored);
+                stats.straighten = {
+                  angle,
+                  srcDims: [w, h],
+                  fit: [fit.left, fit.top, fit.width, fit.height],
+                  mirroredDims: [fit.width, fit.height],
+                };
+                stats.deferred = 'straighten-mirror';
+              } catch (e) {
+                stats.error = `拉直镜像失败: ${e.message}`;
+              }
+            }
+          }
+        } else {
+          fs.writeFileSync(path.join(TMP, 'web', `${c.name}.rgba`), webBuf);
+        }
       }
       const tol = tolOf(c);
       stats.tol = tol;
@@ -582,6 +696,14 @@ async function main() {
           throw new Error('WebGL 画布未出现；用 --headed 重试（无头环境可能缺 GPU/WebGL2）');
         }
         break;
+      }
+      if (stats.deferred) {
+        straightenPending.push(c.name);
+        log(
+          `用例 ${c.name}: 已抓帧并镜像（fit=${JSON.stringify(stats.straighten.fit)}，` +
+            `镜像帧 ${stats.straighten.mirroredDims.join('x')}）；判定延后到 Rust diff 复核`
+        );
+        continue;
       }
       const [mr, mg, mb, ma] = stats.max;
       const bad = mr > tol.maxDelta || mg > tol.maxDelta || mb > tol.maxDelta || ma > 0;
@@ -607,6 +729,32 @@ async function main() {
       const out = runExample('diff');
       console.log(out);
       report.rustCrossCheck = JSON.parse(fs.readFileSync(path.join(TMP, 'rust-diff.json'), 'utf8'));
+    }
+    // 拉直用例的延迟判定：几何镜像帧的逐通道 Δ 由 Rust diff 步骤独立算出（web/*.rgba 已是
+    // 镜像后的 fit 矩形帧），此处取回数字并按本用例档位判定
+    for (const name of straightenPending) {
+      const stats = report.cases[name];
+      const tol = stats.tol;
+      const cross = report.rustCrossCheck && report.rustCrossCheck[name];
+      if (!cross) {
+        stats.error = 'Rust diff 复核缺少本用例（镜像帧未落盘或 dims 不一致）';
+        report.pass = false;
+        log(`用例 ${name}: 失败 — ${stats.error}`);
+        continue;
+      }
+      stats.max = [...cross.maxDelta, 0];
+      stats.mean = cross.meanDelta;
+      stats.cnt = [cross.countGte1, cross.countGte2, cross.countGte3];
+      const [mr, mg, mb] = stats.max;
+      const bad = mr > tol.maxDelta || mg > tol.maxDelta || mb > tol.maxDelta;
+      const meanBad = stats.mean > tol.meanDelta;
+      if (bad || meanBad) report.pass = false;
+      log(
+        `用例 ${name}: 镜像帧 vs 执行器 maxΔ=[${mr},${mg},${mb}] ` +
+          `meanΔ=${stats.mean.toFixed(4)} nΔ≥1=${stats.cnt[0]} nΔ≥2=${stats.cnt[1]} nΔ≥3=${stats.cnt[2]} ` +
+          `[${stats.tolTier} TOL{max ${tol.maxDelta}, mean ${tol.meanDelta}}]` +
+          (bad || meanBad ? ' → 超容差' : ' → ok')
+      );
     }
     fs.writeFileSync(path.join(TMP, 'report.json'), JSON.stringify(report, null, 2));
     log(`报告: ${path.join(TMP, 'report.json')}`);

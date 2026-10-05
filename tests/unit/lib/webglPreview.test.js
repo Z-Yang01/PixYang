@@ -219,7 +219,7 @@ describe('renderWebGLPreview', () => {
     const src = String(frag.args[1]);
     // 顺序合同（执行器 stage 序：颜色 → detail → lens → vignette，pipelineOrder.cjs）：
     // 重映射 UV → 逐通道基础采样 → 仿射（颜色链起点）→ 出界置黑 → 暗角
-    const remapPos = src.indexOf('uvR = (n * rR * halfSz + halfSz) / uImageSize;');
+    const remapPos = src.indexOf('vec2 posR = n * rR * halfSz + halfSz;');
     const basePos = src.indexOf('vec3 c = vec3(');
     const affinePos = src.indexOf('c * uAffineSlope');
     const fillPos = src.indexOf('c *= vec3(inR, inG, inB);');
@@ -245,6 +245,17 @@ describe('renderWebGLPreview', () => {
     expect(src).toContain('vec2 px = uvG * uImageSize;');
     expect(src).not.toContain('vec2 px = vUv * uImageSize;');
     expect(src).toContain('clamp(uvG + vec2(float(dx), float(dy)) * texel');
+    // 出界口径与执行器对齐（R96 对拍实锤）：采样中心落在首/末纹素中心之外
+    //（pos ∉ [0.5, size−0.5]）即置黑——旧 uv∈[0,1] 口径宽半纹素，边缘半纹素带
+    // 预览取钳制边缘纹素、执行器填黑（s26 实测薄环 maxΔ=255）。
+    // 变异验证见 NIGHTLY_LOG R96（下界/上界任一回旧口径 → s26 红）。
+    expect(src).toContain('inR = step(0.5, posR.x) * step(posR.x, uImageSize.x - 0.5)');
+    expect(src).not.toContain('step(0.0, uvR.x) * step(uvR.x, 1.0)');
+    // 畸变为零时 G 通道缩放恒 1：必须回退 vUv 恒等（n 往返 f32 噪声会把恰在纹素中心上的
+    // 恒等行误判出界成假黑行——s28/s29 顶行 801px 根因；变异验证：gIdentity 置 0 → s28 红）。
+    expect(src).toContain('float gIdentity = step(abs(uLensDistortion), 0.0);');
+    expect(src).toContain('uvG = mix(uvG, vUv, gIdentity);');
+    expect(src).toContain('inG = max(inG, gIdentity);');
   });
 });
 

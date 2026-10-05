@@ -236,7 +236,7 @@
       "maxDelta": 2,
       "meanDelta": 1.5
     },
-    "toleranceBasis": "contrast=-50 → 斜率 0、仿射偏移恰为 127.5：全部像素落在 u8 舍入边界。导出端 libvips 语义 trunc→127，浏览器画布写入 round→128，100% 像素恒差 1 级（实测 maxΔ=[1,1,1] meanΔ=1.0000，R99 记录）。档位=边界伪差包络 {2,1.5}；真偏离（方向性/结构性色偏）量级远超此界仍拦下。"
+    "toleranceBasis": "contrast=-50 → 斜率 0、仿射偏移恰为 127.5：全部像素落在 u8 舍入边界。导出端 libvips 语义 trunc→127，浏览器画布写入 round→128，100% 像素恒差 1 级（实测 maxΔ=[1,1,1] meanΔ=1.0000，出处=tests/webgl-parity/d1-saturation-clamp-parity-record.md 专档记录 2026-09-28；R95 ⑤ 勘误：原文「R99 记录」全库无此轮次出处，数字与档位均与 d1 专档逐字一致，系笔误）。档位=边界伪差包络 {2,1.5}；真偏离（方向性/结构性色偏）量级远超此界仍拦下。"
   },
   {
     "name": "15-contrast-whites-blacks-plus",
