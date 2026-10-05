@@ -4,6 +4,7 @@ import api from '@/lib/api';
 import { isEnterSubmit } from '@/lib/shortcuts';
 import { errText, friendlyError } from '@/lib/errorText';
 import ConfirmDialog from '../Layout/ConfirmDialog';
+import BatchExportDialog from '../Browser/BatchExportDialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { FolderOpen, Plus } from 'lucide-react';
@@ -139,14 +140,20 @@ export default function AlbumsView({ onSelectAlbum, onRefresh }) {
     onRefresh?.();
   };
 
+  // 导出两段式（R99 与批量导出统一交互）：右键只开 BatchExportDialog（默认原样复制，
+  // 老行为一键可达）；确认后才选目录并执行，options=null = 原样复制（invoke 不带 options 键），
+  // 转换负载由对话框 buildConvertOptions 归一（与批量导出同源）。在途互斥沿用旧直通版。
+  const [exportTarget, setExportTarget] = useState(null);
   const exportingRef = useRef(false);
-  const handleExport = async (album) => {
-    if (!api.isBridgeAvailable() || exportingRef.current) return;
+  const handleExportConfirmed = async (options) => {
+    const album = exportTarget;
+    setExportTarget(null);
+    if (!album || !api.isBridgeAvailable() || exportingRef.current) return;
     const destDir = await api.selectExportDirectory();
     if (!destDir) return;
     exportingRef.current = true;
     try {
-      const result = await api.exportAlbumImages(album.id, destDir);
+      const result = await api.exportAlbumImages(album.id, destDir, options);
       if (!result || result.error) {
         toast.error(friendlyError(result?.error) || '导出失败');
         return;
@@ -291,7 +298,7 @@ export default function AlbumsView({ onSelectAlbum, onRefresh }) {
                   </ContextMenuItem>
                   <ContextMenuSeparator />
                   <ContextMenuItem onClick={() => handleRenameStart(album)}>重命名</ContextMenuItem>
-                  <ContextMenuItem onClick={() => handleExport(album)}>导出图片</ContextMenuItem>
+                  <ContextMenuItem onClick={() => setExportTarget(album)}>导出图片</ContextMenuItem>
                   <ContextMenuSeparator />
                   <ContextMenuItem
                     className="text-destructive"
@@ -305,6 +312,14 @@ export default function AlbumsView({ onSelectAlbum, onRefresh }) {
           </div>
         )}
       </div>
+
+      {exportTarget && (
+        <BatchExportDialog
+          title={`导出相册「${exportTarget.name}」的图片（共 ${exportTarget.image_count || 0} 张）`}
+          onConfirm={handleExportConfirmed}
+          onCancel={() => setExportTarget(null)}
+        />
+      )}
 
       {deleteTarget && (
         <ConfirmDialog

@@ -138,6 +138,23 @@ describe('BatchExportDialog（13a）', () => {
     expect(onCancel).toHaveBeenCalledTimes(1);
   });
 
+  it('回归 R99：title 可选覆盖标题（相册导出复用同一对话框），确认负载语义不变', () => {
+    const onConfirm = vi.fn();
+    render(
+      <BatchExportDialog
+        onConfirm={onConfirm}
+        onCancel={vi.fn()}
+        title="导出相册「旅行」的图片（共 8 张）"
+      />
+    );
+    expect(screen.getByText('导出相册「旅行」的图片（共 8 张）')).toBeInTheDocument();
+    // 复用面只有标题：默认仍是原样复制，转换字段不渲染，确认负载仍为 null
+    expect(screen.getByText(/按原文件原样复制/)).toBeInTheDocument();
+    expect(screen.queryByLabelText('导出格式')).toBeNull();
+    fireEvent.click(screen.getByText('选择目录并导出'));
+    expect(onConfirm).toHaveBeenCalledWith(null);
+  });
+
   it("回归 R89：选中预设后切回占位项只清选中不改表单（Number('')===0 不得误套第一条）", async () => {
     window.pixyang.getSetting = vi.fn().mockResolvedValue(
       JSON.stringify([

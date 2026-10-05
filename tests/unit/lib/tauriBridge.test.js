@@ -92,6 +92,23 @@ describe('tauriBridge', () => {
     expect(invoke).toHaveBeenLastCalledWith('export_images', { ids: [3], destDir: 'E:/d' });
   });
 
+  it('接缝 R99：exportAlbumImages 转换选项第三参透传，null/undefined 省略 options 键', async () => {
+    const invoke = vi.fn().mockResolvedValue({ total: 1, copied: 1, nefCopied: 0, failed: [] });
+    window.__TAURI__ = { core: { invoke } };
+    const opts = { mode: 'convert', format: 'png', quality: 95, maxEdge: 2560 };
+    await api.exportAlbumImages(7, 'E:/d', opts);
+    expect(invoke).toHaveBeenCalledWith('export_album_images', {
+      albumId: 7,
+      destDir: 'E:/d',
+      options: opts,
+    });
+    // 原样复制（null/缺省）必须省略 options 键：与 export_images 同口径
+    await api.exportAlbumImages(7, 'E:/d', null);
+    expect(invoke).toHaveBeenLastCalledWith('export_album_images', { albumId: 7, destDir: 'E:/d' });
+    await api.exportAlbumImages(7, 'E:/d');
+    expect(invoke).toHaveBeenLastCalledWith('export_album_images', { albumId: 7, destDir: 'E:/d' });
+  });
+
   it('接缝 R26：编辑器三通道桥接（open 直传；bake/export 桥内建 spec）', async () => {
     const session = { basePath: 'E:/t/edit-5-base.jpg', width: 100, height: 80 };
     const invoke = vi.fn().mockResolvedValue(session);

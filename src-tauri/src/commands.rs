@@ -60,6 +60,169 @@ mod tests {
         let rows = ok_or_error_value::<Vec<i64>, String>("批量删除失败", Ok(vec![1, 2])).unwrap();
         assert_eq!(rows, serde_json::json!([1, 2]));
     }
+
+    // R99 相册导出统一走批量出口后的共享语义锁：export_album_images 与 export_images
+    // 现共用 finish_export_with，此出口的 None=原样复制 / convert=转格式且 NEF 配对
+    // 原样复制 / 非法 options=错误 JSON（不 reject 不静默降级）即两条通道的共同契约
+    #[test]
+    fn 导出共享出口_none复制_convert转格式nef配对_非法选项错误json() {
+        fn make_row(filepath: &Path, raw_path: Option<&Path>) -> images_query::ImageRow {
+            images_query::ImageRow {
+                id: 1,
+                filename: filepath.file_name().unwrap().to_string_lossy().into(),
+                filepath: filepath.to_string_lossy().into(),
+                original_path: None,
+                raw_path: raw_path.map(|p| p.to_string_lossy().into()),
+                original_raw_path: None,
+                hidden: None,
+                orientation: None,
+                rotation: None,
+                flip_h: None,
+                flip_v: None,
+                import_date: "2026-10-06".into(),
+                taken_at: None,
+                size: None,
+                width: None,
+                height: None,
+                format: None,
+                thumbnail: None,
+                thumbnail_path: None,
+                thumbnail_small_path: None,
+                rating: None,
+                favorite: None,
+                notes: None,
+                created_at: None,
+                updated_at: None,
+            }
+        }
+        let dir = std::env::temp_dir().join("pixyang_finish_export_shared");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("src")).unwrap();
+        let img = image::DynamicImage::from(image::RgbaImage::from_fn(32, 20, |x, y| {
+            image::Rgba([(x * 7 % 256) as u8, (y * 11 % 256) as u8, 60, 255])
+        }));
+        let jpg = dir.join("src").join("a.jpg");
+        img.save(&jpg).unwrap();
+        // 配对 RAW 内容无关紧要（Copy/Convert 都只做原样复制，不解码）
+        let raw = dir.join("src").join("a.NEF");
+        std::fs::write(&raw, b"FAKERAWSAMPLE").unwrap();
+        let rows = vec![make_row(&jpg, Some(&raw))];
+
+        // None = 历史行为（相册导出旧入口原样）：主图与配对 NEF 都原样复制
+        let dest_copy = dir.join("out_copy");
+        std::fs::create_dir_all(&dest_copy).unwrap();
+        let v = finish_export_with(&rows, dest_copy.to_str().unwrap(), &None).unwrap();
+        assert_eq!(
+            v,
+            json!({ "total": 1, "copied": 1, "nefCopied": 1, "failed": [] })
+        );
+        assert!(dest_copy.join("a.jpg").is_file());
+        assert!(dest_copy.join("a.NEF").is_file(), "配对 NEF 应原样复制");
+
+        // convert = R88 同一管线：主图转格式，配对 NEF 仍原样复制
+        let dest_conv = dir.join("out_conv");
+        std::fs::create_dir_all(&dest_conv).unwrap();
+        let v = finish_export_with(
+            &rows,
+            dest_conv.to_str().unwrap(),
+            &Some(json!({ "mode": "convert", "format": "webp", "quality": 90, "maxEdge": 0 })),
+        )
+        .unwrap();
+        assert_eq!(
+            v,
+            json!({ "total": 1, "copied": 1, "nefCopied": 1, "failed": [] })
+        );
+        assert!(
+            !dest_conv.join("a.jpg").exists(),
+            "转换模式不应复制原格式文件"
+        );
+        assert!(dest_conv.join("a.webp").is_file());
+        assert!(dest_conv.join("a.NEF").is_file(), "转换模式 NEF 仍原样复制");
+
+        // 非法 options = 错误 JSON 走 friendlyError，不 panic 不静默降级，也不落任何文件
+        let dest_bad = dir.join("out_bad");
+        std::fs::create_dir_all(&dest_bad).unwrap();
+        let v = finish_export_with(
+            &rows,
+            dest_bad.to_str().unwrap(),
+            &Some(json!({ "mode": "convert", "format": "gif" })),
+        )
+        .unwrap();
+        assert_eq!(v["error"], "不支持的导出格式: gif");
+        let wrote = std::fs::read_dir(&dest_bad).unwrap().count();
+        assert_eq!(wrote, 0, "非法选项不得产出任何文件");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // R99 相册路径 options 接线锁：export_album_images 的可测内核必须真接 options
+    // （回退成硬编码 &None 时此锁变红）——convert 走相册查询→共享出口→转格式且
+    // NEF 配对原样复制；None 保持历史一键原样复制行为
+    #[test]
+    fn 相册导出内核_options接线_convert转格式nef配对_none原样() {
+        let conn = crate::images_query::tests::mem_db();
+        let dir = std::env::temp_dir().join("pixyang_album_export_wiring");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("src")).unwrap();
+        let img = image::DynamicImage::from(image::RgbaImage::from_fn(32, 20, |x, y| {
+            image::Rgba([(x * 7 % 256) as u8, (y * 11 % 256) as u8, 60, 255])
+        }));
+        let jpg = dir.join("src").join("a.jpg");
+        img.save(&jpg).unwrap();
+        // 配对 RAW 内容无关紧要（Copy/Convert 都只做原样复制，不解码）
+        let raw = dir.join("src").join("a.NEF");
+        std::fs::write(&raw, b"FAKERAWSAMPLE").unwrap();
+        conn.execute(
+            "INSERT INTO images (filename, filepath, raw_path, hidden) VALUES ('a.jpg', ?1, ?2, 0)",
+            [
+                jpg.to_string_lossy().as_ref(),
+                raw.to_string_lossy().as_ref(),
+            ],
+        )
+        .unwrap();
+        conn.execute("INSERT INTO albums (name) VALUES ('trip')", [])
+            .unwrap();
+        conn.execute(
+            "INSERT INTO album_images (album_id, image_id) VALUES (1, 1)",
+            [],
+        )
+        .unwrap();
+
+        // convert options 经相册路径真正生效（接 &options 而非硬编码 &None）
+        let dest_conv = dir.join("out_conv");
+        std::fs::create_dir_all(&dest_conv).unwrap();
+        let v = finish_album_export_with(
+            &conn,
+            1,
+            dest_conv.to_str().unwrap(),
+            &Some(json!({ "mode": "convert", "format": "webp", "quality": 90, "maxEdge": 0 })),
+        )
+        .unwrap();
+        assert_eq!(
+            v,
+            json!({ "total": 1, "copied": 1, "nefCopied": 1, "failed": [] })
+        );
+        assert!(
+            !dest_conv.join("a.jpg").exists(),
+            "转换模式不应复制原格式文件"
+        );
+        assert!(dest_conv.join("a.webp").is_file());
+        assert!(
+            dest_conv.join("a.NEF").is_file(),
+            "转换模式配对 NEF 仍原样复制"
+        );
+
+        // None = 历史行为（老入口一键原样复制）：主图与配对 NEF 都原样落盘
+        let dest_copy = dir.join("out_copy");
+        std::fs::create_dir_all(&dest_copy).unwrap();
+        let v = finish_album_export_with(&conn, 1, dest_copy.to_str().unwrap(), &None).unwrap();
+        assert_eq!(
+            v,
+            json!({ "total": 1, "copied": 1, "nefCopied": 1, "failed": [] })
+        );
+        assert!(dest_copy.join("a.jpg").is_file());
+        assert!(dest_copy.join("a.NEF").is_file());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }
 
 // ── 设置通道（迁移接缝 1：与 Electron 读写同一 pixyang.db 的 settings 表） ──
@@ -368,21 +531,33 @@ pub async fn export_images(
     .map_err(|e| format!("后台任务失败：{}", err_cn::text(&e)))?
 }
 
+// options 与 export_images 同口径（R99 统一交互）：None/缺省 = 原样复制（历史行为一键可达），
+// convert = 同一 BatchExportOptions::from_json 解析；配对 NEF 永远原样复制（file_ops 内核保证）
 #[tauri::command]
 pub async fn export_album_images(
     db: State<'_, Db>,
     album_id: i64,
     dest_dir: String,
+    options: Option<Value>,
 ) -> Result<Value, String> {
     let db = db.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
         let conn = db.write_lock();
-        let images =
-            tags_albums::get_album_images(&conn, album_id).map_err(|e| err_cn::text(&e))?;
-        finish_export_with(&images, &dest_dir, &None)
+        finish_album_export_with(&conn, album_id, &dest_dir, &options)
     })
     .await
     .map_err(|e| format!("后台任务失败：{}", err_cn::text(&e)))?
+}
+
+// 相册导出内核（可测面）：查相册图 → 与批量导出共用同一出口与选项解析
+fn finish_album_export_with(
+    conn: &rusqlite::Connection,
+    album_id: i64,
+    dest_dir: &str,
+    options: &Option<Value>,
+) -> Result<Value, String> {
+    let images = tags_albums::get_album_images(conn, album_id).map_err(|e| err_cn::text(&e))?;
+    finish_export_with(&images, dest_dir, options)
 }
 
 fn finish_export_with(

@@ -106,7 +106,12 @@ export const tauriApi = {
   // options 缺省/null = 原样复制（Rust BatchExportOptions::from_json 的 None 回退）；转换模式传 { mode:'convert', ... }
   exportImages: (ids, destDir, options) =>
     tauriInvoke('export_images', options == null ? { ids, destDir } : { ids, destDir, options }),
-  exportAlbumImages: (albumId, destDir) => tauriInvoke('export_album_images', { albumId, destDir }),
+  // R99 相册导出与批量导出同口径：options 缺省/null = 原样复制（invoke 不带 options 键）
+  exportAlbumImages: (albumId, destDir, options) =>
+    tauriInvoke(
+      'export_album_images',
+      options == null ? { albumId, destDir } : { albumId, destDir, options }
+    ),
   getExif: (filepath) => tauriInvoke('get_exif', { filepath }),
   analyzeImage: (id) => tauriInvoke('analyze_image', { id }),
   scanDirectory: (dirPath) => tauriInvoke('scan_directory', { dir: dirPath }),

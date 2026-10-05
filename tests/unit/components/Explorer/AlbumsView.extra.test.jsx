@@ -42,41 +42,76 @@ describe('AlbumsView（补充：CRUD 与右键菜单）', () => {
     delete window.pixyang;
   });
 
-  it('导出：未选择目标目录时不调用导出', async () => {
+  // R99 两段式导出（与批量导出统一交互）：右键「导出图片」只开 BatchExportDialog，
+  // 确认后才选目录并执行；确认负载 null = 原样复制（桥层省略 options 键）
+  it('导出：右键只开对话框（默认原样复制），取消时不发起目录选择与导出', async () => {
     renderView();
     await screen.findByText('旅行');
     await openMenu('旅行');
     fireEvent.click(screen.getByText('导出图片'));
+    // 对话框出现：相册标题 + 默认原样复制文案，无转换字段
+    expect(await screen.findByText(/导出相册「旅行」的图片/)).toBeInTheDocument();
+    expect(screen.getByText(/按原文件原样复制/)).toBeInTheDocument();
+    expect(screen.queryByLabelText('导出格式')).toBeNull();
+    fireEvent.click(screen.getByText('取消'));
     await vi.waitFor(() => {
-      expect(window.pixyang.selectExportDirectory).toHaveBeenCalled();
+      expect(screen.queryByText(/导出相册「旅行」的图片/)).not.toBeInTheDocument();
     });
+    expect(window.pixyang.selectExportDirectory).not.toHaveBeenCalled();
     expect(window.pixyang.exportAlbumImages).not.toHaveBeenCalled();
     expect(toastSpy).not.toHaveBeenCalled();
   });
 
-  it('导出：成功后 toast 提示（含配对 NEF 数量）', async () => {
+  it('导出：确认（原样复制）后选目录执行，成功 toast 含配对 NEF 数量', async () => {
     window.pixyang.selectExportDirectory.mockResolvedValue('E:/out');
     window.pixyang.exportAlbumImages.mockResolvedValue({ copied: 3, total: 5, nefCopied: 2 });
     renderView();
     await screen.findByText('旅行');
     await openMenu('旅行');
     fireEvent.click(screen.getByText('导出图片'));
+    fireEvent.click(await screen.findByText('选择目录并导出'));
     await vi.waitFor(() => {
-      expect(window.pixyang.exportAlbumImages).toHaveBeenCalledWith(2, 'E:/out');
+      expect(window.pixyang.exportAlbumImages).toHaveBeenCalledWith(2, 'E:/out', null);
       expect(toastSpy).toHaveBeenCalledWith('已导出 3 / 5 张图片，含配对 NEF 2 个');
     });
   });
 
-  it('导出：无 NEF 时不追加 NEF 文案', async () => {
+  it('导出：转换模式确认透传归一 options（与批量导出同一 buildConvertOptions 口径）', async () => {
     window.pixyang.selectExportDirectory.mockResolvedValue('E:/out');
     window.pixyang.exportAlbumImages.mockResolvedValue({ copied: 2, total: 2, nefCopied: 0 });
     renderView();
     await screen.findByText('旅行');
     await openMenu('旅行');
     fireEvent.click(screen.getByText('导出图片'));
+    await screen.findByText(/导出相册「旅行」的图片/);
+    fireEvent.change(screen.getByLabelText('导出方式'), { target: { value: 'convert' } });
+    fireEvent.change(screen.getByLabelText('导出格式'), { target: { value: 'webp' } });
+    fireEvent.change(screen.getByLabelText('导出质量'), { target: { value: '80' } });
+    fireEvent.change(screen.getByLabelText('导出最长边'), { target: { value: '1280' } });
+    fireEvent.click(screen.getByText('选择目录并导出'));
     await vi.waitFor(() => {
+      expect(window.pixyang.exportAlbumImages).toHaveBeenCalledWith(2, 'E:/out', {
+        mode: 'convert',
+        format: 'webp',
+        quality: 80,
+        maxEdge: 1280,
+      });
       expect(toastSpy).toHaveBeenCalledWith('已导出 2 / 2 张图片');
     });
+  });
+
+  it('导出：确认后未选择目标目录则不调用导出（目录取消静默返回）', async () => {
+    window.pixyang.selectExportDirectory.mockResolvedValue(null);
+    renderView();
+    await screen.findByText('旅行');
+    await openMenu('旅行');
+    fireEvent.click(screen.getByText('导出图片'));
+    fireEvent.click(await screen.findByText('选择目录并导出'));
+    await vi.waitFor(() => {
+      expect(window.pixyang.selectExportDirectory).toHaveBeenCalled();
+    });
+    expect(window.pixyang.exportAlbumImages).not.toHaveBeenCalled();
+    expect(toastSpy).not.toHaveBeenCalled();
   });
 
   it('右键菜单「重命名」：Enter 提交重命名并刷新', async () => {

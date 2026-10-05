@@ -261,6 +261,17 @@ const ROUTES = [
     cmd: 'export_album_images',
     invokeArgs: { albumId: 3, destDir: 'E:/d' },
   },
+  {
+    // R99：相册导出与批量导出同口径，转换模式第三参透传
+    method: 'exportAlbumImages',
+    args: [3, 'E:/d', { mode: 'convert', format: 'webp', quality: 90, maxEdge: 1920 }],
+    cmd: 'export_album_images',
+    invokeArgs: {
+      albumId: 3,
+      destDir: 'E:/d',
+      options: { mode: 'convert', format: 'webp', quality: 90, maxEdge: 1920 },
+    },
+  },
   { method: 'selectDirectory', args: [], kind: 'dialog' },
   { method: 'selectExportDirectory', args: [], kind: 'dialog' },
   { method: 'toFileUrl', args: ['E:/a.jpg'], kind: 'url' },

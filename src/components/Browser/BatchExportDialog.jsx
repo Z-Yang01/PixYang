@@ -23,7 +23,9 @@ import {
 // 批量导出对话框（功能 13a）：原样复制（默认）/ 转格式与尺寸 + 导出预设存取。
 // 预设存 settings 表（EXPORT_PRESETS_KEY），转换负载经 buildConvertOptions 归一，
 // Rust 侧 BatchExportOptions::from_json 为最终守门（前端归一只是第一道）。
-export default function BatchExportDialog({ onConfirm, onCancel }) {
+// R99 起相册右键导出复用同一对话框同一归一化：title 可选覆盖标题文案
+// （相册场景无勾选集，默认「已选 N 张」不适用；不传时行为与批量导出完全一致）
+export default function BatchExportDialog({ onConfirm, onCancel, title }) {
   const selectedCount = useGalleryStore((s) => s.selectedIds.size);
   const [mode, setMode] = useState('copy');
   const [format, setFormat] = useState('jpeg');
@@ -102,7 +104,7 @@ export default function BatchExportDialog({ onConfirm, onCancel }) {
     >
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>批量导出（已选 {selectedCount} 张）</DialogTitle>
+          <DialogTitle>{title ?? `批量导出（已选 ${selectedCount} 张）`}</DialogTitle>
         </DialogHeader>
         <div
           className="dialog-body"
