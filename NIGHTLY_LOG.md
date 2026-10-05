@@ -2590,3 +2590,31 @@
     4.44/4.42），本轮实测再扩至 53 组合（全主题×全消费面口径）。
   待人工复核：无新增。提交范围：src/styles/index.css、tests/unit/lib/themes.test.js、
     NIGHTLY_LOG.md（pathspec 点名）。未 push。
+- 2026-10-06 04:40 R101 终验+NSIS 重打包（无人值守轮次101·发布轮，零生产改动）：基线 101550f(R99)
+  干净树（仅 .zcodeignore 未跟踪）。动机：现行安装包为 R93 时代（26955e8，含至 R92），缺 R94
+  （蒙版 NaN 修复）/R95-R96（对拍扩容+GLSL 修复）/R98（主题 AA 全清债）/R99（相册导出统一）。
+  终验全绿（干净树串行全跑）：cargo test --jobs 1 → lib 206 例 + golden_audit 1 例（10.70s）
+  ✓ 全过 / clippy --all-targets 0 error（example webgl_parity 3 条 needless_borrow/unnecessary_cast
+  warning，非本轮引入，0E 口径达标）/ cargo fmt --check ✓ / vitest 989 例(69 文件) ✓ /
+  eslint 0 error（10 warning 与基线逐条同款 react-hooks/exhaustive-deps）/ tsc --noEmit ✓ /
+  prettier --check ✓。
+  重打包 `npm run tauri:build`（vite build → cargo release 52.31s → makensis）exit 0，产物
+  src-tauri/target/release/bundle/nsis/PixYang_0.1.0_x64-setup.exe：4,188,530 B，mtime 2026-10-06
+  04:32:18，SHA-256 42490c0e069af896e3bea7471d6ae813482e56687d1751d07990296a5d935efb。
+  产物验证（npx 7z-wasm 实为 7zz 24.09 解包 NSIS，R93 同法）：内含 pixyang.exe 16,550,912 B
+  （与 target/release/pixyang.exe 字节数同而 SHA 异：4a8a7038… vs 91c03c9a…，tauri nsis bundle
+  补丁预期，R93 同款口径）；exe 内嵌资产名 index-0xyRmZyR.js + index-CcNKCZAc.css 与
+  dist/index.html 逐值一致；旧 R93 包同名位 index-HXR8-P6o.js（R93 条目留档），内容哈希差分
+  证实新包载 R94-R99 前端；dist 产物抽特征串：R99 相册导出对话框 title「导出相册「${z.name}」
+  的图片（共 ${z.image_count||0} 张）」（AlbumsView.jsx:318 模板串，minify 后 z=exportTarget
+  属预期）与 R98 新 muted 值「--text-muted:#9c9eaa」均在新产物命中；旧资产名 HXR8-P6o /
+  DGbwDWOH 在新 JS/CSS 双双零命中。exe 内中文/色值串不可直接 grep（Tauri 嵌入资产压缩存储），
+  按 R93 先例以 dist 明文抽验 + 资产名逐值一致为等价证据。
+  异常上报（操作失误，如实留档）：任务顺序应为「打包前」将 R93 现行包改名 .bak-R93 留档，
+  本轮在 tauri:build 之后才执行该步——makensis 覆盖同名文件，R93 原始字节（4,182,180 B，
+  SHA-256 14c884d9d0b95f400a8f75fe96aaaad3b4fe293c94937a722c460e0886f67a8b）已丢失且盘上无
+  副本（全仓 find 仅新包与 .bak-R88）。未伪造 .bak-R93 文件；.bak-R88 原样未动。补救路径：
+  R93 完整指纹留存于 R93 条目，如需回退可由 26955e8 干净树重打包重建内容等价包（字节级
+  SHA 不保证一致）。后续轮次留档必须在打包前执行。
+  待人工复核：无新增（终验+打包零生产改动；R95 条目实机走查待办维持）。提交范围：
+  NIGHTLY_LOG.md（pathspec 点名）。未 push。
