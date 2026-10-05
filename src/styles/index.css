@@ -41,7 +41,7 @@
   --border-color: rgba(255, 255, 255, 0.12);
   --text-primary: #f2f3f7;
   --text-secondary: #bcbfc9;
-  --text-muted: #8b8d9c;
+  --text-muted: #9c9eaa;
   --accent-color: #818cf8;
   --accent-color-hover: #a5b4fc;
   --accent-color-glow: rgba(129, 140, 248, 0.18);
@@ -1981,7 +1981,7 @@ body:has(.info-panel) .editor-panel {
   --border-color: rgba(255, 255, 255, 0.12);
   --text-primary: #eaf1fb;
   --text-secondary: #a9b9d4;
-  --text-muted: #7388a8;
+  --text-muted: #8194b1;
   --accent-color: #38bdf8;
   --accent-color-hover: #7dd3fc;
   --accent-color-glow: rgba(56, 189, 248, 0.16);
@@ -2055,7 +2055,7 @@ body:has(.info-panel) .editor-panel {
   --border-color: rgba(255, 255, 255, 0.12);
   --text-primary: #ebf2ec;
   --text-secondary: #aabfb1;
-  --text-muted: #758f80;
+  --text-muted: #869d90;
   --accent-color: #34d399;
   --accent-color-hover: #6ee7b7;
   --accent-color-glow: rgba(52, 211, 153, 0.15);
@@ -2203,7 +2203,7 @@ body:has(.info-panel) .editor-panel {
   --border-color: rgba(35, 44, 56, 0.12);
   --text-primary: #232c38;
   --text-secondary: #4f5c6d;
-  --text-muted: #8494a6;
+  --text-muted: #5e6f82;
   --accent-color: #3b7fa6;
   --accent-color-hover: #2c6485;
   --accent-color-glow: rgba(59, 127, 166, 0.13);
@@ -2277,7 +2277,7 @@ body:has(.info-panel) .editor-panel {
   --border-color: rgba(30, 58, 48, 0.12);
   --text-primary: #1e3a30;
   --text-secondary: #47695a;
-  --text-muted: #7b9a8a;
+  --text-muted: #587365;
   --accent-color: #2f8f6f;
   --accent-color-hover: #227155;
   --accent-color-glow: rgba(47, 143, 111, 0.13);
@@ -2351,7 +2351,7 @@ body:has(.info-panel) .editor-panel {
   --border-color: rgba(61, 40, 48, 0.13);
   --text-primary: #3d2830;
   --text-secondary: #6d4c57;
-  --text-muted: #a2818b;
+  --text-muted: #84616c;
   --accent-color: #c2658a;
   --accent-color-hover: #a95577;
   --accent-color-glow: rgba(194, 101, 138, 0.14);
@@ -2425,7 +2425,7 @@ body:has(.info-panel) .editor-panel {
   --border-color: rgba(43, 37, 64, 0.12);
   --text-primary: #2b2540;
   --text-secondary: #574f6e;
-  --text-muted: #8b82a2;
+  --text-muted: #6f6588;
   --accent-color: #7c5cc4;
   --accent-color-hover: #644aa6;
   --accent-color-glow: rgba(124, 92, 196, 0.13);
@@ -2499,7 +2499,7 @@ body:has(.info-panel) .editor-panel {
   --border-color: rgba(37, 49, 56, 0.12);
   --text-primary: #253138;
   --text-secondary: #4f5f68;
-  --text-muted: #74868f;
+  --text-muted: #617078;
   --accent-color: #3a5561;
   --accent-color-hover: #2c3b42;
   --accent-color-glow: rgba(58, 85, 97, 0.13);
@@ -2573,7 +2573,7 @@ body:has(.info-panel) .editor-panel {
   --border-color: rgba(23, 56, 62, 0.12);
   --text-primary: #17383e;
   --text-secondary: #40666d;
-  --text-muted: #6d8d93;
+  --text-muted: #577075;
   --accent-color: #16788c;
   --accent-color-hover: #0f5f70;
   --accent-color-glow: rgba(22, 120, 140, 0.13);
@@ -2647,7 +2647,7 @@ body:has(.info-panel) .editor-panel {
   --border-color: rgba(47, 58, 31, 0.13);
   --text-primary: #2f3a1f;
   --text-secondary: #5a6644;
-  --text-muted: #7d8a63;
+  --text-muted: #677252;
   --accent-color: #5f8335;
   --accent-color-hover: #4a6a27;
   --accent-color-glow: rgba(95, 131, 53, 0.13);
@@ -2721,7 +2721,7 @@ body:has(.info-panel) .editor-panel {
   --border-color: rgba(70, 41, 29, 0.13);
   --text-primary: #46291d;
   --text-secondary: #7a5343;
-  --text-muted: #9c7565;
+  --text-muted: #886658;
   --accent-color: #c85f3f;
   --accent-color-hover: #a94a2d;
   --accent-color-glow: rgba(200, 95, 63, 0.13);
@@ -3750,7 +3750,10 @@ body {
 .grid-date-count {
   padding: 1px 8px;
   border-radius: 999px;
-  background: var(--bg-hover);
+  /* R98: --bg-hover → --bg-input。悬停色作永久徽章底会把 --text-muted 拖到 bg-hover 门槛
+     （深色主题需提亮到与 --text-secondary 几乎同亮度，层级尽失）。改用 .nav-badge 同款
+     徽章底（--bg-input），muted 在其上全主题 ≥4.5:1。 */
+  background: var(--bg-input);
   color: var(--text-muted);
   font-size: 11px;
   font-variant-numeric: tabular-nums;

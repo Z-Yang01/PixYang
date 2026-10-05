@@ -2547,3 +2547,46 @@
   待人工复核：① detail.sharpness 像素对拍闭合是否立项多 pass 预览架构（⑤，含观测量级）；
     ② R59 遗留「对拍升级 CI 门禁」维持挂账（本轮 71/71 全绿）；③ run.cjs 拉直镜像为 Node 侧
     逐式复刻（旋转数学单端实现使然），若未来预览出 canvas 级几何实现应替换为真对拍。
+- 2026-10-06 04:45 R98 全主题 muted AA 治理（无人值守轮次98·主题对比度轮）：基线 6e10a88(R96)
+  干净树（仅 .zcodeignore 未跟踪）。R87 留档「其余 muted AA 债务」全盘清偿（Focusly 轮次42
+  同款方法：token 微调 + vitest 全主题锁，按 CSS 级联解析变量结构）。
+  ① 取证（实测为准，R80/R87 留档勘正吻合）：13 套主题（:root 深色 + 12 [data-theme] 块）×
+    muted 系 4 token（--text-muted/--text-secondary/shadcn --muted-foreground、
+    --secondary-foreground）× 消费面逐组合算 WCAG。债务 53 处全部集中在 --text-muted
+    （次级/ shadcn muted-foreground / secondary-foreground 全达标 4.95~14.2）：8 浅色主题
+    对 bg-primary 2.73~3.66（与 R80 勘正数逐位吻合）、深色 3 套对 bg-card 3.71~3.89、
+    light/sepia 对 bg-hover 4.36/4.44 边缘未达；--text-muted 真实文本消费面 19 处逐一核容器：
+    bg-primary（正文区/空态/工具栏）/bg-secondary（侧栏·info-panel·菜单提示）/bg-card（卡片·
+    对话框）/bg-input（nav-badge 等徽章）4 面；bg-hover 仅 1 处文字（.grid-date-count 徽章）+
+    滚动条 hover 非文本用法。
+  ② 治理（只调 token 值，保 H/S 只动 L，二分求最小改动达 ≥4.5+0.05 余量）：11 主题
+    --text-muted 提对比：dark #8b8d9c→#9c9eaa、midnight #7388a8→#8194b1、forest #758f80→
+    #869d90、yuebai #74868f→#617078、mist #8494a6→#5e6f82、huguang #6d8d93→#577075、
+    celadon #7b9a8a→#587365、zhulu #7d8a63→#677252、sakura #a2818b→#84616c、twilight
+    #8b82a2→#6f6588、luoxia #9c7565→#886658（治理后 4 面最小比值 4.55~4.60，最深色主题
+    4.57；light/sepia 已达标不动）。层级锁证实 secondary 仍严格更醒目（对 bg-primary：
+    深色 8.6~8.7 vs 4.6~6.0，浅色 5.4~6.7 vs 4.6~5.0）。主色/强调色/背景体系零触碰
+    （themes.ts 色卡对拍锁绿 = 未动）。
+  ③ 消费面修正（1 处，非 token 值）：.grid-date-count 徽章底 --bg-hover→--bg-input——
+    全库唯一 muted 文字压悬停色：若保 bg-hover 达标，深色主题 muted 须提亮到与
+    --text-secondary 几乎同亮度（层级尽失）且 10 浅色主题须为 1 枚徽章额外加深；改用
+    .nav-badge 同款徽章底后 bg-hover 无 muted 文字消费。改后各主题 muted×bg-hover 留档：
+    深色 3.64~3.80、浅色 4.06~4.44，仅剩滚动条 thumb:hover 非文本用法（≥3:1 满足
+    WCAG 1.4.11）。
+  ④ 锁（仿 Focusly scripts/contrast.test.ts 模式，入既有 tests/unit/lib/themes.test.js）：
+    +3 用例（982→985）——R98 全主题锁（13 主题×4 消费面 ≥4.5，未来任何主题块 muted 改动
+    退化即红）、muted 层级锁（secondary 同底对比度必须严格>muted，防治理翻转视觉层级）、
+    .grid-date-count 结构锁（徽章底必须是 var(--bg-input)，回退 bg-hover 即红）。
+    R75-01 三主题锁保留为历史回归锚点（其注释「只锁达标主题」已注记 R98 取代）。
+  ⑤ 变异验证：dark --text-muted 翻回坏值 #8b8d9c → 仅 R98 全主题锁红，报错精确
+    （dark --text-muted × --bg-secondary: 4.2299 < 4.5），其余 23 例仍绿；还原后 24/24 绿。
+    （源码 sed 改写+还原，未用 git 回退命令。）
+  - 验证：vitest 985 例 ✓；eslint 0 error；tsc --noEmit ✓；prettier --check ✓；
+    npx vite build ✓（样式可编译）。Rust 未触，cargo 不适用。
+  上报决策：① bg-hover 不入 muted 文字门槛的面数取舍（留档比值见 ③，锁注释已记）；②
+    .grid-date-count 消费面修正属「只调 token 值」铁律的 1 处偏离，理由与替代方案（牺牲
+    层级/全盘加深）已留档，如需回退改回 --bg-hover 须同步放宽层级红线；③ 债务口径勘正：
+    R87 转述「9 处」实为 R80 勘正后的 10 主题（8 主题底色 2.73~3.66 + midnight/forest 徽章底
+    4.44/4.42），本轮实测再扩至 53 组合（全主题×全消费面口径）。
+  待人工复核：无新增。提交范围：src/styles/index.css、tests/unit/lib/themes.test.js、
+    NIGHTLY_LOG.md（pathspec 点名）。未 push。

@@ -184,7 +184,8 @@ describe('themes 与 index.css 对拍', () => {
     // 此前 contrast 断言只覆盖 --text-primary/--accent-color，muted 被静默回退无测试拦截。
     // 其余 10 主题 muted 仍低于 AA（R80 实测勘正：mist 等 8 个 2.73~3.66，midnight/forest
     // 仅徽章底 4.44/4.42 边缘未达——既有债务，全局提对比度属设计决策）
-    // 故只锁当前已达标主题，不得放宽为新主题开洞。
+    // 上述债务已于 R98 全盘治理清零，全主题×4 消费面锁见下方 R98 用例；本用例保留
+    // R75-01 修复值（#676f7d/#756449）的历史回归锚点。
     for (const id of ['dark', 'light', 'sepia']) {
       const block = blockOf(id);
       const muted = tokenValue(block, '--text-muted');
@@ -198,6 +199,53 @@ describe('themes 与 index.css 对拍', () => {
         `${id} muted/徽章底对比度`
       ).toBeGreaterThanOrEqual(4.5);
     }
+  });
+
+  it('R98 全主题 muted AA 治理锁：13 套主题 × 4 实际文本消费面 ≥4.5', () => {
+    // R98 全盘治理（Focusly 轮次42 同款方法）：R80/R87 留档的「10 主题 muted 债务
+    // 2.73~3.66」逐主题按亮度微调清零（保色相/饱和，只动 L；light/sepia 已达标不动）。
+    // 4 个消费面 = muted 文字真实落点（19 处 color:var(--text-muted) 逐一核过容器底色）：
+    //   bg-primary（正文区/工具栏/空态）、bg-secondary（侧栏标题/info-panel 标签/菜单提示）、
+    //   bg-card（卡片描述/对话框提示）、bg-input（nav-badge/import-file-meta 等徽章底）。
+    // bg-hover 上无 muted 文字消费：唯一的 .grid-date-count 徽章已从 --bg-hover 改为
+    //   --bg-input（悬停色作永久徽章底会迫使深色主题 muted 提亮到与 text-secondary 几乎
+    //   同亮度、层级尽失，故修消费面而非牺牲层级）；剩余仅滚动条 hover 把 muted 当底色的
+    //   非文本用法（各主题 ≥3.6 深色 / ≥4.0 浅色，满足 WCAG 1.4.11 非文本 3:1）。
+    const SURFACES = ['--bg-primary', '--bg-secondary', '--bg-card', '--bg-input'];
+    for (const t of THEMES) {
+      const block = blockOf(t.id);
+      const muted = tokenValue(block, '--text-muted');
+      for (const surface of SURFACES) {
+        expect(
+          contrast(muted, tokenValue(block, surface)),
+          `${t.id} --text-muted × ${surface}`
+        ).toBeGreaterThanOrEqual(4.5);
+      }
+    }
+  });
+
+  it('R98 muted 视觉层级锁：text-secondary 必须严格比 text-muted 更醒目（同底对比度更高）', () => {
+    // 治理只许收窄差距、不许翻转层级：次级文本在 --bg-primary 上的对比度必须高于弱化文本。
+    for (const t of THEMES) {
+      const block = blockOf(t.id);
+      const bg = tokenValue(block, '--bg-primary');
+      const rSec = contrast(tokenValue(block, '--text-secondary'), bg);
+      const rMuted = contrast(tokenValue(block, '--text-muted'), bg);
+      expect(
+        rSec,
+        `${t.id} secondary(${rSec.toFixed(2)}) 应 > muted(${rMuted.toFixed(2)})`
+      ).toBeGreaterThan(rMuted);
+    }
+  });
+
+  it('R98 .grid-date-count 徽章底用 --bg-input（回退 --bg-hover = 悬停色作永久底 + muted 降级红）', () => {
+    // 该徽章是全库唯一曾压在 --bg-hover 上的 muted 文字；结构锁防消费面回退。
+    const rules = [...css.matchAll(/\.grid-date-count\s*\{([^}]*)\}/g)].map((m) => m[1]);
+    expect(rules.length, '.grid-date-count 应恰有两条规则（基础色 + 徽章底）').toBe(2);
+    const pill = rules.find((r) => /background:/.test(r));
+    expect(pill, '.grid-date-count 徽章规则缺 background').toBeTruthy();
+    expect(pill).toMatch(/background:\s*var\(--bg-input\)/);
+    expect(pill).not.toMatch(/var\(--bg-hover\)/);
   });
 });
 
