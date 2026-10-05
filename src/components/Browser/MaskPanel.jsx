@@ -47,23 +47,38 @@ const TYPE_LABEL = { radial: '径向', linear: '线性', range: '亮度' };
 const TYPE_TITLE = { radial: '径向蒙版', linear: '线性蒙版', range: '亮度范围蒙版' };
 
 // 蒙版面板（受控组件）：径向/线性/亮度范围蒙版列表 + 选中蒙版的几何与调整滑杆。
-// onChange(nextMasks) 实时更新；onCommit(label, next) 在手势结束/键盘调整/增删时回调，
-// next 为本次变更后的最新列表（键盘路径 setEditOps 尚未渲染，父组件的 ops ref 是陈旧的，
-// 必须用这里传出的 next 入历史栈）。蒙版语义与渲染端共用 shared/masks.cjs。
-export default function MaskPanel({ masks, session, selectedId, onSelect, onCommit, onChange }) {
+// onChange(nextMasks) 实时更新；onCommit(label, next) 在指针手势结束/增删时回调，
+// onKeyCommit(label, next) 承接键盘调整——交由父组件 700ms 手势收敛窗合并连续按键
+// （与主滑杆同口径：每个步进灌一条会撑爆历史栈，R91），next 为本次变更后的最新列表
+//（键盘路径 setEditOps 尚未渲染，父组件的 ops ref 是陈旧的，必须用这里传出的 next）。
+// 蒙版语义与渲染端共用 shared/masks.cjs。
+export default function MaskPanel({
+  masks,
+  session,
+  selectedId,
+  onSelect,
+  onCommit,
+  onKeyCommit,
+  onChange,
+}) {
   const dragRef = useRef(null);
   const latestRef = useRef(null);
+  const keyCommit = onKeyCommit || onCommit;
 
-  // Alt+Tab 切走/窗口外松手时滑杆收不到 up：blur 兜底结算并清 dragRef，
-  // 否则残留的真值让后续键盘调整永远跳过 onCommit（改动不入历史，退出即丢）
+  // Alt+Tab 切走/窗口外松手（blur）或指针被系统接管（pointercancel）时滑杆收不到 up：
+  // 兜底结算并清 dragRef，否则残留的真值让后续键盘调整永远跳过提交（改动不入历史，退出即丢）
   useEffect(() => {
-    const onBlur = () => {
+    const onInterrupt = () => {
       if (!dragRef.current) return;
       dragRef.current = null;
       if (latestRef.current) onCommit?.('蒙版调整', latestRef.current);
     };
-    window.addEventListener('blur', onBlur);
-    return () => window.removeEventListener('blur', onBlur);
+    window.addEventListener('blur', onInterrupt);
+    window.addEventListener('pointercancel', onInterrupt);
+    return () => {
+      window.removeEventListener('blur', onInterrupt);
+      window.removeEventListener('pointercancel', onInterrupt);
+    };
   }, [onCommit]);
 
   const nextMasks = (mapper) =>
@@ -228,7 +243,7 @@ export default function MaskPanel({ masks, session, selectedId, onSelect, onComm
           const next = applyNext((list) =>
             list.map((m) => (m.id === selectedId ? { ...m, ...set(v) } : m))
           );
-          if (!dragRef.current) onCommit?.('蒙版调整', next);
+          if (!dragRef.current) keyCommit('蒙版调整', next);
         }}
       />
       <em>{fmt ? fmt(get()) : px(get())}</em>
@@ -281,7 +296,7 @@ export default function MaskPanel({ masks, session, selectedId, onSelect, onComm
               onChange={(e) => {
                 const v = Number(e.target.value);
                 const next = updateSelected({ feather: v });
-                if (!dragRef.current) onCommit?.('蒙版调整', next);
+                if (!dragRef.current) keyCommit('蒙版调整', next);
               }}
             />
             <em>{pct(selected.feather)}</em>
@@ -315,7 +330,7 @@ export default function MaskPanel({ masks, session, selectedId, onSelect, onComm
                 }}
                 onChange={(e) => {
                   const next = setAdj(key, Number(e.target.value));
-                  if (!dragRef.current) onCommit?.('蒙版调整', next);
+                  if (!dragRef.current) keyCommit('蒙版调整', next);
                 }}
               />
               <em>{fmt(selected.adjustments?.[key] ?? 0)}</em>

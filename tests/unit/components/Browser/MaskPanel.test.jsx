@@ -31,6 +31,7 @@ const SESSION = { width: 400, height: 300 };
 
 const setup = (masks = [], selectedId = null) => {
   const onCommit = vi.fn();
+  const onKeyCommit = vi.fn();
   const onChange = vi.fn();
   const onSelect = vi.fn();
   const { container } = render(
@@ -40,10 +41,11 @@ const setup = (masks = [], selectedId = null) => {
       selectedId={selectedId}
       onSelect={onSelect}
       onCommit={onCommit}
+      onKeyCommit={onKeyCommit}
       onChange={onChange}
     />
   );
-  return { onCommit, onChange, onSelect, container };
+  return { onCommit, onKeyCommit, onChange, onSelect, container };
 };
 
 describe('MaskPanel（蒙版面板）', () => {
@@ -120,8 +122,8 @@ describe('MaskPanel（蒙版面板）', () => {
     expect(feather[4].disabled).toBe(true);
   });
 
-  it('拖动无 pointerup 时 blur 结算，dragRef 清空后键盘调整恢复即提交（审查批 7 M4）', () => {
-    const { onCommit } = setup([radial()], 'm1');
+  it('拖动无 pointerup 时 blur 结算，dragRef 清空后键盘调整恢复（审查批 7 M4 + R91 收敛口径）', () => {
+    const { onCommit, onKeyCommit } = setup([radial()], 'm1');
     const cxSlider = screen.getByLabelText(/^中心 X/);
     fireEvent.pointerDown(cxSlider);
     fireEvent.change(cxSlider, { target: { value: '220' } });
@@ -132,7 +134,48 @@ describe('MaskPanel（蒙版面板）', () => {
     fireEvent.blur(window); // 无手势的二次 blur 不重复结算
     expect(onCommit).toHaveBeenCalledTimes(1);
     fireEvent.change(cxSlider, { target: { value: '240' } });
-    expect(onCommit).toHaveBeenCalledTimes(2); // 键盘路径即时提交，不再被残留 dragRef 吞掉
+    expect(onKeyCommit).toHaveBeenCalledTimes(1); // 键盘调整不再被残留 dragRef 吞掉
+    expect(onKeyCommit.mock.calls[0][1].find((m) => m.id === 'm1').cx).toBe(240);
+  });
+
+  it('pointercancel 兜底结算拖动（指针被系统接管场景，与 blur 同口径，R91）', () => {
+    const { onCommit } = setup([radial()], 'm1');
+    const cxSlider = screen.getByLabelText(/^中心 X/);
+    fireEvent.pointerDown(cxSlider);
+    fireEvent.change(cxSlider, { target: { value: '220' } });
+    expect(onCommit).not.toHaveBeenCalled();
+    fireEvent.pointerCancel(window);
+    expect(onCommit).toHaveBeenCalledTimes(1);
+    expect(onCommit.mock.calls[0][0]).toBe('蒙版调整');
+    expect(onCommit.mock.calls[0][1].find((m) => m.id === 'm1').cx).toBe(220);
+    // dragRef 已清：随后的键盘调整不被残留手势吞掉
+    fireEvent.change(cxSlider, { target: { value: '240' } });
+    expect(onCommit).toHaveBeenCalledTimes(1);
+  });
+
+  it('键盘调整走 onKeyCommit（父级 700ms 收敛窗），指针拖动仍走 onCommit（R91）', () => {
+    const { onCommit, onKeyCommit } = setup([radial()], 'm1');
+    const cxSlider = screen.getByLabelText(/^中心 X/);
+    // 无指针直接 change = 键盘路径：交 onKeyCommit 合并连续按键，不逐条灌历史
+    fireEvent.change(cxSlider, { target: { value: '210' } });
+    expect(onKeyCommit).toHaveBeenCalledTimes(1);
+    expect(onKeyCommit.mock.calls[0][0]).toBe('蒙版调整');
+    expect(onKeyCommit.mock.calls[0][1].find((m) => m.id === 'm1').cx).toBe(210);
+    expect(onCommit).not.toHaveBeenCalled();
+    // 指针路径不变：拖动中不提交，pointerup 一次提交
+    fireEvent.pointerDown(cxSlider);
+    fireEvent.change(cxSlider, { target: { value: '230' } });
+    expect(onKeyCommit).toHaveBeenCalledTimes(1);
+    expect(onCommit).not.toHaveBeenCalled();
+    fireEvent.pointerUp(cxSlider);
+    expect(onCommit).toHaveBeenCalledTimes(1);
+    expect(onCommit.mock.calls[0][1].find((m) => m.id === 'm1').cx).toBe(230);
+    // 羽化与调整滑杆的键盘路径同口径
+    const feather = screen.getByLabelText(/^羽化/);
+    fireEvent.change(feather, { target: { value: '0.8' } });
+    const adj = screen.getByLabelText(/^对比度/);
+    fireEvent.change(adj, { target: { value: '10' } });
+    expect(onKeyCommit).toHaveBeenCalledTimes(3);
   });
 
   it('range 蒙版：chip 显示「亮度」；几何滑杆为中心亮度/范围，羽化可用，调整滑杆生效', () => {

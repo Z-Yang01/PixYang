@@ -294,6 +294,17 @@ export default function ImageViewer({
     setApplyWithGeometry(false);
   }, []);
 
+  // ── 撤销/重做：历史栈存完整 ops 快照 ──
+  const syncHistInfo = useCallback(() => {
+    const h = historyRef.current;
+    setHistInfo({
+      canUndo: !!h && h.index > 0,
+      canRedo: !!h && h.index < h.stack.length - 1,
+      index: h ? h.index : 0,
+      length: h ? h.stack.length : 0,
+    });
+  }, []);
+
   const enterEdit = useCallback(async () => {
     if (!image || editBusy || editPendingRef.current || undoBusy) return; // 撤销在途改写 DB：以旧基线开新会话会把已撤销参数原样写回
     const requestedId = image.id;
@@ -335,6 +346,7 @@ export default function ImageViewer({
           };
       setEditOps(initial);
       historyRef.current = { stack: [{ ops: initial, label: '原始' }], index: 0 };
+      syncHistInfo(); // 面板步数与列表同源：否则首次调整前显示「0 步」却列着「原始」条目（R91）
       savedBaselineRef.current = initial;
       setHasSavedEdits(!!session.savedEdits);
       setEditing(true);
@@ -349,18 +361,7 @@ export default function ImageViewer({
       openingIdRef.current = null;
       setBusyKind('');
     }
-  }, [image, editBusy, undoBusy, onEnterEdit, raiseEditError]);
-
-  // ── 撤销/重做：历史栈存完整 ops 快照 ──
-  const syncHistInfo = useCallback(() => {
-    const h = historyRef.current;
-    setHistInfo({
-      canUndo: !!h && h.index > 0,
-      canRedo: !!h && h.index < h.stack.length - 1,
-      index: h ? h.index : 0,
-      length: h ? h.stack.length : 0,
-    });
-  }, []);
+  }, [image, editBusy, undoBusy, onEnterEdit, raiseEditError, syncHistInfo]);
 
   // 历史栈条目：{ ops, label }——label 供历史面板展示
   const pushEntry = useCallback(
@@ -705,6 +706,16 @@ export default function ImageViewer({
   const commitMaskGesture = useCallback(() => {
     pushHistory(editOpsRef.current, '蒙版调整');
   }, [pushHistory]);
+
+  // 蒙版面板键盘调整：走与主滑杆相同的 700ms 手势收敛窗（连续方向键只结算一条历史）。
+  // MaskPanel 传出的 next 是变更后的蒙版列表，而本组件 ops ref 尚未含该次变更（键盘路径
+  // setEditOps 未渲染），须用 next 覆盖 masks 后快照，保证结算条目就是面板所见终态（R91）
+  const commitMaskKeyAdjust = useCallback(
+    (label, nextMasks) => {
+      recordKeyAdjust(sanitizeEditOps({ ...editOpsRef.current, masks: nextMasks }), label);
+    },
+    [recordKeyAdjust]
+  );
 
   // 拖拽绘制工具：与裁剪编辑互斥（互切时关掉对方），同时退出对比模式（overlay 只在常规编辑层渲染）
   const startMaskTool = useCallback((type) => {
@@ -1261,7 +1272,11 @@ export default function ImageViewer({
       if (c && c.width >= 8 && c.height >= 8) {
         pushHistory(editOpsRef.current, '裁剪');
       } else {
-        setEditOps((o) => ({ ...o, crop: null }));
+        // 拖废（<8px 视为误触丢弃）≡ 清除裁剪，同样入历史：否则该状态悬在栈顶之外，
+        // 一步 Ctrl+Z 直接跳过拖前裁剪落到更早状态（撤销看似失灵，R91）
+        const next = { ...editOpsRef.current, crop: null };
+        pushHistory(next, '清除裁剪');
+        setEditOps(next);
       }
     };
     window.addEventListener('mousemove', onMove);
@@ -2417,8 +2432,11 @@ export default function ImageViewer({
                 colorGrading: { ...editOpsRef.current.colorGrading, [key]: [nextHue, nextSat] },
               });
               const commit = () => {
-                if (sliderDragRef.current === `grade-${key}`) {
-                  sliderDragRef.current = null;
+                if (sliderDragRef.current !== `grade-${key}`) return;
+                sliderDragRef.current = null;
+                // 拖动全程无效果（sat=0）的纯色相调整与键盘路径同口径不入历史（R63 P3-1）：
+                // 否则 undo 的第一步落在视觉零变化的条目上，像「撤销失灵」（R91）
+                if ((editOpsRef.current.colorGrading?.[key]?.[1] ?? 0) > 0) {
                   pushHistory(editOpsRef.current, `分级·${label}`);
                 }
               };
@@ -2786,6 +2804,7 @@ export default function ImageViewer({
               selectedId={selectedMaskId}
               onSelect={setSelectedMaskId}
               onCommit={(label, next) => pushHistory(next || editOpsRef.current, label)}
+              onKeyCommit={commitMaskKeyAdjust}
               onChange={(m) => setEditOps((o) => sanitizeEditOps({ ...o, masks: m }))}
             />
             {(editOps.masks || []).length > 0 && !webglActive && (

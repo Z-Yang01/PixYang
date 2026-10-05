@@ -1096,6 +1096,87 @@ describe('ImageViewer', () => {
     expect(box().style.width).toBe('20%');
     rectSpy.mockRestore();
   });
+
+  const historyHintFirst = () =>
+    [...document.querySelectorAll('.editor-crop-header .editor-crop-hint')]
+      .map((el) => el.textContent)
+      .find((t) => t.endsWith('步'));
+
+  it('编辑模式：拖废（<8px）裁剪框等同「清除裁剪」并入历史，一步 Ctrl+Z 恢复拖前裁剪（R91）', async () => {
+    mockEditBridge();
+    const rectSpy = mockSquareViewport();
+    const { container } = render(<ImageViewer {...baseProps()} />);
+    await enterEdit();
+    drawCrop(); // (100,100)→(500,400) ⇒ 底图 768×324 @ (192,108)，历史：原始 + 裁剪
+    await vi.waitFor(() => expect(historyHintFirst()).toBe('2 步'));
+    // se 角手柄向锚点方向拖到不足 8px：拖废丢弃
+    fireEvent.mouseDown(document.querySelector('[data-crop-handle="se"]'), {
+      clientX: 500,
+      clientY: 400,
+    });
+    fireEvent.mouseMove(window, { clientX: 104, clientY: 103 }); // 底图 w≈7.7 h≈3.2，双双 <8
+    fireEvent.mouseUp(window);
+    expect(container.querySelector('.editor-crop-box')).toBeNull();
+    // 清除态必须入历史（修复前悬在栈顶之外：一步 undo 直接跳过拖前裁剪）
+    await vi.waitFor(() => expect(historyHintFirst()).toBe('3 步'));
+    expect(document.querySelector('.editor-history-list').textContent).toContain('清除裁剪');
+    // 一步撤销回到拖前裁剪框（而非「原始」）
+    fireEvent.keyDown(window, { key: 'z', ctrlKey: true });
+    await vi.waitFor(() => {
+      const restored = container.querySelector('.editor-crop-box');
+      expect(restored).not.toBeNull();
+      expect(restored.textContent).toContain('768×324');
+    });
+    rectSpy.mockRestore();
+  });
+
+  it('编辑模式：蒙版滑杆键盘调节走 700ms 收敛窗——连调 3 次只结算 1 条「蒙版调整」（R91）', async () => {
+    mockEditBridge();
+    const { container } = render(<ImageViewer {...baseProps()} />);
+    await enterEdit();
+    fireEvent.click(screen.getByText('+ 径向')); // 历史：原始 + 添加径向蒙版 = 2 步
+    await vi.waitFor(() =>
+      expect(container.querySelectorAll('.editor-mask-list button').length).toBe(1)
+    );
+    const cx = screen.getByLabelText(/^中心 X/);
+    // 键盘路径（无指针）：连续 3 次调节
+    for (const v of ['210', '220', '230']) fireEvent.change(cx, { target: { value: v } });
+    expect(cx.value).toBe('230'); // 值实时生效
+    expect(historyHintFirst()).toBe('2 步'); // 手势窗内不逐条入历史（修复前 +3 条）
+    await vi.waitFor(() => expect(historyHintFirst()).toBe('3 步'), { timeout: 3000 });
+    expect(document.querySelector('.editor-history-list').textContent).toContain('蒙版调整');
+    expect(cx.value).toBe('230'); // 结算不改值
+    // 一步撤销回到添加蒙版时的默认中心（W/2 = 960）
+    fireEvent.keyDown(window, { key: 'z', ctrlKey: true });
+    await vi.waitFor(() => expect(cx.value).toBe('960'));
+  });
+
+  it('编辑模式：sat=0 拖分级色相不入历史，随后拖强度一条承载终态、一步撤销全回退（R91）', async () => {
+    mockEditBridge();
+    render(<ImageViewer {...baseProps()} />);
+    await enterEdit();
+    const hue = screen.getByLabelText('阴影色相');
+    const strength = screen.getByLabelText('阴影强度');
+    // 指针拖色相（sat=0，无渲染效果）：pointerup 不产生历史条目（与键盘路径同口径）
+    fireEvent.pointerDown(hue);
+    fireEvent.change(hue, { target: { value: '210' } });
+    fireEvent.pointerUp(hue);
+    expect(hue.value).toBe('210'); // 值已生效（等强度一起生效）
+    expect(historyHintFirst()).toBe('1 步');
+    expect(document.querySelector('.editor-history-list').textContent).not.toContain('分级');
+    // 拖强度：一条历史同时承载色相+强度终态
+    fireEvent.pointerDown(strength);
+    fireEvent.change(strength, { target: { value: '40' } });
+    fireEvent.pointerUp(strength);
+    await vi.waitFor(() => expect(historyHintFirst()).toBe('2 步'));
+    expect(document.querySelector('.editor-history-list').textContent).toContain('分级·阴影');
+    // 一步撤销：色相与强度同时回退（修复前第一步 undo 落在视觉零变化的色相条目上）
+    fireEvent.keyDown(window, { key: 'z', ctrlKey: true });
+    await vi.waitFor(() => {
+      expect(strength.value).toBe('0');
+      expect(hue.value).toBe('0');
+    });
+  });
 });
 
 function container_close() {
