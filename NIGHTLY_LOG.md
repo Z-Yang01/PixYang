@@ -2423,3 +2423,18 @@
   ⑧ 门禁（干净树全量）：cargo 204 例（+2）+ golden_audit ✓ / clippy --all-targets 0 error
   / cargo fmt --check ✓；vitest 966 例 ✓ / eslint 0 error / tsc ✓ / prettier ✓。
   AGENTS.md 计数 Rust 202→204。
+- 2026-10-06 01:43 R93 终验+NSIS 重打包（无人值守轮次93·发布轮，零生产改动）：基线 26955e8(R92)
+  干净树（仅 .zcodeignore 未跟踪）。终验全绿（干净树串行全跑）：cargo test --jobs 1 → lib 204 例 +
+  golden_audit ✓ 全过 / clippy --all-targets 0 error / cargo fmt --check ✓ / vitest 981 例(69 文件) ✓ /
+  eslint 0 error（10 warning 与基线一致）/ tsc --noEmit ✓ / prettier --check ✓。
+  旧 R88 安装包留存改名 PixYang_0.1.0_x64-setup.exe.bak-R88（4,181,257 B，2026-10-05 23:40，未删除）。
+  重打包 `npm run tauri:build`（vite build 7.39s → cargo release 1m20s → makensis）exit 0，产物
+  src-tauri/target/release/bundle/nsis/PixYang_0.1.0_x64-setup.exe：4,182,180 B，mtime 2026-10-06
+  01:37:21，SHA-256 14c884d9d0b95f400a8f75fe96aaaad3b4fe293c94937a722c460e0886f67a8b。
+  产物验证（7z-wasm 解包 NSIS，R88 同法）：内含 pixyang.exe 16,498,688 B（tauri 已打 bundle type=nsis
+  补丁，与 target/release/pixyang.exe 字节数同而 SHA 异，属补丁预期）；内嵌资产名 index-HXR8-P6o.js +
+  index-CKnKUg-g.css 与 dist/index.html 一致；旧包同名位为 index-DGbwDWOH.js（vite 内容哈希差分证实
+  新包载 R89-R92 前端，CSS 两轮未变）；dist 抽特征串：R92「拉直自动套用去黑角的最大同比例裁剪框」
+  「粗调；Ctrl+Del 回默认」、R91 onKeyCommit prop 均在（matchSliderNavKey 标识符被 minify 改名，
+  以内容哈希资产名为等价证据）。AGENTS.md 前端计数 966→981（按 R93 实测）并补记 R91/R92 回归锁
+  条目；Rust 204 与实测一致无过期。本笔仅台账两文件，未 push。
