@@ -89,30 +89,46 @@ export default function useBatchActions({ showToast }) {
 
   // 导出在途拒绝再次触发：并发双批会往同一目录各写一份重复文件（审查批 7 N3）
   const exportingRef = useRef(false);
-  const handleExportSelected = useCallback(async () => {
-    if (!api.isBridgeAvailable() || exportingRef.current) return;
+
+  // 入口只负责开对话框（功能 13a）：原样复制（默认）/ 转格式与尺寸在弹层里选择
+  const handleExportSelected = useCallback(() => {
+    if (!api.isBridgeAvailable()) return;
     const selected = useGalleryStore.getState().selectedIds;
     if (selected.size === 0) return;
-    const dir = await api.selectExportDirectory();
-    if (!dir) return;
-    exportingRef.current = true;
-    try {
-      const result = await api.exportImages([...selected], dir);
-      if (!result || result.error) {
-        showToast(friendlyError(result?.error) || '导出失败', 'error');
-        return;
+    setPendingBatchAction({ type: 'export' });
+  }, []);
+
+  // 弹层确认后执行：options=null = 原样复制（invoke 不带 options 键），转换负载由对话框归一。
+  // 在途互斥/目录取消静默返回/失败计数 toast 语义与旧直通版一致。
+  const handleExportConfirmed = useCallback(
+    async (options) => {
+      setPendingBatchAction(null);
+      if (!api.isBridgeAvailable() || exportingRef.current) return;
+      const selected = useGalleryStore.getState().selectedIds;
+      if (selected.size === 0) return;
+      const dir = await api.selectExportDirectory();
+      if (!dir) return;
+      exportingRef.current = true;
+      try {
+        const result = await api.exportImages([...selected], dir, options ?? undefined);
+        if (!result || result.error) {
+          showToast(friendlyError(result?.error) || '导出失败', 'error');
+          return;
+        }
+        const nefText = result.nefCopied > 0 ? `，含配对 NEF ${result.nefCopied} 个` : '';
+        const base = `已导出 ${result.copied} / ${result.total} 张图片${nefText}`;
+        if (result.failed?.length)
+          showToast(`${base}，${result.failed.length} 个文件失败`, 'error');
+        else showToast(base, 'success');
+      } catch (e) {
+        console.error('[batch] 导出失败:', e.message);
+        showToast(errText('导出失败', e), 'error');
+      } finally {
+        exportingRef.current = false;
       }
-      const nefText = result.nefCopied > 0 ? `，含配对 NEF ${result.nefCopied} 个` : '';
-      const base = `已导出 ${result.copied} / ${result.total} 张图片${nefText}`;
-      if (result.failed?.length) showToast(`${base}，${result.failed.length} 个文件失败`, 'error');
-      else showToast(base, 'success');
-    } catch (e) {
-      console.error('[batch] 导出失败:', e.message);
-      showToast(errText('导出失败', e), 'error');
-    } finally {
-      exportingRef.current = false;
-    }
-  }, [showToast]);
+    },
+    [showToast]
+  );
 
   const handleBatchTag = useCallback(
     async (tagId) => {
@@ -382,6 +398,7 @@ export default function useBatchActions({ showToast }) {
     handleSelectAllPage,
     handleSelectAllAll,
     handleExportSelected,
+    handleExportConfirmed,
     handleBatchTag,
     handleBatchUpdate,
     handleSyncEdits,

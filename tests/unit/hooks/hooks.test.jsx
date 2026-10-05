@@ -583,7 +583,7 @@ describe('useBatchActions 异步收尾守卫', () => {
   });
 });
 
-describe('useBatchActions 批量导出（批 7 N3：在途互斥 + failed 计数 + reject 兜底）', () => {
+describe('useBatchActions 批量导出（13a 两段式：入口开弹层，确认后执行；批 7 N3 互斥/计数/reject 语义不变）', () => {
   const out = { current: null };
   const showToast = vi.fn();
   function ExportHarness() {
@@ -603,7 +603,39 @@ describe('useBatchActions 批量导出（批 7 N3：在途互斥 + failed 计数
     delete window.pixyang;
   });
 
-  it('exportImages 在途时再次触发被拒绝，不发第二批（同目录重复导出）', async () => {
+  it('入口只开弹层不导出；确认后经目录选择发起 exportImages（13a 两段式）', async () => {
+    let resolveExp;
+    window.pixyang.selectExportDirectory = vi.fn().mockResolvedValue('C:/out');
+    window.pixyang.exportImages = vi.fn(
+      () =>
+        new Promise((r) => {
+          resolveExp = r;
+        })
+    );
+    render(<ExportHarness />);
+    act(() => {
+      out.current.handleExportSelected();
+    });
+    // 入口：pendingBatchAction 置为 export 弹层，未发起任何导出
+    expect(out.current.pendingBatchAction).toEqual({ type: 'export' });
+    expect(window.pixyang.selectExportDirectory).not.toHaveBeenCalled();
+    expect(window.pixyang.exportImages).not.toHaveBeenCalled();
+    // 确认：原样复制（options=null → invoke 不带 options）
+    let t1;
+    await act(async () => {
+      t1 = out.current.handleExportConfirmed(null);
+    });
+    expect(out.current.pendingBatchAction).toBeNull();
+    expect(window.pixyang.exportImages).toHaveBeenCalledTimes(1);
+    expect(window.pixyang.exportImages).toHaveBeenCalledWith([1, 2], 'C:/out', undefined);
+    await act(async () => {
+      resolveExp({ total: 2, copied: 2, nefCopied: 0, failed: [] });
+      await t1;
+    });
+    expect(showToast).toHaveBeenCalledWith('已导出 2 / 2 张图片', 'success');
+  });
+
+  it('exportImages 在途时再次确认被拒绝，不发第二批（同目录重复导出）', async () => {
     let resolveDir;
     let resolveExp;
     window.pixyang.selectExportDirectory = vi.fn(
@@ -619,17 +651,26 @@ describe('useBatchActions 批量导出（批 7 N3：在途互斥 + failed 计数
         })
     );
     render(<ExportHarness />);
+    act(() => {
+      out.current.handleExportSelected();
+    });
     let t1;
     act(() => {
-      t1 = out.current.handleExportSelected();
+      t1 = out.current.handleExportConfirmed(null);
     });
     await act(async () => {
       resolveDir('C:/out');
     });
     expect(window.pixyang.exportImages).toHaveBeenCalledTimes(1);
+    // 第二次确认（转换负载照传）：在途互斥拦下，exportImages 仍只此一批
     let t2;
     act(() => {
-      t2 = out.current.handleExportSelected();
+      t2 = out.current.handleExportConfirmed({
+        mode: 'convert',
+        format: 'png',
+        quality: 92,
+        maxEdge: 0,
+      });
     });
     expect(window.pixyang.exportImages).toHaveBeenCalledTimes(1);
     await act(async () => {
@@ -640,6 +681,31 @@ describe('useBatchActions 批量导出（批 7 N3：在途互斥 + failed 计数
     expect(showToast).toHaveBeenCalledWith('已导出 2 / 2 张图片', 'success');
   });
 
+  it('转换负载原样透传给 exportImages 第三参（13a）', async () => {
+    window.pixyang.selectExportDirectory = vi.fn().mockResolvedValue('C:/out');
+    window.pixyang.exportImages = vi
+      .fn()
+      .mockResolvedValue({ total: 2, copied: 2, nefCopied: 0, failed: [] });
+    render(<ExportHarness />);
+    act(() => {
+      out.current.handleExportSelected();
+    });
+    await act(async () => {
+      await out.current.handleExportConfirmed({
+        mode: 'convert',
+        format: 'webp',
+        quality: 80,
+        maxEdge: 1280,
+      });
+    });
+    expect(window.pixyang.exportImages).toHaveBeenCalledWith([1, 2], 'C:/out', {
+      mode: 'convert',
+      format: 'webp',
+      quality: 80,
+      maxEdge: 1280,
+    });
+  });
+
   it('部分文件失败：toast 带失败数且类型为 error', async () => {
     window.pixyang.selectExportDirectory = vi.fn().mockResolvedValue('C:/out');
     window.pixyang.exportImages = vi
@@ -647,7 +713,7 @@ describe('useBatchActions 批量导出（批 7 N3：在途互斥 + failed 计数
       .mockResolvedValue({ total: 2, copied: 1, nefCopied: 0, failed: ['a.jpg: EPERM'] });
     render(<ExportHarness />);
     await act(async () => {
-      await out.current.handleExportSelected();
+      await out.current.handleExportConfirmed(null);
     });
     expect(showToast).toHaveBeenCalledWith('已导出 1 / 2 张图片，1 个文件失败', 'error');
   });
@@ -660,11 +726,11 @@ describe('useBatchActions 批量导出（批 7 N3：在途互斥 + failed 计数
       .mockResolvedValueOnce({ total: 2, copied: 2, nefCopied: 1, failed: [] });
     render(<ExportHarness />);
     await act(async () => {
-      await out.current.handleExportSelected();
+      await out.current.handleExportConfirmed(null);
     });
     expect(showToast).toHaveBeenCalledWith('导出失败：操作未成功', 'error');
     await act(async () => {
-      await out.current.handleExportSelected();
+      await out.current.handleExportConfirmed(null);
     });
     expect(window.pixyang.exportImages).toHaveBeenCalledTimes(2);
     expect(showToast).toHaveBeenCalledWith('已导出 2 / 2 张图片，含配对 NEF 1 个', 'success');

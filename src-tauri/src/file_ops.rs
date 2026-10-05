@@ -644,8 +644,128 @@ fn copy_exclusive(src: &Path, dest: &Path) -> Result<(), std::io::Error> {
     }
 }
 
-// 导出内核：JPG + 配对 NEF，单文件失败不废整批；空文件名跳过；源不存在静默跳过
-pub fn export_image_files(images: &[ImageRow], dest_dir: &str) -> Result<ExportOutcome, String> {
+// ── 批量导出选项（功能 13a）：None/缺省 = 原样复制（历史行为）；convert = 走渲染管线转格式/尺寸 ──
+
+/// 转换参数：format 三选一；quality 1..=100（PNG 无损忽略）；max_edge 0 = 保持原尺寸，>0 = 长边上限（只缩不放大）
+#[derive(Debug, Clone, PartialEq)]
+pub struct ConvertSpec {
+    pub format: String,
+    pub quality: i64,
+    pub max_edge: u32,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum BatchExportOptions {
+    Copy,
+    Convert(ConvertSpec),
+}
+
+impl BatchExportOptions {
+    /// 解析前端传入的 options：None/null/缺 mode = Copy；mode="copy" = Copy；
+    /// mode="convert" 时 format 必须 ∈ {jpeg,png,webp}（非法整体报错，不静默降级——
+    /// 用户明确要求转格式，静默复制会产出与所选选项不符的文件）；
+    /// quality 夹取 1..=100（非有限数值/缺省回退 92，镜像执行器 clamp_int 口径）；
+    /// maxEdge 仅接受有限正数（否则视为 0 = 原尺寸，镜像 edit_export 过滤口径）。
+    pub fn from_json(v: Option<&Value>) -> Result<Self, String> {
+        let Some(v) = v else {
+            return Ok(BatchExportOptions::Copy);
+        };
+        if v.is_null() {
+            return Ok(BatchExportOptions::Copy);
+        }
+        let Some(obj) = v.as_object() else {
+            return Err("导出选项格式非法".into());
+        };
+        let mode = obj.get("mode").and_then(|m| m.as_str()).unwrap_or("copy");
+        match mode {
+            "copy" => Ok(BatchExportOptions::Copy),
+            "convert" => {
+                let format = obj.get("format").and_then(|f| f.as_str()).unwrap_or("");
+                if !matches!(format, "jpeg" | "png" | "webp") {
+                    return Err(format!("不支持的导出格式: {format}"));
+                }
+                let quality = obj
+                    .get("quality")
+                    .and_then(|q| q.as_f64())
+                    .filter(|q| q.is_finite())
+                    .map(|q| q.round().clamp(1.0, 100.0) as i64)
+                    .unwrap_or(92);
+                let max_edge = obj
+                    .get("maxEdge")
+                    .and_then(|m| m.as_f64())
+                    .filter(|m| m.is_finite() && *m > 0.0)
+                    .map(|m| m.round() as u32)
+                    .unwrap_or(0);
+                Ok(BatchExportOptions::Convert(ConvertSpec {
+                    format: format.into(),
+                    quality,
+                    max_edge,
+                }))
+            }
+            other => Err(format!("未知导出模式: {other}")),
+        }
+    }
+
+    /// 转换产物的扩展名（jpeg 产物统一 .jpg）
+    pub fn ext(&self) -> &'static str {
+        match self {
+            BatchExportOptions::Copy => "",
+            BatchExportOptions::Convert(s) => match s.format.as_str() {
+                "png" => ".png",
+                "webp" => ".webp",
+                _ => ".jpg",
+            },
+        }
+    }
+}
+
+/// 转换模式落盘：空 spec（仅 encode stage）走执行器管线（解码→fit-inside 缩放→编码→
+/// part+fsync+rename 原子落盘→EXIF 回接），复用单图编辑导出的同一条管线。
+/// 目标名 stem+新扩展名，重名 _1.._9999 避让（先探名后渲染，与 edit_export 同口径）。
+fn convert_exclusive(
+    src: &Path,
+    dest_root: &Path,
+    stem: &str,
+    opts: &BatchExportOptions,
+) -> Result<(), String> {
+    let ext = opts.ext();
+    let ConvertSpec {
+        format,
+        quality,
+        max_edge,
+    } = match opts {
+        BatchExportOptions::Convert(s) => s,
+        BatchExportOptions::Copy => return Err("转换模式缺少转换参数".into()),
+    };
+    let mut dest = dest_root.join(format!("{stem}{ext}"));
+    let mut n = 1u32;
+    while dest.exists() {
+        if n > 9999 {
+            return Err("目标目录同名文件过多，避让失败".into());
+        }
+        dest = dest_root.join(format!("{stem}_{n}{ext}"));
+        n += 1;
+    }
+    let mut encode_params = json!({ "format": format, "quality": quality });
+    if *max_edge > 0 {
+        encode_params["resize"] = json!({ "width": max_edge, "height": max_edge });
+    }
+    let spec = json!({
+        "specVersion": 1,
+        "stages": [{ "kind": "encode", "params": encode_params }],
+    });
+    crate::executor::render_spec_to_file(&spec, src, &dest)
+        .map(|_| ())
+        .map_err(|e| e.to_string())
+}
+
+// 导出内核：JPG + 配对 NEF，单文件失败不废整批；空文件名跳过；源不存在静默跳过。
+// Copy 模式 = 独占复制原图；Convert 模式 = 主图走管线转格式/尺寸，配对 NEF 永远原样复制（RAW 不可转码）。
+pub fn export_image_files_with(
+    images: &[ImageRow],
+    dest_dir: &str,
+    options: &BatchExportOptions,
+) -> Result<ExportOutcome, String> {
     if dest_dir.is_empty() {
         return Err("导出目标目录无效".into());
     }
@@ -666,7 +786,23 @@ pub fn export_image_files(images: &[ImageRow], dest_dir: &str) -> Result<ExportO
         let mut jpg_failed = false;
         let src = Path::new(&img.filepath);
         if src.exists() {
-            match copy_exclusive(src, &dest_root.join(out_name)) {
+            let r = match options {
+                BatchExportOptions::Copy => {
+                    copy_exclusive(src, &dest_root.join(out_name)).map_err(|e| e.to_string())
+                }
+                BatchExportOptions::Convert(_) => {
+                    let stem = Path::new(out_name)
+                        .file_stem()
+                        .and_then(|s| s.to_str())
+                        .unwrap_or("");
+                    if stem.is_empty() {
+                        Err("文件名缺少主名，无法确定导出扩展名".into())
+                    } else {
+                        convert_exclusive(src, dest_root, stem, options)
+                    }
+                }
+            };
+            match r {
                 Ok(()) => outcome.copied += 1,
                 Err(e) => {
                     jpg_failed = true;
@@ -698,6 +834,11 @@ pub fn export_image_files(images: &[ImageRow], dest_dir: &str) -> Result<ExportO
         }
     }
     Ok(outcome)
+}
+
+/// 原样复制（历史入口）：options 缺省即 Copy
+pub fn export_image_files(images: &[ImageRow], dest_dir: &str) -> Result<ExportOutcome, String> {
+    export_image_files_with(images, dest_dir, &BatchExportOptions::Copy)
 }
 
 #[cfg(test)]
@@ -942,6 +1083,226 @@ mod tests {
         let rows = vec![export_row("x.jpg", &jpg, None)];
         let err = export_image_files(&rows, "").unwrap_err();
         assert_eq!(err, "导出目标目录无效");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // ── 功能 13a 回归锁：批量导出选项解析（None 回退原样复制 / 合法值 / 非法值） ──
+
+    #[test]
+    fn 导出选项_none_null_缺mode回退原样复制() {
+        assert_eq!(
+            BatchExportOptions::from_json(None).unwrap(),
+            BatchExportOptions::Copy
+        );
+        assert_eq!(
+            BatchExportOptions::from_json(Some(&Value::Null)).unwrap(),
+            BatchExportOptions::Copy
+        );
+        assert_eq!(
+            BatchExportOptions::from_json(Some(&json!({}))).unwrap(),
+            BatchExportOptions::Copy
+        );
+        assert_eq!(
+            BatchExportOptions::from_json(Some(&json!({ "mode": "copy" }))).unwrap(),
+            BatchExportOptions::Copy
+        );
+    }
+
+    #[test]
+    fn 导出选项_转换合法解析_质量夹取_长边过滤() {
+        let o = BatchExportOptions::from_json(Some(&json!({
+            "mode": "convert", "format": "webp", "quality": 250, "maxEdge": 1280
+        })))
+        .unwrap();
+        assert_eq!(
+            o,
+            BatchExportOptions::Convert(ConvertSpec {
+                format: "webp".into(),
+                quality: 100,
+                max_edge: 1280
+            })
+        );
+        // quality 0 → 夹到 1；quality 缺省 → 92；小数四舍五入
+        let q = BatchExportOptions::from_json(Some(&json!({
+            "mode": "convert", "format": "jpeg", "quality": 0
+        })))
+        .unwrap();
+        assert_eq!(
+            q,
+            BatchExportOptions::Convert(ConvertSpec {
+                format: "jpeg".into(),
+                quality: 1,
+                max_edge: 0
+            })
+        );
+        let d = BatchExportOptions::from_json(Some(&json!({
+            "mode": "convert", "format": "png"
+        })))
+        .unwrap();
+        assert_eq!(
+            d,
+            BatchExportOptions::Convert(ConvertSpec {
+                format: "png".into(),
+                quality: 92,
+                max_edge: 0
+            })
+        );
+        // maxEdge 非法（负数/0/非有限数值/字符串）→ 0 = 原尺寸；正小数四舍五入
+        for bad in [-5, 0] {
+            let m = BatchExportOptions::from_json(Some(&json!({
+                "mode": "convert", "format": "jpeg", "maxEdge": bad
+            })))
+            .unwrap();
+            assert_eq!(
+                m,
+                BatchExportOptions::Convert(ConvertSpec {
+                    format: "jpeg".into(),
+                    quality: 92,
+                    max_edge: 0
+                }),
+                "maxEdge={bad} 应视为原尺寸"
+            );
+        }
+        let m = BatchExportOptions::from_json(Some(&json!({
+            "mode": "convert", "format": "jpeg", "maxEdge": 1279.6
+        })))
+        .unwrap();
+        assert_eq!(
+            m,
+            BatchExportOptions::Convert(ConvertSpec {
+                format: "jpeg".into(),
+                quality: 92,
+                max_edge: 1280
+            })
+        );
+        assert_eq!(o.ext(), ".webp");
+        assert_eq!(d.ext(), ".png");
+        assert_eq!(q.ext(), ".jpg");
+        assert_eq!(BatchExportOptions::Copy.ext(), "");
+    }
+
+    #[test]
+    fn 导出选项_非法格式与未知模式整体报错_非对象报错() {
+        for bad_fmt in ["gif", "", "JPEG", "avif"] {
+            let err = BatchExportOptions::from_json(Some(&json!({
+                "mode": "convert", "format": bad_fmt
+            })))
+            .unwrap_err();
+            assert!(
+                err.contains("不支持的导出格式"),
+                "format={bad_fmt} 应报不支持"
+            );
+        }
+        assert_eq!(
+            BatchExportOptions::from_json(Some(&json!({ "mode": "turbo" }))).unwrap_err(),
+            "未知导出模式: turbo"
+        );
+        assert_eq!(
+            BatchExportOptions::from_json(Some(&json!("copy"))).unwrap_err(),
+            "导出选项格式非法"
+        );
+    }
+
+    #[test]
+    fn 导出_转换模式_jpeg转webp带长边只缩不放大() {
+        let dir = std::env::temp_dir().join("pixyang_export_conv_webp");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("src")).unwrap();
+        let jpg = make_jpeg(&dir.join("src"), "a.jpg", 64, 40);
+        let dest = dir.join("out");
+        std::fs::create_dir_all(&dest).unwrap();
+        let opts = BatchExportOptions::from_json(Some(&json!({
+            "mode": "convert", "format": "webp", "quality": 90, "maxEdge": 20
+        })))
+        .unwrap();
+        let rows = vec![export_row("a.jpg", &jpg, None)];
+        let o = export_image_files_with(&rows, dest.to_str().unwrap(), &opts).unwrap();
+        assert_eq!(o.copied, 1);
+        assert!(o.failed.is_empty());
+        assert!(!dest.join("a.jpg").exists(), "转换模式不应复制原格式文件");
+        let out = dest.join("a.webp");
+        assert!(out.exists());
+        let (w, h) = image::ImageReader::open(&out)
+            .unwrap()
+            .into_dimensions()
+            .unwrap();
+        assert_eq!(
+            (w, h),
+            (20, 13),
+            "长边 20：64x40 fit-inside 缩放（40*0.3125=12.5 四舍五入为 13）"
+        );
+        // 原尺寸（maxEdge=0）不放大：小图导出保持原尺寸
+        let opts_full = BatchExportOptions::from_json(Some(&json!({
+            "mode": "convert", "format": "webp", "maxEdge": 0
+        })))
+        .unwrap();
+        let dest2 = dir.join("out2");
+        std::fs::create_dir_all(&dest2).unwrap();
+        let o2 = export_image_files_with(&rows, dest2.to_str().unwrap(), &opts_full).unwrap();
+        assert_eq!(o2.copied, 1);
+        let (w2, h2) = image::ImageReader::open(dest2.join("a.webp"))
+            .unwrap()
+            .into_dimensions()
+            .unwrap();
+        assert_eq!((w2, h2), (64, 40), "maxEdge=0 应保持原尺寸且不放大");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn 导出_转换模式_jpeg转png原尺寸_重名避让_1后缀() {
+        let dir = std::env::temp_dir().join("pixyang_export_conv_png");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("src")).unwrap();
+        let jpg = make_jpeg(&dir.join("src"), "dup.jpg", 32, 20);
+        let dest = dir.join("out");
+        std::fs::create_dir_all(&dest).unwrap();
+        std::fs::write(dest.join("dup.png"), b"EXISTING").unwrap();
+        let opts = BatchExportOptions::from_json(Some(&json!({
+            "mode": "convert", "format": "png"
+        })))
+        .unwrap();
+        let rows = vec![export_row("dup.jpg", &jpg, None)];
+        let o = export_image_files_with(&rows, dest.to_str().unwrap(), &opts).unwrap();
+        assert_eq!(o.copied, 1);
+        assert!(o.failed.is_empty());
+        assert_eq!(std::fs::read(dest.join("dup.png")).unwrap(), b"EXISTING");
+        let out = dest.join("dup_1.png");
+        assert!(out.exists());
+        let (w, h) = image::ImageReader::open(&out)
+            .unwrap()
+            .into_dimensions()
+            .unwrap();
+        assert_eq!((w, h), (32, 20), "maxEdge 缺省 0 应保持原尺寸");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn 导出_转换模式_单文件失败不废整批_NEF仍原样配对复制() {
+        let dir = std::env::temp_dir().join("pixyang_export_conv_fail");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("src")).unwrap();
+        let bad = dir.join("src").join("bad.jpg");
+        std::fs::write(&bad, b"NOTANIMAGE").unwrap();
+        let good = make_jpeg(&dir.join("src"), "good.jpg", 24, 24);
+        let nef = dir.join("src").join("good.nef");
+        std::fs::write(&nef, b"NEFBYTES").unwrap();
+        let dest = dir.join("out");
+        std::fs::create_dir_all(&dest).unwrap();
+        let opts = BatchExportOptions::from_json(Some(&json!({
+            "mode": "convert", "format": "png"
+        })))
+        .unwrap();
+        let rows = vec![
+            export_row("bad.jpg", &bad, None),
+            export_row("good.jpg", &good, Some(&nef)),
+        ];
+        let o = export_image_files_with(&rows, dest.to_str().unwrap(), &opts).unwrap();
+        assert_eq!(o.copied, 1);
+        assert_eq!(o.nef_copied, 1, "配对 NEF 在转换模式下仍原样复制");
+        assert_eq!(o.failed.len(), 1);
+        assert!(o.failed[0].starts_with("bad.jpg:"));
+        assert!(dest.join("good.png").exists());
+        assert!(dest.join("good.nef").exists());
         let _ = std::fs::remove_dir_all(&dir);
     }
 

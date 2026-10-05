@@ -29,6 +29,7 @@ import AlbumsView from './components/Explorer/AlbumsView';
 import BatchBar from './components/Browser/BatchBar';
 import SettingsPage from './components/Settings/SettingsPage';
 import ConfirmDialog from './components/Layout/ConfirmDialog';
+import BatchExportDialog from './components/Browser/BatchExportDialog';
 import HelpGuide from './components/Layout/HelpGuide';
 import ShortcutsHelp from './components/Layout/ShortcutsHelp';
 import { Toaster } from '@/components/ui/sonner';
@@ -102,6 +103,7 @@ export default function App() {
     handleSelectAllPage,
     handleSelectAllAll,
     handleExportSelected,
+    handleExportConfirmed,
     handleBatchTag,
     handleBatchUpdate,
     handleSyncEdits,
@@ -660,6 +662,10 @@ export default function App() {
               <span className="drag-import-hint">支持文件与文件夹，导入前可预览勾选</span>
             </div>
           </div>
+        )}
+
+        {pendingBatchAction?.type === 'export' && (
+          <BatchExportDialog onConfirm={handleExportConfirmed} onCancel={cancelBatchAction} />
         )}
 
         {pendingBatchAction?.type === 'delete' && (

@@ -2336,3 +2336,56 @@
   ⑧ 门禁（干净树全量）：vitest 67 文件/940 例 ✓；lint 0 error/10 基线 warning ✓；
   typecheck ✓；format:check ✓；cargo 191 例（+4）+ golden_audit ✓。AGENTS.md 计数
   勘正（vitest 939→940、Rust 187→191）。
+- 2026-10-05 23:4x R88 功能轮：批量导出转格式/尺寸选项 + 导出预设（无人值守轮次88·功能推荐13a，
+  恰好一轮）：
+  ① 需求来源：功能推荐清单 13a「批量导出格式/尺寸选项 + 导出预设」，补工作流断点。
+  ② 现状取证：批量导出（commands.rs export_images/export_album_images → file_ops.rs
+  export_image_files）为纯 copy_exclusive 复制，无转换面；而单图编辑导出已有
+  format/quality/maxEdge 全链（ImageViewer 导出对话框 → edit_export → executor
+  encode stage：jpeg/png/webp + fit-inside 只缩不放大 + part/fsync/rename 原子落盘 +
+  EXIF 回接）——能力已在管线里，批量侧只差入口与选项传递。设置页无导出预设存储。
+  ③ 修法：Rust 侧 file_ops.rs 新增 BatchExportOptions{Copy|Convert(ConvertSpec)} +
+  from_json 解析（None/null/缺 mode=Copy 回退；format 限 jpeg/png/webp 非法整体报错不
+  静默降级；quality 夹取 1..100 缺省 92 镜像 executor clamp_int；maxEdge 仅有限正数
+  否则 0=原尺寸镜像 edit_export 过滤口径）+ export_image_files_with（Convert 模式空
+  spec 仅 encode stage 走 render_spec_to_file 同一管线，产物 stem+新扩展名，重名
+  _1.._9999 避让，配对 NEF 永远原样复制）；export_images 命令加 Option<Value> options
+  参（相册导出保持 Copy 不扩）。前端：BatchExportDialog（原样复制默认/转格式与尺寸 +
+  格式/质量/长边字段 + 预设下拉/存为预设/删除），预设经既有 getSetting/setSetting 存
+  settings 表 exportPresets 键（JSON 数组），exportPresets.js 归一化（坏 JSON/非法项
+  剔除永不抛错，口径对齐 Rust from_json）；useBatchActions 拆两段式（入口只开弹层，
+  handleExportConfirmed 执行，审查批 7 N3 在途互斥/目录取消/failed 计数语义原样保留）；
+  tauriBridge exportImages 第三参 options（null/undefined 省键=Copy）。
+  ④ 回归锁 + 变异验证：Rust +6（选项解析 None/合法/非法、转换落盘 fit-inside 实测
+  64x40→20x13、原尺寸不放大、重名避让、单文件失败不废整批+NEF 仍配对）；前端 +18
+  （exportPresets 7、BatchExportDialog 7、hooks 批量导出改两段式 +2、tauriBridge 接缝
+  +1、契约表 exportImages 第二行 +1）。变异：Rust from_json 恒返 Copy → 5 红（选项
+  3+转换 2... 实红 5：解析 2+转换 3）Copy 回退例保持绿（口径正确）→ 还原复绿 10/10；
+  前端 confirm 恒传 null → 对话框 2 红 → 还原复绿 38/38。
+  ⑤ 真机取证：本轮未做 GUI 实机走查（无人值守）；转换像素路径与单图编辑导出共用同一
+  executor 管线（golden_audit 已锁），对话框交互由 happy-dom 组件测试覆盖。实机批量
+  转换导出走查列入待人工复核。
+  ⑥ 附带发现：工作树出现并行会话 WIP（ImageGrid.jsx + ImageGrid.test.jsx 选档依赖
+  修复，26/26 绿）——不属本轮，未纳入提交（该 WIP 随后由并行会话以 07680a1 入库，
+  其提交信息自称「轮次87」；为免撞号本轮改记 R88）。全量套件数字包含该 WIP 的通过态。
+  - 验证：vitest 69 文件/963 例 ✓；lint 0 error/10 基线 warning ✓（与改前基线一致）；
+    typecheck ✓；format:check ✓；cargo 202 例（本轮 +6）+ golden_audit 1 例（13.01s）✓
+    ——本修复不改渲染数学，golden 不红；安装包
+    src-tauri/target/release/bundle/nsis/PixYang_0.1.0_x64-setup.exe
+    mtime 2026-10-05 23:40:14 / 4,181,257 字节；哈希链：exe 内全部 index-* 产物名
+    = {index-DGbwDWOH.js, index-CKnKUg-g.css} 与 dist/index.html 逐值一致，非本轮
+    哈希命中 0。
+    提交范围：src-tauri/src/file_ops.rs、src-tauri/src/commands.rs、src/App.jsx、
+    src/hooks/useBatchActions.js、src/components/Browser/BatchExportDialog.jsx（新）、
+    src/lib/exportPresets.js（新）、src/lib/tauriBridge.js、
+    tests/unit/lib/exportPresets.test.js（新）、
+    tests/unit/components/Browser/BatchExportDialog.test.jsx（新）、
+    tests/unit/hooks/hooks.test.jsx、tests/unit/lib/tauriBridge.test.js、
+    tests/unit/lib/apiTauriContract.test.js、AGENTS.md（基线计数同步 67/943→69/963、
+    Rust 195→202）、NIGHTLY_LOG.md。
+  待人工复核：① 实机（安装包）批量转换导出走查：勾选多张 → 导出方式切「转格式与
+  尺寸」→ 选 WebP/长边 1280 → 目标目录产物扩展名/尺寸/配对 NEF 原样；② 相册右键
+  「导出图片」（export_album_images）本轮保持纯复制不扩选项——是否也要接同一对话框
+  待裁决；③ 预设仅存「转换组合」不存「原样复制」档——如需「复制也是一种预设」待裁决；
+  ④ 批量导出对话框出现后，相册导出与快捷键 Ctrl+E 均改走弹层（原为直通目录选择），
+  交互路径变化请确认符合预期。

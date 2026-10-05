@@ -245,6 +245,17 @@ const ROUTES = [
     invokeArgs: { ids: [1, 2], destDir: 'E:/d' },
   },
   {
+    // 功能 13a：转换模式第三参透传（原样复制时桥层省略 options 键，见上一行）
+    method: 'exportImages',
+    args: [[1, 2], 'E:/d', { mode: 'convert', format: 'png', quality: 92, maxEdge: 1280 }],
+    cmd: 'export_images',
+    invokeArgs: {
+      ids: [1, 2],
+      destDir: 'E:/d',
+      options: { mode: 'convert', format: 'png', quality: 92, maxEdge: 1280 },
+    },
+  },
+  {
     method: 'exportAlbumImages',
     args: [3, 'E:/d'],
     cmd: 'export_album_images',

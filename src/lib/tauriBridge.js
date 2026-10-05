@@ -103,7 +103,9 @@ export const tauriApi = {
   importImages: (files, dateOverride) =>
     tauriInvoke('import_images', { files, dateOverride: dateOverride ?? null }),
   renameImage: (id, newFilename) => tauriInvoke('rename_image', { id, newFilename }),
-  exportImages: (ids, destDir) => tauriInvoke('export_images', { ids, destDir }),
+  // options 缺省/null = 原样复制（Rust BatchExportOptions::from_json 的 None 回退）；转换模式传 { mode:'convert', ... }
+  exportImages: (ids, destDir, options) =>
+    tauriInvoke('export_images', options == null ? { ids, destDir } : { ids, destDir, options }),
   exportAlbumImages: (albumId, destDir) => tauriInvoke('export_album_images', { albumId, destDir }),
   getExif: (filepath) => tauriInvoke('get_exif', { filepath }),
   analyzeImage: (id) => tauriInvoke('analyze_image', { id }),

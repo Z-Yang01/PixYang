@@ -355,13 +355,14 @@ pub async fn export_images(
     db: State<'_, Db>,
     ids: Vec<i64>,
     dest_dir: String,
+    options: Option<Value>,
 ) -> Result<Value, String> {
     let db = db.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
         let conn = db.write_lock();
         // 批量 IN 查询替代逐 id N+1（大相册导出前逐条查询放大连接往返）
         let images = images_query::get_images_by_ids(&conn, &ids).map_err(|e| err_cn::text(&e))?;
-        finish_export(&images, &dest_dir)
+        finish_export_with(&images, &dest_dir, &options)
     })
     .await
     .map_err(|e| format!("后台任务失败：{}", err_cn::text(&e)))?
@@ -378,15 +379,24 @@ pub async fn export_album_images(
         let conn = db.write_lock();
         let images =
             tags_albums::get_album_images(&conn, album_id).map_err(|e| err_cn::text(&e))?;
-        finish_export(&images, &dest_dir)
+        finish_export_with(&images, &dest_dir, &None)
     })
     .await
     .map_err(|e| format!("后台任务失败：{}", err_cn::text(&e)))?
 }
 
-fn finish_export(images: &[images_query::ImageRow], dest_dir: &str) -> Result<Value, String> {
+fn finish_export_with(
+    images: &[images_query::ImageRow],
+    dest_dir: &str,
+    options: &Option<Value>,
+) -> Result<Value, String> {
     let total = images.len();
-    match file_ops::export_image_files(images, dest_dir) {
+    // 非法选项不静默降级：转错误 JSON 走前端 friendlyError 统一提示
+    let opts = match file_ops::BatchExportOptions::from_json(options.as_ref()) {
+        Ok(o) => o,
+        Err(msg) => return Ok(json!({ "error": msg })),
+    };
+    match file_ops::export_image_files_with(images, dest_dir, &opts) {
         Ok(o) => Ok(json!({
             "total": total,
             "copied": o.copied,
