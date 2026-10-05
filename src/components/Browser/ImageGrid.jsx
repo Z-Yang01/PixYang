@@ -593,9 +593,17 @@ export default function ImageGrid({
               : '导入图片后会按页显示在这里。'}
           </div>
           {hasActiveFilters ? (
-            <Button className="mt-2" onClick={onClearFilters}>
-              清除筛选
-            </Button>
+            <div className="mt-2" style={{ display: 'flex', gap: 8, justifyContent: 'center' }}>
+              {search && (
+                <Button
+                  variant="secondary"
+                  onClick={() => useGalleryStore.getState().setSearch('')}
+                >
+                  清除搜索「{search}」
+                </Button>
+              )}
+              <Button onClick={onClearFilters}>清除筛选</Button>
+            </div>
           ) : (
             <Button className="mt-2" onClick={onImport}>
               导入图片

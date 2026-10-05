@@ -255,6 +255,21 @@ describe('galleryStore 网格设置引用短路（审查批 8 R-1）', () => {
   });
 });
 
+describe('galleryStore 搜索词归一', () => {
+  beforeEach(() => {
+    useGalleryStore.setState(initialSnapshot, true);
+  });
+
+  it('setSearch trim 首尾空格 + 纯空格归空 + 重置页码', () => {
+    useGalleryStore.setState({ page: 3 });
+    useGalleryStore.getState().setSearch('  cat  ');
+    expect(useGalleryStore.getState().search).toBe('cat');
+    expect(useGalleryStore.getState().page).toBe(1);
+    useGalleryStore.getState().setSearch('   ');
+    expect(useGalleryStore.getState().search).toBe('');
+  });
+});
+
 describe('galleryStore 星级筛选：minRating/unrated 互斥与清理', () => {
   beforeEach(() => {
     useGalleryStore.setState(initialSnapshot, true);

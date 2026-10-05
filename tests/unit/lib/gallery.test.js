@@ -321,6 +321,17 @@ describe('matchesListFilters 轻量写回后成员回归校验（审查批 8 R-3
   });
 });
 
+describe('搜索剪枝：trim 口径与 SQL 对齐', () => {
+  it('首尾空格词 trim 后匹配（与 setSearch trim/store 口径一致）', () => {
+    const row = { filename: 'sunset.jpg', notes: '', original_path: '' };
+    expect(matchesListFilters(row, { search: '  sunset  ' })).toBe(true);
+    expect(matchesListFilters(row, { search: 'sun' })).toBe(true);
+    expect(matchesListFilters(row, { search: 'moon' })).toBe(false);
+    // 纯空格 = 无搜索（trim 后空串不剪枝）
+    expect(matchesListFilters(row, { search: '   ' })).toBe(true);
+  });
+});
+
 describe('星级筛选：仅未评分剪枝', () => {
   it('unrated=true 只留 rating 0/NULL 行；与 hasActiveFilters 收编', () => {
     const base = { filterUnrated: true };

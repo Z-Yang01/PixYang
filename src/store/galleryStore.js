@@ -77,7 +77,8 @@ const useGalleryStore = create((set, get) => ({
   // 参数剪贴板（编辑器「复制参数」写入；BatchBar「同步到所选」消费；geometry 同步需显式选择）
   copiedEdits: null,
 
-  setSearch: (value) => set({ search: value, page: 1 }),
+  // 存 trim 后值：前后端搜索口径对齐（matchesListFilters 用 trim；SQL LIKE '% %' 对纯空格会产生怪匹配）
+  setSearch: (value) => set({ search: String(value ?? '').trim(), page: 1 }),
 
   // 同列再点切换升降序；换列时名称默认升序，其余默认降序；同时持久化
   toggleSort: (by) => {
