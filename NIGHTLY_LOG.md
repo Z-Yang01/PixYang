@@ -2618,3 +2618,34 @@
   SHA 不保证一致）。后续轮次留档必须在打包前执行。
   待人工复核：无新增（终验+打包零生产改动；R95 条目实机走查待办维持）。提交范围：
   NIGHTLY_LOG.md（pathspec 点名）。未 push。
+- 2026-10-06 05:50 R103 终验+NSIS 重打包（无人值守轮次103·发布轮，今夜末轮，此后代码冻结）：基线
+  39f76d3(R102) 干净树（仅 .zcodeignore 未跟踪）。动机：现行安装包为 R101 时代（内含至 R99），
+  缺 R102 两实锤修复——gallery 批量改星 × 评分筛选剪枝（useBatchActions 复验 matchesListFilters）
+  与 db 迁移 × 异形旧库降级启动（BUSINESS_INDEXES 失败不再钉死启动屏）。
+  终验全绿（干净树串行全跑，任何红即停轮口径未触发）：vitest 993 例(69 文件) ✓ / eslint 0 error
+  （10 warning 与基线逐条同款 react-hooks/exhaustive-deps，均在未触文件）/ tsc --noEmit ✓ /
+  prettier --check ✓ / cargo test --jobs 1 → lib 214 例 + golden_audit 1 例 ✓ / clippy
+  --all-targets 0 error（example webgl_parity 3 条 needless_borrow warning，基线遗留）/ cargo
+  fmt --check ✓。
+  留档先行（R101 教训执行确认）：本轮在 makensis 覆盖前将 R101 现行包改名留档
+  src-tauri/target/release/bundle/nsis/PixYang_0.1.0_x64-setup.exe.bak-R101（4,188,530 B，mtime
+  2026-10-06 04:32:18 原样保留，SHA-256 42490c0e069af896e3bea7471d6ae813482e56687d1751d07990296a5d935efb
+  与 R101 条目逐值一致）。留档真伪独立验证：解包内层 pixyang.exe SHA-256
+  4a8a7038e4f60c32cd29ac2bd7ebc812be1e9ce121753b0e05593b0006589fb0 与 R101 条目记载逐值一致；
+  .bak-R88 原样未动。时序小疵如实留档：留档改名首着于 release/ 目录 Sep 20 electron-builder 旧
+  产物（PixYang Setup 1.0.0.exe，98,659,359 B）误挂 .bak-R101 名，经 R101 条目产物路径交叉核对
+  当即发现，已复原原名且该文件字节未被触碰；真正 R101 包的留档在 tauri:build 运行中、makensis
+  写盘前完成——「留档必须先于打包覆盖」教训本轮已实质执行，无字节丢失。
+  重打包 `npm run tauri:build`（vite build → cargo release 52.47s → makensis）exit 0，产物
+  src-tauri/target/release/bundle/nsis/PixYang_0.1.0_x64-setup.exe：4,189,357 B，mtime 2026-10-06
+  05:19:51，SHA-256 9674f5593bf8c1fbba100be756fbc62bd2d5288831109b1cae756aaac96e1cea。
+  产物验证（7zz 24.09 解包 NSIS，R101 同法）：内含 pixyang.exe 16,550,912 B，SHA-256
+  6d0c6a0feb72247f940c19c68a0e4634581bd7599f196fe79494878df45b83d5（与 target/release/pixyang.exe
+  a138f2ff… 字节数同而 SHA 异，tauri nsis bundle 补丁预期，R93/R101 同款口径）。R102 特征串
+  差分双包核验：新包内层 exe 命中 R102 生产代码降级日志串「索引创建失败」（db.rs BUSINESS_INDEXES
+  降级 eprintln，1 处）与新前端资产名 index-R3Oh3dVX.js（与 dist/index.html 逐值一致）、
+  index-CcNKCZAc.css；旧资产名 index-0xyRmZyR.js 新包 0 命中。对照组 .bak-R101 解包：「索引创建
+  失败」与 index-R3Oh3dVX.js 双双 0 命中、旧资产名 1 命中——新包装入 R102、旧包不含，差分闭环
+  （R102 前端改动为纯逻辑无新增字面量，以资产名换新+差分为等价证据，R101 先例口径）。
+  待人工复核：无新增（终验+打包零生产改动；R95 条目实机走查待办维持）。提交范围：
+  NIGHTLY_LOG.md（pathspec 点名）。未 push。代码冻结自本条目起生效。
