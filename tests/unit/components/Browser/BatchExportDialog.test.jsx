@@ -3,6 +3,7 @@
 // 确认负载（copy → null / convert → 归一对象）、取消回调。
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, cleanup, waitFor } from '@testing-library/react';
+import { toast } from 'sonner';
 import BatchExportDialog from '@/components/Browser/BatchExportDialog';
 import useGalleryStore from '@/store/galleryStore';
 
@@ -135,5 +136,49 @@ describe('BatchExportDialog（13a）', () => {
     open({ onCancel });
     fireEvent.click(screen.getByText('取消'));
     expect(onCancel).toHaveBeenCalledTimes(1);
+  });
+
+  it("回归 R89：选中预设后切回占位项只清选中不改表单（Number('')===0 不得误套第一条）", async () => {
+    window.pixyang.getSetting = vi.fn().mockResolvedValue(
+      JSON.stringify([
+        { name: '网页图', format: 'webp', quality: 75, maxEdge: 1280 },
+        { name: '收藏', format: 'jpeg', quality: 90, maxEdge: 2560 },
+      ])
+    );
+    window.pixyang.setSetting = vi.fn().mockResolvedValue(null);
+    open();
+    await waitFor(() => expect(window.pixyang.getSetting).toHaveBeenCalledWith('exportPresets'));
+    fireEvent.change(modeSelect(), { target: { value: 'convert' } });
+    const presetSelect = screen.getByLabelText('导出预设');
+    // 选中第二条预设：表单灌入 jpeg/90/2560
+    fireEvent.change(presetSelect, { target: { value: '1' } });
+    expect(screen.getByLabelText('导出格式').value).toBe('jpeg');
+    expect(screen.getByLabelText('导出质量').value).toBe('90');
+    expect(screen.getByLabelText('导出最长边').value).toBe('2560');
+    // 切回占位项「选择预设…」（value=''）：只清选中高亮，表单保持不动
+    fireEvent.change(presetSelect, { target: { value: '' } });
+    expect(presetSelect.value).toBe('');
+    expect(screen.getByLabelText('导出格式').value).toBe('jpeg');
+    expect(screen.getByLabelText('导出质量').value).toBe('90');
+    expect(screen.getByLabelText('导出最长边').value).toBe('2560');
+  });
+
+  it('回归 R89：预设落盘失败必须 toast 报错（显式保存不静默，对齐设置页 R-8）', async () => {
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const toastSpy = vi.spyOn(toast, 'error').mockImplementation(() => {});
+    window.pixyang.getSetting = vi.fn().mockResolvedValue('[]');
+    window.pixyang.setSetting = vi.fn().mockRejectedValue(new Error('database is locked'));
+    open();
+    fireEvent.change(modeSelect(), { target: { value: 'convert' } });
+    const presetSelect = await screen.findByLabelText('导出预设');
+    await waitFor(() => expect(presetSelect.options.length).toBe(1));
+    fireEvent.change(screen.getByLabelText('预设名称'), { target: { value: '高清' } });
+    fireEvent.click(screen.getByText('保存'));
+    await waitFor(() => expect(window.pixyang.setSetting).toHaveBeenCalledTimes(1));
+    await waitFor(() =>
+      expect(toastSpy).toHaveBeenCalledWith('预设保存失败：数据库正被其他程序占用')
+    );
+    toastSpy.mockRestore();
+    errSpy.mockRestore();
   });
 });

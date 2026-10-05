@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -9,6 +10,7 @@ import {
 } from '@/components/ui/dialog';
 import useGalleryStore from '@/store/galleryStore';
 import api from '@/lib/api';
+import { errText } from '@/lib/errorText';
 import {
   EXPORT_FORMATS,
   EXPORT_PRESETS_KEY,
@@ -42,13 +44,22 @@ export default function BatchExportDialog({ onConfirm, onCancel }) {
   const persistPresets = (list) => {
     setPresets(list);
     if (!api.isBridgeAvailable()) return;
-    api
-      .setSetting(EXPORT_PRESETS_KEY, stringifyExportPresets(list))
-      ?.catch?.((e) => console.error('[batch-export] 预设保存失败:', e.message));
+    api.setSetting(EXPORT_PRESETS_KEY, stringifyExportPresets(list))?.catch?.((e) => {
+      // 显式「保存/删除预设」落盘失败不能静默：本会话内存还在，重启即丢（对齐设置页 R-8 口径）
+      console.error('[batch-export] 预设保存失败:', e.message);
+      toast.error(errText('预设保存失败', e));
+    });
   };
 
-  const applyPreset = (idx) => {
-    const pr = presets[idx];
+  const applyPreset = (rawValue) => {
+    // 占位项（''）必须视为取消选中：Number('')===0 会误套第一条预设并让下拉回不去
+    // （新鲜眼审计 R89 实锤修复）；非整数/越界同理兜底
+    if (rawValue === '' || rawValue == null) {
+      setSelectedPreset('');
+      return;
+    }
+    const idx = Number(rawValue);
+    const pr = Number.isInteger(idx) && idx >= 0 ? presets[idx] : undefined;
     if (!pr) {
       setSelectedPreset('');
       return;
@@ -159,7 +170,7 @@ export default function BatchExportDialog({ onConfirm, onCancel }) {
                 <select
                   aria-label="导出预设"
                   value={selectedPreset}
-                  onChange={(e) => applyPreset(Number(e.target.value))}
+                  onChange={(e) => applyPreset(e.target.value)}
                 >
                   <option value="">选择预设…</option>
                   {presets.map((pr, i) => (
