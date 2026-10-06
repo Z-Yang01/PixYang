@@ -1,6 +1,13 @@
 // @vitest-environment happy-dom
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { renderWebGLPreview, releaseWebGLPreview, previewDrawSize } from '@/lib/webglPreview';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import {
+  renderWebGLPreview,
+  releaseWebGLPreview,
+  previewDrawSize,
+  onWebGLPreviewRestored,
+} from '@/lib/webglPreview';
 
 function makeGL() {
   const calls = [];
@@ -48,7 +55,28 @@ function makeGL() {
 
 function makeCanvas() {
   const gl = makeGL();
-  return { gl, canvas: { width: 0, height: 0, getContext: () => gl } };
+  const listeners = new Map();
+  const canvas = {
+    width: 0,
+    height: 0,
+    getContext: () => gl,
+    addEventListener(type, fn) {
+      if (!listeners.has(type)) listeners.set(type, []);
+      listeners.get(type).push(fn);
+    },
+    removeEventListener(type, fn) {
+      const arr = listeners.get(type) || [];
+      const i = arr.indexOf(fn);
+      if (i >= 0) arr.splice(i, 1);
+    },
+    __emit(type, event) {
+      for (const fn of [...(listeners.get(type) || [])]) fn(event);
+    },
+    __listenerCount(type) {
+      return (listeners.get(type) || []).length;
+    },
+  };
+  return { gl, canvas };
 }
 
 const zeros = (n) => new Array(n).fill(0);
@@ -368,5 +396,206 @@ describe('draft 草稿帧与上传降采样', () => {
     expect(await renderWebGLPreview(canvas, bigImage, baseUniforms(), { draft: true })).toBe(true);
     expect(globalThis.createImageBitmap).toHaveBeenCalledTimes(2);
     expect(gl.__calls.filter((c) => c.prop === 'texImage2D').length).toBe(2);
+  });
+
+  it('MAX_TEXTURE_SIZE 兜底：bitmap 降采样不可用且原图超上限 → 显式 false 而非黑屏谎报', async () => {
+    const { canvas, gl } = makeCanvas();
+    gl.__overrides.getParameter = (p) => (p === gl.MAX_TEXTURE_SIZE ? 1024 : undefined);
+    globalThis.createImageBitmap = vi.fn().mockRejectedValue(new Error('decode fail'));
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const huge = { naturalWidth: 4000, naturalHeight: 2000, src: 'file:///pics/huge.png' };
+    // 直传 4000×2000 到上限 1024 的上下文：texImage2D 会静默 INVALID_VALUE（纹理空白），
+    // 修复后必须在上传前显式失败，让调用方回退 CSS/SVG
+    expect(await renderWebGLPreview(canvas, huge, baseUniforms())).toBe(false);
+    expect(gl.__calls.some((c) => c.prop === 'texImage2D')).toBe(false);
+    expect(errSpy).toHaveBeenCalledWith(expect.stringContaining('MAX_TEXTURE_SIZE'));
+    errSpy.mockRestore();
+  });
+
+  it('MAX_TEXTURE_SIZE 内的直传兜底不受影响', async () => {
+    const { canvas, gl } = makeCanvas();
+    gl.__overrides.getParameter = (p) => (p === gl.MAX_TEXTURE_SIZE ? 4096 : undefined);
+    globalThis.createImageBitmap = vi.fn().mockRejectedValue(new Error('decode fail'));
+    expect(await renderWebGLPreview(canvas, testImage, baseUniforms())).toBe(true);
+    expect(gl.__calls.some((c) => c.prop === 'texImage2D' && c.args.includes(testImage))).toBe(
+      true
+    );
+  });
+});
+
+describe('上下文丢失/恢复生命周期（R107 对抗审计）', () => {
+  it('lost 事件：preventDefault 被调用（WebGL 规范：不阻止默认则上下文永不恢复）', async () => {
+    const { canvas } = makeCanvas();
+    globalThis.createImageBitmap = vi.fn().mockResolvedValue({ close: vi.fn() });
+    await renderWebGLPreview(canvas, testImage, baseUniforms());
+    const event = { preventDefault: vi.fn() };
+    canvas.__emit('webglcontextlost', event);
+    expect(event.preventDefault).toHaveBeenCalledTimes(1);
+  });
+
+  it('丢失瞬间在途异步上传作废：drawSeq 前移，bitmap 落地后丢弃不上传（句柄不泄漏）', async () => {
+    const { canvas, gl } = makeCanvas();
+    const stale = { close: vi.fn() };
+    let resolveStale;
+    globalThis.createImageBitmap = vi.fn().mockImplementation(
+      () =>
+        new Promise((r) => {
+          resolveStale = r;
+        })
+    );
+    const p1 = renderWebGLPreview(canvas, testImage, baseUniforms());
+    canvas.__emit('webglcontextlost', { preventDefault: vi.fn() });
+    resolveStale(stale);
+    // 过期 ≠ 渲染失败：返回 true，不让调用方误闩锁 webglFailed
+    expect(await p1).toBe(true);
+    expect(stale.close).toHaveBeenCalledTimes(1);
+    expect(gl.__calls.some((c) => c.prop === 'texImage2D' && c.args.includes(stale))).toBe(false);
+    expect(gl.__calls.some((c) => c.prop === 'drawArrays')).toBe(false);
+  });
+
+  it('restored 事件：状态整体作废 → 下次渲染全量重建（新 program）+ 纹理缓存失效重传 + 恢复回调', async () => {
+    const { canvas, gl } = makeCanvas();
+    const bitmap = { close: vi.fn() };
+    globalThis.createImageBitmap = vi.fn().mockResolvedValue(bitmap);
+    expect(await renderWebGLPreview(canvas, testImage, baseUniforms())).toBe(true);
+    expect(gl.__calls.filter((c) => c.prop === 'createProgram').length).toBe(1);
+
+    const restoredCb = vi.fn();
+    onWebGLPreviewRestored(canvas, restoredCb);
+    canvas.__emit('webglcontextlost', { preventDefault: vi.fn() });
+    canvas.__emit('webglcontextrestored');
+    expect(restoredCb).toHaveBeenCalledTimes(1);
+
+    // 恢复后的渲染：initCanvas 重跑（第 2 个 program/locs），lastSrc 缓存失效 → bitmap 重传
+    expect(await renderWebGLPreview(canvas, testImage, baseUniforms())).toBe(true);
+    expect(gl.__calls.filter((c) => c.prop === 'createProgram').length).toBe(2);
+    expect(
+      gl.__calls.filter((c) => c.prop === 'texImage2D' && c.args.includes(bitmap)).length
+    ).toBe(2);
+    onWebGLPreviewRestored(canvas, null);
+    canvas.__emit('webglcontextrestored');
+    expect(restoredCb).toHaveBeenCalledTimes(1); // null 注销后不再触达
+  });
+
+  it('死上下文重建重试：静默早退（不再 createShader 编译假程序）返回 false', async () => {
+    const { canvas, gl } = makeCanvas();
+    globalThis.createImageBitmap = vi.fn().mockResolvedValue({ close: vi.fn() });
+    expect(await renderWebGLPreview(canvas, testImage, baseUniforms())).toBe(true);
+    gl.__overrides.isContextLost = () => true;
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const compiles = gl.__calls.filter((c) => c.prop === 'createShader').length;
+    expect(await renderWebGLPreview(canvas, testImage, baseUniforms())).toBe(false);
+    // 旧实现在死上下文上重编译（查询恒 false → 打「shader 编译失败」假错误掩盖真因）
+    expect(gl.__calls.filter((c) => c.prop === 'createShader').length).toBe(compiles);
+    expect(errSpy).not.toHaveBeenCalled();
+    errSpy.mockRestore();
+  });
+
+  it('release 摘除 lost 监听（防扩展触发的丢失被恢复）、保留 restored 监听（闩锁卸载后恢复仍可达）', async () => {
+    const { canvas, gl } = makeCanvas();
+    const loseContext = vi.fn();
+    gl.__overrides.getExtension = () => ({ loseContext });
+    globalThis.createImageBitmap = vi.fn().mockResolvedValue({ close: vi.fn() });
+    await renderWebGLPreview(canvas, testImage, baseUniforms());
+    expect(canvas.__listenerCount('webglcontextlost')).toBe(1);
+    expect(canvas.__listenerCount('webglcontextrestored')).toBe(1);
+    releaseWebGLPreview(canvas);
+    expect(canvas.__listenerCount('webglcontextlost')).toBe(0);
+    expect(canvas.__listenerCount('webglcontextrestored')).toBe(1);
+    expect(loseContext).toHaveBeenCalledTimes(1);
+  });
+
+  it('重 init 时旧监听被替换不叠加：多次 init 后监听数恒为 1/1', async () => {
+    const { canvas } = makeCanvas();
+    globalThis.createImageBitmap = vi.fn().mockResolvedValue({ close: vi.fn() });
+    await renderWebGLPreview(canvas, testImage, baseUniforms());
+    releaseWebGLPreview(canvas);
+    await renderWebGLPreview(canvas, testImage, baseUniforms());
+    releaseWebGLPreview(canvas);
+    await renderWebGLPreview(canvas, testImage, baseUniforms());
+    expect(canvas.__listenerCount('webglcontextlost')).toBe(1);
+    expect(canvas.__listenerCount('webglcontextrestored')).toBe(1);
+  });
+
+  it('连续 10 次进出编辑（init/release 循环）资源对称：create==delete==lose==10，第 11 次照常', async () => {
+    const { canvas, gl } = makeCanvas();
+    const loseContext = vi.fn();
+    gl.__overrides.getExtension = () => ({ loseContext });
+    globalThis.createImageBitmap = vi.fn().mockResolvedValue({ close: vi.fn() });
+    for (let i = 0; i < 10; i++) {
+      expect(await renderWebGLPreview(canvas, testImage, baseUniforms())).toBe(true);
+      releaseWebGLPreview(canvas);
+    }
+    expect(gl.__calls.filter((c) => c.prop === 'createProgram').length).toBe(10);
+    expect(gl.__calls.filter((c) => c.prop === 'deleteProgram').length).toBe(10);
+    expect(gl.__calls.filter((c) => c.prop === 'deleteTexture').length).toBe(20);
+    expect(loseContext).toHaveBeenCalledTimes(10);
+    expect(canvas.__listenerCount('webglcontextlost')).toBe(0);
+    expect(await renderWebGLPreview(canvas, testImage, baseUniforms())).toBe(true);
+  });
+});
+
+describe('isWebGL2Available（R107：探针回收 + 失败不永久缓存）', () => {
+  it('探针上下文立即显式回收（WEBGL_lose_context），成功结果缓存复用', async () => {
+    vi.resetModules();
+    const loseContext = vi.fn();
+    let created = 0;
+    const spy = vi.spyOn(document, 'createElement').mockImplementation(() => ({
+      getContext: () => {
+        created++;
+        const g = makeGL();
+        g.__overrides.getExtension = () => ({ loseContext });
+        return g;
+      },
+    }));
+    try {
+      const mod = await import('@/lib/webglPreview');
+      expect(mod.isWebGL2Available()).toBe(true);
+      expect(mod.isWebGL2Available()).toBe(true); // 缓存命中：不重复创建探针
+      expect(created).toBe(1);
+      expect(loseContext).toHaveBeenCalledTimes(1); // 探针不挤占每页约 16 的活动上下文配额
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('探测失败不永久缓存：瞬时故障恢复后重新探测为 true（不锁死整场 CSS 回退）', async () => {
+    vi.resetModules();
+    let ok = false;
+    const spy = vi.spyOn(document, 'createElement').mockImplementation(() => ({
+      getContext: () => (ok ? makeGL() : null),
+    }));
+    try {
+      const mod = await import('@/lib/webglPreview');
+      expect(mod.isWebGL2Available()).toBe(false);
+      ok = true;
+      expect(mod.isWebGL2Available()).toBe(true);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+});
+
+describe('ImageViewer 预览生命周期契约（R107，源码级防回退）', () => {
+  // vitest 恒从仓库根运行（门禁串行跑全），cwd 相对定位即可
+  const viewerSrc = readFileSync(
+    resolve(process.cwd(), 'src/components/Browser/ImageViewer.jsx'),
+    'utf8'
+  );
+
+  it('过期绘制守卫：旧帧的 false 不得闩锁 webglFailed（seq 判定在 then 内）', () => {
+    expect(viewerSrc).toContain('const seq = ++webglDrawSeqRef.current;');
+    expect(viewerSrc).toContain('if (seq !== webglDrawSeqRef.current) return;');
+  });
+
+  it('恢复重绘：setWebglCanvas 注册 onWebGLPreviewRestored（解除闩锁 + epoch 递增），effect 依赖 webglEpoch', () => {
+    expect(viewerSrc).toContain('onWebGLPreviewRestored(el, () => {');
+    expect(viewerSrc).toContain('setWebglEpoch((n) => n + 1);');
+    // 渲染 effect 的依赖数组必须含 webglEpoch（跨行容错：prettier 可能拆行）
+    expect(viewerSrc).toMatch(/\[[^\]]*\bwebglEpoch\b[^\]]*\]\);/);
+  });
+
+  it('取色死上下文守卫：readPixels 前检查 isContextLost（全零取样不得误报「过暗」）', () => {
+    expect(viewerSrc).toContain('if (gl.isContextLost && gl.isContextLost()) {');
   });
 });

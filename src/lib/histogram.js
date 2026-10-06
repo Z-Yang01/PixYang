@@ -10,6 +10,7 @@ export function extractHistogram(glCanvas) {
   if (!w || !h) return null;
   const gl = glCanvas.getContext('webgl2', { preserveDrawingBuffer: true });
   if (!gl) return null;
+  if (gl.isContextLost && gl.isContextLost()) return null; // 死上下文 readPixels 静默 no-op：全零直方图不可信，维持上次数据
   const pixels = new Uint8Array(w * h * 4);
   gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
   const hist = {

@@ -290,13 +290,21 @@ void main() {
   outColor = vec4(clamp(c, 0.0, 1.0), 1.0);
 }`;
 
-let cachedAvailability = null;
+// 仅缓存 true；false 不缓存——探测失败可能只是瞬时故障（启动初期驱动崩溃/配额耗尽），
+// 永久缓存会把整个会话锁死在 CSS 回退。调用方为组件挂载级（非每帧），重探代价可忽略
+let cachedAvailability = false;
 
 export function isWebGL2Available() {
-  if (cachedAvailability !== null) return cachedAvailability;
+  if (cachedAvailability) return cachedAvailability;
   try {
     const probe = document.createElement('canvas');
-    cachedAvailability = !!probe.getContext('webgl2');
+    const gl = probe.getContext('webgl2');
+    cachedAvailability = !!gl;
+    // 探针上下文必须显式回收：每页活动上下文配额约 16，探测泄漏一个会永久挤占画布配额
+    if (gl) {
+      const lose = gl.getExtension('WEBGL_lose_context');
+      if (lose) lose.loseContext();
+    }
   } catch {
     cachedAvailability = false;
   }
@@ -318,6 +326,42 @@ export function previewDrawSize(naturalWidth, naturalHeight, maxEdge) {
 
 // 每画布状态（gl 上下文/程序/纹理缓存）
 const stateByCanvas = new WeakMap();
+// 画布 lost/restored 监听器登记：丢失→恢复→重 init 时先摘旧监听防重复触发
+const lifecycleByCanvas = new WeakMap();
+// 调用方注册的恢复回调（WeakMap 挂 canvas 自身，与元素同被 GC）
+const restoreHandlers = new WeakMap();
+
+// 上下文恢复回调注册：调用方在画布挂载时注册（恢复后解除失败闩锁并触发重绘），handler 传 null 解除
+export function onWebGLPreviewRestored(canvas, handler) {
+  if (handler) restoreHandlers.set(canvas, handler);
+  else restoreHandlers.delete(canvas);
+}
+
+function attachLifecycle(canvas, st) {
+  const prev = lifecycleByCanvas.get(canvas);
+  if (prev) {
+    canvas.removeEventListener('webglcontextlost', prev.onLost);
+    canvas.removeEventListener('webglcontextrestored', prev.onRestored);
+  }
+  const onLost = (e) => {
+    // WebGL 规范：lost 事件不 preventDefault 则上下文永远不会被浏览器恢复——GPU 驱动重置/
+    // 远程桌面切换/多显示器热插拔后只能永久 CSS 回退。preventDefault 声明可恢复，
+    // GL 对象（program/纹理/uniform 位置）随丢失全部失效，缓存作废由 onRestored 统一负责
+    e.preventDefault();
+    st.drawSeq = (st.drawSeq || 0) + 1; // 作废在途异步上传（半死上下文上的 bitmap/texImage2D）
+  };
+  const onRestored = () => {
+    // 恢复后浏览器已清空全部 GL 对象：JS 侧 program/locs/纹理缓存（lastSrc/lastTexEdge）
+    // 必须随状态整体作废，下次渲染走 initCanvas 全量重建并重传纹理
+    stateByCanvas.delete(canvas);
+    const cb = restoreHandlers.get(canvas);
+    if (cb) cb();
+  };
+  canvas.addEventListener('webglcontextlost', onLost);
+  canvas.addEventListener('webglcontextrestored', onRestored);
+  lifecycleByCanvas.set(canvas, { onLost, onRestored });
+  st.onLost = onLost; // release 时摘除（onRestored 保留：失败闩锁卸载画布后真实恢复仍须可达）
+}
 
 function getUniformLocations(gl, program) {
   const names = [
@@ -375,6 +419,9 @@ function initCanvas(canvas) {
     preserveDrawingBuffer: true,
   });
   if (!gl) return null;
+  // 死上下文上 getContext 返回同一具尸体且查询恒 false：照常编译会打出「shader 编译失败」
+  // 假错误掩盖真因（GPU 重置/远程桌面切换）。静默早退，等 webglcontextrestored 后重建
+  if (gl.isContextLost && gl.isContextLost()) return null;
   const compile = (type, src) => {
     const sh = gl.createShader(type);
     gl.shaderSource(sh, src);
@@ -405,7 +452,10 @@ function initCanvas(canvas) {
   gl.vertexAttribPointer(aPos, 2, gl.FLOAT, false, 0, 0);
   const texture = gl.createTexture();
   const lutTexture = gl.createTexture();
-  return {
+  // MAX_TEXTURE_SIZE 下限取 2048（WebGL2 规范最小保证，FULL_EDGE 同值）：
+  // mock/异常实现 getParameter 缺失时退化为规范下限而非 0（0 会误拒一切上传）
+  const maxTexSize = gl.getParameter(gl.MAX_TEXTURE_SIZE) || 2048;
+  const st = {
     gl,
     program,
     locs: getUniformLocations(gl, program),
@@ -413,7 +463,12 @@ function initCanvas(canvas) {
     lutTexture,
     lastSrc: null,
     lastTexEdge: 0,
+    drawSeq: 0,
+    maxTexSize,
+    onLost: null,
   };
+  attachLifecycle(canvas, st);
+  return st;
 }
 
 // 主入口：canvas 上绘制 uniforms 驱动的预览。image 须已加载（complete && naturalWidth>0）。
@@ -478,6 +533,14 @@ export async function renderWebGLPreview(canvas, image, uniforms, opts = {}) {
         }
       }
       try {
+        // bitmap 降采样不可用时的直传兜底：原图边长超过 GPU 纹理上限时 texImage2D
+        // 静默 INVALID_VALUE（纹理空白 → 黑屏却谎报成功），必须显式失败交 CSS 回退
+        if (source === image && Math.max(image.naturalWidth, image.naturalHeight) > st.maxTexSize) {
+          console.error(
+            `[webgl] 底图 ${image.naturalWidth}×${image.naturalHeight} 超出 MAX_TEXTURE_SIZE=${st.maxTexSize} 且无法降采样`
+          );
+          return false;
+        }
         gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, source);
       } finally {
         // 上传抛错（上下文丢失/跨源污染）时也不能泄漏 createImageBitmap 句柄
@@ -572,6 +635,11 @@ export function releaseWebGLPreview(canvas) {
   const st = stateByCanvas.get(canvas);
   if (!st) return;
   stateByCanvas.delete(canvas);
+  // 摘除 lost 监听再 loseContext：扩展触发的丢失事件不得被 preventDefault（否则浏览器
+  // 会在数秒后自动恢复这个本应销毁的上下文）。restored 监听有意保留在 canvas 上：
+  // 失败闩锁卸载画布后，真实驱动恢复事件仍须能触达调用方解除闩锁（监听与元素同被 GC）
+  const life = lifecycleByCanvas.get(canvas);
+  if (life && st.onLost) canvas.removeEventListener('webglcontextlost', st.onLost);
   const { gl, program, texture, lutTexture } = st;
   if (!gl) return;
   try {

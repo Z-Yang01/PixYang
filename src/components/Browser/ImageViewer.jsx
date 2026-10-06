@@ -71,7 +71,12 @@ import lensLib from '../../../shared/lens.cjs';
 const { vignettePreviewStyle } = lensLib;
 import renderSpecModule from '../../../shared/renderSpec.cjs';
 const { editParamsToRenderSpec } = renderSpecModule;
-import { isWebGL2Available, renderWebGLPreview, releaseWebGLPreview } from '@/lib/webglPreview';
+import {
+  isWebGL2Available,
+  renderWebGLPreview,
+  releaseWebGLPreview,
+  onWebGLPreviewRestored,
+} from '@/lib/webglPreview';
 import { extractHistogram } from '@/lib/histogram';
 import HistogramView from './HistogramView';
 import { specToShaderUniforms } from '@/lib/previewUniforms';
@@ -151,6 +156,9 @@ export default function ImageViewer({
   const [editEpoch, setEditEpoch] = useState(0); // 外部替换 ops（撤销/跳转/清除）时递增，中断进行中的手势
   const webglAvailable = useRef(isWebGL2Available()).current;
   const [webglFailed, setWebglFailed] = useState(false);
+  // 真实上下文恢复（webglcontextrestored，驱动重置/远程桌面切换后）时递增：
+  // 渲染 effect 依赖它触发重绘，配合闩锁解除让预览自动恢复而非永久 SVG 回退
+  const [webglEpoch, setWebglEpoch] = useState(0);
   const webglCanvasRef = useRef(null);
   const [histogram, setHistogram] = useState(null);
   // 画布卸载/重挂时释放旧 canvas 的 GL 上下文：上下文不随元素卸载回收，
@@ -159,6 +167,13 @@ export default function ImageViewer({
     const prev = webglCanvasRef.current;
     if (prev && prev !== el) releaseWebGLPreview(prev);
     webglCanvasRef.current = el;
+    if (el) {
+      // 上下文恢复通知：解除失败闩锁（重新挂载画布）并递增 epoch 触发重绘
+      onWebGLPreviewRestored(el, () => {
+        setWebglFailed(false);
+        setWebglEpoch((n) => n + 1);
+      });
+    }
   }, []);
   const [selectedMaskId, setSelectedMaskId] = useState(null); // 当前编辑的蒙版 id
   const [maskTool, setMaskTool] = useState(null); // 拖拽绘制蒙版的激活工具（'radial' | 'linear' | null）
@@ -801,6 +816,11 @@ export default function ImageViewer({
       if (px < 0 || py < 0 || px >= canvas.width || py >= canvas.height) return;
       const gl = canvas.getContext('webgl2', { preserveDrawingBuffer: true });
       if (!gl) return;
+      if (gl.isContextLost && gl.isContextLost()) {
+        // 死上下文 readPixels 静默 no-op：取样恒为 (0,0,0)，不能误报「该位置过暗」
+        toast.info('渲染上下文丢失，取色暂不可用');
+        return;
+      }
       const pixel = new Uint8Array(4);
       // GL 像素坐标系 y 向上，与页面坐标相反
       gl.readPixels(px, canvas.height - 1 - py, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixel);
@@ -1615,6 +1635,7 @@ export default function ImageViewer({
   // imgSrc 必须与当前会话 editBaseSrc 一致才允许绘制：换图瞬间 effect 可能在 img.src
   // 更新前执行，纹理缓存按旧 src 命中 → 画布渲染上一张图（实机 CDP 复现：dataLen 逐字节一致）
   const drawnOpsRef = useRef(null);
+  const webglDrawSeqRef = useRef(0); // 过期绘制判定：旧帧的失败/直方图不得落袋
   useEffect(() => {
     if (!webglActive || !shaderUniforms) {
       drawnOpsRef.current = null;
@@ -1628,7 +1649,9 @@ export default function ImageViewer({
       img.src === sessionSrc || img.src.endsWith(sessionSrc) || sessionSrc.startsWith(img.src);
     const draw = (draft) => {
       if (img.complete && img.naturalWidth > 0 && imgIsCurrent()) {
+        const seq = ++webglDrawSeqRef.current;
         renderWebGLPreview(canvas, img, shaderUniforms, { draft }).then((ok) => {
+          if (seq !== webglDrawSeqRef.current) return; // 过期绘制：防旧帧 false 误闩锁 webglFailed
           if (!ok) {
             setWebglFailed(true);
             return;
@@ -1655,8 +1678,18 @@ export default function ImageViewer({
     const settleTimer = setTimeout(() => draw(false), EDIT_SETTLE_MS);
     return () => clearTimeout(settleTimer);
     // showBefore/compareMode：画布随 Before/对比视图切换而卸载重挂，新画布必须重绘，
-    // 否则 After 侧是一块空白画布盖住原图（预览 ≡ Before）
-  }, [webglActive, shaderUniforms, editOps, editBaseSrc, bust, showBefore, compareMode]);
+    // 否则 After 侧是一块空白画布盖住原图（预览 ≡ Before）；
+    // webglEpoch：webglcontextrestored 后强制重绘（GL 对象已全量重建）
+  }, [
+    webglActive,
+    shaderUniforms,
+    editOps,
+    editBaseSrc,
+    bust,
+    showBefore,
+    compareMode,
+    webglEpoch,
+  ]);
 
   if (!image) return null;
 

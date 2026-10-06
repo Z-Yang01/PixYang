@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { extractHistogram } from '@/lib/histogram';
 
 function fakeCanvas(pixels, w, h) {
@@ -48,5 +48,16 @@ describe('extractHistogram（直方图提取）', () => {
 
   it('无 WebGL2 上下文返回 null', () => {
     expect(extractHistogram({ width: 10, height: 10, getContext: () => null })).toBeNull();
+  });
+
+  it('上下文丢失返回 null 且不读像素（死上下文 readPixels 静默 no-op，全零直方图不可信）', () => {
+    const readPixels = vi.fn();
+    const canvas = {
+      width: 10,
+      height: 10,
+      getContext: () => ({ RGBA: 1, UNSIGNED_BYTE: 2, isContextLost: () => true, readPixels }),
+    };
+    expect(extractHistogram(canvas)).toBeNull();
+    expect(readPixels).not.toHaveBeenCalled();
   });
 });
