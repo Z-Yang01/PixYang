@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-// App.jsx 整体冒烟：数据层（window.pixyang electron 桥）全部 mock，真实渲染组合根与子组件。
+// App.jsx 整体冒烟：数据层（window.pixyang 单测注入面）全部 mock，真实渲染组合根与子组件。
 //
 // ⚠️ 冒烟结论（2026-09-11）：src/App.jsx:753 使用 `<Route path={['/', '/favorites']}>`（数组 path），
 // 当前安装的 react-router-dom 6.30.4 的 JSX Route 不支持数组 path（v7 才支持），

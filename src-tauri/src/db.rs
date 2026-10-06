@@ -1,5 +1,7 @@
-// SQLite 内核：迁移窗口内与 Electron 共用同一库文件（userData/pixyang.db，WAL）。
-// 表结构由 Electron 侧 migrateSchema 拥有；这里只做 settings 读写，缺表时按同式补齐。
+// SQLite 内核（rusqlite，WAL）。库文件与旧版（Electron，2026-09-21 R36 退役）共用
+// userData/pixyang.db——schema 由本文件 ensure_business_schema 自举（R41 起，
+// 旧 migrateSchema 已失去承接方）；旧位置到便携 data 的一次性快照迁移见
+// migrate_legacy_snapshot。
 
 pub use crate::error::PixError;
 use rusqlite::{Connection, OptionalExtension};

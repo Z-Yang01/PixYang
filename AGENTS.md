@@ -242,8 +242,9 @@ tests/            vitest（node 环境 + per-file happy-dom pragma）
 - CI：GitHub Actions（`.github/workflows/ci.yml`），push/PR 时在 Windows + Ubuntu 跑 lint/typecheck/test。
 - better-sqlite3 原生二进制双 ABI 与 electron-builder 打包已随 Electron 层删除；安装包走 `npm run tauri:build`（vite build + `@tauri-apps/cli build --bundles nsis`，产物 `src-tauri/target/release/bundle/nsis/`）。
 - 前端编译验证：`npx vite build`。注意 CSS 产物受 `.gitignore` 影响：Tailwind v4 的自动内容扫描遵循忽略规则，
-  `release/`（旧 Electron 打包产物，466MB）一旦不被忽略，其第三方 JS 与 `LICENSES.chromium.html` 会被当作 class 源，
-  多产出约 13 kB 死 utility（实测 96.75 kB → 110.12 kB）。勿删该忽略项。
+  `release/`（旧 Electron 打包产物，466MB，2026-10-01 已物理删除）一旦不被忽略，其第三方 JS 与
+  `LICENSES.chromium.html` 会被当作 class 源，多产出约 13 kB 死 utility（实测 96.75 kB → 110.12 kB）。
+  忽略项保留（防未来再生成时复发）。
 - **`npm run dev`（vite dev）当前不可用**：`shared/*.cjs` 被前端以默认导入消费，而 vite dev 原样直出
   `.cjs`（不做 CJS→ESM 转换，Electron 时代靠 vite build 的 rollup commonjs interop），首屏模块图报错、
   `#root` 空且控制台无异常。生产走 `frontendDist=../dist` 不受影响，故长期未暴露。修法二选一（待人工裁决）：
