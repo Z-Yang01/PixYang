@@ -2691,3 +2691,35 @@
   tests/unit/components/Explorer/ImportDialog.test.jsx、
   tests/unit/components/Info/InfoPanel.extra.test.jsx、AGENTS.md、NIGHTLY_LOG.md（pathspec
   点名）。未 push。
+- 2026-10-07 04:05 R109 终版快包（无人值守轮次109·终验+发布轮）：基线 4fcbec2（R108）干净树
+  （仅 .zcodeignore 未跟踪）。台账断档如实补记：R105-R108 四笔（4671faf/15aa0bb/d068c63/
+  4fcbec2）均为纯代码提交未追加条目，本轮包内容=此五笔审计与修复成果（组件域三修/导入编排
+  两修/导出内存 -24.4%/WebGL 生命周期八修/互审两修）。
+  终验七项全绿：vitest 1014 例（69 文件）✓（与基线逐值同）/ eslint 0 error（10 warning 与
+  基线同款 react-hooks/exhaustive-deps）/ tsc --noEmit ✓ / prettier --check ✓ /
+  CARGO_BUILD_JOBS=1 cargo test --jobs 1：lib 216 ✓ + golden_audit 1 ✓ / clippy --all-targets
+  0 error（warning 仅 lib 10·lib test 63·example webgl_parity 3，与基线同口径）/ cargo fmt
+  --check ✓。
+  留档先行（打包前执行）：现行包 mv 为 .bak-R103（4,189,357 B，SHA-256 9674f5593bf8c1fbba100b
+  e756fbc62bd2d5288831109b1cae756aaac96e1cea，与 R103 条目记载逐值一致；解包内层 exe
+  16,550,912 B，SHA 6d0c6a0feb72247f940c19c68a0e4634581bd7599f196fe79494878df45b83d5 同互证）；
+  .bak-R101/.bak-R88 原样未动。
+  重打包 `npm run tauri:build`（vite build → cargo release → makensis）exit 0，产物
+  src-tauri/target/release/bundle/nsis/PixYang_0.1.0_x64-setup.exe：4,187,436 B，mtime
+  2026-10-07 03:59:49，SHA-256 8ad03f2cb09ae283589cf44303a6606e7bb921980996a8460e4f53933e0de64b。
+  产物验证：内含 pixyang.exe 16,555,520 B，SHA-256 00f4570b6cf96665632b9342a0bc762f65b6f07ff6
+  e50bf1149894a32e175213（与 target/release/pixyang.exe 字节数同而 SHA 异 17ac65c4…，tauri nsis
+  bundle 补丁预期，R93/R101/R103 同款口径）。资产名差分：dist/index.html 引
+  assets/index-Dc1KPVyh.js + index-CcNKCZAc.css，新包内层 exe 双双 1 命中；旧资产名
+  index-R3Oh3dVX.js 新包 0 命中、.bak-R103 内 1 命中（反向亦然：新资产名旧包 0 命中）——换新
+  闭环；CSS 哈希与 R103 期同值（R104-R108 前端改动纯 JS，无 CSS 变更，自洽）。特征串：R105
+  Rust 生产串「[导入] 缩略图回写失败」（file_ops.rs:315）新包 1 命中、旧包 0 命中，直证新包装
+  入 R105；cfg(test) 专用串（「无跨卷环境」/MOVEBYTES/pixyang_thumb_fail_）双包 0 命中属预期；
+  R106 executor 为纯拷贝管线重构无新增字面量。R107 前端文案「渲染上下文丢失，取色暂不可用」
+  二进制直查双包 0 命中——Tauri v2 release 前端资产 brotli 压缩嵌入（资产名表未压缩可查、内
+  容不可直查），循 R103 先例以等价证据链闭环：git log -S 证实该串入于 d068c63（R107，旧包构建
+  早于此）→ dist/assets/index-Dc1KPVyh.js 1 命中（嵌入源文件即此份）→ 新包内嵌该资产名 1 命
+  中、旧资产名 0 命中 → 旧包仅内嵌旧资产 index-R3Oh3dVX.js，链条闭合。解包工具如实留档：本机
+  无 7zz 24.09，改用 AOMEI 随附 7z.exe（NSIS 支持在册）解包，与 R101「7z 解包 NSIS」同法等效。
+  待人工复核：无新增。提交范围：NIGHTLY_LOG.md（pathspec 点名）。未 push。代码冻结自本条目
+  起生效（R103 冻结宣言后 R104-R108 为已入库审计轮次，本轮为其补包，此后再无计划内改动）。
