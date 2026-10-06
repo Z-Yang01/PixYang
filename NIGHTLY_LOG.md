@@ -2649,3 +2649,45 @@
   （R102 前端改动为纯逻辑无新增字面量，以资产名换新+差分为等价证据，R101 先例口径）。
   待人工复核：无新增（终验+打包零生产改动；R95 条目实机走查待办维持）。提交范围：
   NIGHTLY_LOG.md（pathspec 点名）。未 push。代码冻结自本条目起生效。
+- 2026-10-07 02:05 R104 新鲜眼审计（无人值守轮次104·UI 组件域审计）：基线 cb02a2f 干净树（仅
+  .zcodeignore 未跟踪）。范围：A=白天外部会话入库 cb02a2f（Electron 残留清理）复核；B=今夜
+  R87-R103 零覆盖的 UI 组件域（Settings/Tags/Explorer 导入+相册/Info/Browser 对比视图+
+  PaginationBar+右键菜单+GridDialogs）逐文件通读。
+  A 部分结论（三查全过，零实锤）：①db.rs 头注释勘正与代码现状逐项吻合——ensure_business_schema
+  （db.rs:365）确为 schema 自举方、migrate_legacy_snapshot（db.rs:413，lib.rs:47 调用）存在、WAL
+  属实、R36 退役 2026-09-21（e0c90fc）与 R41 自举（d22a6c2）日期均对；②release/ 为物理删除
+  .gitignore 忽略项（git 层 0 删除文件属预期），nsis 留档完好：终版包 4,189,357 B + .bak-R101
+  4,188,530 B + .bak-R88 4,181,257 B 三件俱在；③引用断裂无——AGENTS 同步注明；NIGHTLY_LOG:969
+  与 error/electron-builder-files-drops-shared.md:43 为历史记录性提及非功能引用，不改历史。
+  B 部分逐域结论：Settings 读写链/预览/store normalizeGridValue 双防线、导入日期修改（库内
+  import_date 为严格 YYYY-MM-DD，effective_import_date 校验，type=date 编辑器无碍）、备份入口
+  （IPC reject 全接住）均无实锤；Tags 无重命名/合并特性（仅建/删），delete_tag 先清 image_tags
+  再删标签无孤儿，tags.name UNIQUE 使双击创建落重名可见报错，无需在途互斥；Explorer 导入对话框
+  （批次取消/停止/进度/跳过口径=import_one None：无效名或复制失败）/相册视图（创建在途互斥
+  creatingRef、改名双通道互斥 renamingRef、导出两段式 exportingRef）大体稳健；Info 面板
+  liveImageIdRef 竞态守卫、轻量写回链完整；Browser 对比视图监听四件套齐（mode 变更清理），
+  PaginationBar totalpages 防零、GridDialogs 消费方 handleCreateAndAdd 有 trim+互斥。
+  三实锤修复（各配回归锁+变异验证，变异体均被杀）：①ImageGrid.handleCreateAndAdd——相册建好后
+  addToAlbum reject 异常逸出成 unhandled rejection，无 toast、对话框滞留无反馈（对照同文件
+  handleAddToAlbum 错误分支口径）；修法：接住转 errText toast、createAlbumRunningRef 复位、
+  对话框保持打开供重试。②ImportDialog——重扫出 0 个文件时 checkedIds 不清（effect 有
+  length>0 守卫），底部按钮残留上一目录「导入 N 张图片」假数字且可点（点击 no-op）；修法：
+  勾选集无条件随 foundFiles 全量重建，loadPreviews 仍留 length 守卫。③InfoPanel——getExif
+  reject（桥级异常）后 exif 恒 null，面板永挂「加载中...」；Rust 侧 exif_fields 读失败本就归一
+  {}（commands.rs get_exif unwrap_or_else），前端对齐口径：catch 置 {} 展示「无 EXIF 信息」。
+  变异验证：三例各自回置旧代码单跑新锁均 1 failed，恢复修复版后 27/27、6/6、34/34 全绿。
+  门禁全绿（前端四项串行；Rust 未触 cargo 不适用）：vitest 996 例(69 文件) ✓（基线 993+3）/
+  eslint 0 error（10 warning 与基线逐条同款 react-hooks/exhaustive-deps）/ tsc --noEmit ✓ /
+  prettier --check ✓。AGENTS.md 计数同步（989→996 例口径补齐 R100-R103 缺账并追加 R104 锁描述）。
+  上报决策：①Settings 查重对话框为手写 backdrop div（无 Esc/焦点陷阱/role），与 HelpGuide/
+  ShortcutsHelp 同款——三处同模式不宜单点改 radix，按 a11y 债务上报不本轮强改；②重复导入去重
+  口径=path 唯一名（generate_unique_filename 盘∪库查重+序号避让），无内容级去重，重复内容靠
+  设置页 findDuplicates 事后清理——属设计口径非缺陷，如实上报；③CompareView draggingRef 在
+  mode 切换间不重置——推演不可达（切换须经 mouseup 的工具栏点击），未改；④ImageCard
+  image.filename.replace 假定非空（DB NOT NULL），维持。
+  待人工复核：无新增。提交范围：src/components/Browser/ImageGrid.jsx、
+  src/components/Explorer/ImportDialog.jsx、src/components/Info/InfoPanel.jsx、
+  tests/unit/components/Browser/ImageGrid.test.jsx、
+  tests/unit/components/Explorer/ImportDialog.test.jsx、
+  tests/unit/components/Info/InfoPanel.extra.test.jsx、AGENTS.md、NIGHTLY_LOG.md（pathspec
+  点名）。未 push。

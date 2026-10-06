@@ -80,4 +80,18 @@ describe('ImportDialog', () => {
     expect(screen.getByDisplayValue('C:/import')).toBeInTheDocument();
     expect(window.pixyang.scanDirectory).toHaveBeenCalledWith('C:/import');
   });
+
+  it('回归：重扫出 0 个文件时勾选集清零，底部按钮不得残留上一目录的假数字（R104）', async () => {
+    window.pixyang.selectDirectory.mockResolvedValue('C:/import');
+    window.pixyang.scanDirectory.mockResolvedValueOnce(filesFixture);
+    renderDialog();
+    fireEvent.click(screen.getByText('浏览'));
+    expect(await screen.findByText('导入 2 张图片')).toBeEnabled();
+    // 换一个空目录重扫：勾选集必须清空（不清则按钮残留「导入 2 张图片」且可点，点击为 no-op）
+    window.pixyang.selectDirectory.mockResolvedValue('C:/empty');
+    window.pixyang.scanDirectory.mockResolvedValueOnce([]);
+    fireEvent.click(screen.getByText('浏览'));
+    expect(await screen.findByDisplayValue('C:/empty')).toBeInTheDocument();
+    expect(screen.getByText('导入 0 张图片')).toBeDisabled();
+  });
 });

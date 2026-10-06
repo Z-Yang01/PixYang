@@ -77,7 +77,12 @@ export default function InfoPanel({ image, onClose, onImageUpdated, onCountsChan
       .then((data) => {
         if (alive) setExif(data || {});
       })
-      .catch((e) => console.error('[InfoPanel] EXIF 读取失败:', e.message));
+      .catch((e) => {
+        // 桥级异常也要落定：置空对象展示「无 EXIF 信息」，
+        // 否则面板永远停在「加载中...」（Rust 侧读失败本就归一为 {}，此处对齐口径）
+        console.error('[InfoPanel] EXIF 读取失败:', e.message);
+        if (alive) setExif({});
+      });
     return () => {
       alive = false;
     };

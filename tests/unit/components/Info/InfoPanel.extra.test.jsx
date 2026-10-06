@@ -127,6 +127,18 @@ describe('InfoPanel（补充：EXIF 全分支/标签操作/删除/评分收藏�
     expect(screen.getByText('加载中...')).toBeInTheDocument();
   });
 
+  it('回归：getExif reject 时落定为「无 EXIF 信息」，不得永挂「加载中...」（R104）', async () => {
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      window.pixyang.getExif.mockRejectedValue(new Error('bridge down'));
+      renderPanel();
+      expect(await screen.findByText('无 EXIF 信息')).toBeInTheDocument();
+      expect(screen.queryByText('加载中...')).toBeNull();
+    } finally {
+      errSpy.mockRestore();
+    }
+  });
+
   it('缩略图解析失败（null）时不渲染预览图', async () => {
     window.pixyang.toFileUrl.mockResolvedValue(null);
     const { container } = renderPanel();

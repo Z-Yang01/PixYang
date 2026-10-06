@@ -46,8 +46,10 @@ export default function ImportDialog({ onClose, onDone, initialFiles = null }) {
   }, [initialFiles]);
 
   useEffect(() => {
+    // 勾选集必须跟随 foundFiles 全量重建（含空列表）：重扫出 0 个文件时不清，
+    // 底部按钮会残留上一目录的「导入 N 张图片」假数字且可点（点了是 no-op）（R104）
+    setCheckedIds(new Set(foundFiles.map((f) => f.filepath)));
     if (foundFiles.length > 0) {
-      setCheckedIds(new Set(foundFiles.map((f) => f.filepath)));
       loadPreviews(foundFiles);
     }
   }, [foundFiles]);

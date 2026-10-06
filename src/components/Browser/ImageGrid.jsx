@@ -545,11 +545,19 @@ export default function ImageGrid({
       createAlbumRunningRef.current = false;
       return;
     }
-    try {
-      if (album) await api.addToAlbum(album.id, [imageId]);
-    } finally {
-      createAlbumRunningRef.current = false;
+    // 相册建好但加入相册 reject（DB 忙/盘异常）：异常不能逸出成 unhandled rejection——
+    // 静默无提示且对话框滞留；此处接住转 toast，对话框保持打开供重试（对照 handleAddToAlbum）
+    if (album) {
+      try {
+        await api.addToAlbum(album.id, [imageId]);
+      } catch (e) {
+        console.error('[grid] 加入相册失败:', e.message);
+        toast.error(errText('加入相册失败', e));
+        createAlbumRunningRef.current = false;
+        return;
+      }
     }
+    createAlbumRunningRef.current = false;
     setAddToAlbumImage(null);
     onCountsChanged?.();
   };

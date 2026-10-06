@@ -552,4 +552,43 @@ describe('ImageGrid', () => {
       errSpy.mockRestore();
     }
   });
+
+  it('回归：createAndAdd 建相册成功但 addToAlbum reject——不逸出 unhandled rejection、可见报错且对话框留开可重试（R104）', async () => {
+    const errSpy = vi.spyOn(toast, 'error').mockImplementation(() => {});
+    const unhandled = [];
+    const onUnhandled = (reason) => unhandled.push(reason);
+    process.on('unhandledRejection', onUnhandled);
+    try {
+      seedStore({ images: [makeImage()], totalImages: 1 });
+      const { container } = render(<ImageGrid />);
+      await screen.findByText('sunset');
+      fireEvent.contextMenu(container.querySelector('.image-card'));
+      fireEvent.click(await screen.findByRole('menuitem', { name: /添加到相册/ }));
+      const input = await screen.findByPlaceholderText('输入新相册名称');
+      fireEvent.change(input, { target: { value: '新相册' } });
+      // createAlbum 成功、addToAlbum reject：必须在组件内接住（toast + 对话框不关）
+      window.pixyang.createAlbum.mockResolvedValueOnce({ id: 7 });
+      window.pixyang.addToAlbum.mockRejectedValueOnce(new Error('bridge down'));
+      fireEvent.click(screen.getByText('创建', { selector: 'button' }));
+      await vi.waitFor(() => {
+        expect(errSpy).toHaveBeenCalledWith('加入相册失败：操作未成功');
+      });
+      // 对话框留开（未误收），且守卫未锁死：重试 addToAlbum 成功后正常收尾
+      expect(screen.getByPlaceholderText('输入新相册名称')).toBeInTheDocument();
+      window.pixyang.createAlbum.mockResolvedValueOnce({ id: 7 });
+      fireEvent.click(screen.getByText('创建', { selector: 'button' }));
+      await vi.waitFor(() => {
+        expect(window.pixyang.addToAlbum).toHaveBeenCalledTimes(2);
+      });
+      await vi.waitFor(() => {
+        expect(screen.queryByPlaceholderText('输入新相册名称')).toBeNull();
+      });
+      // 给潜在逸出的 rejection 一个微任务窗口
+      await new Promise((r) => setTimeout(r, 0));
+      expect(unhandled).toHaveLength(0);
+    } finally {
+      process.off('unhandledRejection', onUnhandled);
+      errSpy.mockRestore();
+    }
+  });
 });
