@@ -187,8 +187,11 @@ fn apply_unsharp_approx(
 ) -> Result<(), PixError> {
     let img = RgbaImage::from_raw(width, height, data.to_vec())
         .ok_or_else(|| PixError::Io("buffer 尺寸不匹配".into()))?;
-    let blurred = DynamicImage::from(img.clone()).blur(sigma.max(0.1) as f32);
-    let blur_rgba = blurred.to_rgba8();
+    // 少两份全图拷贝（R106，24MP 下各 ≈92MB）：ImageRgba8(img) 直接管所有权
+    // 替代 DynamicImage::from(img.clone())；blur 后仍走 DynamicImage::blur 同一实现，
+    // 取回 blurred 的 Rgba8 用借用替代 to_rgba8 回克隆（Rgba8→blur→Rgba8 恒成立）。
+    let blurred = DynamicImage::ImageRgba8(img).blur(sigma.max(0.1) as f32);
+    let blur_rgba = as_or_to_rgba8(&blurred);
     let k = 1.0;
     for (i, px) in data.chunks_exact_mut(channels).enumerate() {
         for c in 0..3.min(channels) {
@@ -450,14 +453,26 @@ fn clamp_int(v: Option<f64>, min: i64, max: i64, default: i64) -> i64 {
     }
 }
 
+// Rgba8 变体零拷贝借用（JPEG 压平/WebP 编码的输入）；其余变体才物化 to_rgba8 克隆。
+// 24MP 全分辨率下克隆一份 RGBA ≈ 92MB，导出是单发重路径，能免则免。
+fn as_or_to_rgba8(img: &DynamicImage) -> std::borrow::Cow<'_, RgbaImage> {
+    match img.as_rgba8() {
+        Some(rgba) => std::borrow::Cow::Borrowed(rgba),
+        None => std::borrow::Cow::Owned(img.to_rgba8()),
+    }
+}
+
 fn encode_buffer(
-    p: &BufferImage,
+    p: &mut BufferImage,
     format: &str,
     quality: i64,
     resize_w: Option<u64>,
     resize_h: Option<u64>,
 ) -> Result<Vec<u8>, PixError> {
-    let img = RgbaImage::from_raw(p.width, p.height, p.data.clone())
+    // 所有权转移替代全图克隆（R106；24MP RGBA ≈ 92MB/份）：encode 是管线终段，
+    // 两条调用路径（encode stage 返回 / 尾段落盘）此后都不再读 pixels。
+    let data = std::mem::take(&mut p.data);
+    let img = RgbaImage::from_raw(p.width, p.height, data)
         .ok_or_else(|| PixError::Io("buffer 尺寸不匹配".into()))?;
     let mut dyn_img = DynamicImage::from(img);
     // encode.resize：fit inside，不放大（镜像 encodeStage.params.resize）
@@ -488,7 +503,7 @@ fn encode_buffer(
         "webp" => {
             use image::ImageEncoder;
             let encoder = image::codecs::webp::WebPEncoder::new_lossless(&mut out);
-            let rgba = dyn_img.to_rgba8();
+            let rgba = as_or_to_rgba8(&dyn_img);
             encoder
                 .write_image(
                     rgba.as_raw(),
@@ -504,7 +519,8 @@ fn encode_buffer(
                 .map_err(|e| PixError::Io(format!("TIFF 编码失败: {e}")))?;
         }
         _ => {
-            let flat = crate::thumbs::flatten_rgba_white(&dyn_img.to_rgba8());
+            let rgba = as_or_to_rgba8(&dyn_img);
+            let flat = crate::thumbs::flatten_rgba_white(&rgba);
             let encoder =
                 image::codecs::jpeg::JpegEncoder::new_with_quality(&mut out, quality as u8);
             flat.write_with_encoder(encoder)
@@ -515,7 +531,7 @@ fn encode_buffer(
 }
 
 fn write_encoded(
-    pixels: Option<&BufferImage>,
+    pixels: Option<&mut BufferImage>,
     input: &Path,
     output: &Path,
     format: &str,
@@ -844,7 +860,7 @@ pub fn render_spec_to_file(
                     .and_then(|r| r.get("height"))
                     .and_then(|v| v.as_u64());
                 write_encoded(
-                    pixels.as_ref(),
+                    pixels.as_mut(),
                     input,
                     output,
                     format,
@@ -861,7 +877,7 @@ pub fn render_spec_to_file(
     }
     flush_affine(&mut pixels, &mut affine, input)?;
     let format = guess_format(output);
-    write_encoded(pixels.as_ref(), input, output, format, 92, None, None)?;
+    write_encoded(pixels.as_mut(), input, output, format, 92, None, None)?;
     Ok(RenderOutput { width, height })
 }
 
@@ -1292,7 +1308,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let plain = encode_buffer(
-            &BufferImage {
+            &mut BufferImage {
                 data: PIXELS[..12].to_vec(),
                 width: 3,
                 height: 1,
