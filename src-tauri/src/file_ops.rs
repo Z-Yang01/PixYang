@@ -40,7 +40,10 @@ pub fn today_ymd() -> String {
     ymd_from_days(secs.div_euclid(86400))
 }
 
-/// 镜像 moveFileSafe：rename 优先，EXDEV 回退 copy+delete
+/// 镜像 moveFileSafe：rename 优先，EXDEV 回退 copy+delete。
+/// 回退两步任一失败都必须摘除已落盘的目标再报错：copy 失败会留下半截内容，
+/// src 删除失败（Windows 只读/占用）时目标已是完整无记录孤儿——调用方按失败
+/// 回滚其余文件，若目标残留则重试派生 _N 避让名、残件永成无主文件（R105 实锤）
 pub fn move_file_safe(from: &Path, to: &Path) -> Result<(), PixError> {
     if let Some(parent) = to.parent() {
         std::fs::create_dir_all(parent).map_err(|e| PixError::Io(format!("建目录失败: {e}")))?;
@@ -49,8 +52,14 @@ pub fn move_file_safe(from: &Path, to: &Path) -> Result<(), PixError> {
         Ok(()) => Ok(()),
         Err(e) => {
             // EXDEV（跨盘）与 Windows ERROR_NOT_SAME_DEVICE(17) 均走 copy+delete
-            std::fs::copy(from, to).map_err(|e2| PixError::Io(format!("移动失败: {e}/{e2}")))?;
-            std::fs::remove_file(from).map_err(|e| PixError::Io(format!("移动清理失败: {e}")))?;
+            if let Err(e2) = std::fs::copy(from, to) {
+                let _ = std::fs::remove_file(to);
+                return Err(PixError::Io(format!("移动失败: {e}/{e2}")));
+            }
+            if let Err(e2) = std::fs::remove_file(from) {
+                let _ = std::fs::remove_file(to);
+                return Err(PixError::Io(format!("移动清理失败: {e2}")));
+            }
             Ok(())
         }
     }
@@ -283,19 +292,32 @@ pub fn import_one(
             let w_ok = std::fs::write(&big_path, medium).is_ok();
             let s_ok = std::fs::write(&small_path, small).is_ok();
             if w_ok && s_ok {
-                conn.execute(
+                // R105 实锤：回写列的 UPDATE 此前 map_err(? ) 上抛——与上方注释
+                // 「失败不致命，列保持空」相反。记录与文件此时已落库落盘，UPDATE 失败
+                // 若中断：批内后续文件不再导入，且命令层报错后用户重试会因唯一名避让
+                // 给同一来源派生 _1 重复记录。改为留日志、按已导入返回（列保持空）
+                match conn.execute(
                     "UPDATE images SET thumbnail_path = ?1, thumbnail_small_path = ?2, width = ?3, height = ?4 WHERE id = ?5",
                     rusqlite::params![big_path.to_string_lossy(), small_path.to_string_lossy(), w, h, row.id],
-                )
-                .map_err(PixError::Db)?;
-                return conn
-                    .query_row(
-                        "SELECT * FROM images WHERE filepath = ?1",
-                        [&dest_path.to_string_lossy()],
-                        crate::images_query::row_from,
-                    )
-                    .optional()
-                    .map_err(PixError::Db);
+                ) {
+                    Ok(_) => {
+                        return conn
+                            .query_row(
+                                "SELECT * FROM images WHERE filepath = ?1",
+                                [&dest_path.to_string_lossy()],
+                                crate::images_query::row_from,
+                            )
+                            .optional()
+                            .map_err(PixError::Db);
+                    }
+                    Err(e) => {
+                        eprintln!(
+                            "[导入] 缩略图回写失败（列保持空，导入不受影响）: id={} {e}",
+                            row.id
+                        );
+                        return Ok(Some(row.clone()));
+                    }
+                }
             }
         }
     }
@@ -1712,6 +1734,109 @@ mod tests {
         let updated = get_img_row(&conn, row.id).unwrap();
         assert_eq!(updated.filename, "renamed.jpg");
         assert!(Path::new(&updated.filepath).exists());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // ── R105 导入编排对抗审计回归锁 ──
+
+    #[cfg(windows)]
+    #[test]
+    fn 移动跨盘_源删除失败_目标不残留孤儿() {
+        // R105 实锤回归锁：EXDEV 回退 copy 成功、src 删除失败时，已完整落盘的目标必须
+        // 随失败一并摘除——否则迁移/日期移动方按失败回滚其余文件后，该目标成为无记录
+        // 孤儿，重试派生 _N 避让名、孤儿永留。
+        // 删除失败注入：持有一个共享读/写但不共享删除的句柄——Windows 删除语义下
+        // remove_file(src) 必报共享冲突（只读属性在新工具链的 remove_file 已被绕过，
+        // 不可作注入手段）
+        let src_dir = std::env::temp_dir().join(format!("pixyang_xvol_src_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&src_dir);
+        std::fs::create_dir_all(&src_dir).unwrap();
+        let dst_dir = std::env::current_dir()
+            .unwrap()
+            .join("target")
+            .join(format!("pixyang_xvol_dst_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dst_dir);
+        std::fs::create_dir_all(&dst_dir).unwrap();
+        // 前置：两目录须跨卷（系统 temp 与仓库 target 通常异卷）；同卷环境无法构造
+        // EXDEV，取证后跳过保持环境中性
+        let src_prefix = src_dir.components().next();
+        let dst_prefix = dst_dir.components().next();
+        if src_prefix.is_none() || dst_prefix.is_none() || src_prefix == dst_prefix {
+            eprintln!("[测试] 无跨卷环境，跳过 EXDEV 孤儿清理锁");
+            let _ = std::fs::remove_dir_all(&src_dir);
+            let _ = std::fs::remove_dir_all(&dst_dir);
+            return;
+        }
+        let src = src_dir.join("ro.jpg");
+        std::fs::write(&src, b"MOVEBYTES").unwrap();
+        let guard = {
+            use std::os::windows::fs::OpenOptionsExt;
+            const FILE_SHARE_READ: u32 = 0x1;
+            const FILE_SHARE_WRITE: u32 = 0x2;
+            std::fs::File::options()
+                .read(true)
+                .share_mode(FILE_SHARE_READ | FILE_SHARE_WRITE)
+                .open(&src)
+                .unwrap()
+        };
+        let dst = dst_dir.join("ro.jpg");
+        let result = move_file_safe(&src, &dst);
+        assert!(result.is_err(), "跨盘 + 源句柄不共享删除（删除必败）应报错");
+        assert!(src.exists(), "源文件保持原位");
+        assert!(!dst.exists(), "已复制出的目标必须随失败一并摘除");
+        drop(guard);
+        let _ = std::fs::remove_dir_all(&src_dir);
+        let _ = std::fs::remove_dir_all(&dst_dir);
+    }
+
+    #[test]
+    fn 导入单张_缩略图列回写失败不致命_记录照常返回() {
+        // R105 实锤回归锁：注释契约「失败不致命，列保持空」，但缩略图列回写 UPDATE 此前
+        // `?` 上抛——记录与文件已落库落盘后，一处 DB 错误让整个导入批中断，且命令层报错
+        // 后用户重试会因唯一名避让给同一来源派生 _1 重复记录。
+        // 注入手段：thumbnail_path/thumbnail_small_path 声明为 VIRTUAL 生成列——
+        // INSERT 不引用可过、SELECT * 可读、UPDATE 必报 cannot UPDATE generated column
+        let dir = std::env::temp_dir().join(format!("pixyang_thumb_fail_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("src")).unwrap();
+        let conn = Connection::open(":memory:").unwrap();
+        conn.execute_batch(
+            "CREATE TABLE images (id INTEGER PRIMARY KEY AUTOINCREMENT, filename TEXT NOT NULL,
+             filepath TEXT NOT NULL UNIQUE, original_path TEXT DEFAULT '', raw_path TEXT DEFAULT '',
+             original_raw_path TEXT DEFAULT '', hidden INTEGER DEFAULT 0, orientation INTEGER DEFAULT 1,
+             rotation INTEGER DEFAULT 0, flip_h INTEGER DEFAULT 0, flip_v INTEGER DEFAULT 0,
+             import_date TEXT, taken_at TEXT, size INTEGER DEFAULT 0, width INTEGER, height INTEGER,
+             format TEXT DEFAULT '', thumbnail TEXT, thumbnail_edit_path TEXT,
+             thumbnail_path TEXT GENERATED ALWAYS AS ('x') VIRTUAL,
+             thumbnail_small_path TEXT GENERATED ALWAYS AS ('y') VIRTUAL,
+             rating INTEGER DEFAULT 0, favorite INTEGER DEFAULT 0,
+             notes TEXT DEFAULT '', created_at DATETIME, updated_at DATETIME, duration INTEGER);
+             CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT);",
+        )
+        .unwrap();
+        let src = make_jpeg(&dir.join("src"), "thumbfail.jpg", 40, 30);
+        let img = json!({
+            "filename": "thumbfail.jpg",
+            "filepath": src.to_string_lossy(),
+            "importDate": "2026-09-20",
+        });
+        // 修前：回写 UPDATE 报错 → import_one Err（本断言炸）
+        let row = import_one(
+            &conn,
+            &dir.join("root"),
+            &img,
+            None,
+            false,
+            "2026-09-20",
+            &dir.join("thumbs"),
+        )
+        .unwrap()
+        .expect("缩略图回写失败不得吞掉已导入记录");
+        assert!(Path::new(&row.filepath).exists(), "文件与记录保持已导入态");
+        let n: i64 = conn
+            .query_row("SELECT COUNT(*) FROM images", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(n, 1);
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
