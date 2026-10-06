@@ -290,6 +290,7 @@ export default function ImageViewer({
     setEditErrorRaw('');
     setBusyKind('');
     setWebglFailed(false);
+    setHistogram(null); // 直方图随会话作废：不复位则上一张图的数据残留进下一次编辑（webgl 闩锁时整场错误显示）
     setHistInfo({ canUndo: false, canRedo: false, index: 0, length: 0 });
     historyRef.current = null;
     savedBaselineRef.current = null;

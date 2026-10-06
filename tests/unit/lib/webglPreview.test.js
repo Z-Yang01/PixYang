@@ -421,6 +421,31 @@ describe('draft 草稿帧与上传降采样', () => {
       true
     );
   });
+
+  it('MAX_TEXTURE_SIZE 兜底覆盖 bitmap 路径：无降采样的全尺寸 bitmap 超限同样显式 false（R108）', async () => {
+    const { canvas, gl } = makeCanvas();
+    gl.__overrides.getParameter = (p) => (p === gl.MAX_TEXTURE_SIZE ? 1024 : undefined);
+    // 原图长边 ≤ FULL_EDGE：createImageBitmap 不带 resize，产出全尺寸 bitmap；
+    // 异常实现（maxTexSize=1024）上该 bitmap 直传同样静默 INVALID_VALUE，必须显式失败
+    const bitmap = { close: vi.fn(), width: 2000, height: 2000 };
+    globalThis.createImageBitmap = vi.fn().mockResolvedValue(bitmap);
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const midImage = { naturalWidth: 2000, naturalHeight: 2000, src: 'file:///pics/mid.png' };
+    expect(await renderWebGLPreview(canvas, midImage, baseUniforms())).toBe(false);
+    expect(gl.__calls.some((c) => c.prop === 'texImage2D' && c.args.includes(bitmap))).toBe(false);
+    expect(bitmap.close).toHaveBeenCalledTimes(1); // return false 走 finally，句柄不泄漏
+    expect(errSpy).toHaveBeenCalledWith(expect.stringContaining('MAX_TEXTURE_SIZE'));
+    errSpy.mockRestore();
+  });
+
+  it('maxTexSize 内的正常 bitmap 路径不受上限兜底影响（mock bitmap 无尺寸字段 → 守卫跳过）', async () => {
+    const { canvas, gl } = makeCanvas();
+    gl.__overrides.getParameter = (p) => (p === gl.MAX_TEXTURE_SIZE ? 4096 : undefined);
+    const bitmap = { close: vi.fn() };
+    globalThis.createImageBitmap = vi.fn().mockResolvedValue(bitmap);
+    expect(await renderWebGLPreview(canvas, testImage, baseUniforms())).toBe(true);
+    expect(gl.__calls.some((c) => c.prop === 'texImage2D' && c.args.includes(bitmap))).toBe(true);
+  });
 });
 
 describe('上下文丢失/恢复生命周期（R107 对抗审计）', () => {
@@ -597,5 +622,9 @@ describe('ImageViewer 预览生命周期契约（R107，源码级防回退）', 
 
   it('取色死上下文守卫：readPixels 前检查 isContextLost（全零取样不得误报「过暗」）', () => {
     expect(viewerSrc).toContain('if (gl.isContextLost && gl.isContextLost()) {');
+  });
+
+  it('直方图随会话复位：cleanupEditSession 必须清 histogram（单实例跨换图，上一张图数据不得残留进新会话，R108）', () => {
+    expect(viewerSrc).toContain('setHistogram(null);');
   });
 });

@@ -533,11 +533,16 @@ export async function renderWebGLPreview(canvas, image, uniforms, opts = {}) {
         }
       }
       try {
-        // bitmap 降采样不可用时的直传兜底：原图边长超过 GPU 纹理上限时 texImage2D
-        // 静默 INVALID_VALUE（纹理空白 → 黑屏却谎报成功），必须显式失败交 CSS 回退
-        if (source === image && Math.max(image.naturalWidth, image.naturalHeight) > st.maxTexSize) {
+        // 纹理上限兜底：源边长超过 GPU 纹理上限时 texImage2D 静默 INVALID_VALUE
+        //（纹理空白 → 黑屏却谎报成功），必须在上传前显式失败交 CSS 回退。
+        // 两条路径都要查：直传 image（bitmap 降采样不可用）查 naturalWidth/Height；
+        // bitmap 路径查 width/height——无 resize 的全尺寸 bitmap（原图长边 ≤ FULL_EDGE）
+        // 在异常实现（maxTexSize < 2048）上同样超限，只查直传路径会漏（R108 补）
+        const srcW = source === image ? image.naturalWidth : source.width;
+        const srcH = source === image ? image.naturalHeight : source.height;
+        if (Math.max(srcW, srcH) > st.maxTexSize) {
           console.error(
-            `[webgl] 底图 ${image.naturalWidth}×${image.naturalHeight} 超出 MAX_TEXTURE_SIZE=${st.maxTexSize} 且无法降采样`
+            `[webgl] 底图 ${srcW}×${srcH} 超出 MAX_TEXTURE_SIZE=${st.maxTexSize}${source === image ? ' 且无法降采样' : ''}`
           );
           return false;
         }
