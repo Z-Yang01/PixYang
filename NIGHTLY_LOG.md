@@ -2762,3 +2762,63 @@ src/components/Browser/ImageViewer.jsx、src/App.jsx、src/styles/index.css、
 tests/unit/hooks/useSlideshowTimer.test.js、
 tests/unit/components/Browser/ImageViewer.slideshow.test.jsx、AGENTS.md、NIGHTLY_LOG.md。
 未 push。待人工复核：无。
+
+## 2026-10-08（无人值守轮次 116·终版快包轮）R116 R110-R115 六笔终版重打包
+
+基线 HEAD caab5db（R114 提交；R115 零改动无提交），分支 optimize/architecture，工作树仅
+.zcodeignore 未跟踪。定位：现行安装包为 R109 时代构建（2026-10-07 03:59），缺 R110-R115
+六笔（R110 大库导入/重建缩略图并行化、R111 并行回写分块互审修复、R112 幻灯片放映、R113
+放映 bump 覆盖修复、R114 相机同步批量导入并行化、R115 零改动），本轮为今夜最后一轮快包，
+完成后代码冻结维持。
+
+终版终验（任何红即停轮，全绿放行）：npm test 1030 例/71 文件 ✓（基线 1030 同值）/ eslint
+0 error 10 warning（与基线逐条同口径：ImageGrid 3 + ImageViewer 6 + InfoPanel 1，全
+react-hooks/exhaustive-deps）✓ / tsc --noEmit ✓ / prettier --check ✓ / cargo test --jobs 1
+lib 221 passed ✓ + golden_audit_rust_vs_sharp_baseline 1 passed ✓（含 camera::tests::
+相机同步并行缩略图_与串行内联基线逐字节一致 ok，行为面佐证 R114 并行路径在编译内）/ clippy
+--all-targets exit 0（0 error；63 条 warning 为中文测试名 non_snake_case 既有口径）✓ /
+cargo fmt --check ✓。
+
+旧包留档：打包前改名 src-tauri/target/release/bundle/nsis/PixYang_0.1.0_x64-setup.exe →
+同名 .bak-R109（4,187,436 B，mtime 2026-10-07 03:59:49，SHA-256
+8ad03f2cb09ae283589cf44303a6606e7bb921980996a8460e4f53933e0de64b），.bak-R88/.bak-R101/
+.bak-R103 原样未动。
+
+重打包 `npm run tauri:build`（vite build → cargo release → makensis）exit 0，产物
+PixYang_0.1.0_x64-setup.exe：4,207,014 B，mtime 2026-10-08 02:37:21，SHA-256
+27b4760d25c5d36f51b168ff08f1929ebdce074132df0f49014e1aa32a635dc6（较 R109 包 +19,578 B）。
+产物互证：解包验内层（本机仍无 7z，改用 Bandizip bz.exe 解 NSIS，与 R101/R109「7z 解包
+NSIS」同法等效）内含 pixyang.exe 16,575,488 B，SHA-256
+5eedfcbd514dd0422eccd4ff46fa52582a89af7dc0ca70f8426b756c75c92874，与
+target/release/pixyang.exe（16,575,488 B，SHA-256
+c1f704c29ce4437bf8b6d7ac7561f5adc1990da4ef99993cc7dc9f0d2ce2599b）字节数同而 SHA 异——
+tauri nsis bundle 补丁预期（R93/R101/R103/R109 同款口径）；旧包内层 pixyang.exe
+16,555,520 B，SHA-256 00f4570b6cf96665632b9342a0bc762f65b6f07ff6e50bf1149894a32e175213
+与 R109 台账记录逐字节一致（旧包溯源强证）。原始 NSIS 容器 LZMA 压缩，资产名直查双包 0/0
+属预期，差分以内层 exe 为准。
+
+资产名差分：dist/index.html 引 assets/index-CxnqiNCX.js + index-C1hSlFlG.css；新内层 exe
+双双 1 命中，R109 期旧资产名 index-Dc1KPVyh.js / index-CcNKCZAc.css 均 0 命中；旧内层反向
+亦然（旧名 1/1、新名 0/0；全量 token 扫描两包各恰 2 个资产名）——换新闭环，双向零残留。
+CSS 哈希较 R109 期（CcNKCZAc）已变，对应 R112 幻灯片角标样式入 src/styles/index.css，自洽。
+
+特征串抽验：R110/R114 直证——「[导入] 缩略图生成失败（列保持空，导入不受影响）」
+（file_ops.rs:504，R110 引入，位于 write_back_thumbs_chunked（file_ops.rs:492，git log -S
+证实 R114 引入该函数）段内）新内层 1 命中、旧内层 0 命中；R114 相机路径生产段恰是改为调用
+import_one_deferred + write_back_thumbs_chunked 与 import_images 共用批尾回写，故此 1/0
+差分直证新包既载 R110 又载 R114 相机路径所共用的那一段代码。R114 无新增生产字面量（生产段
+纯函数级复用），pub(crate) 内部符号 release 不存（import_one_deferred/write_back_thumbs_
+chunked 双包 0 命中；pub API import_images/sync_camera_folder 双包 1/1 可查为对照），循
+R109 先例以等价证据链闭环：git diff 生产段（camera.rs @@287-402）→ git log -S → :504 串
+1/0 差分 → cargo 相机并行测试 ok，链条闭合。R112 前端「放映中」：git log -S 证实入于
+10c396c（R112，旧包构建早于该提交）；dist/assets/index-CxnqiNCX.js（即内嵌源文件）1 命中
+→ 新内层嵌该资产名 1 命中/旧资产名 0 命中 → 旧内层仅嵌 index-Dc1KPVyh.js，链条闭合；
+「放映中」二进制直查双包 0 命中属预期（Tauri v2 release 前端资产 brotli 压缩嵌入，R107/
+R109 同款口径）；R113 修复（bumpSlideshowEpoch 补 bump）随同一 dist 资产入库（minified
+标识符不可直查，同链覆盖）。cfg(test) 专用串（「无跨卷环境」/「NEF-only 组按隐藏记录落库」
+/golden_audit）双包 0 命中属预期（release 不编测试代码）。
+
+台账补记：R113（2e272a4）/R114（caab5db）提交当时未附 NIGHTLY_LOG 条目，本轮一并于此处
+补记说明（其完整信息见提交消息本身）。待人工复核：无新增。提交范围：NIGHTLY_LOG.md
+（pathspec 点名）。未 push。代码冻结自 R103 宣言维持，R109 本为补包、本轮 R116 为其后续
+六笔的终版快包，此后再无计划内改动。
