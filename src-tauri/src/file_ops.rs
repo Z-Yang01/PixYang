@@ -146,6 +146,28 @@ enum ImportMode {
     Hidden,
 }
 
+/// 相机同步批内落库转发（R114）：与 import_one 完全同链（import_one_impl），
+/// 仅缩略图从逐张内联改为批尾并行生成（VisibleDeferred）——批量路径与 R110 import_images
+/// 同构；Inline 单张路径（import_one）零变化。
+pub(crate) fn import_one_deferred(
+    conn: &Connection,
+    root: &Path,
+    img: &Value,
+    pair: Option<&Value>,
+    today: &str,
+    thumbs_dir: &Path,
+) -> Result<Option<ImageRow>, PixError> {
+    import_one_impl(
+        conn,
+        root,
+        img,
+        pair,
+        ImportMode::VisibleDeferred,
+        today,
+        thumbs_dir,
+    )
+}
+
 /// 单张导入编排共用体：import_one 转发 VisibleInline/Hidden，import_images 批量走 VisibleDeferred
 fn import_one_impl(
     conn: &Connection,
@@ -340,7 +362,7 @@ fn import_one_impl(
 /// 缩略图写回：写双档文件 + UPDATE 路径/尺寸 + 按 filepath 回读最新行。
 /// 文件写失败/UPDATE 失败均不致命（返回 None，调用方保持原行，列保持空）。
 /// 从 import_one 尾段原样拆出（R110 并行化共用），语义逐行一致。
-fn write_thumbs_and_update(
+pub(crate) fn write_thumbs_and_update(
     conn: &Connection,
     row: &ImageRow,
     thumbs_dir: &Path,
@@ -459,9 +481,20 @@ pub fn import_images(
             }
         }
     }
-    // R111 互审：按 PARALLEL_CHUNK 分块「生成→回写」——结果容器峰值 ~10MB 不随批量
-    // 增长（全批一次并行的产物驻留对万级首导是 GB 级，旧串行版为 O(1)）；
-    // 原序/统计/事件面仍逐行不变（块间串行推进，块内乱序完成按 ticket 对齐原序）
+    write_back_thumbs_chunked(conn, &mut imported, &pending, thumbs_dir)?;
+    Ok(imported)
+}
+
+/// R111 分块「生成→回写」共用尾段（import_images 与相机同步批量导入共用，R114 起）：
+/// 结果容器分块化——峰值 ~10MB 不随批量增长（全批一次并行的产物驻留对万级首导是 GB 级，
+/// 旧串行版为 O(1)）；原序/统计/事件面仍逐行不变（块间串行推进，块内乱序完成按 ticket
+/// 对齐原序）。单个生成失败不扩散：该行列保持空，其余照常回写。
+pub(crate) fn write_back_thumbs_chunked(
+    conn: &Connection,
+    imported: &mut [ImageRow],
+    pending: &[(usize, PathBuf)],
+    thumbs_dir: &Path,
+) -> Result<(), PixError> {
     for chunk in pending.chunks(thumbs::PARALLEL_CHUNK) {
         let sources: Vec<&PathBuf> = chunk.iter().map(|(_, p)| p).collect();
         let results = crate::thumbs::generate_tiers_parallel(&sources);
@@ -481,7 +514,7 @@ pub fn import_images(
             }
         }
     }
-    Ok(imported)
+    Ok(())
 }
 
 fn parse_import_files(files: &Value) -> Vec<image_group::ImportFile> {

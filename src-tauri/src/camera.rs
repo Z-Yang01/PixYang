@@ -2,7 +2,8 @@
 // 编排与 electron/database.js 的 prepareCameraSync / attachRawToImage / setImagesRoot。
 // 相机口径枚举（含 NEF 独立条目、无配对注记）走 scan.rs 公开的 scan_directory_include_raw。
 // extractExifBatch/readExifInfo 首次移植（exif_read 的字节级解析为私有，日期/朝向所需的最小解析就地实现）。
-// 串行锁由命令层经 Db(Mutex<Connection>) 持有，内核不做并发处理。
+// 串行锁由命令层经 Db(Mutex<Connection>) 持有；DB 读写始终单线程，批量导入的缩略图
+// 生成自 R114 起批尾并行（file_ops::write_back_thumbs_chunked，与 import_images 同款）。
 
 use crate::db::{delete_image_record, images_root, AppPaths, Db, PixError};
 use crate::err_cn;
@@ -286,6 +287,11 @@ fn attach_raw_to_image(
 
 // ── importImages：分组编排（jpg 组可见导入，nef-only 组隐藏导入） ──
 
+/// R114 相机同步批量导入并行化：组循环落库阶段与旧逐张编排逐行同语义（去重复查、
+/// NEF 避让/收养、失败跳过不致命），可见 JPG 组由 import_one（VisibleInline 逐张内联
+/// 缩略图）改为 import_one_deferred（落库后批尾并行生成）——与 R110 import_images
+/// 三阶段同构，缩略图生成是主耗时（24MP 单张双档 ~1.3s）。NEF-only 组本就无缩略图
+/// （Hidden 模式），原样保留。落库阶段本无逐文件进度事件（进度只发 EXIF 批次），事件面不变。
 fn import_camera_files(
     conn: &Connection,
     to_import: Vec<Value>,
@@ -317,6 +323,8 @@ fn import_camera_files(
     let groups = image_group::group_import_files(&import_files);
 
     let mut imported = Vec::new();
+    // imported 下标 → 缩略图源文件（可见记录才有；隐藏记录不进队列不错位）
+    let mut pending: Vec<(usize, PathBuf)> = Vec::new();
     for (_, group) in &groups {
         if let Some(jpg) = &group.jpg {
             let Some(jpg_value) = by_path.get(jpg.filepath.as_str()).copied() else {
@@ -353,9 +361,10 @@ fn import_camera_files(
                 }
                 continue;
             }
-            if let Some(row) = crate::file_ops::import_one(
-                conn, root, jpg_value, nef_value, false, today, thumbs_dir,
+            if let Some(row) = crate::file_ops::import_one_deferred(
+                conn, root, jpg_value, nef_value, today, thumbs_dir,
             )? {
+                pending.push((imported.len(), PathBuf::from(row.filepath.clone())));
                 imported.push(row);
             }
         } else if let Some(nef) = &group.nef {
@@ -386,6 +395,8 @@ fn import_camera_files(
             }
         }
     }
+    // 批尾并行生成 + 按原序串行回写（与 import_images 完全共用同一段代码）
+    crate::file_ops::write_back_thumbs_chunked(conn, &mut imported, &pending, thumbs_dir)?;
     Ok(imported)
 }
 
@@ -844,6 +855,349 @@ mod tests {
         );
         assert!(hidden.raw_path.as_deref().unwrap_or("").is_empty());
         assert!(hidden.thumbnail_path.as_deref().unwrap_or("").is_empty());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// 递归收集目录下全部文件「相对路径 → 字节」（哈希对照用）
+    fn dir_bytes(root: &Path) -> HashMap<String, Vec<u8>> {
+        fn walk(dir: &Path, base: &Path, out: &mut HashMap<String, Vec<u8>>) {
+            for e in std::fs::read_dir(dir).unwrap().flatten() {
+                let p = e.path();
+                if p.is_dir() {
+                    walk(&p, base, out);
+                } else {
+                    let rel = p.strip_prefix(base).unwrap().to_string_lossy().into_owned();
+                    out.insert(rel, std::fs::read(&p).unwrap());
+                }
+            }
+        }
+        let mut out = HashMap::new();
+        walk(root, root, &mut out);
+        out
+    }
+
+    /// 全行归一化摘要：托管根/缩略图根前缀替换为占位符后逐行 Debug 化。
+    /// created_at/updated_at 为 CURRENT_TIMESTAMP（秒级，两轮运行天然可不同）不入摘要。
+    fn normalized_rows(conn: &Connection, managed: &Path, thumbs: &Path) -> Vec<String> {
+        let norm = |s: Option<String>| -> Option<String> {
+            s.map(|v| {
+                v.replace(managed.to_string_lossy().as_ref(), "@M@")
+                    .replace(thumbs.to_string_lossy().as_ref(), "@T@")
+            })
+        };
+        let mut stmt = conn.prepare("SELECT * FROM images ORDER BY id").unwrap();
+        let rows = stmt.query_map([], row_from).unwrap();
+        rows.flatten()
+            .map(|r| {
+                [
+                    r.id.to_string(),
+                    r.filename.clone(),
+                    format!("{:?}", norm(Some(r.filepath))),
+                    format!("{:?}", r.original_path),
+                    format!("{:?}", r.original_raw_path),
+                    format!("{:?}", norm(r.raw_path)),
+                    format!("{:?}", r.hidden),
+                    format!("{:?}", r.orientation),
+                    format!("{:?}", r.rotation),
+                    format!("{:?}", r.flip_h),
+                    format!("{:?}", r.flip_v),
+                    r.import_date.clone(),
+                    format!("{:?}", r.taken_at),
+                    format!("{:?}", r.size),
+                    format!("{:?}", r.width),
+                    format!("{:?}", r.height),
+                    format!("{:?}", r.format),
+                    format!("{:?}", r.thumbnail),
+                    format!("{:?}", norm(r.thumbnail_path)),
+                    format!("{:?}", norm(r.thumbnail_small_path)),
+                    format!("{:?}", r.rating),
+                    format!("{:?}", r.favorite),
+                    format!("{:?}", r.notes),
+                ]
+                .join("\u{1f}")
+            })
+            .collect()
+    }
+
+    /// 旧串行内联基线复刻（R114 前 import_camera_files 原编排）：逐组 import_one
+    /// （VisibleInline，缩略图落库后内联生成）——哈希对照的参照面
+    fn serial_inline_reference(
+        conn: &Connection,
+        to_import: &[Value],
+        root: &Path,
+        today: &str,
+        thumbs_dir: &Path,
+    ) -> Vec<ImageRow> {
+        let import_files: Vec<image_group::ImportFile> = to_import
+            .iter()
+            .map(|v| image_group::ImportFile {
+                filename: v
+                    .get("filename")
+                    .and_then(|x| x.as_str())
+                    .unwrap_or("")
+                    .to_string(),
+                filepath: v
+                    .get("filepath")
+                    .and_then(|x| x.as_str())
+                    .unwrap_or("")
+                    .to_string(),
+                raw_source: None,
+                raw_filename: None,
+            })
+            .collect();
+        let by_path: HashMap<&str, &Value> = to_import
+            .iter()
+            .filter_map(|v| v.get("filepath").and_then(|x| x.as_str()).map(|p| (p, v)))
+            .collect();
+        let groups = image_group::group_import_files(&import_files);
+        let mut imported = Vec::new();
+        for (_, group) in &groups {
+            if let Some(jpg) = &group.jpg {
+                let Some(jpg_value) = by_path.get(jpg.filepath.as_str()).copied() else {
+                    continue;
+                };
+                let nef_value = group
+                    .nef
+                    .as_ref()
+                    .and_then(|n| by_path.get(n.filepath.as_str()).copied());
+                let existing: Option<ImageRow> = conn
+                    .query_row(
+                        "SELECT * FROM images WHERE original_path = ?1 COLLATE NOCASE",
+                        [jpg.filepath.as_str()],
+                        row_from,
+                    )
+                    .optional()
+                    .unwrap();
+                if let Some(row) = existing {
+                    let has_raw = row.raw_path.as_deref().is_some_and(|s| !s.is_empty());
+                    if !has_raw {
+                        if let Some(nef_value) = nef_value {
+                            attach_raw_to_image(
+                                conn,
+                                row.id,
+                                nef_value
+                                    .get("filepath")
+                                    .and_then(|x| x.as_str())
+                                    .unwrap_or(""),
+                                nef_value
+                                    .get("filename")
+                                    .and_then(|x| x.as_str())
+                                    .unwrap_or(""),
+                            )
+                            .unwrap();
+                        }
+                    }
+                    continue;
+                }
+                if let Some(row) = crate::file_ops::import_one(
+                    conn, root, jpg_value, nef_value, false, today, thumbs_dir,
+                )
+                .unwrap()
+                {
+                    imported.push(row);
+                }
+            } else if let Some(nef) = &group.nef {
+                let Some(nef_value) = by_path.get(nef.filepath.as_str()).copied() else {
+                    continue;
+                };
+                let as_hidden: Option<i64> = conn
+                    .query_row(
+                        "SELECT id FROM images WHERE original_path = ?1 COLLATE NOCASE",
+                        [nef.filepath.as_str()],
+                        |r| r.get(0),
+                    )
+                    .optional()
+                    .unwrap();
+                let as_pair: Option<i64> = conn
+                    .query_row(
+                        "SELECT id FROM images WHERE original_raw_path = ?1 COLLATE NOCASE",
+                        [nef.filepath.as_str()],
+                        |r| r.get(0),
+                    )
+                    .optional()
+                    .unwrap();
+                if as_hidden.is_some() || as_pair.is_some() {
+                    continue;
+                }
+                if let Some(row) = crate::file_ops::import_one(
+                    conn, root, nef_value, None, true, today, thumbs_dir,
+                )
+                .unwrap()
+                {
+                    imported.push(row);
+                }
+            }
+        }
+        imported
+    }
+
+    #[test]
+    fn 相机同步并行缩略图_与串行内联基线逐字节一致() {
+        // R114 回归锁（哈希对照法，沿用 R110）：同源相机文件夹跑两遍——
+        // A=旧串行内联基线（上方复刻函数，逐组 import_one），
+        // B=新 camera_sync（批内落库 + 批尾并行生成）。
+        // 断言：DB 全列归一化摘要逐行一致 + 托管图/配对 NEF/双档缩略图文件字节级一致。
+        let dir = temp_dir("hashparity");
+        let cam = dir.join("cam");
+        std::fs::create_dir_all(&cam).unwrap();
+        for i in 0..5u32 {
+            let name = format!("DSC_{i:03}");
+            make_jpeg(&cam, &format!("{name}.jpg"), 40 + i * 13, 30 + i * 7);
+            if i % 2 == 0 {
+                std::fs::write(cam.join(format!("{name}.NEF")), format!("raw-{name}")).unwrap();
+            }
+        }
+        std::fs::write(cam.join("LONE.nef"), b"lone-raw").unwrap();
+
+        // B：新并行链（camera_sync）
+        let conn_par = mem_db();
+        let managed_par = dir.join("managed_par");
+        let thumbs_par = dir.join("thumbs_par");
+        let result = camera_sync(&conn_par, &cam, &managed_par, &thumbs_par, None).unwrap();
+        assert_eq!(result["scanned"], 9, "5 jpg + 3 配对 NEF + 1 孤 NEF");
+        assert_eq!(result["imported"], 6, "5 可见 jpg + 1 隐藏孤 NEF");
+
+        // A：旧串行内联基线（同链前段：扫描→去重→EXIF 富化，尾段逐组 import_one）
+        let conn_ser = mem_db();
+        let managed_ser = dir.join("managed_ser");
+        let thumbs_ser = dir.join("thumbs_ser");
+        let files = scan_camera_files(&cam);
+        let (to_import, _attach, _skipped) = prepare_camera_sync(&conn_ser, &files).unwrap();
+        let root = images_root(&conn_ser, &managed_ser).unwrap();
+        let today = crate::file_ops::today_ymd();
+        let enriched: Vec<Value> = to_import
+            .iter()
+            .map(|f| {
+                let info = read_exif_info(Path::new(&f.filepath));
+                json!({
+                    "filename": f.filename,
+                    "filepath": f.filepath,
+                    "size": f.size,
+                    "format": f.format,
+                    "importDate": info.date,
+                    "takenAt": info.taken_at,
+                    "orientation": info.orientation,
+                })
+            })
+            .collect();
+        serial_inline_reference(&conn_ser, &enriched, &root, &today, &thumbs_ser);
+
+        // 全列摘要逐行一致（id=INSERT 序，分组迭代序确定故两侧同 id 同行）
+        let ser_rows = normalized_rows(&conn_ser, &managed_ser, &thumbs_ser);
+        let par_rows = normalized_rows(&conn_par, &managed_par, &thumbs_par);
+        assert_eq!(ser_rows.len(), par_rows.len(), "两侧记录条数不一致");
+        for (i, (s, p)) in ser_rows.iter().zip(&par_rows).enumerate() {
+            assert_eq!(s, p, "第 {i} 行归一化摘要不一致\n  串行: {s}\n  并行: {p}");
+        }
+
+        // 文件字节级一致：托管图 + 配对 NEF + 双档缩略图（相对路径与内容全等）
+        let ser_files = dir_bytes(&managed_ser);
+        let par_files = dir_bytes(&managed_par);
+        assert_eq!(ser_files, par_files, "托管图/NEF 字节不一致");
+        let ser_thumbs = dir_bytes(&thumbs_ser);
+        let par_thumbs = dir_bytes(&thumbs_par);
+        assert_eq!(ser_thumbs, par_thumbs, "缩略图字节不一致");
+        assert!(
+            ser_thumbs.len() >= 10,
+            "5 可见记录 × 双档 = 10 文件，基线面不得为空"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn 相机同步混合批次_去重收养新增语义在并行下保持() {
+        // R114 回归锁：同批混排「已入库跳过 / 缺 raw 收养 / 全新导入」——并行化后
+        // pending 下标只进真实新增组，跳过/收养组不错位；去重口径与计数契约不变
+        let dir = temp_dir("mixed");
+        let cam = dir.join("cam");
+        std::fs::create_dir_all(&cam).unwrap();
+        make_jpeg(&cam, "PAIR_A.jpg", 40, 30);
+        std::fs::write(cam.join("PAIR_A.NEF"), b"raw-a").unwrap();
+        make_jpeg(&cam, "SOLO_B.jpg", 50, 40);
+        std::fs::write(cam.join("LONE_C.nef"), b"lone-c").unwrap();
+
+        let conn = mem_db();
+        let managed = dir.join("managed");
+        let thumbs = dir.join("thumbs");
+        let first = camera_sync(&conn, &cam, &managed, &thumbs, None).unwrap();
+        assert_eq!(
+            first["imported"], 3,
+            "PAIR_A 可见 + SOLO_B 可见 + LONE_C 隐藏"
+        );
+
+        // 抹掉 PAIR_A 的托管 NEF（模拟缺 raw 旧记录），补一组全新文件
+        let old_raw: String = conn
+            .query_row(
+                "SELECT raw_path FROM images WHERE original_path = ?1 COLLATE NOCASE",
+                [cam.join("PAIR_A.jpg").to_string_lossy()],
+                |r| r.get(0),
+            )
+            .unwrap();
+        std::fs::remove_file(&old_raw).unwrap();
+        conn.execute(
+            "UPDATE images SET raw_path = '', original_raw_path = '' WHERE original_path = ?1 COLLATE NOCASE",
+            [cam.join("PAIR_A.jpg").to_string_lossy()],
+        )
+        .unwrap();
+        make_jpeg(&cam, "NEW_D.jpg", 60, 20);
+        std::fs::write(cam.join("NEW_D.NEF"), b"raw-d").unwrap();
+
+        let second = camera_sync(&conn, &cam, &managed, &thumbs, None).unwrap();
+        assert_eq!(second["scanned"], 6);
+        assert_eq!(
+            second["imported"], 1,
+            "只导入全新 NEW_D.jpg（NEF 随组挂 raw）"
+        );
+        assert_eq!(second["jpgImported"], 1);
+        assert_eq!(
+            second["nefImported"], 0,
+            "配对 NEF 不产生独立行，随组收编为 raw"
+        );
+        assert_eq!(second["attached"], 1, "PAIR_A 走收养");
+        assert_eq!(second["skipped"], 3, "PAIR_A/SOLO_B/LONE_C 去重跳过");
+        assert_eq!(count(&conn), 4);
+
+        // 收养落位：PAIR_A 的 raw 指回相机 NEF 源（original_raw_path 口径）
+        let adopted_raw: String = conn
+            .query_row(
+                "SELECT raw_path FROM images WHERE original_path = ?1 COLLATE NOCASE",
+                [cam.join("PAIR_A.jpg").to_string_lossy()],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert!(!adopted_raw.is_empty() && Path::new(&adopted_raw).exists());
+        let adopted_src: String = conn
+            .query_row(
+                "SELECT original_raw_path FROM images WHERE original_path = ?1 COLLATE NOCASE",
+                [cam.join("PAIR_A.jpg").to_string_lossy()],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(
+            adopted_src,
+            cam.join("PAIR_A.NEF").to_string_lossy(),
+            "original_raw_path 去重口径不变"
+        );
+
+        // 缩略图只属可见记录且全部落盘：PAIR_A/SOLO_B/NEW_D 三条可见 × 双档
+        let visible_with_thumbs: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM images WHERE hidden = 0 AND thumbnail_path != ''",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(visible_with_thumbs, 3);
+        let thumb_files = dir_bytes(&thumbs);
+        assert_eq!(thumb_files.len(), 6, "3 可见记录 × 双档");
+        let hidden_thumbs: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM images WHERE hidden = 1 AND (thumbnail_path != '' OR thumbnail_small_path != '')",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(hidden_thumbs, 0, "隐藏记录不得生成缩略图");
         let _ = std::fs::remove_dir_all(&dir);
     }
 
