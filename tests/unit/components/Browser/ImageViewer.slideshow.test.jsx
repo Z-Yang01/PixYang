@@ -120,6 +120,24 @@ describe('ImageViewer 幻灯片放映', () => {
     expect(onNext).toHaveBeenCalledTimes(1);
   });
 
+  it('键盘 0 复位视图重置当前间隔（缩放族交互，同双击/Fit 口径）：4.9s 时按键，此后重计完整间隔', async () => {
+    const onNext = vi.fn();
+    const { container } = await renderViewer(baseProps({ onNext }));
+    await startSlideshow(container);
+    act(() => {
+      vi.advanceTimersByTime(4900);
+    });
+    fireEvent.keyDown(window, { key: '0' }); // ZoomReset：复位缩放/位移/旋转/翻转 + bump 交互纪元
+    act(() => {
+      vi.advanceTimersByTime(4900); // 距键盘复位 4.9s：不翻页
+    });
+    expect(onNext).not.toHaveBeenCalled();
+    act(() => {
+      vi.advanceTimersByTime(100); // 距键盘复位满 5s：恢复自动
+    });
+    expect(onNext).toHaveBeenCalledTimes(1);
+  });
+
   it('角标点按切换间隔 3/5/10：切 10s 后 5s 不翻、10s 翻', async () => {
     const onNext = vi.fn();
     const { container } = await renderViewer(baseProps({ onNext }));

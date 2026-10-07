@@ -1438,6 +1438,7 @@ export default function ImageViewer({
           setZoom(1);
           setPos({ x: 0, y: 0 });
           if (!editingRef.current) {
+            bumpSlideshowEpoch(); // 放映中键盘复位视图（缩放族交互，同双击/Fit 口径）：重置当前间隔
             setRotation(0);
             setFlipH(false);
             setFlipV(false);
