@@ -1,7 +1,8 @@
 // 文件操作编排（迁移接缝 4c/4b 混合）：importImages/importOne/renameImage 的 Rust 直译。
 // 复用已移植内核：naming（唯一命名）、image_group（分组/日期围栏/安全文件名）、thumbs（双档缩略图）。
 // 已记录改进型分歧：导入时由 Rust 直接生成双档缩略图并回写
-// thumbnail_path/thumbnail_small_path/width/height（Electron 版由渲染进程传 base64，仅 thumbnail 列）。
+// 已记录改进型分歧：导入时由 Rust 直接生成双档缩略图并回写
+// thumbnail_path/thumbnail_small_path/width/height 三列（旧 Electron 版由渲染进程传 base64，仅 thumbnail 列）。
 
 use crate::db::{delete_image_record, PixError};
 use crate::err_cn;
