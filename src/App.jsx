@@ -35,6 +35,21 @@ import ShortcutsHelp from './components/Layout/ShortcutsHelp';
 import { Toaster } from '@/components/ui/sonner';
 import { TooltipProvider } from '@/components/ui/tooltip';
 
+// 查看器跨页单张查询参数：当前筛选+排序的唯一拼装（翻页 navigateViewer 与幻灯片下一张预取共用）
+const viewerQueryParams = (state) => ({
+  search: state.search,
+  sortBy: state.sortBy,
+  sortOrder: state.sortOrder,
+  tagId: state.filterTag,
+  albumId: state.filterAlbum,
+  favorite: state.filterFavorites,
+  minRating: state.filterMinRating,
+  unrated: state.filterUnrated,
+  importDate: state.filterDate,
+  dateFrom: state.dateRange.from,
+  dateTo: state.dateRange.to,
+});
+
 export default function App() {
   // 共享状态来自 galleryStore（筛选/勾选/网格/图片/共享数据）
   const images = useGalleryStore((s) => s.images);
@@ -290,17 +305,7 @@ export default function App() {
     viewerNavBusyRef.current = true;
     try {
       const result = await api.getImages({
-        search: state.search,
-        sortBy: state.sortBy,
-        sortOrder: state.sortOrder,
-        tagId: state.filterTag,
-        albumId: state.filterAlbum,
-        favorite: state.filterFavorites,
-        minRating: state.filterMinRating,
-        unrated: state.filterUnrated,
-        importDate: state.filterDate,
-        dateFrom: state.dateRange.from,
-        dateTo: state.dateRange.to,
+        ...viewerQueryParams(state),
         limit: 1,
         offset: gIdx,
       });
@@ -326,6 +331,34 @@ export default function App() {
     const idx = viewerIndexRef.current;
     if (idx < useGalleryStore.getState().totalImages - 1) navigateViewer(idx + 1);
   }, [navigateViewer]);
+
+  // 幻灯片下一张预取：查看器驻留时按同一筛选预取 viewerIndex+1 的记录（既有 getImages
+  // 通道，不新增 IPC 端点），交 ImageViewer 离屏预解码；失败静默，不影响翻页主路径
+  const [viewerNextImage, setViewerNextImage] = useState(null);
+  const viewerId = viewerImage?.id;
+  useEffect(() => {
+    if (!viewerId || !api.isBridgeAvailable()) {
+      setViewerNextImage(null);
+      return undefined;
+    }
+    const nextIdx = viewerIndexRef.current + 1;
+    if (nextIdx < 0 || nextIdx >= useGalleryStore.getState().totalImages) {
+      setViewerNextImage(null);
+      return undefined;
+    }
+    let cancelled = false;
+    api
+      .getImages({ ...viewerQueryParams(useGalleryStore.getState()), limit: 1, offset: nextIdx })
+      .then((result) => {
+        if (!cancelled) setViewerNextImage(result?.images?.[0] || null);
+      })
+      .catch(() => {
+        if (!cancelled) setViewerNextImage(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [viewerId]);
 
   // 单图轻量更新（评分/收藏/备注/重命名等）：本地合并，避免全量刷新
   // id/updates 为空时表示结构性变化（删除/导入/标签变动等），走全量刷新
@@ -615,6 +648,8 @@ export default function App() {
             onNext={viewerNext}
             hasPrev={viewerIndex > 0}
             hasNext={viewerIndex < totalImages - 1}
+            onJumpTo={navigateViewer}
+            nextImage={viewerNextImage}
             onImageUpdated={handleImageUpdated}
             onOpenInfo={(img) => {
               if (!img) return;

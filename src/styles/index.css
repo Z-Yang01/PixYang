@@ -1160,6 +1160,85 @@ body:has(.info-panel) .editor-panel {
   font-variant-numeric: tabular-nums;
 }
 
+/* ── 幻灯片放映角标（左下角轻量指示，同 viewer-info 深色胶囊风格，不遮挡图片主体）── */
+.viewer-slideshow {
+  position: absolute;
+  bottom: 20px;
+  left: 20px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  background: rgba(30, 30, 34, 0.7);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  color: white;
+  font-size: 12px;
+  z-index: 1001;
+}
+
+.viewer-slideshow-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent-color);
+  animation: slideshowPulse 2s ease-in-out infinite;
+}
+
+/* 暂停时呼吸灯停摆并压暗：状态一眼可辨 */
+.viewer-slideshow.is-paused .viewer-slideshow-dot {
+  animation: none;
+  opacity: 0.4;
+}
+
+@keyframes slideshowPulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+.viewer-slideshow-interval {
+  background: none;
+  border: none;
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 12px;
+  cursor: pointer;
+  padding: 2px 6px;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.viewer-slideshow-interval:hover {
+  color: #fff;
+}
+
+.viewer-slideshow-btn {
+  background: none;
+  border: none;
+  color: rgba(255, 255, 255, 0.6);
+  cursor: pointer;
+  padding: 2px;
+  display: flex;
+  align-items: center;
+  border-radius: 6px;
+}
+
+.viewer-slideshow-btn:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+/* 循环开启态用强调色点亮，与工具栏 is-active 口径一致 */
+.viewer-slideshow-btn.is-active {
+  color: var(--accent-color);
+}
+
 /* ── Info Panel ── */
 .info-panel {
   position: fixed;

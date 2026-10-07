@@ -32,6 +32,10 @@ import {
   Redo2,
   Pipette,
   History,
+  Play,
+  Pause,
+  Square,
+  Repeat,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
@@ -55,6 +59,10 @@ import {
 } from '@/lib/editParams';
 import { applyPresetToOps } from '@/lib/presetApply';
 import useGalleryStore from '@/store/galleryStore';
+import useSlideshowTimer, {
+  SLIDESHOW_DEFAULT_INTERVAL,
+  nextSlideshowInterval,
+} from '@/hooks/useSlideshowTimer';
 import builtinPresetsModule from '../../../shared/builtinPresets.cjs';
 import autoGradeModule from '../../../shared/autoGrade.cjs';
 import { HSL_BAND_LABELS, whiteBalanceFromSample, straightenGeometry } from '@/lib/editParams';
@@ -105,6 +113,8 @@ export default function ImageViewer({
   onNext,
   hasPrev,
   hasNext,
+  onJumpTo,
+  nextImage,
   onImageUpdated,
   onOpenInfo,
   onEnterEdit,
@@ -1127,6 +1137,42 @@ export default function ImageViewer({
     setEditOps(next);
   }, [pushHistory]);
 
+  // ── 幻灯片放映（会话内存态：间隔/循环不落 settings，查看器关闭即止）──
+  const [slideshowOn, setSlideshowOn] = useState(false);
+  const [slideshowPaused, setSlideshowPaused] = useState(false);
+  const [slideshowInterval, setSlideshowInterval] = useState(SLIDESHOW_DEFAULT_INTERVAL);
+  const [slideshowLoop, setSlideshowLoop] = useState(true);
+  const [slideshowEpoch, setSlideshowEpoch] = useState(0);
+
+  const stopSlideshow = useCallback(() => {
+    setSlideshowOn(false);
+    setSlideshowPaused(false);
+  }, []);
+
+  // 手动翻页/缩放重置当前间隔（交互优先）：bump 纪元 → 计时器重计完整间隔后恢复自动
+  const bumpSlideshowEpoch = useCallback(() => setSlideshowEpoch((n) => n + 1), []);
+
+  // 放映推进：末张循环回首（onJumpTo 由 App 提供，走与手动翻页同一查库通道）；
+  // 不循环则到末张自动停止。编辑会话中不推进（进入编辑本就暂停计时，此处兜底）
+  const advanceSlideshow = useCallback(() => {
+    if (editingRef.current || editPendingRef.current) return;
+    if (hasNext) {
+      onNext();
+    } else if (slideshowLoop && onJumpTo) {
+      onJumpTo(0);
+    } else {
+      stopSlideshow();
+    }
+  }, [hasNext, onNext, slideshowLoop, onJumpTo, stopSlideshow]);
+
+  useSlideshowTimer({
+    active: slideshowOn && !editing,
+    paused: slideshowPaused,
+    intervalSec: slideshowInterval,
+    resetKey: slideshowEpoch,
+    onTick: advanceSlideshow,
+  });
+
   // ── 裁剪交互 ──
   // 鼠标坐标 → 底图像素坐标：共享 maskGeometry.displayToImage
   //（内部完成 0..1 钳制与先退旋转再退翻转；编辑态整图显示，无 crop）
@@ -1347,16 +1393,28 @@ export default function ImageViewer({
           editingRef.current ? requestExitEdit() : onClose();
           break;
         case VIEWER_ACTIONS.Prev:
-          if (hasPrev && !editingRef.current && !editPendingRef.current) onPrev();
+          if (hasPrev && !editingRef.current && !editPendingRef.current) {
+            bumpSlideshowEpoch(); // 放映中手动翻页：重置当前间隔（交互优先）
+            onPrev();
+          }
           break;
         case VIEWER_ACTIONS.Next:
-          if (hasNext && !editingRef.current && !editPendingRef.current) onNext();
+          if (hasNext && !editingRef.current && !editPendingRef.current) {
+            bumpSlideshowEpoch();
+            onNext();
+          }
           break;
         case VIEWER_ACTIONS.ZoomIn:
-          if (!compareActive) setZoom((z) => Math.min(z + 0.25, 5));
+          if (!compareActive) {
+            bumpSlideshowEpoch(); // 放映中手动缩放：重置当前间隔
+            setZoom((z) => Math.min(z + 0.25, 5));
+          }
           break;
         case VIEWER_ACTIONS.ZoomOut:
-          if (!compareActive) setZoom((z) => Math.max(z - 0.25, 0.25));
+          if (!compareActive) {
+            bumpSlideshowEpoch();
+            setZoom((z) => Math.max(z - 0.25, 0.25));
+          }
           break;
         case VIEWER_ACTIONS.RotateCw:
           applyRotate(90);
@@ -1408,6 +1466,7 @@ export default function ImageViewer({
     requestExitEdit,
     applyHistory,
     compareActive,
+    bumpSlideshowEpoch,
   ]);
 
   // 加载策略：中图占位，原图异步替换；列表小图不用于查看器
@@ -1443,6 +1502,36 @@ export default function ImageViewer({
       pre.onerror = null;
     };
   }, [fullSrc]);
+
+  // 下一张原图预取（幻灯片平滑翻页）：nextImage 由 App 按同一筛选查询发放（既有 getImages
+  // 通道，不新增 IPC 端点），此处仅离屏预解码——与主图同 crossOrigin，缓存同键复用，
+  // 自动翻页到下一张时全图已在缓存。失败静默：翻页主路径自会按需加载
+  const prefetchRef = useRef(null);
+  useEffect(() => {
+    const fp = nextImage?.filepath;
+    if (!fp || !api.isBridgeAvailable()) return undefined;
+    let dead = false;
+    api
+      .toFileUrl(fp)
+      .then((url) => {
+        if (!url || dead) return;
+        const pre = new Image();
+        pre.crossOrigin = 'anonymous';
+        const settled = () => {
+          pre.onload = null;
+          pre.onerror = null;
+          if (prefetchRef.current === pre) prefetchRef.current = null;
+        };
+        pre.onload = settled;
+        pre.onerror = settled;
+        pre.src = url;
+        prefetchRef.current = pre;
+      })
+      .catch(() => {});
+    return () => {
+      dead = true;
+    };
+  }, [nextImage?.filepath]);
 
   // ── 生命周期守护 ──
   // App 层 Escape 先经此守卫：编辑态时交给组件自身走"未保存确认"流程而非直接关闭
@@ -1554,12 +1643,13 @@ export default function ImageViewer({
       e.preventDefault();
       e.stopPropagation();
       if (compareActive) return;
+      bumpSlideshowEpoch(); // 放映中滚轮缩放：重置当前间隔（交互优先）
       setZoom((z) => {
         const delta = e.deltaY < 0 ? 0.15 : -0.15;
         return Math.max(0.25, Math.min(5, z + delta));
       });
     },
-    [compareActive]
+    [compareActive, bumpSlideshowEpoch]
   );
 
   useEffect(() => {
@@ -1605,6 +1695,7 @@ export default function ImageViewer({
 
   // 双击重置
   const handleDoubleClick = () => {
+    bumpSlideshowEpoch(); // 放映中双击复位（缩放族交互）：重置当前间隔
     setZoom(1);
     setPos({ x: 0, y: 0 });
     if (!editing) {
@@ -2055,6 +2146,21 @@ export default function ImageViewer({
             <Info className="size-5" />
           </Button>
         )}
+        {!editing && (
+          <Button
+            variant="ghost"
+            size="icon"
+            className={slideshowOn ? 'is-active' : ''}
+            onClick={() => (slideshowOn ? stopSlideshow() : setSlideshowOn(true))}
+            title={
+              slideshowOn
+                ? '停止幻灯片放映'
+                : '幻灯片放映（默认 5 秒/张；左下角角标可调间隔/循环/暂停）'
+            }
+          >
+            {slideshowOn ? <Square className="size-5" /> : <Play className="size-5" />}
+          </Button>
+        )}
         {/* 任务书第 30 节：点击切换 Fit ↔ 100% 实际像素（1 screen pixel ≈ 1 image pixel） */}
         <span
           className="viewer-zoom-label"
@@ -2069,6 +2175,7 @@ export default function ImageViewer({
             const natW = el?.naturalWidth || 0;
             const dispW = el?.getBoundingClientRect().width || 0;
             if (!natW || !dispW) return;
+            bumpSlideshowEpoch(); // 放映中 Fit↔100% 切换（缩放族交互）：重置当前间隔
             // 当前显示宽 = fitW × zoom → 实际像素倍率 = natural / fitW
             const zoomActual = (natW * zoomRef.current) / dispW;
             setZoom((z) =>
@@ -2096,6 +2203,7 @@ export default function ImageViewer({
           style={{ left: 20 }}
           onClick={(e) => {
             e.stopPropagation();
+            bumpSlideshowEpoch(); // 放映中手动翻页：重置当前间隔
             onPrev();
           }}
         >
@@ -2108,6 +2216,7 @@ export default function ImageViewer({
           style={{ right: 20 }}
           onClick={(e) => {
             e.stopPropagation();
+            bumpSlideshowEpoch();
             onNext();
           }}
         >
@@ -3291,6 +3400,41 @@ export default function ImageViewer({
           onConfirm={bakeEdits}
           onCancel={() => setBakeConfirm(false)}
         />
+      )}
+
+      {/* 幻灯片放映角标（左下角轻量指示，不遮挡图片主体）：状态文本点按切换间隔，
+          循环/暂停/停止为独立小按钮；整体 stopPropagation 不触发 overlay 点击关闭 */}
+      {slideshowOn && !editing && (
+        <div
+          className={`viewer-slideshow${slideshowPaused ? ' is-paused' : ''}`}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <span className="viewer-slideshow-dot" aria-hidden="true" />
+          <button
+            className="viewer-slideshow-interval"
+            title="点击切换间隔（3 / 5 / 10 秒）"
+            onClick={() => setSlideshowInterval(nextSlideshowInterval)}
+          >
+            {slideshowPaused ? '已暂停' : '放映中'} · {slideshowInterval}s
+          </button>
+          <button
+            className={`viewer-slideshow-btn${slideshowLoop ? ' is-active' : ''}`}
+            title={slideshowLoop ? '循环放映：开（点击关闭）' : '循环放映：关（点击开启）'}
+            onClick={() => setSlideshowLoop((v) => !v)}
+          >
+            <Repeat className="size-3.5" />
+          </button>
+          <button
+            className="viewer-slideshow-btn"
+            title={slideshowPaused ? '继续放映' : '暂停放映'}
+            onClick={() => setSlideshowPaused((p) => !p)}
+          >
+            {slideshowPaused ? <Play className="size-3.5" /> : <Pause className="size-3.5" />}
+          </button>
+          <button className="viewer-slideshow-btn" title="停止放映" onClick={stopSlideshow}>
+            <Square className="size-3.5" />
+          </button>
+        </div>
       )}
 
       {/* 底部信息 */}

@@ -2723,3 +2723,42 @@
   无 7zz 24.09，改用 AOMEI 随附 7z.exe（NSIS 支持在册）解包，与 R101「7z 解包 NSIS」同法等效。
   待人工复核：无新增。提交范围：NIGHTLY_LOG.md（pathspec 点名）。未 push。代码冻结自本条目
   起生效（R103 冻结宣言后 R104-R108 为已入库审计轮次，本轮为其补包，此后再无计划内改动）。
+
+## 2026-10-08（无人值守轮次 112·新功能轮）R112 全屏查看器幻灯片放映
+
+基线 HEAD e4cddb1（R111），分支 optimize/architecture，工作树仅 .zcodeignore 未跟踪。
+
+新功能闭环（保守最小口径）：全屏查看器（ImageViewer.jsx）工具栏新增「幻灯片放映」开关
+按钮（Play/Square 图标 + tooltip，仅查看态）；开启后按固定间隔自动下一张，间隔 3/5/10 秒
+点角标文本循环切换（默认 5s，会话内存态不落 settings）；末张循环回首默认开（角标 Repeat
+按钮可关，关闭后到末张自动停止，循环走 onJumpTo(0)=App navigateViewer 同一查库通道）；
+手动翻页（导航按钮/←→JK）/缩放（滚轮/±/Fit↔100%/双击复位）bump 交互纪元重置当前完整
+间隔（交互优先，之后恢复自动）；角标「放映中 · 5s」（暂停态「已暂停 · 5s」+ 呼吸灯停摆）
++ 循环/暂停/停止小按钮，左下角与 viewer-info 同款深色胶囊不遮挡图片；进入编辑态计时暂停
+（active=on&&!editing）、Esc/关闭随查看器卸载清理定时器（effect cleanup 兜底）；自动翻页
+前缩放/平移复位复用既有换图 effect（image?.id 变化即 setZoom(1)/setPos(0,0)，无新增复位
+代码）；下一张原图预取：App 新增 viewerNextImage 预取 effect（viewerQueryParams 从
+navigateViewer 等价抽取共用，既有 getImages 通道不新增 IPC 端点），查看器对 nextImage
+离屏预解码（与主图同 crossOrigin 缓存同键）。计时状态机抽独立 hook
+src/hooks/useSlideshowTimer.js（自再武装单发定时器：每触发重起一轮，resetKey 驱动手动
+重置）。
+
+回归锁：新增 tests/unit/hooks/useSlideshowTimer.test.js 8 例（间隔触发/间隔切换/resetKey
+重置/暂停恢复/自再武装/停止清理/卸载清理/nextSlideshowInterval 循环档位）+
+tests/unit/components/Browser/ImageViewer.slideshow.test.jsx 7 例（工具栏开关与角标/自动
+翻页节奏/手动翻页重置/间隔切换/末张循环与自停/暂停恢复/卸载停止）。
+
+变异验证红→绿（变异体注入 useSlideshowTimer.js，跑两个新测试文件，备份
+useSlideshowTimer.js.r112.green 逐字节恢复后终绿）：M1 移除 cleanup clearTimeout → 9/15
+红；M2 移除自再武装 setCycle → 3/15 红；M3 间隔换算 ×1000→×100 → 11/15 红；M4 无视
+paused → 2/15 红；恢复后 15/15 绿。
+
+门禁：npm test 1029 例（71 文件）✓（基线 1014 + 新增 15）/ eslint 0 error（10 warning 与
+基线同口径）/ tsc --noEmit ✓ / prettier --check ✓；本轮未触 Rust 文件，免跑 cargo。
+
+AGENTS.md 测试计数同步（69 文件/996 例 → 71 文件/1029 例，该行自 R105 后未随轮同步，本轮
+一并校正）。提交范围 pathspec 点名：src/hooks/useSlideshowTimer.js、
+src/components/Browser/ImageViewer.jsx、src/App.jsx、src/styles/index.css、
+tests/unit/hooks/useSlideshowTimer.test.js、
+tests/unit/components/Browser/ImageViewer.slideshow.test.jsx、AGENTS.md、NIGHTLY_LOG.md。
+未 push。待人工复核：无。
