@@ -459,21 +459,26 @@ pub fn import_images(
             }
         }
     }
-    let sources: Vec<&PathBuf> = pending.iter().map(|(_, p)| p).collect();
-    let results = crate::thumbs::generate_tiers_parallel(&sources);
-    for ((idx, src_path), result) in pending.iter().zip(results) {
-        let Ok((small, medium, w, h)) = result else {
-            eprintln!(
-                "[导入] 缩略图生成失败（列保持空，导入不受影响）: {}",
-                src_path.display()
-            );
-            continue;
-        };
-        let row = &imported[*idx];
-        if let Some(updated) =
-            write_thumbs_and_update(conn, row, thumbs_dir, &small, &medium, w, h)?
-        {
-            imported[*idx] = updated;
+    // R111 互审：按 PARALLEL_CHUNK 分块「生成→回写」——结果容器峰值 ~10MB 不随批量
+    // 增长（全批一次并行的产物驻留对万级首导是 GB 级，旧串行版为 O(1)）；
+    // 原序/统计/事件面仍逐行不变（块间串行推进，块内乱序完成按 ticket 对齐原序）
+    for chunk in pending.chunks(thumbs::PARALLEL_CHUNK) {
+        let sources: Vec<&PathBuf> = chunk.iter().map(|(_, p)| p).collect();
+        let results = crate::thumbs::generate_tiers_parallel(&sources);
+        for ((idx, src_path), result) in chunk.iter().zip(results) {
+            let Ok((small, medium, w, h)) = result else {
+                eprintln!(
+                    "[导入] 缩略图生成失败（列保持空，导入不受影响）: {}",
+                    src_path.display()
+                );
+                continue;
+            };
+            let row = &imported[*idx];
+            if let Some(updated) =
+                write_thumbs_and_update(conn, row, thumbs_dir, &small, &medium, w, h)?
+            {
+                imported[*idx] = updated;
+            }
         }
     }
     Ok(imported)
@@ -1534,6 +1539,89 @@ mod tests {
         let t = today_ymd();
         assert_eq!(t.len(), 10);
         assert_eq!(&t[4..5], "-");
+    }
+
+    #[test]
+    fn 批量导入_三阶段回写_隐藏不生成_单张失败不扩散() {
+        // R110 三阶段化回归锁（R111 互审补）：全批落库后并行生成、按原序串行回写——
+        // 返回行与 DB 列都要回填；隐藏 NEF-only 记录不进生成队列也不错位对齐；
+        // 单张生成失败（解码 Err）该行列保持空、其余照常回写（失败不扩散口径）
+        let dir = std::env::temp_dir().join(format!("pixyang_batch3p_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("src")).unwrap();
+        let conn = mem_db();
+        let default_root = dir.join("managed_root");
+        std::fs::create_dir_all(&default_root).unwrap();
+        let src_dir = dir.join("src");
+        let v1 = make_jpeg(&src_dir, "v1.jpg", 30, 20);
+        let v2 = make_jpeg(&src_dir, "v2.jpg", 40, 24);
+        let v3 = make_jpeg(&src_dir, "v3.jpg", 24, 24);
+        let bad = dir.join("src").join("bad.jpg");
+        std::fs::write(&bad, b"NOTANIMAGE").unwrap();
+        let solo_nef = dir.join("src").join("solo.nef");
+        std::fs::write(&solo_nef, b"NEFBYTES").unwrap();
+        let files = json!([
+            { "filename": "v1.jpg", "filepath": v1.to_string_lossy() },
+            { "filename": "bad.jpg", "filepath": bad.to_string_lossy() },
+            { "filename": "v2.jpg", "filepath": v2.to_string_lossy() },
+            { "filename": "v3.jpg", "filepath": v3.to_string_lossy() },
+            { "filename": "solo.nef", "filepath": solo_nef.to_string_lossy() },
+        ]);
+        let today = crate::file_ops::today_ymd();
+        let rows = super::import_images(
+            &conn,
+            &files,
+            None,
+            &today,
+            &dir.join("thumbs"),
+            None,
+            &default_root,
+        )
+        .unwrap();
+        assert_eq!(rows.len(), 5, "v1/bad/v2/v3 可见 + solo.nef 隐藏");
+        let thumbs_dir = dir.join("thumbs");
+        let visible_names = ["v1.jpg", "v2.jpg", "v3.jpg"];
+        for name in visible_names {
+            let row = rows.iter().find(|r| r.filename == name).unwrap();
+            assert!(
+                !row.thumbnail_path.as_deref().unwrap_or("").is_empty(),
+                "{name} 返回行须回填缩略图路径"
+            );
+            assert!(row.width.is_some_and(|w| w > 0), "{name} 宽度回填");
+            let stored: String = conn
+                .query_row(
+                    "SELECT thumbnail_path FROM images WHERE id = ?1",
+                    [row.id],
+                    |r| r.get(0),
+                )
+                .unwrap();
+            assert!(!stored.is_empty(), "{name} DB 列须回填");
+            assert!(Path::new(&stored).exists(), "{name} 双档主文件须落盘");
+            assert!(
+                thumbs_dir.join(format!("{}_s.jpg", row.id)).exists(),
+                "{name} 双档 small 须落盘"
+            );
+        }
+        let bad_row = rows.iter().find(|r| r.filename == "bad.jpg").unwrap();
+        assert!(
+            bad_row.thumbnail_path.as_deref().unwrap_or("").is_empty(),
+            "生成失败的行列保持空（失败不致命）"
+        );
+        let hidden_row = rows.iter().find(|r| r.filename == "solo.nef").unwrap();
+        assert_eq!(hidden_row.hidden, Some(1), "NEF-only 组按隐藏记录落库");
+        assert!(
+            hidden_row
+                .thumbnail_path
+                .as_deref()
+                .unwrap_or("")
+                .is_empty(),
+            "隐藏记录不生成缩略图"
+        );
+        assert!(
+            !thumbs_dir.join(format!("{}.jpg", hidden_row.id)).exists(),
+            "隐藏记录不得占用缩略图文件"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

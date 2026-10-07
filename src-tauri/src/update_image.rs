@@ -563,58 +563,67 @@ pub fn rebuild_thumbnails_unlocked(
     std::fs::create_dir_all(thumbs_dir)
         .map_err(|e| PixError::Io(format!("建缩略图目录失败: {e}")))?;
     // R110：生成并行（纯 CPU+读盘），回写/核验/进度按原序串行——进度 payload 与
-    // 统计口径不变（逐张 index+1 单调发射），24MP 万级重建从小时级降到 ~1/4 墙钟
-    let sources: Vec<PathBuf> = rows.iter().map(|(_, f)| PathBuf::from(f)).collect();
-    let results = thumbs::generate_tiers_parallel(&sources);
-    for (index, ((id, filepath), result)) in rows.iter().zip(results).enumerate() {
-        match result {
-            Ok((small, medium, w, h)) => {
-                let medium_path = thumbs_dir.join(format!("{id}.jpg"));
-                let small_path = thumbs_dir.join(format!("{id}_s.jpg"));
-                // 短锁：写回前核验记录仍在且未改名，文件写 + 单条 UPDATE 同锁内完成
-                let applied = (|| -> Result<bool, PixError> {
-                    let conn = db.write_lock();
-                    let fresh = crate::images_query::get_image_by_id(&conn, *id)?;
-                    if fresh.is_some_and(|cur| cur.filepath == *filepath) {
-                        match std::fs::write(&medium_path, &medium)
-                            .and_then(|_| std::fs::write(&small_path, &small))
-                        {
-                            Ok(_) => {
-                                update_image_thumbs(
-                                    &conn,
-                                    *id,
-                                    &medium_path.to_string_lossy(),
-                                    &small_path.to_string_lossy(),
-                                    w as i64,
-                                    h as i64,
-                                )?;
-                                Ok(true)
+    // 统计口径不变（逐张 index+1 单调发射），24MP 万级重建从小时级降到 ~1/4 墙钟。
+    // R111 互审：按 PARALLEL_CHUNK 分块「生成→回写」——结果容器峰值 ~10MB 不随批量
+    // 增长（全批驻留编码产物对万级重建是 GB 级，旧串行版为 O(1)），且进度事件随块
+    // 渐进流出（恢复旧串行节奏，payload 序列不变）；核验-写盘-回写同短锁原子的
+    // R105 结论不受分块影响（每张写回仍在单锁闭包内）
+    let mut done_base = 0usize;
+    for chunk in rows.chunks(thumbs::PARALLEL_CHUNK) {
+        let sources: Vec<PathBuf> = chunk.iter().map(|(_, f)| PathBuf::from(f)).collect();
+        let results = thumbs::generate_tiers_parallel(&sources);
+        for (offset, ((id, filepath), result)) in chunk.iter().zip(results).enumerate() {
+            let index = done_base + offset;
+            match result {
+                Ok((small, medium, w, h)) => {
+                    let medium_path = thumbs_dir.join(format!("{id}.jpg"));
+                    let small_path = thumbs_dir.join(format!("{id}_s.jpg"));
+                    // 短锁：写回前核验记录仍在且未改名，文件写 + 单条 UPDATE 同锁内完成
+                    let applied = (|| -> Result<bool, PixError> {
+                        let conn = db.write_lock();
+                        let fresh = crate::images_query::get_image_by_id(&conn, *id)?;
+                        if fresh.is_some_and(|cur| cur.filepath == *filepath) {
+                            match std::fs::write(&medium_path, &medium)
+                                .and_then(|_| std::fs::write(&small_path, &small))
+                            {
+                                Ok(_) => {
+                                    update_image_thumbs(
+                                        &conn,
+                                        *id,
+                                        &medium_path.to_string_lossy(),
+                                        &small_path.to_string_lossy(),
+                                        w as i64,
+                                        h as i64,
+                                    )?;
+                                    Ok(true)
+                                }
+                                Err(e) => {
+                                    eprintln!("[缩略图] 写入失败: {filepath} {e}");
+                                    Ok(false)
+                                }
                             }
-                            Err(e) => {
-                                eprintln!("[缩略图] 写入失败: {filepath} {e}");
-                                Ok(false)
-                            }
+                        } else {
+                            Ok(false)
                         }
-                    } else {
-                        Ok(false)
+                    })()?;
+                    if applied {
+                        rebuilt += 1;
                     }
-                })()?;
-                if applied {
-                    rebuilt += 1;
+                }
+                Err(e) => {
+                    failed += 1;
+                    eprintln!("[缩略图] 重建失败: {filepath} {e}");
                 }
             }
-            Err(e) => {
-                failed += 1;
-                eprintln!("[缩略图] 重建失败: {filepath} {e}");
+            if let Some(app) = app {
+                progress::emit_progress(
+                    app,
+                    progress::REBUILD_PROGRESS,
+                    progress::rebuild_payload(index as i64 + 1, total, failed),
+                );
             }
         }
-        if let Some(app) = app {
-            progress::emit_progress(
-                app,
-                progress::REBUILD_PROGRESS,
-                progress::rebuild_payload(index as i64 + 1, total, failed),
-            );
-        }
+        done_base += chunk.len();
     }
     if let Some(app) = app {
         progress::emit_progress(app, progress::THUMBNAILS_READY, Value::Null);

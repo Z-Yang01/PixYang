@@ -121,6 +121,13 @@ pub fn generate_tiers(filepath: &Path) -> TiersResult {
 /// 双档缩略图产物：(small, medium, 显示宽, 显示高)
 pub type TiersResult = Result<(Vec<u8>, Vec<u8>, u32, u32), PixError>;
 
+/// 并行批的「生成→回写」分块大小（R111 互审补）。generate_tiers_parallel 的结果容器
+/// 驻留全部编码产物直到调用方写盘：万级批一次并行会驻留 GB 级 Vec<u8>（双档 ~100KB/张
+/// ×万张），而旧串行版同一时刻只持一张的产物（O(1) 内存）。调用方按本值分块后峰值
+/// ~64×100KB ≈ 10MB 且不随批量增长；64 ≫ worker 上限 8，每块仍满载并行，吞吐无损；
+/// 重建进度也随之按块渐进流出（恢复旧串行的节奏，不再是全批生成完才 bursts 到 100%）
+pub const PARALLEL_CHUNK: usize = 64;
+
 /// 批量并行生成双档缩略图（R110）。仅解码/缩放/编码这类纯 CPU+读盘工作并行，
 /// 不做任何写盘/DB——写回仍由调用方按本 Vec 顺序串行完成，故落库语义与串行版逐行一致。
 /// 返回顺序与入参一致；单个失败不扩散（Err 原样落到对应下标）。
@@ -260,6 +267,7 @@ fn read_exif_orientation_from_bytes(bytes: &[u8]) -> u32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::PathBuf;
 
     fn solid_rgba(w: u32, h: u32, rgba: [u8; 4]) -> DynamicImage {
         let mut img = RgbaImage::new(w, h);
@@ -338,6 +346,96 @@ mod tests {
         std::fs::write(&nef_path, &nef2).unwrap();
         let (w, h) = extract_nef_preview(&nef_path, &out).unwrap().unwrap();
         assert_eq!((w, h), (320, 200));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn nef预览提取_转正后尺寸即返回尺寸_旋转宽高互换() {
+        // R110 免复核解码回归锁（R111 互审补）：返回 (w,h) 不再来自「编码后再解码」，
+        // 必须与产物 JPEG 实际解码尺寸逐字节同口径——含 EXIF orientation 6 顺时针转正
+        // 的宽高互换（5-8 互换、2-4 不互换中的代表面）
+        let dir = std::env::temp_dir().join("pixyang_nef_orient_test");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let plain = encode_jpeg(&solid_rgba(320, 200, [9, 8, 7, 255]), 80).unwrap();
+        let orient = exif::Field {
+            tag: exif::Tag::Orientation,
+            ifd_num: exif::In::PRIMARY,
+            value: exif::Value::Short(vec![6]),
+        };
+        let mut writer = exif::experimental::Writer::new();
+        writer.push_field(&orient);
+        let mut tiff = std::io::Cursor::new(Vec::new());
+        writer.write(&mut tiff, false).unwrap();
+        let mut payload = b"Exif\0\0".to_vec();
+        payload.extend_from_slice(&tiff.into_inner());
+        let with_exif = crate::exif_relay::inject_jpeg_exif(&plain, &[payload]);
+
+        let mut nef = vec![0xaa; 1024];
+        nef.extend_from_slice(&with_exif);
+        let nef_path = dir.join("rot.nef");
+        std::fs::write(&nef_path, &nef).unwrap();
+        let out = dir.join("rot.jpg");
+        let (w, h) = extract_nef_preview(&nef_path, &out).unwrap().unwrap();
+        assert_eq!((w, h), (200, 320), "orientation 6 转正后宽高互换");
+        let decoded = image::load_from_memory(&std::fs::read(&out).unwrap()).unwrap();
+        assert_eq!(
+            decoded.dimensions(),
+            (200, 320),
+            "返回尺寸须等于产物实际尺寸"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn 并行生成_原序对齐_与串行逐字节一致_失败隔离() {
+        // R110 并行化回归锁（R111 互审补）：ticket 取号 + out[i]=r 的乱序完成对齐——
+        // 返回顺序与入参一致；产物与串行逐字节一致；单个失败（解码 Err）只落在自己
+        // 下标不扩散；空批/单文件走串行回退口径不变
+        let dir = std::env::temp_dir().join("pixyang_tiers_parallel");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut paths: Vec<PathBuf> = Vec::new();
+        for i in 0..24 {
+            let img = solid_rgba(
+                48 + i,
+                32 + (i % 7) * 3,
+                [(i * 11 % 256) as u8, (i * 29 % 256) as u8, 60, 255],
+            );
+            let p = dir.join(format!("p{i:02}.jpg"));
+            img.save(&p).unwrap();
+            paths.push(p);
+        }
+        // 失败样本混在中间（不在尾部）：8=路径不存在，17=内容非图
+        let missing = dir.join("missing.jpg");
+        let corrupt = dir.join("corrupt.jpg");
+        std::fs::write(&corrupt, b"NOTANIMAGE").unwrap();
+        paths.insert(8, missing.clone());
+        paths.insert(17, corrupt.clone());
+
+        let par = generate_tiers_parallel(&paths);
+        assert_eq!(par.len(), paths.len());
+        for (i, r) in par.into_iter().enumerate() {
+            if i == 8 || i == 17 {
+                assert!(r.is_err(), "失败须落在自己下标 @{i}");
+                continue;
+            }
+            let (ps, pm, pw, ph) = match r {
+                Ok(t) => t,
+                Err(e) => panic!("@{i} 应成功: {e}"),
+            };
+            let (ss, sm, sw, sh) = generate_tiers(&paths[i]).unwrap();
+            assert_eq!(ps, ss, "small 逐字节不一致 @{i}");
+            assert_eq!(pm, sm, "medium 逐字节不一致 @{i}");
+            assert_eq!((pw, ph), (sw, sh), "显示尺寸不一致 @{i}");
+        }
+
+        // 空批与单文件：串行回退口径
+        let empty: [PathBuf; 0] = [];
+        assert!(generate_tiers_parallel(&empty).is_empty());
+        let single = generate_tiers_parallel(&paths[0..1]);
+        assert_eq!(single.len(), 1);
+        assert!(single[0].is_ok());
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
