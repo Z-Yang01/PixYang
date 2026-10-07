@@ -562,9 +562,12 @@ pub fn rebuild_thumbnails_unlocked(
     let mut failed = 0i64;
     std::fs::create_dir_all(thumbs_dir)
         .map_err(|e| PixError::Io(format!("建缩略图目录失败: {e}")))?;
-    for (index, (id, filepath)) in rows.iter().enumerate() {
-        let src = PathBuf::from(filepath);
-        match thumbs::generate_tiers(&src) {
+    // R110：生成并行（纯 CPU+读盘），回写/核验/进度按原序串行——进度 payload 与
+    // 统计口径不变（逐张 index+1 单调发射），24MP 万级重建从小时级降到 ~1/4 墙钟
+    let sources: Vec<PathBuf> = rows.iter().map(|(_, f)| PathBuf::from(f)).collect();
+    let results = thumbs::generate_tiers_parallel(&sources);
+    for (index, ((id, filepath), result)) in rows.iter().zip(results).enumerate() {
+        match result {
             Ok((small, medium, w, h)) => {
                 let medium_path = thumbs_dir.join(format!("{id}.jpg"));
                 let small_path = thumbs_dir.join(format!("{id}_s.jpg"));

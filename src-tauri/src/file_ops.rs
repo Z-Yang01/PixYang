@@ -121,6 +121,43 @@ pub fn import_one(
     today: &str,
     thumbs_dir: &Path,
 ) -> Result<Option<ImageRow>, PixError> {
+    import_one_impl(
+        conn,
+        root,
+        img,
+        pair,
+        if hidden {
+            ImportMode::Hidden
+        } else {
+            ImportMode::VisibleInline
+        },
+        today,
+        thumbs_dir,
+    )
+}
+
+/// 导入模式（R110）：隐藏记录（NEF-only）不生成缩略图；VisibleDeferred 把缩略图
+/// 从逐张内联改为全批落库后并行生成（万级首导主耗时，24MP 单张 ~1.3s），
+/// 单张路径 VisibleInline 行为与历史逐字节一致。
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ImportMode {
+    VisibleInline,
+    VisibleDeferred,
+    Hidden,
+}
+
+/// 单张导入编排共用体：import_one 转发 VisibleInline/Hidden，import_images 批量走 VisibleDeferred
+fn import_one_impl(
+    conn: &Connection,
+    root: &Path,
+    img: &Value,
+    pair: Option<&Value>,
+    mode: ImportMode,
+    today: &str,
+    thumbs_dir: &Path,
+) -> Result<Option<ImageRow>, PixError> {
+    let hidden = mode == ImportMode::Hidden;
+    let defer_thumbs = mode == ImportMode::VisibleDeferred;
     let raw_date = str_or_empty(img.get("importDate"));
     let date_str = if raw_date.is_empty() {
         today.to_string()
@@ -286,43 +323,64 @@ pub fn import_one(
 
     // 改进型分歧：导入即由 Rust 生成双档缩略图并回写路径/尺寸（失败不致命，列保持空）
     if let (Some(row), false) = (&row, hidden) {
+        if defer_thumbs {
+            return Ok(Some(row.clone()));
+        }
         if let Ok((small, medium, w, h)) = thumbs::generate_tiers(&dest_path) {
-            std::fs::create_dir_all(thumbs_dir).ok();
-            let big_path = thumbs_dir.join(format!("{}.jpg", row.id));
-            let small_path = thumbs_dir.join(format!("{}_s.jpg", row.id));
-            let w_ok = std::fs::write(&big_path, medium).is_ok();
-            let s_ok = std::fs::write(&small_path, small).is_ok();
-            if w_ok && s_ok {
-                // R105 实锤：回写列的 UPDATE 此前 map_err(? ) 上抛——与上方注释
-                // 「失败不致命，列保持空」相反。记录与文件此时已落库落盘，UPDATE 失败
-                // 若中断：批内后续文件不再导入，且命令层报错后用户重试会因唯一名避让
-                // 给同一来源派生 _1 重复记录。改为留日志、按已导入返回（列保持空）
-                match conn.execute(
-                    "UPDATE images SET thumbnail_path = ?1, thumbnail_small_path = ?2, width = ?3, height = ?4 WHERE id = ?5",
-                    rusqlite::params![big_path.to_string_lossy(), small_path.to_string_lossy(), w, h, row.id],
-                ) {
-                    Ok(_) => {
-                        return conn
-                            .query_row(
-                                "SELECT * FROM images WHERE filepath = ?1",
-                                [&dest_path.to_string_lossy()],
-                                crate::images_query::row_from,
-                            )
-                            .optional()
-                            .map_err(PixError::Db);
-                    }
-                    Err(e) => {
-                        eprintln!(
-                            "[导入] 缩略图回写失败（列保持空，导入不受影响）: id={} {e}",
-                            row.id
-                        );
-                        return Ok(Some(row.clone()));
-                    }
-                }
+            if let Some(updated) =
+                write_thumbs_and_update(conn, row, thumbs_dir, &small, &medium, w, h)?
+            {
+                return Ok(Some(updated));
             }
         }
     }
     Ok(row)
+}
+
+/// 缩略图写回：写双档文件 + UPDATE 路径/尺寸 + 按 filepath 回读最新行。
+/// 文件写失败/UPDATE 失败均不致命（返回 None，调用方保持原行，列保持空）。
+/// 从 import_one 尾段原样拆出（R110 并行化共用），语义逐行一致。
+fn write_thumbs_and_update(
+    conn: &Connection,
+    row: &ImageRow,
+    thumbs_dir: &Path,
+    small: &[u8],
+    medium: &[u8],
+    w: u32,
+    h: u32,
+) -> Result<Option<ImageRow>, PixError> {
+    std::fs::create_dir_all(thumbs_dir).ok();
+    let big_path = thumbs_dir.join(format!("{}.jpg", row.id));
+    let small_path = thumbs_dir.join(format!("{}_s.jpg", row.id));
+    let w_ok = std::fs::write(&big_path, medium).is_ok();
+    let s_ok = std::fs::write(&small_path, small).is_ok();
+    if !(w_ok && s_ok) {
+        return Ok(None);
+    }
+    // R105 实锤：回写列的 UPDATE 此前 map_err(? ) 上抛——与上方注释
+    // 「失败不致命，列保持空」相反。记录与文件此时已落库落盘，UPDATE 失败
+    // 若中断：批内后续文件不再导入，且命令层报错后用户重试会因唯一名避让
+    // 给同一来源派生 _1 重复记录。改为留日志、按已导入返回（列保持空）
+    match conn.execute(
+        "UPDATE images SET thumbnail_path = ?1, thumbnail_small_path = ?2, width = ?3, height = ?4 WHERE id = ?5",
+        rusqlite::params![big_path.to_string_lossy(), small_path.to_string_lossy(), w, h, row.id],
+    ) {
+        Ok(_) => conn
+            .query_row(
+                "SELECT * FROM images WHERE filepath = ?1",
+                [row.filepath.as_str()],
+                crate::images_query::row_from,
+            )
+            .optional()
+            .map_err(PixError::Db),
+        Err(e) => {
+            eprintln!(
+                "[导入] 缩略图回写失败（列保持空，导入不受影响）: id={} {e}",
+                row.id
+            );
+            Ok(None)
+        }
+    }
 }
 
 /// 镜像 importImages：分组编排（jpg 组可见导入，nef-only 组隐藏导入）。
@@ -367,16 +425,55 @@ pub fn import_images(
             }
         }
     }
+    // R110：落库（复制+INSERT，串行语义不变）与缩略图生成分离——24MP 单张双档
+    // 生成 ~1.3s（实测），万级首导串行即小时级。全批落库后并行生成、按原序串行回写：
+    // 行序/行值/列语义不变（回写失败仍不致命，列保持空）；旧实现逐张在落库后内联
+    // 生成，此阶段本就无逐文件进度事件（导入进度只发 EXIF 批次），事件面同样不变。
+    let mut pending: Vec<(usize, PathBuf)> = Vec::new(); // imported 下标 → 缩略图源文件
     for (jpg, nef) in &prepared {
         if let Some(jpg) = jpg {
-            if let Some(row) = import_one(conn, &root, jpg, nef.as_ref(), false, today, thumbs_dir)?
-            {
+            if let Some(row) = import_one_impl(
+                conn,
+                &root,
+                jpg,
+                nef.as_ref(),
+                ImportMode::VisibleDeferred,
+                today,
+                thumbs_dir,
+            )? {
+                pending.push((imported.len(), PathBuf::from(row.filepath.clone())));
                 imported.push(row);
             }
         } else if let Some(nef) = nef {
-            if let Some(row) = import_one(conn, &root, nef, None, true, today, thumbs_dir)? {
+            if let Some(row) = import_one_impl(
+                conn,
+                &root,
+                nef,
+                None,
+                ImportMode::Hidden,
+                today,
+                thumbs_dir,
+            )? {
+                // 隐藏记录（NEF-only）不生成缩略图（与旧内联分支的 hidden 门一致），不进队列
                 imported.push(row);
             }
+        }
+    }
+    let sources: Vec<&PathBuf> = pending.iter().map(|(_, p)| p).collect();
+    let results = crate::thumbs::generate_tiers_parallel(&sources);
+    for ((idx, src_path), result) in pending.iter().zip(results) {
+        let Ok((small, medium, w, h)) = result else {
+            eprintln!(
+                "[导入] 缩略图生成失败（列保持空，导入不受影响）: {}",
+                src_path.display()
+            );
+            continue;
+        };
+        let row = &imported[*idx];
+        if let Some(updated) =
+            write_thumbs_and_update(conn, row, thumbs_dir, &small, &medium, w, h)?
+        {
+            imported[*idx] = updated;
         }
     }
     Ok(imported)
