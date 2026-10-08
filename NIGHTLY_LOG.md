@@ -2822,3 +2822,74 @@ R109 同款口径）；R113 修复（bumpSlideshowEpoch 补 bump）随同一 dis
 补记说明（其完整信息见提交消息本身）。待人工复核：无新增。提交范围：NIGHTLY_LOG.md
 （pathspec 点名）。未 push。代码冻结自 R103 宣言维持，R109 本为补包、本轮 R116 为其后续
 六笔的终版快包，此后再无计划内改动。
+
+## 2026-10-09（无人值守轮次 118·抖动猎捕根治轮）R118 单测假红根治
+
+基线 HEAD 13c7fb2（R117 审查修复提交），分支 optimize/architecture，工作树仅 .zcodeignore
+未跟踪。轮次缘起：R117 实测 ImportDialog 区域 2 例首跑失败、3 轮复跑全绿（环境性抖动），
+抖动会侵蚀夜间门禁公信力，本轮为恰一轮抖动猎捕与根治。
+
+### 猎捕过程与数据（12 轮全量 + 70 轮定向 + 修复后 38 轮复验）
+
+- 全量冷跑 8 轮（空闲）：r7 假红 1 例——`ImageViewer > 编辑模式：曲线编辑器渲染、加点出现
+  清除、清除复位`，`Error: Test timed out in 5000ms`（实际 5071ms；当轮全量 41.3s 对比常态
+  35s，负载尖峰轮）。余 7 轮绿。
+- 冷缓存 2 轮（rm node_modules/.vite 复现夜间首跑条件）：全绿——冷缓存非诱因。
+- 12 核 CPU 打满（busy-loop×12）2 轮全量：全绿，但暴露 p-max 单例 3.4s（r11；常态 p-max
+  ≈1.1s）、ImportDialog.extra 单例 1.755s——对 1s 硬编码默认（findBy*/vi.waitFor）余量仅
+  12%，即 R117 类假红的成窗条件。
+- 定向循环（满载下）：ImportDialog 两文件 ×30 全绿（R117 两例未复现，判定非组件缺陷）；
+  ImageViewer.test ×10 → iter3 同一曲线用例再红（5061ms，同 5s testTimeout）。
+
+### 抖动清单（用例名 + 出现频率 + 根因分类）
+
+| 用例 | 频率 | 错误形态 | 根因分类 |
+| --- | --- | --- | --- |
+| ImageViewer > 编辑模式：曲线编辑器渲染、加点出现清除、清除复位 | 4 次实锤（r7 全量 1/8；定向 10 连跑 1/10；初版阈值下满载循环 2/18） | ①Test timed out in 5000ms（5071/5061ms）②vi.waitFor 超时 expected null to be truthy（5280/15265/15372/15291ms 四次） | ①组件真竞态（实锤修复，见下）+ ②测试预算结构失配：用例内确定性等待上限合计（1s findBy + 5s waitFor×2=11s）大于用例级 5s 默认 testTimeout + ③环境负载 |
+| ImportDialog 区域（R117 首跑 2 例，具体用例名 R117 未留痕） | 本轮 0/42 暴露（30 定向满载 + 12 全量） | （未复现；按 r11 数据推断为 findBy*/vi.waitFor 1s 默认超时类） | ②固定 1s 默认等待阈值过紧（实测单例可至 1.755s）+ ③负载——中心化放宽根治 |
+
+### 实锤组件竞态（本 bug 与负载无关，只是负载放大了暴露率）
+
+对失败轮做临时插桩（计时探针 + 实例号，满载复现 2 次取证完毕即剥离）实锤完整时序：
+mousedown 处理器已 set dragRef（writePoints 落点 t+0ms）→ **挂载期 `useEffect([epoch])`
+复位跑在 t+1ms 把 dragRef 清空** → 随后 mousemove 进 onMove 时 `drag=false` 早退 → 曲线
+永不更新 → 清除按钮永不出现 → waitFor 必然超时。机制：React 被动效果由调度器延迟执行，
+高负载下 CurveEditor 挂载效果迟到到 fireEvent 的 act 刷出点才运行，与同步事件序列交错；
+该用例恰是文件首测，冷 JIT/环境预热全压在它身上。生产影响≈0（人类操作时标下挂载效果早已
+落盘），但守卫修复语义等价且免费。epoch 复位守卫：`prevEpochRef` 比对，仅 epoch 真跳变
+（undo/redo/跳转）才清 dragRef——挂载首跑（含 StrictMode 双跑）不再落冗余复位；undo/跳转
+中断在途拖拽的语义原样保留。
+
+### 修复清单（组件修复 vs 测试侧修复逐例）
+
+1. 【组件】src/components/Browser/CurveEditor.jsx：epoch 复位效果加 prevEpochRef 真跳变守卫
+   （上节实锤竞态的根治；语义等价，回归由既有 78 例覆盖 + 修复后满载 30 连跑零红）。
+2. 【测试侧·确定性等待】tests/unit/components/Browser/ImageViewer.test.jsx 曲线用例：拖拽前
+   `await act(async () => {})` 显式落盘挂载被动效果（等「效果就位」这一确定性事件，即任务
+   纪律的 act 推进），两个 vi.waitFor 上限 5000→15000（等的是同一断言，只是给足余量）。
+3. 【测试侧·阈值放宽+依据注释】vitest.config.js：testTimeout 5000→20000、hookTimeout→20000
+   （实测分布：空闲 p-max 1.1s / 满载 3.4s / 尖峰 5.07s；只放宽「杀死上限」，真失败依旧立刻红）。
+4. 【测试侧·阈值放宽+依据注释】tests/setup.js：testing-library `configure({ asyncUtilTimeout:
+   5000 })`（覆盖 findBy*/waitFor 全量 294 处）+ `vi.waitFor` 包装默认 5s（vitest 3.2.7 无
+   配置键，覆盖 192 处；显式传 options 者原样透传）。断言内容零改动。
+
+不上报隔离（@fluky）：无一例——两处抖动源均可确定性根治，无「无法根治需隔离」项。
+不弱化断言自查：四处改动全部只动「等待方式/上限」，验证内容（断言、用例数 1030）一字未动；
+也无引入 retry（重试会掩盖真红）。
+
+### 复验与门禁（全绿放行）
+
+- 满载（busy-loop×12 持续 100%）修复复验：曲线用例定向 30 连跑全绿（修复前同条件满载循环
+  66 次暴露红 5 次）。
+- npm test 连续 8 轮全量（空闲串行，V1-V8，01:46-01:48）：8×（1030 passed / 71 files，
+  exit 0），单轮 18-24s。✓
+- eslint：0 error / 10 warning（与 R116 基线逐条同口径：ImageGrid 3 + ImageViewer 6 +
+  InfoPanel 1，全 react-hooks/exhaustive-deps；改动文件 0 告警）。✓
+- tsc --noEmit：exit 0。✓
+- prettier --check：exit 0。✓
+- 未触 Rust（无 Rust 改动），cargo 按纪律免跑。
+
+台账补记：R117（无提交轮，其 2 例抖动为本轮缘起）未附条目，于此并记。待人工复核：无新增。
+提交范围：src/components/Browser/CurveEditor.jsx、tests/unit/components/Browser/
+ImageViewer.test.jsx、tests/setup.js、vitest.config.js、NIGHTLY_LOG.md（pathspec 点名）。
+未 push。

@@ -486,21 +486,27 @@ describe('ImageViewer', () => {
     const { container } = render(<ImageViewer {...baseProps()} />);
     fireEvent.click(screen.getByTitle(/编辑模式/));
     await screen.findByText('编辑');
+    // 挂载期被动效果（含挂载清理、window 监听器注册）由调度器延迟运行：负载下可迟到到
+    // 下一次 act 刷出，与下面的同步 mousedown/mouseMove 序列交错（R118 实锤竞态）。
+    // 显式 act 空转一次，把挂载效果全部落盘后再开拖拽——等的是「效果就位」这一确定性事件。
+    await act(async () => {});
     const svg = container.querySelector('[data-curve-editor]');
     expect(svg).toBeInTheDocument();
     const curveHeader = svg.closest('.editor-crop-section').querySelector('.editor-crop-header');
     expect(curveHeader.textContent).toContain('曲线');
     expect(curveHeader.querySelector('button')).toBeNull(); // 无曲线数据时无清除
     // 点击中心加锚点并拖离对角线（(60,30) → 曲线点 (0.6,0.7)，非恒等）→ 清除按钮出现
-    // 全量套件（尤其 coverage 插桩）负载下 1s 默认超时偶发不足——显式放宽
+    // 负载/冷进程下该用例是本文件首测，worker 冷 JIT 与 happy-dom 环境预热的成本都
+    // 落在首个 rAF 等待上——R118 实测冷+满载需 5.28s（r7 全量假红 5.07s 同因），
+    // 5s 上限撞线改 15s：等待仍是确定性断言轮询，只是上限给足余量
     fireEvent.mouseDown(svg, { clientX: 50, clientY: 50 });
     fireEvent.mouseMove(window, { clientX: 60, clientY: 30 });
     await vi.waitFor(() => expect(curveHeader.querySelector('button')).toBeTruthy(), {
-      timeout: 5000,
+      timeout: 15000,
     });
     fireEvent.click(curveHeader.querySelector('button'));
     await vi.waitFor(() => expect(curveHeader.querySelector('button')).toBeNull(), {
-      timeout: 5000,
+      timeout: 15000,
     });
     rectSpy.mockRestore();
   });

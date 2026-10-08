@@ -29,8 +29,18 @@ export default function CurveEditor({ curves, onCommit, onChange, epoch = 0 }) {
   const moveRafRef = useRef(null);
   const lastMoveRef = useRef(null);
 
+  // epoch 复位仅在真跳变时执行：挂载首跑（含 StrictMode 双跑）不落复位——
+  // 挂载时 dragRef 尚未持有拖拽，复位本就是冗余写；而 React 被动效果按调度器延迟运行，
+  // 高负载下「挂载效果迟到」可与同步事件序列交错（R118 抖动猎捕实锤：mousedown 已 set
+  // dragRef → 挂载期 [epoch] 效果迟至 fireEvent 的 act 刷出时才跑 → dragRef 被清 →
+  // 随后的 mousemove 早退，曲线永远不更新，清除按钮永不出现）。守卫后语义不变：
+  // undo/redo/跳转（epoch 真变）依旧立即中断在途拖拽。
+  const prevEpochRef = useRef(epoch);
   useEffect(() => {
-    dragRef.current = null;
+    if (prevEpochRef.current !== epoch) {
+      dragRef.current = null;
+      prevEpochRef.current = epoch;
+    }
   }, [epoch]);
 
   const channelColor = (CHANNELS.find((c) => c.key === channel) || CHANNELS[0]).color;
