@@ -2893,3 +2893,61 @@ mousedown 处理器已 set dragRef（writePoints 落点 t+0ms）→ **挂载期 
 提交范围：src/components/Browser/CurveEditor.jsx、tests/unit/components/Browser/
 ImageViewer.test.jsx、tests/setup.js、vitest.config.js、NIGHTLY_LOG.md（pathspec 点名）。
 未 push。
+
+## 2026-10-09（无人值守轮次 119·互审轮）R119 R118 抖动根治互审——守卫真跳变语义补测
+
+基线 HEAD 7371844（R118），分支 optimize/architecture，工作树仅 .zcodeignore 未跟踪。
+本轮为恰一轮新鲜眼互审（实锤即修），对象 R118 五文件 diff（git show 逐行）+ 沿调用链读现状。
+
+### 逐项审计结论
+
+1. 【CurveEditor prevEpochRef 守卫语义】✓ 语义逐场景等价，无修复项：
+   - epoch 唯二写点均为 `setEditEpoch(e=>e+1)` 递增（jumpToHistory——undo/redo/跳转共用；
+     清除曲线按钮），无「epoch 不变本应复位」的路径；undo/redo 在栈边界处提前 return 不动
+     epoch 也不动 ops，行为正确。
+   - StrictMode 双跑/双挂载无泄漏：prevEpochRef 为组件实例 useRef（非模块级），每实例各自
+     初始化为当时 epoch；双跑两次 effect 均 `prev===epoch` 空转，dragRef 本就 null。
+   - 挂载竞态窗口（mousedown 先于挂载效果）内 mousemove 现按「无跳变不中断」放行——正是
+     期望语义；生产中 React 在离散事件处理前刷被动效果且效果先于首帧 paint，窗口不可达。
+2. 【超时放宽面】✓ 无掩盖实锤：
+   - 全量 1030 例空闲实测耗时分布：<1s×1030、1s 以上×0（最慢 982ms 键盘收敛窗用例）；
+     R118 引用的 3.4s/5.07s 均为 12 核打满负载下数据。「恰在 5-20s 完成」的测试当前不存在，
+     无真性能回归被 budget 吞的存量面。
+   - vi.waitFor 包装透传矩阵实测（脚本模拟 7 形态）：() →{timeout:5000}；2000→2000；
+     {timeout:15000}→15000（ImageViewer 曲线用例显式值不被覆盖）；{interval:50}→合并；
+     {timeout:0}→0；null→5000；{}→5000。全部符合预期。
+3. 【变异复验】3 处独立（全部 cp /tmp/nightshift/backup/ 换入换出，未用 git restore/checkout/stash）：
+   - M1 守卫「真跳变复位」被删（if(false)&&）：CurveEditor.test.jsx 恰 1 例红（新增守卫
+     用例 AssertionError: called 2 times but got 3），其余 11 例绿。
+   - M2 cp 入 r118-preinstrument（R118 前未守卫版）：12 例 + 曲线用例全绿——证实 R118 竞态
+     防护由测试侧 await act 确定性落盘承载，不依赖组件守卫；守卫跳变语义与旧版一致。
+   - M3 applyMove 首行 no-op（组件真坏）：曲线用例红于 vi.waitFor.timeout（expected null
+     to be truthy，ImageViewer.test.jsx:504）——放宽后的 15s waitFor/20s testTimeout 不吞真失败。
+
+### 实锤修复清单（1 项）
+
+1. 【测试】tests/unit/components/Browser/CurveEditor.test.jsx：补「epoch 真跳变中断在途拖拽；
+   epoch 不变的重渲染不打断」用例。依据：R118 commit 声称「undo/跳转中断在途拖拽原样保留+
+   回归由既有 78 例覆盖」，但 grep 实锤 CurveEditor.test.jsx 全文无 epoch prop（0 处）、
+   ImageViewer.test.jsx 亦无——守卫的真跳变分支（R118 声称保留的核心语义）零覆盖，复位行被删
+   或条件写反时全量套件照样绿。新用例双断言：epoch 0→1 重渲染后 mousemove 不写 onChange、
+   mouseup 不结算 onCommit；epoch 不变重渲染后拖拽照常写（防「复位误移出 effect」类回归）。
+
+### 复验与门禁（全绿放行）
+
+- npm test：exit 0，71 文件 / 1031 例全绿（1030+1 新增），无 retry。✓
+- eslint：exit 0，0 error / 10 warning（与 R116/R118 基线逐条同口径：ImageGrid 3 +
+  ImageViewer 6 + InfoPanel 1，全 react-hooks/exhaustive-deps；CurveEditor.test.jsx 0 告警）。✓
+- tsc --noEmit：exit 0。✓
+- prettier --check：exit 0。✓
+- 未触 Rust（无 Rust 改动），cargo 按纪律免跑。
+
+### 上报决策清单（无需人工处置项）
+
+- 上报不改：vi.waitUntil 无任何调用点（grep src/tests = 0），R118 只包装 vi.waitFor 无暴露面
+  遗漏；setup.js 包装对 null options 比上游更宽容（上游疑似 TypeError，现按默认 5s），无危害。
+- 上报不改：守卫的「挂载首跑不复位」语义在 TL act 语义下无法确定性单测（render 即刷效果），
+  由 ImageViewer 曲线用例的 await act 落盘间接保障（M2 佐证充分）。
+- 待人工复核：无新增。
+提交范围：tests/unit/components/Browser/CurveEditor.test.jsx、NIGHTLY_LOG.md（pathspec 点名）。
+未 push。

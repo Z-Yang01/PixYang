@@ -95,6 +95,33 @@ describe('CurveEditor（曲线编辑器）', () => {
     expect(onChange).toHaveBeenCalledTimes(2);
   });
 
+  // R118 epoch 复位守卫语义（prevEpochRef 真跳变才清 dragRef）：
+  // undo/redo/跳转/清除曲线都走 setEditEpoch(e=>e+1)——epoch 真跳变必须立即中断在途拖拽
+  //（后续 mousemove 不写、松手不结算历史）；epoch 不变的重渲染（父组件其他状态更新）不得误中断。
+  it('epoch 真跳变中断在途拖拽；epoch 不变的重渲染不打断（R118 守卫语义）', () => {
+    const onCommit = vi.fn();
+    const onChange = vi.fn();
+    const { container, rerender } = render(
+      <CurveEditor curves={EMPTY} onCommit={onCommit} onChange={onChange} epoch={0} />
+    );
+    const svg = () => container.querySelector('[data-curve-editor]');
+    fireEvent.mouseDown(svg(), { clientX: 50, clientY: 50 });
+    expect(onChange).toHaveBeenCalledTimes(1); // 在途：加锚点已写
+    // epoch 不变的重渲染：拖拽继续（守卫不得把冗余效果跑当成跳变）
+    rerender(<CurveEditor curves={EMPTY} onCommit={onCommit} onChange={onChange} epoch={0} />);
+    fireEvent.mouseMove(window, { clientX: 60, clientY: 40 });
+    flushRaf();
+    expect(onChange).toHaveBeenCalledTimes(2);
+    expect(onChange.mock.calls.at(-1)[0].rgb).toEqual([0, 0, 0.6, 0.6, 1, 1]);
+    // epoch 真跳变（外部撤销/跳转）：立即中断——不再写、松手不结算
+    rerender(<CurveEditor curves={EMPTY} onCommit={onCommit} onChange={onChange} epoch={1} />);
+    fireEvent.mouseMove(window, { clientX: 70, clientY: 30 });
+    flushRaf();
+    expect(onChange).toHaveBeenCalledTimes(2);
+    fireEvent.mouseUp(window);
+    expect(onCommit).not.toHaveBeenCalled();
+  });
+
   it('内部锚点拖出面板即删除', () => {
     const { onCommit, onChange, svg } = setup({ rgb: [0, 0, 0.5, 0.5, 1, 1], r: [], g: [], b: [] });
     // 命中中间点 (0.5,0.5) → 屏幕 (50,50)
