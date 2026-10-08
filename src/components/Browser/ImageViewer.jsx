@@ -319,6 +319,9 @@ export default function ImageViewer({
     setSelectedMaskId(null);
     setPresetName('');
     setApplyWithGeometry(false);
+    // 放映态属会话级：残留 slideshowOn 会让下次打开任意图意外自动开映
+    setSlideshowOn(false);
+    setSlideshowPaused(false);
   }, []);
 
   // ── 撤销/重做：历史栈存完整 ops 快照 ──
@@ -1507,7 +1510,6 @@ export default function ImageViewer({
   // 下一张原图预取（幻灯片平滑翻页）：nextImage 由 App 按同一筛选查询发放（既有 getImages
   // 通道，不新增 IPC 端点），此处仅离屏预解码——与主图同 crossOrigin，缓存同键复用，
   // 自动翻页到下一张时全图已在缓存。失败静默：翻页主路径自会按需加载
-  const prefetchRef = useRef(null);
   useEffect(() => {
     const fp = nextImage?.filepath;
     if (!fp || !api.isBridgeAvailable()) return undefined;
@@ -1521,12 +1523,12 @@ export default function ImageViewer({
         const settled = () => {
           pre.onload = null;
           pre.onerror = null;
-          if (prefetchRef.current === pre) prefetchRef.current = null;
         };
         pre.onload = settled;
         pre.onerror = settled;
-        pre.src = url;
-        prefetchRef.current = pre;
+        // 与 loadImage 同拼 ?v= 版本参数：HTTP 缓存按完整 URL 分键——预取裸 URL
+        // 永远暖不到查看器实际请求的带版本条目（审查 M1）
+        pre.src = `${url}${url.includes('?') ? '&' : '?'}v=${bustRef.current}`;
       })
       .catch(() => {});
     return () => {
