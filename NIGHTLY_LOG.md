@@ -2951,3 +2951,57 @@ ImageViewer.test.jsx、tests/setup.js、vitest.config.js、NIGHTLY_LOG.md（path
 - 待人工复核：无新增。
 提交范围：tests/unit/components/Browser/CurveEditor.test.jsx、NIGHTLY_LOG.md（pathspec 点名）。
 未 push。
+
+## 2026-10-09（无人值守轮次 120·终版快包轮）R120 R117-R119 终版重打包，代码冻结
+
+基线 HEAD 1aa38be（R119），分支 optimize/architecture，工作树仅 .zcodeignore 未跟踪。定位：
+现行安装包为 R116 时代构建（2026-10-08 02:37），缺其后四笔——13c7fb2（审查三修：M1 预取
+缓存键 ?v= 拼接〔生产修复〕+ cleanupEditSession 补放映态会话级复位〔生产修复〕+ 顺删
+prefetchRef 死代码）、2d45844（纯文档）、7371844（R118 CurveEditor 挂载竞态守卫〔生产修复〕
++ 抖动测试根治）、1aa38be（R119 守卫真跳变语义补测/回归锁），本轮为今夜最后一轮快包，完成
+后代码冻结。
+
+终版终验（任何红即停轮，全绿放行）：
+
+- npm test：exit 0，71 文件 / 1031 例全绿（与基线 1031 同值）。✓
+- eslint：exit 0，0 error / 10 warning（与 R116/R118/R119 基线逐条同口径：ImageGrid 3 +
+  ImageViewer 6 + InfoPanel 1，全 react-hooks/exhaustive-deps）。✓
+- tsc --noEmit：exit 0。✓
+- prettier --check：exit 0。✓
+- cargo test --jobs 1（CARGO_BUILD_JOBS=1）：lib 221 passed ✓ +
+  golden_audit_rust_vs_sharp_baseline 1 passed ✓。✓
+- clippy --all-targets：exit 0（0 error；warning 同既有口径：lib 10 + example webgl_parity
+  3 + lib test 63〔内含 10 重复〕，无新增类目）。✓
+- cargo fmt --check：exit 0。✓
+
+旧包留档：打包前改名 src-tauri/target/release/bundle/nsis/PixYang_0.1.0_x64-setup.exe →
+同名 .bak-R116（4,207,014 B，mtime 2026-10-08 02:37:21，SHA-256
+27b4760d25c5d36f51b168ff08f1929ebdce074132df0f49014e1aa32a635dc6，与 R116 台账记录逐字节
+一致），.bak-R88/.bak-R101/.bak-R103/.bak-R109 原样未动。
+
+重打包 `npm run tauri:build`（vite build → cargo release → makensis）exit 0，产物
+PixYang_0.1.0_x64-setup.exe：4,191,329 B，mtime 2026-10-09 02:25:05，SHA-256
+51ea91dbad2c53973cfa39c26dd269b08ac08ddbd57f01273fd1bb9303ac4e17（较 R116 包 -15,685 B）。
+产物互证：bz.exe（Bandizip）解 NSIS 双包，内层 pixyang.exe 均 16,575,488 B；新内层
+SHA-256 c34ec3f3f27128e7a572cf89c501dcf5472bb4f45fa97671243ad6c8ebc46b3e，与
+target/release/pixyang.exe（16,575,488 B，SHA-256
+2bea68e741f0ecb88d283e639e48d34aa6339b0501eac30c17c955d7ebe170d2）字节数同而 SHA 异——
+tauri nsis bundle 补丁预期（R93/R101/R103/R109/R116 同款口径）；旧内层 SHA-256
+5eedfcbd514dd0422eccd4ff46fa52582a89af7dc0ca70f8426b756c75c92874 与 R116 台账记录逐字节
+一致（旧包溯源强证）。
+
+资产名差分：dist/index.html 引 assets/index-Dqn22HYC.js + index-C1hSlFlG.css；新内层 exe
+新名双双 1 命中、R116 期旧 JS 名 index-CxnqiNCX.js 0 命中；旧内层反向（旧 JS 名 1 命中、
+新名 0 命中）；全量 token 扫描（index-[A-Za-z0-9_-]{8}.js|css）两包各恰 2 个资产名——换新
+闭环，双向零残留。CSS 哈希较 R116 期不变（C1hSlFlG），对应 R117-R119 零样式改动，自洽；
+JS 哈希变（CxnqiNCX→Dqn22HYC）对应上述生产面三笔修复。
+
+特征串说明：R118 守卫与 R117 三修均为纯逻辑 diff（prevEpochRef 真跳变守卫、预取 ?v= 拼键、
+setSlideshowOn/setSlideshowPaused 双复位），无新增生产字面量，标识符 minified 后不可直查
+——循 R116「R114 无新增生产字面量以等价证据链闭环」先例：git diff 9937807..HEAD 生产面仅
+src/components/Browser/CurveEditor.jsx（+11/-1）与 ImageViewer.jsx（+6/-4）两文件、
+src-tauri 零改动 → 打包时工作树净（仅 .zcodeignore 未跟踪，dist 由 HEAD 源码构建）→ 新
+资产名 1/1 嵌入新内层，链条闭合；R119 为纯测试提交，不进生产面。
+
+待人工复核：无新增。提交范围：NIGHTLY_LOG.md（pathspec 点名）。未 push。本轮后代码冻结：
+R103 宣言 → R116 六笔快包 → 本轮 R117-R119 终版快包，此后再无计划内改动。
