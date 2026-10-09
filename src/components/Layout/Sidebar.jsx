@@ -17,6 +17,7 @@ import {
   Keyboard,
   BookOpen,
   Star,
+  Trash2,
 } from 'lucide-react';
 import useGalleryStore from '@/store/galleryStore';
 
@@ -336,6 +337,14 @@ export default function Sidebar({
         {/* 设置 */}
         <div className="nav-section">
           {!collapsed && <div className="nav-section-title">其他</div>}
+          <NavLink
+            to="/trash"
+            className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
+            title="回收站：手动删除的图片保留 24 小时可恢复"
+          >
+            <Trash2 strokeWidth={1.75} />
+            {!collapsed && <span>回收站</span>}
+          </NavLink>
           <NavLink
             to="/settings"
             className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}

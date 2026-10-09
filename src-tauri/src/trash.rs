@@ -689,6 +689,141 @@ pub fn sweep_trash(trash: &Path, now: SystemTime, retention: Duration) -> usize 
     removed
 }
 
+/// 回收站条目摘要（list_trash 用）：manifest 摘要 + 暂存目录磁盘实况。
+/// thumb_path 为大档缩略图的暂存全路径（asset scope 覆盖 trash 目录，供回收站预览）。
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct TrashEntryInfo {
+    pub id: i64,
+    pub filename: String,
+    pub filepath: String,
+    pub import_date: String,
+    pub taken_at: Option<String>,
+    pub size: Option<i64>,
+    pub format: Option<String>,
+    pub rating: Option<i64>,
+    pub favorite: Option<i64>,
+    pub has_raw: bool,
+    pub file_count: usize,
+    pub thumb_path: Option<String>,
+    pub trashed_at_ms: u64,
+    pub remaining_secs: u64,
+}
+
+fn trash_now_ms(now: SystemTime) -> u64 {
+    now.duration_since(SystemTime::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
+}
+
+/// 列出暂存区条目（按 id 升序）。manifest 损坏的条目跳过——清扫会按 mtime 收走，
+/// 不阻塞其余条目的展示与恢复。
+pub fn list_trash_entries(trash: &Path, now: SystemTime) -> Vec<TrashEntryInfo> {
+    let mut manifests: Vec<(i64, PathBuf)> = Vec::new();
+    if let Ok(entries) = std::fs::read_dir(trash) {
+        for e in entries.flatten() {
+            let name = e.file_name().to_string_lossy().to_string();
+            if let Some(id) = name
+                .strip_suffix("__record.json")
+                .and_then(|s| s.parse::<i64>().ok())
+            {
+                manifests.push((id, e.path()));
+            }
+        }
+    }
+    manifests.sort();
+    let now_ms = trash_now_ms(now);
+    let mut out = Vec::new();
+    for (id, manifest_path) in manifests {
+        let Ok(raw) = std::fs::read_to_string(&manifest_path) else {
+            continue;
+        };
+        let Ok(manifest) = serde_json::from_str::<TrashManifest>(&raw) else {
+            continue;
+        };
+        let record = &manifest.image;
+        let prefix = format!("{id}__");
+        let mut file_count = 0usize;
+        let mut thumb_path = None;
+        let mut thumb_fallback = None;
+        let main_thumb = format!("{prefix}thumb__{id}.jpg");
+        if let Ok(entries) = std::fs::read_dir(trash) {
+            for e in entries.flatten() {
+                let name = e.file_name().to_string_lossy().to_string();
+                if !name.starts_with(&prefix) || name.ends_with("__record.json") {
+                    continue;
+                }
+                file_count += 1;
+                if name == main_thumb {
+                    thumb_path = Some(trash.join(&name));
+                } else if name.starts_with(&format!("{prefix}thumb__")) && thumb_fallback.is_none() {
+                    thumb_fallback = Some(trash.join(&name));
+                }
+            }
+        }
+        let trashed_at_ms = mtime_ms(&manifest_path);
+        let elapsed = now_ms.saturating_sub(trashed_at_ms) / 1000;
+        out.push(TrashEntryInfo {
+            id,
+            filename: record.filename.clone(),
+            filepath: record.filepath.clone(),
+            import_date: record.import_date.clone(),
+            taken_at: record.taken_at.clone(),
+            size: record.size,
+            format: record.format.clone(),
+            rating: record.rating,
+            favorite: record.favorite,
+            has_raw: record
+                .raw_path
+                .as_deref()
+                .map(|s| !s.is_empty())
+                .unwrap_or(false),
+            file_count,
+            thumb_path: thumb_path
+                .or(thumb_fallback)
+                .map(|p| p.to_string_lossy().to_string()),
+            trashed_at_ms,
+            remaining_secs: RETENTION_SECS.saturating_sub(elapsed),
+        });
+    }
+    out
+}
+
+/// 立即清除单个条目（{id}__ 全部文件含 manifest）。任一文件删除失败即报错并保留其余，
+/// 供 UI 重试；返回清除的文件数。
+pub fn purge_trash_entry(trash: &Path, id: i64) -> Result<usize, PixError> {
+    let prefix = format!("{id}__");
+    let mut removed = 0usize;
+    let entries = std::fs::read_dir(trash)
+        .map_err(|e| PixError::Io(format!("暂存目录读取失败: {e}")))?;
+    for e in entries.flatten() {
+        let name = e.file_name().to_string_lossy().to_string();
+        if !name.starts_with(&prefix) {
+            continue;
+        }
+        std::fs::remove_file(e.path())
+            .map_err(|err| PixError::Io(format!("清除 {name} 失败: {err}")))?;
+        removed += 1;
+    }
+    Ok(removed)
+}
+
+/// 清空暂存区（全部常规文件；目录本身保留）。返回清除的文件数。
+pub fn empty_trash_entries(trash: &Path) -> Result<usize, PixError> {
+    let mut removed = 0usize;
+    let entries = std::fs::read_dir(trash)
+        .map_err(|e| PixError::Io(format!("暂存目录读取失败: {e}")))?;
+    for e in entries.flatten() {
+        let p = e.path();
+        if !p.is_file() {
+            continue;
+        }
+        std::fs::remove_file(&p)
+            .map_err(|err| PixError::Io(format!("清除 {} 失败: {err}", file_name_of(&p))))?;
+        removed += 1;
+    }
+    Ok(removed)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1287,5 +1422,91 @@ mod tests {
         assert!(after.get("error").is_none(), "{after}");
         assert_eq!(after["version"], 4, "撤销后版本应自快照 3 续接");
         let _ = std::fs::remove_dir_all(pics.parent().unwrap());
+    }
+
+    #[test]
+    fn 回收站列表_摘要齐全_含文件数主缩略图与剩余时间() {
+        let (conn, pics, thumbs, trash) = setup("list");
+        insert_image(&conn, &pics, true);
+        write_thumbs(&thumbs);
+        delete_image_to_trash_core(&conn, 1, &thumbs, &trash).unwrap().unwrap();
+
+        let now = std::time::SystemTime::now();
+        let list = list_trash_entries(&trash, now);
+        assert_eq!(list.len(), 1);
+        let e = &list[0];
+        assert_eq!(e.id, 1);
+        assert_eq!(e.filename, "a.jpg");
+        assert_eq!(e.import_date, "2026-01-01");
+        assert!(e.has_raw);
+        // 原图 + NEF + 三档派生 = 5 个媒体文件（manifest 不计）
+        assert_eq!(e.file_count, 5);
+        assert_eq!(
+            e.thumb_path.as_deref(),
+            Some(trash.join("1__thumb__1.jpg").to_string_lossy().to_string().as_str())
+        );
+        assert!(e.trashed_at_ms > 0);
+        // 刚删除：剩余保留时间贴近 24h 上限
+        assert!(e.remaining_secs > RETENTION_SECS - 60);
+        assert!(e.remaining_secs <= RETENTION_SECS);
+
+        // 空 trash 目录 → 空列表；目录不存在也不炸
+        let empty_dir = trash.parent().unwrap().join("list-empty");
+        std::fs::create_dir_all(&empty_dir).unwrap();
+        assert!(list_trash_entries(&empty_dir, now).is_empty());
+        assert!(list_trash_entries(&empty_dir.join("nope"), now).is_empty());
+        let _ = std::fs::remove_dir_all(pics.parent().unwrap());
+    }
+
+    #[test]
+    fn 回收站列表_manifest损坏跳过_不出现在列表() {
+        let (conn, pics, thumbs, trash) = setup("list-corrupt");
+        insert_image(&conn, &pics, false);
+        write_thumbs(&thumbs);
+        delete_image_to_trash_core(&conn, 1, &thumbs, &trash).unwrap().unwrap();
+        std::fs::write(trash.join("1__record.json"), "{broken json").unwrap();
+
+        let list = list_trash_entries(&trash, std::time::SystemTime::now());
+        assert!(list.is_empty(), "损坏 manifest 条目应跳过");
+        let _ = std::fs::remove_dir_all(pics.parent().unwrap());
+    }
+
+    #[test]
+    fn 立即清除_单条目全文件删除_再清除为零_撤销报中文错() {
+        let (conn, pics, thumbs, trash) = setup("purge");
+        insert_image(&conn, &pics, true);
+        write_thumbs(&thumbs);
+        delete_image_to_trash_core(&conn, 1, &thumbs, &trash).unwrap().unwrap();
+
+        let removed = purge_trash_entry(&trash, 1).unwrap();
+        assert_eq!(removed, 6, "5 媒体文件 + 1 manifest");
+        assert!(std::fs::read_dir(&trash).unwrap().next().is_none());
+
+        assert_eq!(purge_trash_entry(&trash, 1).unwrap(), 0);
+        let err = restore_image_from_trash_core(&conn, 1, &thumbs, &trash).unwrap_err();
+        assert!(err_cn_like(&err, "暂存记录不存在或已超期清理"));
+        let _ = std::fs::remove_dir_all(pics.parent().unwrap());
+    }
+
+    #[test]
+    fn 清空回收站_全部条目文件清空_目录保留_互不影响其他文件() {
+        let (conn, pics, thumbs, trash) = setup("empty");
+        insert_image(&conn, &pics, false);
+        write_thumbs(&thumbs);
+        delete_image_to_trash_core(&conn, 1, &thumbs, &trash).unwrap().unwrap();
+        std::fs::write(trash.join("无关文件.txt"), b"x").unwrap();
+
+        let removed = empty_trash_entries(&trash).unwrap();
+        assert_eq!(removed, 6, "5 个条目文件（无 NEF）+ 1 个无关文件（清空即全清）");
+        assert!(trash.exists(), "目录本身保留");
+        assert!(std::fs::read_dir(&trash).unwrap().next().is_none());
+
+        let missing = trash.parent().unwrap().join("empty-nope");
+        assert!(empty_trash_entries(&missing).is_err());
+        let _ = std::fs::remove_dir_all(pics.parent().unwrap());
+    }
+
+    fn err_cn_like(e: &PixError, needle: &str) -> bool {
+        format!("{e}").contains(needle) || format!("{e:?}").contains(needle)
     }
 }

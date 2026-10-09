@@ -140,6 +140,10 @@ tests/            vitest（node 环境 + per-file happy-dom pragma）
 - 冲突策略：还原时磁盘同名占用 → 新文件绝不动，暂存文件以「stem (恢复N).ext」改名回位并同步更新记录
   filename/filepath（NEF 跟随还原后主文件主名）；库内 filepath 已被新导入占用 → 整体拒绝撤销（中文报错），
   暂存文件留存待清扫。占位测试用 `share_mode(0)` 独占打开模拟文件占用。
+- **回收站管理页（/trash 路由）**：`list_trash`/`purge_trash_entry`/`empty_trash` 三命令（纯文件面
+  操作，不碰库记录、不需要写锁；manifest 损坏条目列表跳过待清扫）；恢复复用 `restoreImageFromTrash`
+  整链还原。assetProtocol scope 含 `$CONFIG/pixyang/trash/**`（回收站缩略图预览）。前端
+  `src/components/Explorer/TrashView.jsx`，契约表三行在 `apiTauriContract.test.js`。
 
 ## agent 调色与编辑扩展（2026-09-28）
 

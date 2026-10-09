@@ -64,6 +64,9 @@ export const tauriApi = {
   deleteImageToTrash: (id) => tauriInvoke('delete_image_to_trash', { id }),
   batchDeleteImagesToTrash: (ids) => tauriInvoke('batch_delete_images_to_trash', { ids }),
   restoreImageFromTrash: (id) => tauriInvoke('restore_image_from_trash', { id }),
+  listTrash: () => tauriInvoke('list_trash', {}),
+  purgeTrashEntry: (id) => tauriInvoke('purge_trash_entry', { id }),
+  emptyTrash: () => tauriInvoke('empty_trash', {}),
   // presets：upgradeEdits 规整在桥接层（前端与桥同用 shared/editSchema.cjs）
   getPresets: async () => {
     const rows = await tauriInvoke('get_presets');

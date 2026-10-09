@@ -113,6 +113,9 @@ const ROUTES = [
     cmd: 'restore_image_from_trash',
     invokeArgs: { id: 9 },
   },
+  { method: 'listTrash', args: [], cmd: 'list_trash', invokeArgs: {} },
+  { method: 'purgeTrashEntry', args: [9], cmd: 'purge_trash_entry', invokeArgs: { id: 9 } },
+  { method: 'emptyTrash', args: [], cmd: 'empty_trash', invokeArgs: {} },
   {
     method: 'getPresets',
     args: [],

@@ -1387,6 +1387,41 @@ pub async fn restore_image_from_trash(
     .map_err(|e| format!("后台任务失败：{}", err_cn::text(&e)))?
 }
 
+// ── 回收站管理（暂存区浏览/恢复/立即清除/清空）：纯文件面操作，不碰库记录 ──
+
+#[tauri::command]
+pub async fn list_trash(paths: State<'_, AppPaths>) -> Result<Vec<trash::TrashEntryInfo>, String> {
+    let paths = paths.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        Ok(trash::list_trash_entries(
+            &paths.trash_dir,
+            std::time::SystemTime::now(),
+        ))
+    })
+    .await
+    .map_err(|e| format!("后台任务失败：{}", err_cn::text(&e)))?
+}
+
+#[tauri::command]
+pub async fn purge_trash_entry(paths: State<'_, AppPaths>, id: i64) -> Result<usize, String> {
+    let paths = paths.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        trash::purge_trash_entry(&paths.trash_dir, id).map_err(|e| err_cn::text(&e))
+    })
+    .await
+    .map_err(|e| format!("后台任务失败：{}", err_cn::text(&e)))?
+}
+
+#[tauri::command]
+pub async fn empty_trash(paths: State<'_, AppPaths>) -> Result<usize, String> {
+    let paths = paths.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        trash::empty_trash_entries(&paths.trash_dir).map_err(|e| err_cn::text(&e))
+    })
+    .await
+    .map_err(|e| format!("后台任务失败：{}", err_cn::text(&e)))?
+}
+
 // ── 图片列表查询通道（迁移接缝 3） ──
 
 #[tauri::command]

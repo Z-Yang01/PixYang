@@ -26,6 +26,7 @@ import InfoPanel from './components/Info/InfoPanel';
 import ImportDialog from './components/Explorer/ImportDialog';
 import TagManager from './components/Tags/TagManager';
 import AlbumsView from './components/Explorer/AlbumsView';
+import TrashView from './components/Explorer/TrashView';
 import BatchBar from './components/Browser/BatchBar';
 import SettingsPage from './components/Settings/SettingsPage';
 import ConfirmDialog from './components/Layout/ConfirmDialog';
@@ -617,6 +618,16 @@ export default function App() {
                   onSelectTag={(id) => {
                     navigate('/', { state: { tagId: id } });
                   }}
+                  onRefresh={() => {
+                    useGalleryStore.getState().refreshAppData();
+                  }}
+                />
+              }
+            />
+            <Route
+              path="/trash"
+              element={
+                <TrashView
                   onRefresh={() => {
                     useGalleryStore.getState().refreshAppData();
                   }}
