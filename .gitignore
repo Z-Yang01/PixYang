@@ -5,6 +5,8 @@ dist/
 Thumbs.db
 
 .zcode/
+.zcodeignore
+.claude/
 
 coverage/
 
