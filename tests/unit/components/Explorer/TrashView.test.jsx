@@ -52,6 +52,21 @@ describe('TrashView（回收站管理页）', () => {
     expect(screen.getByRole('button', { name: /清空回收站/ })).toBeInTheDocument();
   });
 
+  it('mtime 不可读条目（trashed_at_ms=0）：显示未知时间且不谎报剩余保留，排序殿后', async () => {
+    const unknown = { ...ENTRY, id: 8, filename: 'UNKNOWN.JPG', trashed_at_ms: 0 };
+    const invoke = vi.fn((cmd) =>
+      cmd === 'list_trash' ? Promise.resolve([unknown, ENTRY]) : Promise.resolve({})
+    );
+    mount(invoke);
+    expect(await screen.findByText('UNKNOWN.JPG')).toBeInTheDocument();
+    expect(screen.getByText(/删除时间未知（不参与自动清除）/)).toBeInTheDocument();
+    // 排序：未知时间殿后，正常条目在前（按 trashed_at 升序，DOM 先后即行序）
+    const normalRow = screen.getByTitle('IMG_0007.JPG');
+    const unknownRow = screen.getByTitle('UNKNOWN.JPG');
+    // 4 = Node.DOCUMENT_POSITION_FOLLOWING：b 在 a 之后
+    expect(normalRow.compareDocumentPosition(unknownRow) & 4).toBeTruthy();
+  });
+
   it('恢复：invoke restore_image_from_trash → 重载列表 + onRefresh + 成功 toast', async () => {
     const onRefresh = vi.fn();
     const invoke = vi.fn((cmd) =>

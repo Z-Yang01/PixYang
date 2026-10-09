@@ -257,17 +257,25 @@ fn move_file_into_trash(src: &Path, dest: &Path) -> Result<(), PixError> {
 /// thumb__{自身 id 派生名}（如原图 thumb__1.jpg 自带派生 1.jpg）时，两条目算出同一个
 /// `{id}__…` 暂存路径，而 move_file_into_trash 先清后移会把先移入的文件物理销毁——
 /// 删除「成功」、原图静默永久丢失且无从撤销。撞名必须报错中止，由调用方整体回滚。
+/// reserved（manifest 落点）参与判重：原图名恰为 record.json（Windows 大小写不敏感）时
+/// 二者是同一路径，manifest 写入会用 JSON 覆盖原图字节（审查 P1）。
+fn trash_paths_collide(a: &Path, b: &Path) -> bool {
+    a == b || a.to_string_lossy().eq_ignore_ascii_case(&b.to_string_lossy())
+}
+
 fn move_into_trash_tracked(
     moved: &mut Vec<(PathBuf, PathBuf)>,
     files: &mut Vec<TrashedFile>,
     src: &Path,
     dest: &Path,
+    reserved: &Path,
     role: &str,
     src_mtime_ms: u64,
 ) -> Result<(), PixError> {
-    if moved.iter().any(|(_, d)| d == dest) {
+    if moved.iter().any(|(_, d)| trash_paths_collide(d, dest)) || trash_paths_collide(reserved, dest)
+    {
         return Err(PixError::Io(format!(
-            "暂存区命名冲突（{}）：本轮已有同名条目，中止删除以防先移入的文件被覆盖销毁",
+            "暂存区命名冲突（{}）：中止删除以防先移入的文件被覆盖销毁",
             file_name_of(dest)
         )));
     }
@@ -292,15 +300,22 @@ pub fn move_image_to_trash(
     let record = &manifest.image;
     std::fs::create_dir_all(trash).map_err(|e| PixError::Io(format!("暂存目录创建失败: {e}")))?;
     let mut moved: Vec<(PathBuf, PathBuf)> = Vec::new();
+    let manifest_path = trash.join(format!("{}__record.json", record.id));
 
     let mut files: Vec<TrashedFile> = Vec::new();
     let orig = PathBuf::from(&record.filepath);
     if orig.exists() {
         let dest = trash.join(format!("{}__{}", record.id, file_name_of(&orig)));
         let src_mtime = mtime_ms(&orig);
-        if let Err(e) =
-            move_into_trash_tracked(&mut moved, &mut files, &orig, &dest, "original", src_mtime)
-        {
+        if let Err(e) = move_into_trash_tracked(
+            &mut moved,
+            &mut files,
+            &orig,
+            &dest,
+            &manifest_path,
+            "original",
+            src_mtime,
+        ) {
             rollback_moves(&moved);
             return Err(e);
         }
@@ -310,9 +325,15 @@ pub fn move_image_to_trash(
         if raw.exists() {
             let dest = trash.join(format!("{}__raw__{}", record.id, file_name_of(&raw)));
             let src_mtime = mtime_ms(&raw);
-            if let Err(e) =
-                move_into_trash_tracked(&mut moved, &mut files, &raw, &dest, "raw", src_mtime)
-            {
+            if let Err(e) = move_into_trash_tracked(
+                &mut moved,
+                &mut files,
+                &raw,
+                &dest,
+                &manifest_path,
+                "raw",
+                src_mtime,
+            ) {
                 rollback_moves(&moved);
                 return Err(e);
             }
@@ -323,14 +344,21 @@ pub fn move_image_to_trash(
         if p.exists() {
             let dest = trash.join(format!("{}__thumb__{}", record.id, name));
             // 派生缩略图可再生，mtime 无外部语义
-            if let Err(e) = move_into_trash_tracked(&mut moved, &mut files, &p, &dest, "thumb", 0) {
+            if let Err(e) = move_into_trash_tracked(
+                &mut moved,
+                &mut files,
+                &p,
+                &dest,
+                &manifest_path,
+                "thumb",
+                0,
+            ) {
                 rollback_moves(&moved);
                 return Err(e);
             }
         }
     }
 
-    let manifest_path = trash.join(format!("{}__record.json", record.id));
     let mut manifest_with_files = manifest.clone();
     manifest_with_files.files = files;
     let manifest_json = serde_json::to_string_pretty(&manifest_with_files)
@@ -477,7 +505,15 @@ pub fn restore_image_from_trash_core(
         ));
     }
 
+    // 暂存原图与磁盘原位都不在时（清扫删半、manifest 残缺等），恢复只会产出指向
+    // 不存在文件的坏记录且 toast 假报成功（审查 P2）——拒绝还原，走损坏记录清理收尾
     let orig_path = PathBuf::from(&record.filepath);
+    let trash_orig = trash.join(format!("{id}__{}", file_name_of(&orig_path)));
+    if !trash_orig.exists() && !orig_path.exists() {
+        return Err(PixError::Io(
+            "暂存的原图文件已不存在，无法恢复；请用设置页的「损坏记录清理」处理残留".into(),
+        ));
+    }
     let parent = orig_path
         .parent()
         .map(|p| p.to_path_buf())
@@ -755,13 +791,22 @@ pub fn list_trash_entries(trash: &Path, now: SystemTime) -> Vec<TrashEntryInfo> 
                 file_count += 1;
                 if name == main_thumb {
                     thumb_path = Some(trash.join(&name));
-                } else if name.starts_with(&format!("{prefix}thumb__")) && thumb_fallback.is_none() {
+                } else if name.starts_with(&format!("{prefix}thumb__"))
+                    && thumb_fallback.is_none()
+                    && (name.ends_with(".jpg") || name.ends_with(".png"))
+                {
+                    // 兜底限图片扩展名：edit-{id}.jpg.meta.json 之类的 JSON 旁车不当 <img> 源
                     thumb_fallback = Some(trash.join(&name));
                 }
             }
         }
         let trashed_at_ms = mtime_ms(&manifest_path);
-        let elapsed = now_ms.saturating_sub(trashed_at_ms) / 1000;
+        // mtime 不可读（回 0）与清扫口径一致：视为未过期，展示满窗口而非「即将清除」
+        let elapsed = if trashed_at_ms == 0 {
+            0
+        } else {
+            now_ms.saturating_sub(trashed_at_ms) / 1000
+        };
         out.push(TrashEntryInfo {
             id,
             filename: record.filename.clone(),
@@ -1508,5 +1553,53 @@ mod tests {
 
     fn err_cn_like(e: &PixError, needle: &str) -> bool {
         format!("{e}").contains(needle) || format!("{e:?}").contains(needle)
+    }
+
+    #[test]
+    fn 删除_原图名恰为record_json_撞保留名_中止且回滚原图字节不动() {
+        let (conn, pics, thumbs, trash) = setup("reserved-name");
+        // 原图文件名与 manifest 落点同形（Windows 大小写不敏感，Record.JSON 同样命中）
+        std::fs::write(pics.join("record.json"), b"IMAGE BYTES").unwrap();
+        conn.execute(
+            "INSERT INTO images (id, filename, filepath, import_date) VALUES (1, 'record.json', ?, '2026-01-01')",
+            [pics.join("record.json").to_string_lossy().to_string()],
+        )
+        .unwrap();
+
+        let err = delete_image_to_trash_core(&conn, 1, &thumbs, &trash).unwrap_err();
+        assert!(err_cn_like(&err, "暂存区命名冲突"), "{err}");
+        // 原图字节完好、记录未删、暂存无任何残留（先移后写 manifest 的旧缺陷会在此覆盖原图）
+        assert_eq!(std::fs::read(pics.join("record.json")).unwrap(), b"IMAGE BYTES");
+        assert!(crate::images_query::get_image_by_id(&conn, 1).unwrap().is_some());
+        assert!(std::fs::read_dir(&trash).unwrap().next().is_none());
+        let _ = std::fs::remove_dir_all(pics.parent().unwrap());
+    }
+
+    #[test]
+    fn 恢复_暂存原图已丢且原位无文件_拒绝不出坏记录() {
+        let (conn, pics, thumbs, trash) = setup("restore-missing");
+        insert_image(&conn, &pics, false);
+        delete_image_to_trash_core(&conn, 1, &thumbs, &trash).unwrap().unwrap();
+        std::fs::remove_file(trash.join("1__a.jpg")).unwrap();
+
+        let err = restore_image_from_trash_core(&conn, 1, &thumbs, &trash).unwrap_err();
+        assert!(err_cn_like(&err, "暂存的原图文件已不存在"), "{err}");
+        assert!(crate::images_query::get_image_by_id(&conn, 1).unwrap().is_none());
+        let _ = std::fs::remove_dir_all(pics.parent().unwrap());
+    }
+
+    #[test]
+    fn 回收站列表_缩略图兜底拒绝meta_json旁车_不把JSON当图片源() {
+        let (conn, pics, thumbs, trash) = setup("list-fallback");
+        insert_image(&conn, &pics, false);
+        // 不写任何缩略图：删除后暂存只有原图 + manifest；手工放一个 meta.json 旁车
+        delete_image_to_trash_core(&conn, 1, &thumbs, &trash).unwrap().unwrap();
+        std::fs::write(trash.join("1__thumb__edit-1.jpg.meta.json"), b"{}").unwrap();
+
+        let list = list_trash_entries(&trash, std::time::SystemTime::now());
+        assert_eq!(list.len(), 1);
+        assert_eq!(list[0].thumb_path, None, "meta.json 不得作缩略图兜底");
+        assert_eq!(list[0].file_count, 2, "原图 + meta 旁车（manifest 不计）");
+        let _ = std::fs::remove_dir_all(pics.parent().unwrap());
     }
 }

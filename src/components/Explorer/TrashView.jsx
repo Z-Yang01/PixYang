@@ -25,7 +25,13 @@ export default function TrashView({ onRefresh }) {
     }
     try {
       const rows = await api.listTrash();
-      setEntries(rows || []);
+      // 最快到期在最前（trashed_at 升序）：24h 窗口内先救将消失的；同一毫秒按 id 稳定序，
+      // 删除时间未知（mtime 不可读回 0，不参与自动清除）殿后
+      setEntries(
+        (rows || []).sort(
+          (a, b) => (a.trashed_at_ms || Infinity) - (b.trashed_at_ms || Infinity) || a.id - b.id
+        )
+      );
     } catch (e) {
       console.error('[trash] 加载回收站失败:', e.message);
       toast.error(errText('加载回收站失败', e));
@@ -87,6 +93,12 @@ export default function TrashView({ onRefresh }) {
     try {
       await api.purgeTrashEntry(entry.id);
       toast.success(`已永久删除「${entry.filename}」`);
+      // 与恢复/清空对称清缓存键，防同 id 复用显示陈旧缩略图
+      setThumbUrls((prev) => {
+        const next = { ...prev };
+        delete next[entry.id];
+        return next;
+      });
       await loadEntries();
     } catch (e) {
       console.error('[trash] 清除失败:', e.message);
@@ -249,7 +261,9 @@ export default function TrashView({ onRefresh }) {
                     删除于 {trashedLabel(entry.trashed_at_ms) || '未知时间'}
                     {entry.size ? ` · ${formatSizeDisplay(entry.size)}` : ''}
                     {` · ${entry.file_count} 个文件`}
-                    {` · ${remainingLabel(entry.remaining_secs)}`}
+                    {entry.trashed_at_ms
+                      ? ` · ${remainingLabel(entry.remaining_secs)}`
+                      : ' · 删除时间未知（不参与自动清除）'}
                   </div>
                 </div>
                 <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>

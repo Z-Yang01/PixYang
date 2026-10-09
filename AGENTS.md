@@ -137,6 +137,11 @@ tests/            vitest（node 环境 + per-file happy-dom pragma）
   NEF 收养等内部 `delete_image_record` 调用点不进 trash；`db::delete_image`/`batch_delete_images` 仍是物理删除原语。
 - trash 文件名 `{id}__原名` / `{id}__raw__原名` / `{id}__thumb__派生名`；**移入时 mtime 归一到当下**（rename/copy
   保留原图 mtime，老照片会被按 mtime 判期的清扫立即误删）；清扫在启动 + 每 24h 各一轮，物理删除超期 24h 文件。
+- **保留名守卫**：`{id}__record.json`（manifest 落点）参与撞名判重（Windows 大小写不敏感）——原图名恰为
+  `record.json` 时删除中止并回滚（防 manifest JSON 覆盖原图字节，审查 P1）；恢复时暂存原图与磁盘原位
+  双缺即拒绝（防恢复出坏库记录 + toast 假成功，审查 P2）。
+- **已知限制（审查 P2 记录不修）**：trash 文件面（sweep/purge/empty/移入/回位）无进程内互斥锁，
+  毫秒级交错理论可达（恢复中 purge → 记录指向被删 NEF）；单窗口 UI 不可同时触发，代价大于收益故不锁。
 - 冲突策略：还原时磁盘同名占用 → 新文件绝不动，暂存文件以「stem (恢复N).ext」改名回位并同步更新记录
   filename/filepath（NEF 跟随还原后主文件主名）；库内 filepath 已被新导入占用 → 整体拒绝撤销（中文报错），
   暂存文件留存待清扫。占位测试用 `share_mode(0)` 独占打开模拟文件占用。
