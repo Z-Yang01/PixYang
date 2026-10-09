@@ -12,8 +12,6 @@ export default function useGalleryData({ onThumbnailsReady } = {}) {
   const filterTag = useGalleryStore((s) => s.filterTag);
   const filterAlbum = useGalleryStore((s) => s.filterAlbum);
   const filterFavorites = useGalleryStore((s) => s.filterFavorites);
-  const filterMinRating = useGalleryStore((s) => s.filterMinRating);
-  const filterUnrated = useGalleryStore((s) => s.filterUnrated);
   const filterDate = useGalleryStore((s) => s.filterDate);
   const dateRange = useGalleryStore((s) => s.dateRange);
   const page = useGalleryStore((s) => s.page);
@@ -41,8 +39,6 @@ export default function useGalleryData({ onThumbnailsReady } = {}) {
     filterTag,
     filterAlbum,
     filterFavorites,
-    filterMinRating,
-    filterUnrated,
     filterDate,
     dateRange.from,
     dateRange.to,

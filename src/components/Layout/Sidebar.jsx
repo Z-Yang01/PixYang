@@ -16,7 +16,6 @@ import {
   ChevronRight,
   Keyboard,
   BookOpen,
-  Star,
   Trash2,
 } from 'lucide-react';
 import useGalleryStore from '@/store/galleryStore';
@@ -35,30 +34,19 @@ export default function Sidebar({
   const filterTag = useGalleryStore((s) => s.filterTag);
   const filterAlbum = useGalleryStore((s) => s.filterAlbum);
   const filterDate = useGalleryStore((s) => s.filterDate);
-  const filterUnrated = useGalleryStore((s) => s.filterUnrated);
-  const setFilterUnrated = useGalleryStore((s) => s.setFilterUnrated);
   const filterFavorites = useGalleryStore((s) => s.filterFavorites);
-  const filterMinRating = useGalleryStore((s) => s.filterMinRating);
   const dateRange = useGalleryStore((s) => s.dateRange);
   const setFilterTag = useGalleryStore((s) => s.setFilterTag);
   const setFilterAlbum = useGalleryStore((s) => s.setFilterAlbum);
   const setFilterDate = useGalleryStore((s) => s.setFilterDate);
-  const setFilterMinRating = useGalleryStore((s) => s.setFilterMinRating);
   const clearFilters = useGalleryStore((s) => s.clearFilters);
   const navigate = useNavigate();
   const location = useLocation();
 
   const [dateExpand, setDateExpand] = useState(false);
-  const [hoverRating, setHoverRating] = useState(0); // 星级行 hover 预览（0=无）
 
   const hasActiveFilter =
-    filterTag ||
-    filterAlbum ||
-    filterDate ||
-    filterFavorites ||
-    filterMinRating > 0 ||
-    dateRange.from ||
-    dateRange.to;
+    filterTag || filterAlbum || filterDate || filterFavorites || dateRange.from || dateRange.to;
   const isGallery = location.pathname === '/' || location.pathname === '/favorites';
 
   const handleFilterTag = (id) => {
@@ -72,14 +60,6 @@ export default function Sidebar({
   const handleFilterDate = (date) => {
     setFilterDate(date);
     if (date && !isGallery) navigate('/');
-  };
-  const handleFilterMinRating = (n) => {
-    setFilterMinRating(n);
-    if (n > 0 && !isGallery) navigate('/');
-  };
-  const handleFilterUnrated = (v) => {
-    setFilterUnrated(v);
-    if (v && !isGallery) navigate('/');
   };
   const handleClearFilters = () => {
     clearFilters();
@@ -212,79 +192,6 @@ export default function Sidebar({
             )}
           </div>
         )}
-
-        {/* 评分筛选：星 级资产激活（≥N 星）。全部=不过滤；选中态再点同一档即取消。
-            星形着色走主题 token（.rating-star-full/empty → --star/--star-empty），禁字面色 */}
-        <div className="nav-section" data-testid="rating-filter">
-          {!collapsed && (
-            <div className="nav-section-title">
-              按评分筛选
-              {(filterMinRating > 0 || filterUnrated) && (
-                <Button
-                  variant="ghost"
-                  size="xs"
-                  onClick={() => {
-                    handleFilterMinRating(0);
-                    setFilterUnrated(false);
-                  }}
-                  className="ml-1.5 text-[10px] h-5 px-1.5"
-                >
-                  清除
-                </Button>
-              )}
-            </div>
-          )}
-          <button
-            className={`nav-item ${filterMinRating === 0 && !filterUnrated ? 'active' : ''}`}
-            onClick={() => {
-              handleFilterMinRating(0);
-              setFilterUnrated(false);
-            }}
-            title="全部评分"
-            aria-pressed={filterMinRating === 0 && !filterUnrated}
-          >
-            <Star strokeWidth={1.5} className="rating-star-empty" fill="none" />
-            {!collapsed && <span>全部</span>}
-          </button>
-          {[1, 2, 3, 4, 5].map((n) => (
-            <button
-              key={n}
-              className={`nav-item ${(filterMinRating === n && !filterUnrated) || hoverRating === n ? 'active' : ''}`}
-              onClick={() => handleFilterMinRating(filterMinRating === n ? 0 : n)}
-              onMouseEnter={() => setHoverRating(n)}
-              onMouseLeave={() => setHoverRating(0)}
-              title={`≥ ${n} 星`}
-              aria-pressed={filterMinRating === n && !filterUnrated}
-            >
-              {/* i 元素避开 .sidebar-collapsed .nav-item span 的隐藏规则，折叠态保留星形图标 */}
-              <i className="rating-star-row" aria-hidden="true">
-                {[1, 2, 3, 4, 5].map((i) => {
-                  const lit = i <= (hoverRating || n);
-                  return (
-                    <Star
-                      key={i}
-                      strokeWidth={1.5}
-                      className={`rating-star ${lit ? 'rating-star-full' : 'rating-star-empty'}`}
-                      fill={lit ? 'currentColor' : 'none'}
-                    />
-                  );
-                })}
-              </i>
-              {!collapsed && <span>≥ {n} 星</span>}
-            </button>
-          ))}
-          <button
-            className={`nav-item ${filterUnrated ? 'active' : ''}`}
-            onClick={() => handleFilterUnrated(filterUnrated ? false : true)}
-            onMouseEnter={() => setHoverRating(-1)}
-            onMouseLeave={() => setHoverRating(0)}
-            title="仅看未评分图片（与星级档互斥）"
-            aria-pressed={filterUnrated}
-          >
-            <Star strokeWidth={1.5} className="rating-star-empty" fill="none" />
-            {!collapsed && <span>未评分</span>}
-          </button>
-        </div>
 
         {/* 标签筛选 */}
         {tags.length > 0 && (

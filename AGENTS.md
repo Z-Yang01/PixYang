@@ -170,9 +170,10 @@ tests/            vitest（node 环境 + per-file happy-dom pragma）
   原子命令 `undo_last_edit`：读回退目标 → save_edit_params 链写回，全程持写锁；CLI `pixyang cli
   undo` 共用同一 undo_last_edit_conn，GUI/CLI 双端单实现）。回退目标语义：最新步 before → 缺失
   向前找最近 after → 全无回默认参数（isDefault）。
-- **星级筛选**：≥N（filterMinRating）与「仅未评分」（filterUnrated）两档 UI 互斥（store action 内
-  双清防恒空集叠加）；SQL 分支 `(i.rating IS NULL OR i.rating = 0)` 与前端剪枝 (rating||0)===0 同
-  口径；TopBar 评分/未评分 chip 可单独移除（clearSingleFilter('rating') 双清）
+- **星级筛选已移除（2026-10-09 用户拍板）**：侧栏「按评分筛选」（≥N/仅未评分）全链拆除——前端
+  filterMinRating/filterUnrated 状态与 action、buildImageQuery/hasActiveFilters/matchesListFilters
+  分量、Rust ImageQuery.min_rating/unrated 字段与 SQL 分支、TopBar 评分 chip 全部退场；评分能力由
+  顶栏「评分 ↓」排序承载（sortBy=rating 既有通道，未动）
 - **裁剪拉直（crop.angle ±45°）**：坐标合同——angle≠0 时 crop.x/y/w/h 直接是
   「geometry+拉直旋转后」空间的像素坐标（执行器 rotate_by_angle 双线性旋转+出界填黑后取矩形，
   跳过 geometry 映射）；前端滑杆变更时自动套同比例最大内接框（editParams straightenGeometry）。

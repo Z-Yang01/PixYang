@@ -6,7 +6,7 @@ import { toEditParams } from '../lib/editParams';
 import { applyPresetToOps } from '../lib/presetApply';
 import autoGradeModule from '../../shared/autoGrade.js';
 const { suggestGrade } = autoGradeModule;
-import { pageAfterDelete, removeIdsFromSet, matchesListFilters } from '../lib/gallery';
+import { pageAfterDelete, removeIdsFromSet } from '../lib/gallery';
 import { errText, friendlyError } from '../lib/errorText';
 import { offerDeleteUndo } from '../lib/trashUndo';
 
@@ -44,8 +44,6 @@ export default function useBatchActions({ showToast }) {
         st.filterTag,
         st.filterAlbum,
         st.filterFavorites,
-        st.filterMinRating,
-        st.filterUnrated,
         st.filterDate,
         st.dateRange.from,
         st.dateRange.to,
@@ -59,8 +57,6 @@ export default function useBatchActions({ showToast }) {
         tagId: store.filterTag,
         albumId: store.filterAlbum,
         favorite: store.filterFavorites,
-        minRating: store.filterMinRating,
-        unrated: store.filterUnrated,
         importDate: store.filterDate,
         dateFrom: store.dateRange.from,
         dateTo: store.dateRange.to,
@@ -176,19 +172,6 @@ export default function useBatchActions({ showToast }) {
           prev.map((img) => (idSet.has(img.id) ? { ...img, ...updates } : img))
         );
         if ('favorite' in updates) store.loadStats();
-        // 评分筛选 × 批量改星（R-3 批量同口径，与单图 handleImageUpdated 一致）：
-        // 「≥N」/「仅未评分」档激活时降星/升星会让行掉出当前筛选视图，本地 merge 留下
-        // 「灭而未走」的行且勾选仍打向视图外图片——merge 后复验，掉出者剪枝勾选 + 重查
-        if ('rating' in updates && (store.filterMinRating > 0 || store.filterUnrated)) {
-          const cur = useGalleryStore.getState();
-          const stale = cur.images
-            .filter((img) => idSet.has(img.id) && !matchesListFilters(img, cur))
-            .map((img) => img.id);
-          if (stale.length > 0) {
-            cur.setSelectedIds(removeIdsFromSet(cur.selectedIds, stale));
-            await Promise.all([cur.loadImages(), cur.loadStats()]);
-          }
-        }
       }
       const desc =
         'rating' in updates

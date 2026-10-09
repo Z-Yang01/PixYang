@@ -87,58 +87,6 @@ describe('galleryStore 筛选互斥与重置', () => {
   });
 });
 
-describe('galleryStore 评分筛选（filterMinRating）', () => {
-  beforeEach(() => {
-    useGalleryStore.setState(initialSnapshot, true);
-  });
-
-  afterEach(() => {
-    delete window.pixyang;
-  });
-
-  it('setFilterMinRating 归一化到 0-5 整数并重置页码；脏值回落 0', () => {
-    useGalleryStore.setState({ page: 4 });
-    useGalleryStore.getState().setFilterMinRating(3);
-    expect(useGalleryStore.getState().filterMinRating).toBe(3);
-    expect(useGalleryStore.getState().page).toBe(1);
-    useGalleryStore.getState().setFilterMinRating(9);
-    expect(useGalleryStore.getState().filterMinRating).toBe(5);
-    useGalleryStore.getState().setFilterMinRating(-2);
-    expect(useGalleryStore.getState().filterMinRating).toBe(0);
-    useGalleryStore.getState().setFilterMinRating('4');
-    expect(useGalleryStore.getState().filterMinRating).toBe(4);
-    useGalleryStore.getState().setFilterMinRating(2.9);
-    expect(useGalleryStore.getState().filterMinRating).toBe(2);
-    useGalleryStore.getState().setFilterMinRating(NaN);
-    expect(useGalleryStore.getState().filterMinRating).toBe(0);
-  });
-
-  it('clearFilters 与 clearSingleFilter("rating") 都复位评分筛选', () => {
-    useGalleryStore.getState().setFilterMinRating(2);
-    useGalleryStore.getState().clearSingleFilter('rating');
-    expect(useGalleryStore.getState().filterMinRating).toBe(0);
-    useGalleryStore.setState({ filterMinRating: 5 });
-    useGalleryStore.getState().clearFilters();
-    expect(useGalleryStore.getState().filterMinRating).toBe(0);
-  });
-
-  it('loadImages 把 filterMinRating 透传为查询参数 minRating', async () => {
-    window.pixyang = { getImages: vi.fn().mockResolvedValue({ images: [], total: 0 }) };
-    useGalleryStore.setState(initialSnapshot, true);
-    useGalleryStore.setState({ filterMinRating: 3 });
-    await useGalleryStore.getState().loadImages();
-    expect(window.pixyang.getImages).toHaveBeenCalledWith(
-      expect.objectContaining({ minRating: 3 })
-    );
-    // 默认 0=不过滤，也要显式携带（与 Rust Option<u32> 反序列化 0→跳过分支同口径）
-    useGalleryStore.setState({ filterMinRating: 0 });
-    await useGalleryStore.getState().loadImages();
-    expect(window.pixyang.getImages).toHaveBeenLastCalledWith(
-      expect.objectContaining({ minRating: 0 })
-    );
-  });
-});
-
 describe('galleryStore loadImages 页码越界钳制', () => {
   afterEach(() => {
     delete window.pixyang;
@@ -267,32 +215,6 @@ describe('galleryStore 搜索词归一', () => {
     expect(useGalleryStore.getState().page).toBe(1);
     useGalleryStore.getState().setSearch('   ');
     expect(useGalleryStore.getState().search).toBe('');
-  });
-});
-
-describe('galleryStore 星级筛选：minRating/unrated 互斥与清理', () => {
-  beforeEach(() => {
-    useGalleryStore.setState(initialSnapshot, true);
-  });
-
-  it('setFilterUnrated(true) 清 minRating；setFilterMinRating(>0) 清 unrated', () => {
-    useGalleryStore.getState().setFilterMinRating(3);
-    useGalleryStore.getState().setFilterUnrated(true);
-    expect(useGalleryStore.getState().filterUnrated).toBe(true);
-    expect(useGalleryStore.getState().filterMinRating).toBe(0);
-    useGalleryStore.getState().setFilterMinRating(3);
-    expect(useGalleryStore.getState().filterUnrated).toBe(false);
-    expect(useGalleryStore.getState().filterMinRating).toBe(3);
-  });
-
-  it("clearSingleFilter('rating') 双清；clearFilters 双清", () => {
-    useGalleryStore.setState({ filterMinRating: 2, filterUnrated: true });
-    useGalleryStore.getState().clearSingleFilter('rating');
-    expect(useGalleryStore.getState().filterMinRating).toBe(0);
-    expect(useGalleryStore.getState().filterUnrated).toBe(false);
-    useGalleryStore.setState({ filterUnrated: true });
-    useGalleryStore.getState().clearFilters();
-    expect(useGalleryStore.getState().filterUnrated).toBe(false);
   });
 });
 

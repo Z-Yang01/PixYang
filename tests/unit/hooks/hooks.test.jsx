@@ -151,30 +151,6 @@ describe('useGalleryData wiring', () => {
     }
   });
 
-  it('filterUnrated 变化触发重查且查询携带 unrated（审查回归：依赖遗漏则档位切换列表不动）', async () => {
-    window.pixyang.getImages = vi.fn().mockResolvedValue({ images: [], total: 0 });
-    render(<HookHarness hook={useGalleryData} hookProps={{}} />);
-    await waitFor(() => expect(window.pixyang.getImages).toHaveBeenCalled());
-    const callsAfterMount = window.pixyang.getImages.mock.calls.length;
-    await act(async () => {
-      useGalleryStore.getState().setFilterUnrated(true);
-    });
-    await waitFor(() => {
-      expect(window.pixyang.getImages.mock.calls.length).toBeGreaterThan(callsAfterMount);
-    });
-    expect(window.pixyang.getImages).toHaveBeenLastCalledWith(
-      expect.objectContaining({ unrated: true })
-    );
-    await act(async () => {
-      useGalleryStore.getState().setFilterUnrated(false);
-    });
-    await waitFor(() => {
-      expect(window.pixyang.getImages).toHaveBeenLastCalledWith(
-        expect.objectContaining({ unrated: false })
-      );
-    });
-  });
-
   it('onThumbnailsReady 回调 bump thumbVersion 并刷新列表', async () => {
     let readyCb;
     window.pixyang.onThumbnailsReady = vi.fn((cb) => {
@@ -346,38 +322,6 @@ describe('useBatchActions 异步收尾守卫', () => {
     expect(showToast).not.toHaveBeenCalled();
   });
 
-  it('全选全部：unrated 档进入查询与竞态快照（断链则全选视图外图片）', async () => {
-    useGalleryStore.setState({ filterUnrated: true });
-    window.pixyang.getAllImageIds = vi.fn().mockResolvedValue([9]);
-    render(<GuardHarness />);
-    await act(async () => {
-      await out.current.handleSelectAllAll();
-    });
-    expect(window.pixyang.getAllImageIds).toHaveBeenCalledWith(
-      expect.objectContaining({ unrated: true })
-    );
-    expect([...useGalleryStore.getState().selectedIds]).toEqual([9]);
-    // 等待期间切换 unrated 档：晚到的旧 id 集被丢弃（快照须含 filterUnrated）
-    let resolveIds;
-    window.pixyang.getAllImageIds = vi.fn(
-      () =>
-        new Promise((r) => {
-          resolveIds = r;
-        })
-    );
-    let task;
-    await act(async () => {
-      task = out.current.handleSelectAllAll();
-    });
-    await act(async () => {
-      useGalleryStore.getState().setFilterUnrated(false);
-      resolveIds([7, 8]);
-      await task;
-    });
-    // 丢弃晚到的旧档 id 集：保留第一段的 [9]，[7,8] 不灌入
-    expect([...useGalleryStore.getState().selectedIds]).toEqual([9]);
-  });
-
   it('全选全部：筛选未变时正常灌入（对照组，守卫不过宽）', async () => {
     window.pixyang.getAllImageIds = vi.fn().mockResolvedValue([1, 2]);
     render(<GuardHarness />);
@@ -451,97 +395,6 @@ describe('useBatchActions 异步收尾守卫', () => {
     expect(loadImages).toHaveBeenCalled();
     expect(loadStats).toHaveBeenCalled();
     expect(showToast).toHaveBeenCalledWith('已取消收藏（2 张）', 'success');
-  });
-
-  // ── R102 跨模块集成审计：评分筛选 × 批量改星（R-3 批量同口径）──
-  // 「≥N」/「仅未评分」筛选激活时批量写评分，掉出筛选的行不得本地 merge 留在视图里
-  //（勾选仍打向视图外图片）。变异验证：删掉 useBatchActions 的评分复验分支本组先红。
-
-  it('≥N 档批量清评分：掉出筛选的行剪枝勾选 + 重查（不留「灭而未走」行）', async () => {
-    const loadImages = vi.fn(async () => {});
-    const loadStats = vi.fn(async () => {});
-    useGalleryStore.setState({
-      selectedIds: new Set([1, 2, 3]),
-      filterMinRating: 3,
-      images: [
-        { id: 1, rating: 5 },
-        { id: 2, rating: 3 },
-        { id: 3, rating: 4 },
-      ],
-      loadImages,
-      loadStats,
-    });
-    window.pixyang.updateImages = vi.fn().mockResolvedValue(undefined);
-    render(<GuardHarness />);
-    await act(async () => {
-      await out.current.handleBatchUpdate({ rating: 0 });
-    });
-    expect(useGalleryStore.getState().selectedIds.size).toBe(0);
-    expect(loadImages).toHaveBeenCalled();
-    expect(loadStats).toHaveBeenCalled();
-    expect(showToast).toHaveBeenCalledWith('已清除评分（3 张）', 'success');
-  });
-
-  it('≥N 档批量升星仍匹配：不触发重查不丢勾选（复验守卫不过宽）', async () => {
-    const loadImages = vi.fn(async () => {});
-    const loadStats = vi.fn(async () => {});
-    useGalleryStore.setState({
-      selectedIds: new Set([1]),
-      filterMinRating: 3,
-      images: [{ id: 1, rating: 3 }],
-      loadImages,
-      loadStats,
-    });
-    window.pixyang.updateImages = vi.fn().mockResolvedValue(undefined);
-    render(<GuardHarness />);
-    await act(async () => {
-      await out.current.handleBatchUpdate({ rating: 5 });
-    });
-    expect([...useGalleryStore.getState().selectedIds]).toEqual([1]);
-    expect(useGalleryStore.getState().images[0].rating).toBe(5);
-    expect(loadImages).not.toHaveBeenCalled();
-  });
-
-  it('仅未评分档批量评星：行掉出档位视图剪枝 + 重查（unrated 分叉同口径）', async () => {
-    const loadImages = vi.fn(async () => {});
-    const loadStats = vi.fn(async () => {});
-    useGalleryStore.setState({
-      selectedIds: new Set([7, 8]),
-      filterUnrated: true,
-      images: [
-        { id: 7, rating: 0 },
-        { id: 8, rating: null },
-      ],
-      loadImages,
-      loadStats,
-    });
-    window.pixyang.updateImages = vi.fn().mockResolvedValue(undefined);
-    render(<GuardHarness />);
-    await act(async () => {
-      await out.current.handleBatchUpdate({ rating: 4 });
-    });
-    expect(useGalleryStore.getState().selectedIds.size).toBe(0);
-    expect(loadImages).toHaveBeenCalled();
-    expect(showToast).toHaveBeenCalledWith('已设为 4 星（2 张）', 'success');
-  });
-
-  it('无评分筛选时批量改星：纯本地 merge 不重查（回归对照）', async () => {
-    const loadImages = vi.fn(async () => {});
-    useGalleryStore.setState({
-      selectedIds: new Set([1]),
-      filterMinRating: 0,
-      filterUnrated: false,
-      images: [{ id: 1, rating: 0 }],
-      loadImages,
-      loadStats: vi.fn(async () => {}),
-    });
-    window.pixyang.updateImages = vi.fn().mockResolvedValue(undefined);
-    render(<GuardHarness />);
-    await act(async () => {
-      await out.current.handleBatchUpdate({ rating: 2 });
-    });
-    expect(useGalleryStore.getState().images[0].rating).toBe(2);
-    expect(loadImages).not.toHaveBeenCalled();
   });
 
   it('批量删除成功数按返回行数统计：DB 只回推成功行，ghost id 计入失败（批 8 Q-02）', async () => {

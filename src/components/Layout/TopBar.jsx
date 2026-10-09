@@ -38,8 +38,6 @@ export default function TopBar({ showFilters = true, onImport, searchInputRef })
   const filterDate = useGalleryStore((s) => s.filterDate);
   const dateRange = useGalleryStore((s) => s.dateRange);
   const filterFavorites = useGalleryStore((s) => s.filterFavorites);
-  const filterMinRating = useGalleryStore((s) => s.filterMinRating);
-  const filterUnrated = useGalleryStore((s) => s.filterUnrated);
   const totalImages = useGalleryStore((s) => s.totalImages);
   const selectedCount = useGalleryStore((s) => s.selectedIds.size);
   const tags = useGalleryStore((s) => s.tags);
@@ -49,17 +47,9 @@ export default function TopBar({ showFilters = true, onImport, searchInputRef })
   const setFilterTag = useGalleryStore((s) => s.setFilterTag);
   const setDateRange = useGalleryStore((s) => s.setDateRange);
   const clearSingleFilter = useGalleryStore((s) => s.clearSingleFilter);
-  const setFilterUnrated = useGalleryStore((s) => s.setFilterUnrated);
 
   const hasFilters =
-    filterTag ||
-    filterAlbum ||
-    filterDate ||
-    dateRange.from ||
-    dateRange.to ||
-    filterFavorites ||
-    filterMinRating > 0 ||
-    filterUnrated;
+    filterTag || filterAlbum || filterDate || dateRange.from || dateRange.to || filterFavorites;
   const sortArrow = (key) => {
     if (sortBy !== key) return null;
     return sortOrder === 'ASC' ? (
@@ -212,22 +202,6 @@ export default function TopBar({ showFilters = true, onImport, searchInputRef })
           )}
           {filterFavorites && (
             <FilterChip label="收藏" onRemove={() => handleClearFilter('favorites')} />
-          )}
-          {filterMinRating > 0 && (
-            <FilterChip
-              label={`≥ ${filterMinRating} 星`}
-              onRemove={() => handleClearFilter('rating')}
-            />
-          )}
-          {filterUnrated && (
-            <FilterChip
-              label="未评分"
-              onRemove={() => {
-                setFilterUnrated(false);
-                // 未评分档可能在非图库页激活：复位后回图库（同收藏 chip 语义）
-                navigate('/');
-              }}
-            />
           )}
         </div>
       )}

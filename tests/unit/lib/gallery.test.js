@@ -128,7 +128,6 @@ describe('buildImageQuery', () => {
       tagId: 3,
       albumId: 7,
       favorite: true,
-      unrated: true,
       importDate: '2024-01-01',
       dateFrom: '2024-01-01',
       dateTo: '2024-12-31',
@@ -142,55 +141,12 @@ describe('buildImageQuery', () => {
       tagId: 3,
       albumId: 7,
       favorite: true,
-      unrated: true,
-      minRating: 0,
       importDate: '2024-01-01',
       dateFrom: '2024-01-01',
       dateTo: '2024-12-31',
       limit: 15,
       offset: 0,
     });
-  });
-
-  it('minRating 显式透传（键名与 Rust ImageQuery serde camelCase 对齐）', () => {
-    const q = buildImageQuery({ minRating: 4, page: 1, gridSettings: grid });
-    expect(q.minRating).toBe(4);
-  });
-});
-
-describe('minRating 查询对拍向量（Rust images_query.rs tests 同表锁定）', () => {
-  // 种子 rating 分布 [0,1,3,5]；期望值 = rating ≥ minRating 的行数。
-  // Rust 侧 MIN_RATING_VECTORS 以同一批 JSON 向量 + 同一期望值断言真实 SQL 行数。
-  const vectors = [
-    ['{}', 4],
-    ['{"minRating":0}', 4],
-    ['{"minRating":1}', 3],
-    ['{"minRating":3}', 2],
-    ['{"minRating":5}', 1],
-    ['{"minRating":6}', 0],
-  ];
-  const ratedRows = [{ rating: 0 }, { rating: 1 }, { rating: 3 }, { rating: 5 }];
-
-  it('JSON 向量经 buildImageQuery 后键值不变，前端剪枝留存数与 SQL 期望一致', () => {
-    for (const [json, expected] of vectors) {
-      const parsed = JSON.parse(json);
-      const q = buildImageQuery({ ...parsed, page: 1, gridSettings: grid });
-      expect(q.minRating, `向量 ${json} 键值`).toBe(parsed.minRating ?? 0);
-      const kept = ratedRows.filter((row) =>
-        matchesListFilters(row, { filterMinRating: q.minRating })
-      ).length;
-      expect(kept, `向量 ${json} 剪枝留存数`).toBe(expected);
-    }
-  });
-
-  it('剪枝边界：未评分(null/undefined)归 0 恒被 ≥1 剔除，0=不过滤全保留', () => {
-    expect(matchesListFilters({ rating: null }, { filterMinRating: 1 })).toBe(false);
-    expect(matchesListFilters({ rating: undefined }, { filterMinRating: 3 })).toBe(false);
-    expect(matchesListFilters({ rating: 3 }, { filterMinRating: 3 })).toBe(true);
-    expect(matchesListFilters({ rating: 2 }, { filterMinRating: 3 })).toBe(false);
-    expect(matchesListFilters({ rating: 0 }, { filterMinRating: 0 })).toBe(true);
-    expect(matchesListFilters({ rating: 5 }, { filterMinRating: 5 })).toBe(true);
-    expect(matchesListFilters({ rating: 4 }, { filterMinRating: 5 })).toBe(false);
   });
 });
 
@@ -238,8 +194,6 @@ describe('筛选与更新', () => {
     expect(hasActiveFilters({ dateRange: { from: '2024-01-01' } })).toBe(true);
     expect(hasActiveFilters({ dateRange: { to: '2024-01-01' } })).toBe(true);
     expect(hasActiveFilters({ filterFavorites: true })).toBe(true);
-    expect(hasActiveFilters({ filterMinRating: 0 })).toBe(false);
-    expect(hasActiveFilters({ filterMinRating: 3 })).toBe(true);
   });
 
   it('applyLightLocalUpdate 只更新命中 id，保持其他引用稳定', () => {
@@ -330,18 +284,6 @@ describe('搜索剪枝：trim 口径与 SQL 对齐', () => {
     expect(matchesListFilters(row, { search: 'moon' })).toBe(false);
     // 纯空格 = 无搜索（trim 后空串不剪枝）
     expect(matchesListFilters(row, { search: '   ' })).toBe(true);
-  });
-});
-
-describe('星级筛选：仅未评分剪枝', () => {
-  it('unrated=true 只留 rating 0/NULL 行；与 hasActiveFilters 收编', () => {
-    const base = { filterUnrated: true };
-    expect(matchesListFilters({ rating: 0 }, base)).toBe(true);
-    expect(matchesListFilters({ rating: null }, base)).toBe(true);
-    expect(matchesListFilters({ rating: 3 }, base)).toBe(false);
-    expect(matchesListFilters({ rating: undefined }, base)).toBe(true);
-    expect(hasActiveFilters({ filterUnrated: true })).toBe(true);
-    expect(hasActiveFilters({ filterUnrated: false })).toBe(false);
   });
 });
 

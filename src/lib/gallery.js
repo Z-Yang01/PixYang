@@ -58,8 +58,6 @@ export function buildImageQuery({
   tagId = null,
   albumId = null,
   favorite = false,
-  minRating = 0,
-  unrated = false,
   importDate = '',
   dateFrom = '',
   dateTo = '',
@@ -75,10 +73,6 @@ export function buildImageQuery({
     tagId,
     albumId,
     favorite,
-    // Rust ImageQuery.min_rating（serde camelCase）同键名；0=不过滤
-    minRating,
-    // Rust ImageQuery.unrated：仅 rating 0/NULL；与 minRating UI 互斥，SQL 层纯 AND
-    unrated,
     importDate,
     dateFrom,
     dateTo,
@@ -129,8 +123,6 @@ export function hasActiveFilters({
   filterDate,
   dateRange,
   filterFavorites,
-  filterMinRating,
-  filterUnrated,
 } = {}) {
   return !!(
     search ||
@@ -139,9 +131,7 @@ export function hasActiveFilters({
     filterDate ||
     dateRange?.from ||
     dateRange?.to ||
-    filterFavorites ||
-    filterMinRating ||
-    filterUnrated
+    filterFavorites
   );
 }
 
@@ -153,15 +143,10 @@ export function applyLightLocalUpdate(images, id, updates) {
 // 轻量写回后复验行与当前筛选的归属（仅覆盖行数据可判定的维度：收藏/单日/区间/搜索/评分下限）。
 // 搜索 haystack 并入 original_path（R71，后端 SQL 同口径）；标签名列仍无法在前端复刻，
 // 误判方向是多刷一次重查，不会漏剪枝（审查批 8 R-3）
-export function matchesListFilters(
-  row,
-  { filterFavorites, filterDate, dateRange, search, filterMinRating, filterUnrated } = {}
-) {
+export function matchesListFilters(row, { filterFavorites, filterDate, dateRange, search } = {}) {
   if (!row) return true;
   if (filterFavorites && !row.favorite) return false;
   // rating 列默认 0：null/undefined 归零后比较，与 SQL「NULL ≥ N 恒假」同口径
-  if (filterMinRating && (row.rating || 0) < filterMinRating) return false;
-  if (filterUnrated && (row.rating || 0) !== 0) return false;
   if (filterDate && row.import_date !== filterDate) return false;
   const d = row.import_date || '';
   if (dateRange?.from && d < dateRange.from) return false;
