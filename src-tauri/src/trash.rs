@@ -869,6 +869,42 @@ pub fn empty_trash_entries(trash: &Path) -> Result<usize, PixError> {
     Ok(removed)
 }
 
+/// 批量恢复（回收站页多选）：逐 id 独立原子（单 id 失败不中断批次），返回
+/// (成功回库行, [(失败 id, 错误)])；错误中文化由命令层经 err_cn 完成。
+pub fn batch_restore_from_trash_core(
+    conn: &Connection,
+    ids: &[i64],
+    thumbs_dir: &Path,
+    trash: &Path,
+) -> Result<(Vec<crate::images_query::ImageRow>, Vec<(i64, PixError)>), PixError> {
+    let mut restored = Vec::new();
+    let mut failed = Vec::new();
+    for id in ids {
+        match restore_image_from_trash_core(conn, *id, thumbs_dir, trash) {
+            Ok(()) => {
+                if let Some(row) = crate::images_query::get_image_by_id(conn, *id)? {
+                    restored.push(row);
+                }
+            }
+            Err(e) => failed.push((*id, e)),
+        }
+    }
+    Ok((restored, failed))
+}
+
+/// 批量立即清除（回收站页多选）：逐 id 独立原子，返回 (清除文件总数, [(失败 id, 错误)])。
+pub fn batch_purge_trash_entries(trash: &Path, ids: &[i64]) -> (usize, Vec<(i64, PixError)>) {
+    let mut total = 0usize;
+    let mut failed = Vec::new();
+    for id in ids {
+        match purge_trash_entry(trash, *id) {
+            Ok(n) => total += n,
+            Err(e) => failed.push((*id, e)),
+        }
+    }
+    (total, failed)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1548,6 +1584,59 @@ mod tests {
 
         let missing = trash.parent().unwrap().join("empty-nope");
         assert!(empty_trash_entries(&missing).is_err());
+        let _ = std::fs::remove_dir_all(pics.parent().unwrap());
+    }
+
+    #[test]
+    fn 批量恢复_逐id独立原子_部分失败不中断_成功行回库() {
+        let (conn, pics, thumbs, trash) = setup("batch-restore");
+        insert_image(&conn, &pics, false);
+        write_thumbs(&thumbs);
+        // 造第二条可恢复记录
+        std::fs::write(pics.join("b.jpg"), b"B").unwrap();
+        conn.execute(
+            "INSERT INTO images (id, filename, filepath, import_date) VALUES (2, 'b.jpg', ?, '2026-01-01')",
+            [pics.join("b.jpg").to_string_lossy().to_string()],
+        )
+        .unwrap();
+        delete_image_to_trash_core(&conn, 1, &thumbs, &trash).unwrap().unwrap();
+        delete_image_to_trash_core(&conn, 2, &thumbs, &trash).unwrap().unwrap();
+        // id 2 暂存原图丢失 → 该 id 失败；id 1 正常
+        std::fs::remove_file(trash.join("2__b.jpg")).unwrap();
+
+        let (restored, failed) =
+            batch_restore_from_trash_core(&conn, &[1, 2], &thumbs, &trash).unwrap();
+        assert_eq!(restored.len(), 1);
+        assert_eq!(restored[0].id, 1);
+        assert_eq!(failed.len(), 1);
+        assert_eq!(failed[0].0, 2);
+        assert!(crate::images_query::get_image_by_id(&conn, 1).unwrap().is_some());
+        assert!(crate::images_query::get_image_by_id(&conn, 2).unwrap().is_none());
+        let _ = std::fs::remove_dir_all(pics.parent().unwrap());
+    }
+
+    #[test]
+    fn 批量清除_逐id独立原子_计数聚合() {
+        let (conn, pics, thumbs, trash) = setup("batch-purge");
+        insert_image(&conn, &pics, false);
+        write_thumbs(&thumbs);
+        std::fs::write(pics.join("b.jpg"), b"B").unwrap();
+        conn.execute(
+            "INSERT INTO images (id, filename, filepath, import_date) VALUES (2, 'b.jpg', ?, '2026-01-01')",
+            [pics.join("b.jpg").to_string_lossy().to_string()],
+        )
+        .unwrap();
+        delete_image_to_trash_core(&conn, 1, &thumbs, &trash).unwrap().unwrap();
+        delete_image_to_trash_core(&conn, 2, &thumbs, &trash).unwrap().unwrap();
+
+        let (total, failed) = batch_purge_trash_entries(&trash, &[1, 2, 3]);
+        // id1: 1 原图 + 3 派生 + manifest? manifest 归 id 前缀共 5；id2 同 5；无 NEF
+        assert_eq!(total, 7, "id1: 5 文件（原图+3 派生+manifest）；id2: 2 文件（原图+manifest，其派生缩略图不存在）");
+        assert!(
+            failed.is_empty(),
+            "不存在的 id 是 Ok(0) 个文件而非报错（purge 单项契约）"
+        );
+        assert!(std::fs::read_dir(&trash).unwrap().next().is_none());
         let _ = std::fs::remove_dir_all(pics.parent().unwrap());
     }
 

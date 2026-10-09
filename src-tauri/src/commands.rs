@@ -1396,6 +1396,51 @@ pub async fn empty_trash(paths: State<'_, AppPaths>) -> Result<usize, String> {
     .map_err(|e| format!("后台任务失败：{}", err_cn::text(&e)))?
 }
 
+#[tauri::command]
+pub async fn batch_restore_from_trash(
+    db: State<'_, Db>,
+    paths: State<'_, AppPaths>,
+    ids: Vec<i64>,
+) -> Result<Value, String> {
+    let db = db.inner().clone();
+    let paths = paths.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let conn = db.write_lock();
+        let (restored, failed) =
+            trash::batch_restore_from_trash_core(&conn, &ids, &paths.thumbs_dir, &paths.trash_dir)
+                .map_err(|e| err_cn::text(&e))?;
+        Ok(json!({
+            "restored": restored,
+            "failed": failed
+                .into_iter()
+                .map(|(id, e)| json!({ "id": id, "error": err_cn::text(&e) }))
+                .collect::<Vec<_>>(),
+        }))
+    })
+    .await
+    .map_err(|e| format!("后台任务失败：{}", err_cn::text(&e)))?
+}
+
+#[tauri::command]
+pub async fn batch_purge_trash(
+    paths: State<'_, AppPaths>,
+    ids: Vec<i64>,
+) -> Result<Value, String> {
+    let paths = paths.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let (purged_files, failed) = trash::batch_purge_trash_entries(&paths.trash_dir, &ids);
+        Ok(json!({
+            "purgedFiles": purged_files,
+            "failed": failed
+                .into_iter()
+                .map(|(id, e)| json!({ "id": id, "error": err_cn::text(&e) }))
+                .collect::<Vec<_>>(),
+        }))
+    })
+    .await
+    .map_err(|e| format!("后台任务失败：{}", err_cn::text(&e)))?
+}
+
 // ── 图片列表查询通道（迁移接缝 3） ──
 
 #[tauri::command]

@@ -44,6 +44,8 @@ for (const name of [
   'listTrash',
   'purgeTrashEntry',
   'emptyTrash',
+  'batchRestoreFromTrash',
+  'batchPurgeTrash',
   'getImportDates',
   'rebuildThumbnails',
   'editOpen',

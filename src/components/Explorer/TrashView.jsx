@@ -5,17 +5,19 @@ import { formatSizeDisplay } from '@/lib/format';
 import { errText } from '@/lib/errorText';
 import ConfirmDialog from '../Layout/ConfirmDialog';
 import { Button } from '@/components/ui/button';
-import { Trash2, RotateCcw } from 'lucide-react';
+import { Trash2, RotateCcw, X } from 'lucide-react';
 
 // 删除暂存区管理页（回收站）：列出 trash 目录的 manifest 条目，恢复走既有
 // restoreImageFromTrash 整链还原，立即清除/清空为物理删除（不可撤销）。
-// 剩余保留时间由后端按 manifest mtime 推算（24h 清扫口径）。
+// 剩余保留时间由后端按 manifest mtime 推算（24h 清扫口径）。支持多选批量恢复/清除。
 export default function TrashView({ onRefresh }) {
   const [entries, setEntries] = useState([]);
   const [thumbUrls, setThumbUrls] = useState({});
   const [loaded, setLoaded] = useState(false);
   const [purgeTarget, setPurgeTarget] = useState(null);
   const [emptyConfirm, setEmptyConfirm] = useState(false);
+  const [selectedIds, setSelectedIds] = useState(() => new Set());
+  const [batchPurgeConfirm, setBatchPurgeConfirm] = useState(false);
   const busyRef = useRef(false);
 
   const loadEntries = async () => {
@@ -27,11 +29,16 @@ export default function TrashView({ onRefresh }) {
       const rows = await api.listTrash();
       // 最快到期在最前（trashed_at 升序）：24h 窗口内先救将消失的；同一毫秒按 id 稳定序，
       // 删除时间未知（mtime 不可读回 0，不参与自动清除）殿后
-      setEntries(
-        (rows || []).sort(
-          (a, b) => (a.trashed_at_ms || Infinity) - (b.trashed_at_ms || Infinity) || a.id - b.id
-        )
+      const sorted = (rows || []).sort(
+        (a, b) => (a.trashed_at_ms || Infinity) - (b.trashed_at_ms || Infinity) || a.id - b.id
       );
+      setEntries(sorted);
+      // 勾选集剪枝到现存条目：批量操作后陈旧 id 不残留（删除确认同口径）
+      setSelectedIds((prev) => {
+        const alive = new Set(sorted.map((t) => t.id));
+        const next = new Set([...prev].filter((id) => alive.has(id)));
+        return next.size === prev.size ? prev : next;
+      });
     } catch (e) {
       console.error('[trash] 加载回收站失败:', e.message);
       toast.error(errText('加载回收站失败', e));
@@ -125,6 +132,80 @@ export default function TrashView({ onRefresh }) {
     }
   };
 
+  // ── 批量操作（多选） ──
+  const toggleRow = (id) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+  const allSelected = entries.length > 0 && selectedIds.size === entries.length;
+  const toggleAll = () => {
+    setSelectedIds(allSelected ? new Set() : new Set(entries.map((t) => t.id)));
+  };
+
+  const handleBatchRestore = async () => {
+    if (selectedIds.size === 0 || !api.isBridgeAvailable() || busyRef.current) return;
+    busyRef.current = true;
+    const ids = [...selectedIds];
+    try {
+      const result = await api.batchRestoreFromTrash(ids);
+      const restored = result?.restored || [];
+      const failed = result?.failed || [];
+      for (const row of restored) {
+        setThumbUrls((prev) => {
+          const next = { ...prev };
+          delete next[row.id];
+          return next;
+        });
+      }
+      if (failed.length === 0) {
+        toast.success(`已恢复 ${restored.length} 张图片到原位置`);
+      } else {
+        const base = `已恢复 ${restored.length} 张，${failed.length} 张失败`;
+        toast.error(friendlyBatchError(base, failed));
+      }
+      await loadEntries();
+      if (restored.length > 0) onRefresh?.();
+    } catch (e) {
+      console.error('[trash] 批量恢复失败:', e.message);
+      toast.error(errText('批量恢复失败', e));
+    } finally {
+      busyRef.current = false;
+    }
+  };
+
+  const handleBatchPurge = async () => {
+    setBatchPurgeConfirm(false);
+    if (selectedIds.size === 0 || !api.isBridgeAvailable() || busyRef.current) return;
+    busyRef.current = true;
+    const ids = [...selectedIds];
+    try {
+      const result = await api.batchPurgeTrash(ids);
+      const failed = result?.failed || [];
+      if (failed.length === 0) {
+        toast.success(`已永久删除 ${ids.length} 项（${result?.purgedFiles ?? 0} 个文件）`);
+      } else {
+        const base = `已永久删除 ${ids.length - failed.length} 项，${failed.length} 项失败`;
+        toast.error(friendlyBatchError(base, failed));
+      }
+      await loadEntries();
+    } catch (e) {
+      console.error('[trash] 批量删除失败:', e.message);
+      toast.error(errText('批量删除失败', e));
+    } finally {
+      busyRef.current = false;
+    }
+  };
+
+  // 失败清单第一条进上屏文案（其余进 title 不适用，整串太长；全量在 console）
+  const friendlyBatchError = (base, failed) => {
+    const first = failed[0]?.error ? `：${failed[0].error}` : '';
+    return `${base}${first}`;
+  };
+
   const remainingLabel = (secs) => {
     if (secs <= 0) return '即将自动清除';
     if (secs < 3600) return '不足 1 小时后自动清除';
@@ -173,110 +254,163 @@ export default function TrashView({ onRefresh }) {
             </div>
           </div>
         ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            {entries.map((entry) => (
+          <>
+            {entries.length > 0 && (
               <div
-                key={entry.id}
                 style={{
                   display: 'flex',
                   alignItems: 'center',
-                  gap: 14,
-                  background: 'var(--bg-card)',
-                  border: '1px solid var(--border)',
-                  borderRadius: 'var(--radius-lg)',
-                  padding: 12,
+                  gap: 10,
+                  marginBottom: 12,
+                  fontSize: 13,
+                  color: 'var(--text-muted)',
                 }}
               >
-                {thumbUrls[entry.id] ? (
-                  <img
-                    src={thumbUrls[entry.id]}
-                    alt=""
-                    loading="lazy"
-                    decoding="async"
-                    style={{
-                      width: 72,
-                      height: 54,
-                      objectFit: 'cover',
-                      borderRadius: 'var(--radius-md)',
-                      flexShrink: 0,
+                <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={allSelected}
+                    ref={(el) => {
+                      if (el) el.indeterminate = selectedIds.size > 0 && !allSelected;
                     }}
+                    onChange={toggleAll}
+                    aria-label="全选"
                   />
-                ) : (
-                  <div
-                    aria-hidden="true"
-                    style={{
-                      width: 72,
-                      height: 54,
-                      borderRadius: 'var(--radius-md)',
-                      flexShrink: 0,
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      background: 'var(--bg-primary)',
-                    }}
-                  >
-                    <Trash2 style={{ width: 20, height: 20, color: 'var(--text-muted)' }} />
-                  </div>
+                  全选
+                </label>
+                {selectedIds.size > 0 && (
+                  <>
+                    <span>已选 {selectedIds.size} 项</span>
+                    <Button size="sm" onClick={handleBatchRestore}>
+                      <RotateCcw className="size-3.5" /> 批量恢复
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={() => setBatchPurgeConfirm(true)}>
+                      批量删除
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon-xs"
+                      onClick={() => setSelectedIds(new Set())}
+                      title="取消选择"
+                    >
+                      <X className="size-3.5" />
+                    </Button>
+                  </>
                 )}
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div
-                    style={{
-                      fontSize: 14,
-                      fontWeight: 600,
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      whiteSpace: 'nowrap',
-                    }}
-                    title={entry.filename}
-                  >
-                    {entry.filename}
-                    {entry.has_raw && (
-                      <span
-                        style={{
-                          marginLeft: 8,
-                          fontSize: 11,
-                          color: 'var(--text-muted)',
-                          fontWeight: 400,
-                        }}
-                        title="含配对 NEF 原图"
-                      >
-                        RAW
-                      </span>
-                    )}
-                  </div>
-                  <div
-                    style={{
-                      fontSize: 12,
-                      color: 'var(--text-muted)',
-                      marginTop: 2,
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      whiteSpace: 'nowrap',
-                    }}
-                    title={entry.filepath}
-                  >
-                    {entry.filepath}
-                  </div>
-                  <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
-                    删除于 {trashedLabel(entry.trashed_at_ms) || '未知时间'}
-                    {entry.size ? ` · ${formatSizeDisplay(entry.size)}` : ''}
-                    {` · ${entry.file_count} 个文件`}
-                    {entry.trashed_at_ms
-                      ? ` · ${remainingLabel(entry.remaining_secs)}`
-                      : ' · 删除时间未知（不参与自动清除）'}
-                  </div>
-                </div>
-                <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
-                  <Button size="sm" onClick={() => handleRestore(entry)}>
-                    <RotateCcw className="size-3.5" /> 恢复
-                  </Button>
-                  <Button variant="outline" size="sm" onClick={() => setPurgeTarget(entry)}>
-                    立即删除
-                  </Button>
-                </div>
               </div>
-            ))}
-          </div>
+            )}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {entries.map((entry) => (
+                <div
+                  key={entry.id}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 14,
+                    background: 'var(--bg-card)',
+                    border: '1px solid var(--border)',
+                    borderRadius: 'var(--radius-lg)',
+                    padding: 12,
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={selectedIds.has(entry.id)}
+                    onChange={() => toggleRow(entry.id)}
+                    aria-label={`选择 ${entry.filename}`}
+                    style={{ flexShrink: 0 }}
+                  />
+                  {thumbUrls[entry.id] ? (
+                    <img
+                      src={thumbUrls[entry.id]}
+                      alt=""
+                      loading="lazy"
+                      decoding="async"
+                      style={{
+                        width: 72,
+                        height: 54,
+                        objectFit: 'cover',
+                        borderRadius: 'var(--radius-md)',
+                        flexShrink: 0,
+                      }}
+                    />
+                  ) : (
+                    <div
+                      aria-hidden="true"
+                      style={{
+                        width: 72,
+                        height: 54,
+                        borderRadius: 'var(--radius-md)',
+                        flexShrink: 0,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        background: 'var(--bg-primary)',
+                      }}
+                    >
+                      <Trash2 style={{ width: 20, height: 20, color: 'var(--text-muted)' }} />
+                    </div>
+                  )}
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div
+                      style={{
+                        fontSize: 14,
+                        fontWeight: 600,
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                      }}
+                      title={entry.filename}
+                    >
+                      {entry.filename}
+                      {entry.has_raw && (
+                        <span
+                          style={{
+                            marginLeft: 8,
+                            fontSize: 11,
+                            color: 'var(--text-muted)',
+                            fontWeight: 400,
+                          }}
+                          title="含配对 NEF 原图"
+                        >
+                          RAW
+                        </span>
+                      )}
+                    </div>
+                    <div
+                      style={{
+                        fontSize: 12,
+                        color: 'var(--text-muted)',
+                        marginTop: 2,
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                      }}
+                      title={entry.filepath}
+                    >
+                      {entry.filepath}
+                    </div>
+                    <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
+                      删除于 {trashedLabel(entry.trashed_at_ms) || '未知时间'}
+                      {entry.size ? ` · ${formatSizeDisplay(entry.size)}` : ''}
+                      {` · ${entry.file_count} 个文件`}
+                      {entry.trashed_at_ms
+                        ? ` · ${remainingLabel(entry.remaining_secs)}`
+                        : ' · 删除时间未知（不参与自动清除）'}
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+                    <Button size="sm" onClick={() => handleRestore(entry)}>
+                      <RotateCcw className="size-3.5" /> 恢复
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={() => setPurgeTarget(entry)}>
+                      立即删除
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </>
         )}
       </div>
 
@@ -299,6 +433,17 @@ export default function TrashView({ onRefresh }) {
           danger
           onConfirm={handleEmpty}
           onCancel={() => setEmptyConfirm(false)}
+        />
+      )}
+
+      {batchPurgeConfirm && (
+        <ConfirmDialog
+          title="批量永久删除"
+          message={`确定要永久删除选中的 ${selectedIds.size} 项吗？该操作不可撤销，图片文件将被立即物理删除。`}
+          confirmLabel="永久删除选中项"
+          danger
+          onConfirm={handleBatchPurge}
+          onCancel={() => setBatchPurgeConfirm(false)}
         />
       )}
     </div>

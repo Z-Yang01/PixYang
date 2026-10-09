@@ -148,4 +148,75 @@ describe('TrashView（回收站管理页）', () => {
     render(<TrashView />);
     expect(screen.getByText('回收站是空的')).toBeInTheDocument();
   });
+
+  it('多选批量恢复：行复选/全选 → batch_restore_from_trash 一次携全量 id；成功清空勾选并刷新', async () => {
+    const second = { ...ENTRY, id: 9, filename: 'IMG_0009.JPG' };
+    let listed = true;
+    const invoke = vi.fn((cmd) => {
+      // 恢复后重载：两条目已离开暂存区，list 返回空（真实磁盘语义）
+      if (cmd === 'list_trash') return Promise.resolve(listed ? [ENTRY, second] : []);
+      if (cmd === 'batch_restore_from_trash') {
+        listed = false;
+        return Promise.resolve({ restored: [{ id: 7 }, { id: 9 }], failed: [] });
+      }
+      return Promise.resolve(0);
+    });
+    const onRefresh = vi.fn();
+    mount(invoke, { onRefresh });
+    await screen.findByText('IMG_0007.JPG');
+    fireEvent.click(screen.getByLabelText('选择 IMG_0007.JPG'));
+    fireEvent.click(screen.getByLabelText('选择 IMG_0009.JPG'));
+    fireEvent.click(screen.getByRole('button', { name: /批量恢复/ }));
+    await vi.waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith('batch_restore_from_trash', { ids: [7, 9] });
+      expect(toast.success).toHaveBeenCalledWith('已恢复 2 张图片到原位置');
+      expect(onRefresh).toHaveBeenCalled();
+    });
+    // 恢复后列表重载（空）→ 批量操作栏随勾选集清空消失
+    await vi.waitFor(() => {
+      expect(screen.queryByRole('button', { name: /批量恢复/ })).toBeNull();
+    });
+  });
+
+  it('多选批量删除：需二次确认才 invoke batch_purge_trash；部分失败报错误 toast', async () => {
+    const invoke = vi.fn((cmd) => {
+      if (cmd === 'list_trash') return Promise.resolve([ENTRY]);
+      if (cmd === 'batch_purge_trash')
+        return Promise.resolve({
+          purgedFiles: 3,
+          failed: [{ id: 7, error: '清除 7__IMG_0007.JPG 失败: Os { code: 5 }' }],
+        });
+      return Promise.resolve(0);
+    });
+    mount(invoke);
+    await screen.findByText('IMG_0007.JPG');
+    fireEvent.click(screen.getByLabelText('选择 IMG_0007.JPG'));
+    fireEvent.click(screen.getByRole('button', { name: '批量删除' }));
+    expect(invoke).not.toHaveBeenCalledWith('batch_purge_trash', expect.anything());
+    fireEvent.click(await screen.findByRole('button', { name: '永久删除选中项' }));
+    await vi.waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith('batch_purge_trash', { ids: [7] });
+      expect(toast.error).toHaveBeenCalledWith(
+        '已永久删除 0 项，1 项失败：清除 7__IMG_0007.JPG 失败: Os { code: 5 }'
+      );
+    });
+  });
+
+  it('全选带 indeterminate：部分选中时全选框半选态，再点一次全清', async () => {
+    const second = { ...ENTRY, id: 9, filename: 'IMG_0009.JPG' };
+    const invoke = vi.fn((cmd) =>
+      cmd === 'list_trash' ? Promise.resolve([ENTRY, second]) : Promise.resolve(0)
+    );
+    mount(invoke);
+    await screen.findByText('IMG_0007.JPG');
+    const all = screen.getByLabelText('全选');
+    expect(all.checked).toBe(false);
+    fireEvent.click(screen.getByLabelText('选择 IMG_0007.JPG'));
+    expect(all.indeterminate).toBe(true);
+    fireEvent.click(all);
+    expect(screen.getByLabelText('选择 IMG_0007.JPG').checked).toBe(true);
+    expect(screen.getByLabelText('选择 IMG_0009.JPG').checked).toBe(true);
+    fireEvent.click(all);
+    expect(screen.getByLabelText('选择 IMG_0007.JPG').checked).toBe(false);
+  });
 });

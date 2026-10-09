@@ -65,6 +65,8 @@ export const tauriApi = {
   listTrash: () => tauriInvoke('list_trash', {}),
   purgeTrashEntry: (id) => tauriInvoke('purge_trash_entry', { id }),
   emptyTrash: () => tauriInvoke('empty_trash', {}),
+  batchRestoreFromTrash: (ids) => tauriInvoke('batch_restore_from_trash', { ids }),
+  batchPurgeTrash: (ids) => tauriInvoke('batch_purge_trash', { ids }),
   // presets：upgradeEdits 规整在桥接层（前端与桥同用 shared/editSchema.js）
   getPresets: async () => {
     const rows = await tauriInvoke('get_presets');

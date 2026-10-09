@@ -176,6 +176,8 @@ pub fn run() {
             commands::list_trash,
             commands::purge_trash_entry,
             commands::empty_trash,
+            commands::batch_restore_from_trash,
+            commands::batch_purge_trash,
             commands::get_presets,
             commands::create_preset,
             commands::delete_preset,

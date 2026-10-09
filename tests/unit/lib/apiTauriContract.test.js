@@ -115,6 +115,13 @@ const ROUTES = [
   { method: 'purgeTrashEntry', args: [9], cmd: 'purge_trash_entry', invokeArgs: { id: 9 } },
   { method: 'emptyTrash', args: [], cmd: 'empty_trash', invokeArgs: {} },
   {
+    method: 'batchRestoreFromTrash',
+    args: [[7, 8]],
+    cmd: 'batch_restore_from_trash',
+    invokeArgs: { ids: [7, 8] },
+  },
+  { method: 'batchPurgeTrash', args: [[7]], cmd: 'batch_purge_trash', invokeArgs: { ids: [7] } },
+  {
     method: 'getPresets',
     args: [],
     cmd: 'get_presets',

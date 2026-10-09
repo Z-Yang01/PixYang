@@ -148,8 +148,10 @@ tests/            vitest（node 环境 + per-file happy-dom pragma）
   暂存文件留存待清扫。占位测试用 `share_mode(0)` 独占打开模拟文件占用。
 - **回收站管理页（/trash 路由）**：`list_trash`/`purge_trash_entry`/`empty_trash` 三命令（纯文件面
   操作，不碰库记录、不需要写锁；manifest 损坏条目列表跳过待清扫）；恢复复用 `restoreImageFromTrash`
-  整链还原。assetProtocol scope 含 `$CONFIG/pixyang/trash/**`（回收站缩略图预览）。前端
-  `src/components/Explorer/TrashView.jsx`，契约表三行在 `apiTauriContract.test.js`。
+  整链还原。批量多选走 `batch_restore_from_trash`（写锁内逐 id 独立原子，返回 {restored, failed:[{id,error}]}
+  中文错误清单）与 `batch_purge_trash`（纯文件面，{purgedFiles, failed}）。assetProtocol scope 含
+  `$CONFIG/pixyang/trash/**`（回收站缩略图预览）。前端 `src/components/Explorer/TrashView.jsx`
+  （多选剪枝随列表重载，删除确认同口径），契约表五行在 `apiTauriContract.test.js`。
 
 ## agent 调色与编辑扩展（2026-09-28）
 
