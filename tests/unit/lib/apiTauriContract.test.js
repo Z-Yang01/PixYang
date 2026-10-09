@@ -39,10 +39,8 @@ const ROUTES = [
     cmd: 'get_images',
     invokeArgs: { query: { page: 1 } },
   },
-  { method: 'getImage', args: [5], cmd: 'get_image', invokeArgs: { id: 5 } },
   { method: 'getImportDates', args: [], cmd: 'get_import_dates', invokeArgs: {} },
   { method: 'getStats', args: [], cmd: 'get_stats', invokeArgs: {} },
-  { method: 'getAlbumImages', args: [4], cmd: 'get_album_images', invokeArgs: { albumId: 4 } },
   {
     method: 'createTag',
     args: ['风景', '#fff'],
@@ -139,12 +137,6 @@ const ROUTES = [
     invokeArgs: { query: { tagId: 1 } },
   },
   {
-    method: 'fileExists',
-    args: ['E:/a.jpg'],
-    cmd: 'file_exists',
-    invokeArgs: { filepath: 'E:/a.jpg' },
-  },
-  {
     method: 'importImages',
     args: [[{ filename: 'a.jpg' }], '2026-01-01'],
     cmd: 'import_images',
@@ -196,7 +188,6 @@ const ROUTES = [
     invokeArgs: { ids: [3] },
   },
   { method: 'findDuplicates', args: [], cmd: 'find_duplicates', invokeArgs: {} },
-  { method: 'getEdits', args: [1], cmd: 'get_edits', invokeArgs: { id: 1 } },
   {
     method: 'saveEdits',
     args: [1, { exposure: 0.5 }, { label: 'x' }],
@@ -205,7 +196,6 @@ const ROUTES = [
     invokeImpl: (cmd) =>
       cmd === 'edit_open' ? { basePath: 'E:/b.jpg', width: 800, height: 600 } : { ok: true },
   },
-  { method: 'getEditHistory', args: [1], cmd: 'get_edit_history', invokeArgs: { id: 1 } },
   {
     method: 'undoLastEdit',
     args: [3],

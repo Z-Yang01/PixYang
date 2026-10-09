@@ -198,8 +198,6 @@ describe('tauriBridge', () => {
     });
     await api.getImages();
     expect(invoke).toHaveBeenCalledWith('get_images', { query: {} });
-    await api.getImage(5);
-    expect(invoke).toHaveBeenCalledWith('get_image', { id: 5 });
     await api.getImportDates();
     expect(invoke).toHaveBeenCalledWith('get_import_dates', {});
     await api.getStats();
@@ -239,27 +237,6 @@ describe('tauriBridge', () => {
     expect(invoke).toHaveBeenCalledWith('rebuild_thumbnails_with_events', { all: true });
   });
 
-  it('接缝 P1-10：getEdits 返回 params 经 upgradeEdits 规整，无记录为 null', async () => {
-    const invoke = vi
-      .fn()
-      .mockResolvedValueOnce({
-        version: 3,
-        updatedAt: '2026-09-21 10:00',
-        params: { exposure: 0.5 },
-      })
-      .mockResolvedValueOnce(null);
-    window.__TAURI__ = { core: { invoke } };
-    const row = await api.getEdits(5);
-    expect(invoke).toHaveBeenNthCalledWith(1, 'get_edits', { id: 5 });
-    expect(row).toEqual({
-      version: 3,
-      updatedAt: '2026-09-21 10:00',
-      params: upgradeEdits({ exposure: 0.5 }),
-    });
-    await expect(api.getEdits(6)).resolves.toBeNull();
-    expect(invoke).toHaveBeenNthCalledWith(2, 'get_edits', { id: 6 });
-  });
-
   it('接缝 14：托管路径与跨页全选通道走 Rust 命令', async () => {
     const invoke = vi.fn().mockResolvedValue(null);
     window.__TAURI__ = { core: { invoke } };
@@ -269,8 +246,6 @@ describe('tauriBridge', () => {
     expect(invoke).toHaveBeenCalledWith('get_database_path', {});
     await api.getAllImageIds({ tagId: 3 });
     expect(invoke).toHaveBeenCalledWith('get_all_image_ids', { query: { tagId: 3 } });
-    await api.fileExists('E:/managed/a.jpg');
-    expect(invoke).toHaveBeenCalledWith('file_exists', { filepath: 'E:/managed/a.jpg' });
   });
 
   it('接缝 4c：导入/改名通道走 Rust 命令', async () => {

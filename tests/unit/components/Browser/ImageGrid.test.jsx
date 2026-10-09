@@ -70,6 +70,7 @@ describe('ImageGrid', () => {
       removeTagFromImage: vi.fn().mockResolvedValue(undefined),
       addToAlbum: vi.fn().mockResolvedValue(undefined),
       createAlbum: vi.fn().mockResolvedValue(null),
+      removeFromAlbum: vi.fn().mockResolvedValue(undefined),
     };
   });
 
@@ -293,6 +294,53 @@ describe('ImageGrid', () => {
       const last = window.pixyang.toFileUrls.mock.calls.at(-1)[0];
       expect(last).toContain('C:/edit/sunset.png');
     });
+  });
+
+  it('回归：相册筛选视图右键「移出相册」走 removeFromAlbum 通道并全量刷新', async () => {
+    seedStore({
+      images: [makeImage({ id: 1, filename: 'sunset.jpg' })],
+      totalImages: 1,
+      filterAlbum: 4,
+    });
+    const onImageUpdated = vi.fn();
+    render(<ImageGrid onImageUpdated={onImageUpdated} />);
+    fireEvent.contextMenu(document.querySelector('div.image-card'));
+    fireEvent.click(await screen.findByRole('menuitem', { name: /移出相册/ }));
+    await vi.waitFor(() => {
+      expect(window.pixyang.removeFromAlbum).toHaveBeenCalledWith(4, 1);
+      expect(onImageUpdated).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it('回归：无相册筛选时右键菜单不提供「移出相册」（普通视图语义不明）', async () => {
+    seedStore({
+      images: [makeImage({ id: 1, filename: 'sunset.jpg' })],
+      totalImages: 1,
+      filterAlbum: null,
+    });
+    render(<ImageGrid />);
+    fireEvent.contextMenu(document.querySelector('div.image-card'));
+    expect(await screen.findByRole('menuitem', { name: /添加到相册/ })).toBeInTheDocument();
+    expect(screen.queryByRole('menuitem', { name: /移出相册/ })).toBeNull();
+  });
+
+  it('回归：移出相册失败上中文 toast 且不触发刷新（错误码 5 映射锁）', async () => {
+    window.pixyang.removeFromAlbum = vi.fn().mockRejectedValue(new Error('Os { code: 5 }'));
+    const errSpy = vi.spyOn(toast, 'error').mockImplementation(() => {});
+    seedStore({
+      images: [makeImage({ id: 1, filename: 'sunset.jpg' })],
+      totalImages: 1,
+      filterAlbum: 4,
+    });
+    const onImageUpdated = vi.fn();
+    render(<ImageGrid onImageUpdated={onImageUpdated} />);
+    fireEvent.contextMenu(document.querySelector('div.image-card'));
+    fireEvent.click(await screen.findByRole('menuitem', { name: /移出相册/ }));
+    await vi.waitFor(() => {
+      expect(errSpy).toHaveBeenCalledWith('移出相册失败：文件被占用或权限不足（错误码 5）');
+    });
+    expect(onImageUpdated).not.toHaveBeenCalled();
+    errSpy.mockRestore();
   });
 
   it('键盘导航：无模态时方向键+空格切换勾选（门禁放行对照组）', () => {

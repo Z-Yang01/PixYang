@@ -525,6 +525,22 @@ export default function ImageGrid({
     onCountsChanged?.();
   };
 
+  // 移出相册（相册筛选视图的右键入口）：行必离开当前视图，走全量重查 + 相册徽标刷新
+  const handleRemoveFromAlbum = useCallback(
+    async (imageId) => {
+      if (!filterAlbum || !api.isBridgeAvailable()) return;
+      try {
+        await api.removeFromAlbum(filterAlbum, imageId);
+      } catch (e) {
+        console.error('[grid] 移出相册失败:', e.message);
+        toast.error(errText('移出相册失败', e));
+        return;
+      }
+      onImageUpdated?.();
+    },
+    [filterAlbum, onImageUpdated]
+  );
+
   const createAlbumRunningRef = useRef(false);
   const handleCreateAndAdd = async (imageId, name) => {
     if (!name?.trim() || !api.isBridgeAvailable() || createAlbumRunningRef.current) return;
@@ -672,6 +688,7 @@ export default function ImageGrid({
               onRename={openRename}
               onDelete={handleDelete}
               onAddToAlbum={setAddToAlbumImage}
+              onRemoveFromAlbum={filterAlbum ? handleRemoveFromAlbum : undefined}
               onThumbError={handleThumbError}
               onOriginalError={handleOriginalError}
             />

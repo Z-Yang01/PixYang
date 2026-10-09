@@ -396,15 +396,6 @@ pub fn remove_from_album(db: State<'_, Db>, album_id: i64, image_id: i64) -> Res
     tags_albums::remove_from_album(&conn, album_id, image_id).map_err(|e| err_cn::text(&e))
 }
 
-#[tauri::command]
-pub fn get_album_images(
-    db: State<'_, Db>,
-    album_id: i64,
-) -> Result<Vec<images_query::ImageRow>, String> {
-    let conn = db.open_read().map_err(|e| err_cn::text(&e))?;
-    tags_albums::get_album_images(&conn, album_id).map_err(|e| err_cn::text(&e))
-}
-
 // ── 预设通道（迁移接缝 4c：params 原样 JSON 存取，upgradeEdits 在前端桥接层） ──
 
 #[tauri::command]
@@ -453,17 +444,6 @@ pub fn get_all_image_ids(
 ) -> Result<Vec<i64>, String> {
     let conn = db.open_read().map_err(|e| err_cn::text(&e))?;
     images_query::get_all_visible_ids(&conn, &query).map_err(|e| err_cn::text(&e))
-}
-
-#[tauri::command]
-pub fn file_exists(
-    db: State<'_, Db>,
-    paths: State<'_, AppPaths>,
-    filepath: String,
-) -> Result<bool, String> {
-    let conn = db.open_read().map_err(|e| err_cn::text(&e))?;
-    db::managed_file_exists(&conn, &paths.default_images_dir, &filepath)
-        .map_err(|e| err_cn::text(&e))
 }
 
 // ── 导入/改名编排（迁移接缝 4c） ──
@@ -793,12 +773,6 @@ pub fn save_edit_params(
 ) -> Result<Value, String> {
     let conn = db.write_lock();
     edit_session::save_edit_params(&conn, id, &params, Some(&command)).map_err(|e| err_cn::text(&e))
-}
-
-#[tauri::command]
-pub fn get_edit_history(db: State<'_, Db>, id: i64) -> Result<Vec<Value>, String> {
-    let conn = db.open_read().map_err(|e| err_cn::text(&e))?;
-    edit_session::get_edit_history(&conn, id).map_err(|e| err_cn::text(&e))
 }
 
 #[tauri::command]
@@ -1429,12 +1403,6 @@ pub fn get_images(db: State<'_, Db>, query: images_query::ImageQuery) -> Result<
     let conn = db.open_read().map_err(|e| err_cn::text(&e))?;
     let (rows, total) = images_query::get_images(&conn, &query).map_err(|e| err_cn::text(&e))?;
     Ok(json!({ "images": rows, "total": total }))
-}
-
-#[tauri::command]
-pub fn get_image(db: State<'_, Db>, id: i64) -> Result<Option<images_query::ImageRow>, String> {
-    let conn = db.open_read().map_err(|e| err_cn::text(&e))?;
-    images_query::get_image_by_id(&conn, id).map_err(|e| err_cn::text(&e))
 }
 
 #[tauri::command]

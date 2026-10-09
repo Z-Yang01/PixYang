@@ -1,13 +1,13 @@
 # TAURI_PARITY — Electron→Tauri 通道对齐权威清单
 
 建档：2026-09-21 R24（夜间自动化）。**基准**：`src/lib/api.js` 统一访问层暴露的 64 个通道
-（60 数据通道 + 4 事件）。逐一核对
+（55 数据通道 + 4 事件）。逐一核对
 `src/lib/api.js` 通道清单 × `src/lib/tauriBridge.js` / `tauriBridgeMedia.js` 包装 × `src-tauri/src/` 命令注册。
 （2026-09-22 R44：删除无生产者的 `onOrientationBackfill` 事件链，见「行为对齐补全」表。
 R38 起 api.js 不再有 `TAURI_SEAMS` 名单——路由改为「桥存在同名包装且 Tauri 可用 → Rust 命令，
 否则透传 `window.pixyang`」。Electron 层已于 R36 整体删除，本表转为 Tauri 单运行时的通道现状清单。）
 
-**当前对齐度：64/64 ✅ 全通。**（R25 导出；R27 编辑预览；R28 拖拽导入原生事件源闭环）
+**当前对齐度：59/59 ✅ 全通。**（R25 导出；R27 编辑预览；R28 拖拽导入原生事件源闭环）
 状态含义：✅ 已通（Tauri 运行时走 Rust 命令或 Tauri 插件 JS 能力）。
 **通道层无剩余缺口**；剩余人工事项 = tauri 全功能点击级冒烟。
 
@@ -22,10 +22,9 @@ R38 起 api.js 不再有 `TAURI_SEAMS` 名单——路由改为「桥存在同�
 | selectDirectory | ✅ | 桥内直接消费 `tauri-plugin-dialog` JS API（R43 删除冗余 Rust 命令 `select_directory`，取消=null） |
 | scanDirectory | ✅ | scan.rs |
 | collectImportFiles | ✅ | scan.rs |
-| getPathForFile | ✅ | R28：Tauri 运行时改走原生 onDragDropEvent 事件源（绝对路径由原生给出，通道本体不适用）；useDragImport 双事件源并存（历史 Electron=DOM+webUtils，Tauri=原生），队列/排队逻辑共用。**api.js 64 通道中唯一无桥包装者**（仅透传 `window.pixyang`） |
+| getPathForFile | ✅ | R28：Tauri 运行时改走原生 onDragDropEvent 事件源（绝对路径由原生给出，通道本体不适用）；useDragImport 双事件源并存（历史 Electron=DOM+webUtils，Tauri=原生），队列/排队逻辑共用。**api.js 59 通道中唯一无桥包装者**（仅透传 `window.pixyang`） |
 | getExif | ✅ | exif_read.rs 18 字段中文映射 |
 | toFileUrl / toFileUrls | ✅ | tauriBridgeMedia convertFileSrc + asset scope 运行时扩展（R23+01:00 修复） |
-| fileExists | ✅ | isManagedPath 根 containment |
 | getImagesRoot / setImagesRoot | ✅ | camera.rs 迁移含 NEF 跟随与反向回滚 |
 | openPath | ✅ | R24 接缝；Rust open_path 托管边界与错误字符串契约镜像 |
 
@@ -35,7 +34,7 @@ R38 起 api.js 不再有 `TAURI_SEAMS` 名单——路由改为「桥存在同�
 |---|---|---|
 | importImages | ✅ | file_ops.rs（NEF 避让收养/双回滚/导入即双档缩略图） |
 | syncCameraFolder | ✅ | camera.rs |
-| getImages / getImage / getImportDates / getStats | ✅ | images_query.rs 动态查询全语义镜像 |
+| getImages / getImportDates / getStats | ✅ | images_query.rs 动态查询全语义镜像（getImage 通道 2026-10-09 零调用清理，见「无生产调用方」节裁决） |
 | getAllImageIds | ✅ | 跨页全选，筛选器共用 |
 | updateImage / updateImages | ✅ | update_image.rs 白名单 + NEF 随日期移动 |
 | renameImage | ✅ | file_ops.rs（盘∪库查重/NEF 跟随） |
@@ -46,7 +45,7 @@ R38 起 api.js 不再有 `TAURI_SEAMS` 名单——路由改为「桥存在同�
 
 ## 编辑（7）
 
-editOpen / getEdits / saveEdits / getEditHistory / editBake / editExport / editCancel 全部 ✅
+editOpen / saveEdits / editBake / editExport / editCancel 全部 ✅；getEdits 转为**桥内部命令**（undoLastEdit 撤销后重渲预览缩略图消费，公开 api.getEdits 通道 2026-10-09 零调用清理）；getEditHistory 公开通道同批清理（内核 edit_session::get_edit_history 仍在，CLI/undo 消费）
 （edit_session.rs；saveEdits 走 save_edit_params，editCancel Tauri 侧无操作恒 ok；upgradeEdits 规整在桥接层）。
 
 **R26 勘误与补全**：R23 日志声称 editOpen/editBake/editExport 桥接已集成，实际 tauriApi
@@ -70,7 +69,7 @@ getBatchImageTags / addTagToImages 全部 ✅（tags_albums.rs，SQL 逐字镜�
 ## 相册（7）
 
 getAlbums / createAlbum / renameAlbum / deleteAlbum / addToAlbum / removeFromAlbum /
-getAlbumImages 全部 ✅（`get_album_images` 已注册，且 `getAlbumImages` 确在 api.js 循环内，计入 64 基准）。
+removeFromAlbum/addToAlbum 等全部 ✅（getAlbumImages 通道 2026-10-09 零调用清理，内核 tags_albums::get_album_images 仍在；removeFromAlbum 同日补上 UI 入口——相册筛选视图右键「移出相册」，退出零调用名单）
 
 ## 导出（3）
 
@@ -87,7 +86,7 @@ getDatabasePath ✅；backupDatabase ✅（R24 接缝；backup_database VACUUM I
 
 ## 设置（3）
 
-getSettings / getSetting / setSetting ✅（db.rs 同库读写，get_settings 返回 {key:value} 对象）。
+getSettings / getSetting / setSetting ✅（db.rs 同库读写，get_settings 返回 {key:value} 对象；getSetting 有真实调用方——BatchExportDialog 导出预设读取，2026-10-09 曾误判零调用、当日即按测试回归恢复）
 
 ## 事件（4）
 
@@ -101,7 +100,7 @@ getSettings / getSetting / setSetting ✅（db.rs 同库读写，get_settings �
 
 ## 剩余缺口
 
-**无（64/64 全通）。** 后续工作 = tauri 全功能点击级冒烟（人工，`npm run tauri:dev`）
+**无（59/59 全通）。** 后续工作 = tauri 全功能点击级冒烟（人工，`npm run tauri:dev`）
 + 已标注「需人工复核」项的逐项确认。
 
 ## 行为对齐补全（R30-R35，通道清单之外的副作用/行为类修复）
@@ -128,13 +127,20 @@ vitest 58 文件 / 807 例；cargo 单测 154 例 + golden 门禁 1 例；typech
 （旧版记录的 56/765 + 149 与 92.24/86.99/82.25 为 R49 时点快照，969/129 与
 91.73/85.25/80.37 为 R36 时点快照，均已随轮次增删漂移。）
 
-## 无生产调用方的通道（R49 扫描，待裁决）
+## 无生产调用方的通道（R49 登记 → 2026-10-09 裁决落地）
 
-api.js 64 通道中，以下 7 个在 `src/` 内**零生产调用方**（Rust 命令与桥包装均在位，属对齐清单
-保留面）：`fileExists`、`getImage`、`getAlbumImages`、`getEdits`、`getEditHistory`、
-`removeFromAlbum`、`getSetting`。其中 `getImage`/`fileExists`/`getEdits`/`getSetting` 另在
-`tests/unit/lib/tauriBridge.test.js` 契约测试中触达。删除会同时收窄「通道对齐」这一记录性
-能力面并需要连带删 Rust 命令，故登记为待裁决项而非单方面清理。
+R49 扫描出 7 个零生产调用方通道。2026-10-09 裁决：**4 删 + 1 转内部 + 1 补入口 + 1 证实存活**——
+
+- **删除全链**（Rust 命令壳 + 注册 + 桥包装 + api 方法 + 契约行；共享内核保留）：
+  `getImage`、`getAlbumImages`、`fileExists`、`getEditHistory`
+  （内核 images_query::get_image_by_id / tags_albums::get_album_images / db::get_setting_raw /
+  db::managed_file_exists / edit_session::get_edit_history 均有其他消费者，只删通道壳）。
+- **转桥内部**：`getEdits` 公开通道删除，Rust 命令保留——undoLastEdit 撤销后需读回参数重渲
+  预览缩略图，是唯一消费者（不再出现在 api.js 公开面）。
+- **补 UI 入口**：`removeFromAlbum` 全链原样保留，相册筛选视图右键新增「移出相册」
+  （此前相册成员只能加不能减，属功能缺口而非死代码）。
+
+基准 64 → 59（55 数据 + 4 事件；getSetting 经全量测试回归证实有 BatchExportDialog 消费，剔除出删除名单）。契约测试「注册即消费，无死命令」双向对拍锁死该口径。
 
 ## 验证口径
 

@@ -45,10 +45,8 @@ export const tauriApi = {
   getImageTags: (imageId) => tauriInvoke('get_image_tags', { imageId }),
   getBatchImageTags: (imageIds) => tauriInvoke('get_batch_image_tags', { imageIds }),
   getImages: (options) => tauriInvoke('get_images', { query: options ?? {} }),
-  getImage: (id) => tauriInvoke('get_image', { id }),
   getImportDates: () => tauriInvoke('get_import_dates'),
   getStats: () => tauriInvoke('get_stats'),
-  getAlbumImages: (albumId) => tauriInvoke('get_album_images', { albumId }),
   createTag: (name, color) => tauriInvoke('create_tag', { name, color }),
   deleteTag: (id) => tauriInvoke('delete_tag', { id }),
   addTagToImage: (imageId, tagId) => tauriInvoke('add_tag_to_image', { imageId, tagId }),
@@ -92,7 +90,6 @@ export const tauriApi = {
   syncCameraFolder: () => tauriInvoke('sync_camera_folder', {}),
   getDatabasePath: () => tauriInvoke('get_database_path'),
   getAllImageIds: (options) => tauriInvoke('get_all_image_ids', { query: options ?? {} }),
-  fileExists: (filepath) => tauriInvoke('file_exists', { filepath }),
   selectDirectory: async () => {
     const dialog = requirePluginGlobal(tauriDialog(), 'open');
     return dialog.open({ directory: true, title: '选择要导入的图片文件夹' });
@@ -125,17 +122,6 @@ export const tauriApi = {
   scanBrokenRecords: () => tauriInvoke('scan_broken_records', {}),
   deleteBrokenRecords: (ids) => tauriInvoke('delete_broken_records', { ids }),
   findDuplicates: () => tauriInvoke('find_duplicates', {}),
-  getEdits: async (id) => {
-    const row = await tauriInvoke('get_edits', { id });
-    if (!row) return null;
-    let params = row.params;
-    try {
-      params = upgradeEdits(row.params);
-    } catch (e) {
-      console.error('[tauriBridge] 编辑参数规整失败:', e.message);
-    }
-    return { version: row.version, updatedAt: row.updatedAt, params };
-  },
   saveEdits: (id, params, command) =>
     tauriInvoke('save_edit_params', { id, params: upgradeEdits(params), command }).then(
       (result) => {
@@ -148,7 +134,6 @@ export const tauriApi = {
         return result;
       }
     ),
-  getEditHistory: (id) => tauriInvoke('get_edit_history', { id }),
   // 持久化历史撤销：Rust 侧原子组合（读回退目标 → save_edit_params 链写回，全程持写锁），
   // 成功后桥内补 edit_render_preview 链刷新缩略图（同 saveEdits 成功路径）。空历史返回 {error}
   undoLastEdit: async (id) => {

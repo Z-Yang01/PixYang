@@ -14,7 +14,17 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { Heart, Check, FolderPlus, Eye, Pencil, Trash2, Images, ImageOff } from 'lucide-react';
+import {
+  Heart,
+  Check,
+  FolderPlus,
+  FolderMinus,
+  Eye,
+  Pencil,
+  Trash2,
+  Images,
+  ImageOff,
+} from 'lucide-react';
 import StarRating from '@/components/common/StarRating';
 
 const ImageCard = memo(function ImageCard({
@@ -37,6 +47,7 @@ const ImageCard = memo(function ImageCard({
   onRename,
   onDelete,
   onAddToAlbum,
+  onRemoveFromAlbum,
   onThumbError,
   onOriginalError,
 }) {
@@ -179,6 +190,11 @@ const ImageCard = memo(function ImageCard({
         <ContextMenuItem onClick={() => onAddToAlbum(image)}>
           <FolderPlus className="size-4" /> 添加到相册...
         </ContextMenuItem>
+        {onRemoveFromAlbum && (
+          <ContextMenuItem onClick={() => onRemoveFromAlbum(image.id)}>
+            <FolderMinus className="size-4" /> 移出相册
+          </ContextMenuItem>
+        )}
         <ContextMenuSeparator />
         <ContextMenuItem className="text-destructive" onClick={() => onDelete(image)}>
           <Trash2 className="size-4" /> 删除

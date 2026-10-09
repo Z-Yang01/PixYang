@@ -46,13 +46,13 @@ pub struct TrashRecord {
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-struct EditSnapshot {
+pub struct EditSnapshot {
     version: i64,
     params_json: String,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-struct HistorySnapshot {
+pub struct HistorySnapshot {
     step: i64,
     command_json: String,
 }
