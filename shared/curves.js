@@ -118,7 +118,7 @@ function hasCurveData(curves = {}) {
   return buildCurveLuts(curves) !== null;
 }
 
-module.exports = {
+export default {
   normalizePoints,
   evalAt,
   isIdentityPoints,

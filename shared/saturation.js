@@ -36,7 +36,7 @@ function applySaturationInPlace(data, params, channels) {
   }
 }
 
-module.exports = {
+export default {
   SATURATION_LUMA,
   satFactor,
   saturate01,

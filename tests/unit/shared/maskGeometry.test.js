@@ -1,8 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { createRequire } from 'module';
 
-const require_ = createRequire(import.meta.url);
-const geo = require_('../../../shared/maskGeometry.cjs');
+import geo from '../../../shared/maskGeometry.js';
 
 const VIEW = { width: 800, height: 400 };
 

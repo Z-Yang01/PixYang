@@ -1,8 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { createRequire } from 'module';
 
-const require_ = createRequire(import.meta.url);
-const cg = require_('../../../shared/colorGrading.cjs');
+import cg from '../../../shared/colorGrading.js';
 
 describe('normalizeRange / normalizeGrading', () => {
   it('hue 折叠到 [0,360)，sat 钳制', () => {

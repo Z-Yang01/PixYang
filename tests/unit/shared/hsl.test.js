@@ -1,8 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { createRequire } from 'module';
 
-const require_ = createRequire(import.meta.url);
-const hsl = require_('../../../shared/hsl.cjs');
+import hsl from '../../../shared/hsl.js';
 
 describe('normalizeHsl / hasHslData', () => {
   it('补齐 8 值、钳制 -100..100、非有限置 0', () => {

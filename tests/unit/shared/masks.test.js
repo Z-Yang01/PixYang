@@ -1,8 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { createRequire } from 'module';
 
-const require_ = createRequire(import.meta.url);
-const masks = require_('../../../shared/masks.cjs');
+import masks from '../../../shared/masks.js';
 
 describe('normalizeMasks / hasMaskData', () => {
   it('未知类型丢弃，radial/linear 保留且几何/调整量钳制', () => {

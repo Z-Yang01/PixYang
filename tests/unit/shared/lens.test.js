@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { createRequire } from 'module';
 
-const require_ = createRequire(import.meta.url);
-const lens = require_('../../../shared/lens.cjs');
+import lens from '../../../shared/lens.js';
+
+const { lensGeomParams, lensGeomScale } = lens;
 
 describe('vignetteFalloff', () => {
   it('线性区间 [0.5, 1]，两端外钳制', () => {
@@ -88,8 +88,6 @@ describe('vignettePreviewStyle（CSS 渐变参数）', () => {
   });
 });
 describe('lensGeomParams / lensGeomScale（镜头几何校正系数）', () => {
-  const { lensGeomParams, lensGeomScale } = require_('../../../shared/lens.cjs');
-
   it('系数映射：±100 → k=±0.25 / ca=±0.01；全零 off', () => {
     expect(lensGeomParams(100, 100)).toEqual({ k: 0.25, ca: 0.01, on: true });
     expect(lensGeomParams(-100, -100)).toEqual({ k: -0.25, ca: -0.01, on: true });

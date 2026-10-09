@@ -1,5 +1,6 @@
 {
   "name": "pixyang",
+  "type": "module",
   "version": "1.0.0",
   "description": "Local image management and browsing application",
   "scripts": {

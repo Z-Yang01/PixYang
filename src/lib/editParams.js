@@ -1,12 +1,12 @@
 // 编辑参数语义中心：前端预览（CSS）与 Rust 渲染执行器共用同一换算，
-// 保证"所见即所得"。持久化结构 EditParams 见 shared/editSchema.cjs（唯一事实源），
+// 保证"所见即所得"。持久化结构 EditParams 见 shared/editSchema.js（唯一事实源），
 // 本文件的平铺结构仅作 UI 内部模型，经 toEditParams/fromEditParams 在边界转换。
 
-import editSchema from '../../shared/editSchema.cjs';
-import curvesLib from '../../shared/curves.cjs';
-import gradingLib from '../../shared/colorGrading.cjs';
-import masksLib from '../../shared/masks.cjs';
-import hslLib from '../../shared/hsl.cjs';
+import editSchema from '../../shared/editSchema.js';
+import curvesLib from '../../shared/curves.js';
+import gradingLib from '../../shared/colorGrading.js';
+import masksLib from '../../shared/masks.js';
+import hslLib from '../../shared/hsl.js';
 
 const { normalizePoints, buildCurveTables, hasCurveData } = curvesLib;
 const { normalizeGrading, hasColorGradingData, buildGradingTables } = gradingLib;
@@ -27,7 +27,7 @@ export const EDIT_DEFAULTS = {
   whites: 0, // -100..100
   blacks: 0, // -100..100
   tint: 0, // -100..100（绿- 品红+）
-  curves: { rgb: [], r: [], g: [], b: [] }, // 点对平铺数组 [x0,y0,...]，0..1，见 shared/curves.cjs
+  curves: { rgb: [], r: [], g: [], b: [] }, // 点对平铺数组 [x0,y0,...]，0..1，见 shared/curves.js
   colorGrading: { shadows: [], midtones: [], highlights: [] }, // 每区间 [hue 0..360, sat 0..100]
   hsl: {
     hue: [0, 0, 0, 0, 0, 0, 0, 0],
@@ -35,14 +35,14 @@ export const EDIT_DEFAULTS = {
     lum: [0, 0, 0, 0, 0, 0, 0, 0],
   },
   detail: { sharpness: 0, noise: 0 }, // 锐化/降噪 0..100；noise 执行器未实现恒 0
-  // 八带分色，每带 -100..100（normalizeHsl 恒补齐 8 项），见 shared/hsl.cjs
-  vignette: 0, // -100..100（负压暗/正提亮），pre-crop 语义，见 shared/lens.cjs
-  distortion: 0, // -100..100（径向畸变校正：+ 桶形 / − 枕形），见 shared/lens.cjs lensGeomParams
-  chromatic: 0, // -100..100（横向色散校正：随 r² 增长），见 shared/lens.cjs
-  masks: [], // 局部蒙版（radial/linear），pre-crop 像素坐标，见 shared/masks.cjs
+  // 八带分色，每带 -100..100（normalizeHsl 恒补齐 8 项），见 shared/hsl.js
+  vignette: 0, // -100..100（负压暗/正提亮），pre-crop 语义，见 shared/lens.js
+  distortion: 0, // -100..100（径向畸变校正：+ 桶形 / − 枕形），见 shared/lens.js lensGeomParams
+  chromatic: 0, // -100..100（横向色散校正：随 r² 增长），见 shared/lens.js
+  masks: [], // 局部蒙版（radial/linear），pre-crop 像素坐标，见 shared/masks.js
 };
 
-// 八带中文名（与 shared/hsl.cjs HSL_BANDS 顺序一致），供编辑面板渲染滑杆行
+// 八带中文名（与 shared/hsl.js HSL_BANDS 顺序一致），供编辑面板渲染滑杆行
 export const HSL_BAND_LABELS = ['红', '橙', '黄', '绿', '青', '蓝', '紫', '洋红'];
 
 export const CROP_RATIOS = [

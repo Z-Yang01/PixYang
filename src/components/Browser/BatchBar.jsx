@@ -21,7 +21,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import useGalleryStore from '@/store/galleryStore';
 import api from '@/lib/api';
-import builtinPresetsModule from '../../../shared/builtinPresets.cjs';
+import builtinPresetsModule from '../../../shared/builtinPresets.js';
 
 const { BUILTIN_PRESETS } = builtinPresetsModule;
 

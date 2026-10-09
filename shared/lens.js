@@ -88,7 +88,7 @@ function lensGeomScale(k, ca, r2, channel) {
   return radial;
 }
 
-module.exports = {
+export default {
   vignetteFalloff,
   vignettePixel,
   applyVignetteInPlace,

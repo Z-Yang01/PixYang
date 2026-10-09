@@ -1,14 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import maskGeometry from '../../../shared/maskGeometry.cjs';
+import maskGeometry from '../../../shared/maskGeometry.js';
 
 const { displayToImage } = maskGeometry;
 
 const clamp = (v, min, max) => Math.min(max, Math.max(min, v));
 const CREATE_MIN_PX = 3; // 拖拽创建的最小位移（底图像素），低于视为点击而放弃
 
-// 蒙版几何 overlay（编辑模式专用）：在底图坐标系（pre-crop 像素，shared/masks.cjs 语义）内
+// 蒙版几何 overlay（编辑模式专用）：在底图坐标系（pre-crop 像素，shared/masks.js 语义）内
 // 渲染蒙版轮廓与选中手柄。渲染层位于 editor-transform-layer 内，随图层一起旋转/翻转/缩放，
-// 因此几何只需 image↔display 归一化换算（shared/maskGeometry.cjs，crop 不参与——编辑态整图显示）。
+// 因此几何只需 image↔display 归一化换算（shared/maskGeometry.js，crop 不参与——编辑态整图显示）。
 // 交互：
 // - tool 激活时整层捕获 pointerdown，拖拽创建新蒙版（radial 拖出椭圆 / linear 起点→终点），
 //   pointerup 提交给父组件入列并入历史；位移过小视为点击而放弃。

@@ -63,21 +63,21 @@ import useSlideshowTimer, {
   SLIDESHOW_DEFAULT_INTERVAL,
   nextSlideshowInterval,
 } from '@/hooks/useSlideshowTimer';
-import builtinPresetsModule from '../../../shared/builtinPresets.cjs';
-import autoGradeModule from '../../../shared/autoGrade.cjs';
+import builtinPresetsModule from '../../../shared/builtinPresets.js';
+import autoGradeModule from '../../../shared/autoGrade.js';
 import { HSL_BAND_LABELS, whiteBalanceFromSample, straightenGeometry } from '@/lib/editParams';
 import { AI_DEFAULT_BASE_URL, pickExifSummary, suggestByVision } from '@/lib/aiGrade';
-import maskGeometry from '../../../shared/maskGeometry.cjs';
+import maskGeometry from '../../../shared/maskGeometry.js';
 const { displayToImage } = maskGeometry;
 const { BUILTIN_PRESETS } = builtinPresetsModule;
 const { suggestGrade } = autoGradeModule;
-import curvesLib from '../../../shared/curves.cjs';
+import curvesLib from '../../../shared/curves.js';
 const { hasCurveData } = curvesLib;
-import gradingLib from '../../../shared/colorGrading.cjs';
+import gradingLib from '../../../shared/colorGrading.js';
 const { hasColorGradingData } = gradingLib;
-import lensLib from '../../../shared/lens.cjs';
+import lensLib from '../../../shared/lens.js';
 const { vignettePreviewStyle } = lensLib;
-import renderSpecModule from '../../../shared/renderSpec.cjs';
+import renderSpecModule from '../../../shared/renderSpec.js';
 const { editParamsToRenderSpec } = renderSpecModule;
 import {
   isWebGL2Available,
@@ -2513,7 +2513,7 @@ export default function ImageViewer({
             </label>
           ))}
 
-          {/* 色调曲线：渲染端 LUT 与预览端 tableValues 同语义（shared/curves.cjs） */}
+          {/* 色调曲线：渲染端 LUT 与预览端 tableValues 同语义（shared/curves.js） */}
           <div className="editor-crop-section">
             <div className="editor-crop-header">
               <span>曲线</span>
@@ -2543,7 +2543,7 @@ export default function ImageViewer({
             </p>
           </div>
 
-          {/* 颜色分级：分离色调（渲染端真亮度加权，预览逐通道近似，见 shared/colorGrading.cjs） */}
+          {/* 颜色分级：分离色调（渲染端真亮度加权，预览逐通道近似，见 shared/colorGrading.js） */}
           <div className="editor-crop-section">
             <div className="editor-crop-header">
               <span>颜色分级</span>
@@ -2678,7 +2678,7 @@ export default function ImageViewer({
             <p className="editor-crop-hint">按亮度区间着色：先拖色相选色调，再调强度</p>
           </div>
 
-          {/* HSL 八带分色：三端同式（shared/hsl.cjs = shader = 执行器），仅 SVG 回退不渲染 */}
+          {/* HSL 八带分色：三端同式（shared/hsl.js = shader = 执行器），仅 SVG 回退不渲染 */}
           <div className="editor-crop-section">
             <div className="editor-crop-header">
               <span>HSL 分色</span>
@@ -2882,7 +2882,7 @@ export default function ImageViewer({
             </p>
           </div>
 
-          {/* 镜头校正：畸变/色散（shared/lens.cjs lensGeomScale 同式；重采样段，SVG 回退不渲染） */}
+          {/* 镜头校正：畸变/色散（shared/lens.js lensGeomScale 同式；重采样段，SVG 回退不渲染） */}
           <div className="editor-crop-section">
             <div className="editor-crop-header">
               <span>镜头</span>
@@ -2939,7 +2939,7 @@ export default function ImageViewer({
             </p>
           </div>
 
-          {/* 局部蒙版：radial/linear，渲染与 WebGL 预览同公式（shared/masks.cjs） */}
+          {/* 局部蒙版：radial/linear，渲染与 WebGL 预览同公式（shared/masks.js） */}
           <div className="editor-crop-section">
             <div className="editor-crop-header">
               <span>蒙版（{(editOps.masks || []).length}/8）</span>

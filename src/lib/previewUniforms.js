@@ -7,11 +7,11 @@
 // 作为 uniform 传入（GLSL 只消费 uniform），高光方向为 LR 惯例（+提亮/−压暗）。
 // 几何/裁剪不进 shader（CSS transform 与裁剪框承担）；detail.sharpness 预览不呈现（与 SVG 路径一致）。
 
-import curvesLib from '../../shared/curves.cjs';
-import gradingLib from '../../shared/colorGrading.cjs';
-import hslLib from '../../shared/hsl.cjs';
-import masksLib from '../../shared/masks.cjs';
-import saturationLib from '../../shared/saturation.cjs';
+import curvesLib from '../../shared/curves.js';
+import gradingLib from '../../shared/colorGrading.js';
+import hslLib from '../../shared/hsl.js';
+import masksLib from '../../shared/masks.js';
+import saturationLib from '../../shared/saturation.js';
 
 const { buildCurveLuts } = curvesLib;
 const { buildGradeLuts } = gradingLib;
@@ -74,7 +74,7 @@ export function specToShaderUniforms(spec, imageSize = [0, 0]) {
     }
   }
 
-  // HSL：8 带数组（shader 内做带权重，公式与 shared/hsl.cjs 一致）
+  // HSL：8 带数组（shader 内做带权重，公式与 shared/hsl.js 一致）
   const hsl = normalizeHsl(by.hsl?.params || {});
   const hslOn = by.hsl?.params
     ? hsl.hue.some((v) => v !== 0) || hsl.sat.some((v) => v !== 0) || hsl.lum.some((v) => v !== 0)
@@ -86,7 +86,7 @@ export function specToShaderUniforms(spec, imageSize = [0, 0]) {
   const detailSharp = (by.detail?.params?.sharpness || 0) > 0 ? 1 : 0;
   const detailNoise = ((by.detail?.params?.noise || 0) / 100) * 0.85;
 
-  // 分级：预计算 tint 偏移与标度（shader 端做真亮度权重，公式与 shared/colorGrading.cjs 一致）
+  // 分级：预计算 tint 偏移与标度（shader 端做真亮度权重，公式与 shared/colorGrading.js 一致）
   const gradeLuts = buildGradeLuts(by.colorGrading?.params || {});
   const gradingScale = [0, 0, 0];
   const gradingDelta = [
@@ -108,15 +108,15 @@ export function specToShaderUniforms(spec, imageSize = [0, 0]) {
   const mono = by.saturation?.params?.mono ? 1 : 0;
   const saturation = mono ? 1 : 1 + satVal / 100;
 
-  // 暗角（pre-crop 椭圆，shader 内线性衰减，公式与 shared/lens.cjs 一致）
+  // 暗角（pre-crop 椭圆，shader 内线性衰减，公式与 shared/lens.js 一致）
   const vignette = clamp(Number(by.lens?.params?.vignette) || 0, -100, 100);
 
-  // 镜头几何校正：畸变/色散系数（shared/lens.cjs lensGeomParams 同式；重采样段，模拟器不含）
+  // 镜头几何校正：畸变/色散系数（shared/lens.js lensGeomParams 同式；重采样段，模拟器不含）
   const lensDistortion = (clamp(Number(by.lens?.params?.distortion) || 0, -100, 100) / 100) * 0.25;
   const lensChromatic = (clamp(Number(by.lens?.params?.chromatic) || 0, -100, 100) / 100) * 0.01;
   const lensGeomOn = lensDistortion !== 0 || lensChromatic !== 0 ? 1 : 0;
 
-  // 蒙版（pre-crop 像素坐标，shader 内权重 × 调整，公式与 shared/masks.cjs 一致；上限 8 个）
+  // 蒙版（pre-crop 像素坐标，shader 内权重 × 调整，公式与 shared/masks.js 一致；上限 8 个）
   const maskList = masksLib.normalizeMasks(by.masks?.params?.list || []).slice(0, 8);
   const MASK_COUNT = 8;
   const maskType = new Array(MASK_COUNT).fill(0);

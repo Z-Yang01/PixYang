@@ -14,13 +14,13 @@ const PIPELINE_ORDER = [
   'whiteBalance', // 色温/色调（M3：RGB 通道增益近似；M8 RAW 接真实白平衡）
   'exposure', // 曝光 EV
   'tone', // 对比度/高光/阴影/白场/黑场
-  'curves', // 曲线（rgb/r/g/b 分段线性，shared/curves.cjs LUT）
-  'hsl', // HSL（8 色相带色相/饱和度/亮度，shared/hsl.cjs）
-  'colorGrading', // 颜色分级（分离色调，亮度加权，shared/colorGrading.cjs）
+  'curves', // 曲线（rgb/r/g/b 分段线性，shared/curves.js LUT）
+  'hsl', // HSL（8 色相带色相/饱和度/亮度，shared/hsl.js）
+  'colorGrading', // 颜色分级（分离色调，亮度加权，shared/colorGrading.js）
   'saturation', // 饱和度（-100 = 黑白，mono 显式）
-  'masks', // 局部蒙版（radial/linear + 曝光/色温/对比/饱和，shared/masks.cjs）
+  'masks', // 局部蒙版（radial/linear + 曝光/色温/对比/饱和，shared/masks.js）
   'detail', // 锐化/降噪（锐化已实现，降噪未实现时按参数内警告）
-  'lens', // 镜头校正（vignette/distortion/chromatic 已实现，shared/lens.cjs；profile 预留）
+  'lens', // 镜头校正（vignette/distortion/chromatic 已实现，shared/lens.js；profile 预留）
   'geometry', // 旋转/翻转（90° 倍数）
   'crop', // 裁剪（底图坐标系，执行器映射到变换后空间）
   'encode', // 编码输出
@@ -35,8 +35,6 @@ function isSupportedStage(kind) {
   }
   return !UNSUPPORTED_STAGES.has(kind);
 }
-
-module.exports = { PIPELINE_ORDER, UNSUPPORTED_STAGES, isSupportedStage };
 
 // ── 渲染能力矩阵 ──
 // 每个功能在 预览(preview)/导出(export)/烘焙(bake) 三条路径上的真实可用状态。
@@ -114,5 +112,10 @@ function stageCapability(kind, target) {
   return target ? cap[target] || 'unsupported' : cap;
 }
 
-module.exports.CAPABILITY_MATRIX = CAPABILITY_MATRIX;
-module.exports.stageCapability = stageCapability;
+export default {
+  PIPELINE_ORDER,
+  UNSUPPORTED_STAGES,
+  isSupportedStage,
+  CAPABILITY_MATRIX,
+  stageCapability,
+};

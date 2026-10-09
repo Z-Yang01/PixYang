@@ -5,7 +5,8 @@ import { describe, it, expect } from 'vitest';
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
-import { editParamsToRenderSpec, listUnsupported } from '../../../shared/renderSpec.cjs';
+import sharedMod_renderSpec from '../../../shared/renderSpec.js';
+const { editParamsToRenderSpec, listUnsupported } = sharedMod_renderSpec;
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const CASES_DIR = path.join(HERE, '..', '..', 'golden', 'cases');

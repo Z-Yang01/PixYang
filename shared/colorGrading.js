@@ -144,7 +144,7 @@ function buildGradingTables(grading = {}, samples = 33) {
   return tables;
 }
 
-module.exports = {
+export default {
   normalizeRange,
   normalizeGrading,
   hasColorGradingData,

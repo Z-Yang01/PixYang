@@ -1,6 +1,6 @@
 // 自动调色建议算法（agent 调色的"大脑"）：analyze_image 的统计 → EditParams.basic 建议参数。
 // 纯函数、确定性、无依赖；输出全量 basic 九字段（含显式 0 值，语义为整域替换，
-// 与批量预设「基线取中性 ops」同口径，重复应用幂等）。值域与 shared/editSchema.cjs
+// 与批量预设「基线取中性 ops」同口径，重复应用幂等）。值域与 shared/editSchema.js
 // BasicSchema 对齐：exposure ±2，其余 ±100。
 // 符号约定对齐执行器 whiteBalance/tone：+temperature 变暖（R↑B↓）、+tint 压绿偏品红、
 // +shadows 提亮暗部、−highlights 拉回过曝亮部（R71 LR 惯例）。
@@ -79,4 +79,4 @@ function suggestGrade(analysis, opts = {}) {
   };
 }
 
-module.exports = { suggestGrade, TARGET_MID, TARGET_SPREAD };
+export default { suggestGrade, TARGET_MID, TARGET_SPREAD };

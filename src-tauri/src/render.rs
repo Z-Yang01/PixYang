@@ -17,7 +17,7 @@ fn num_or(v: Option<&Value>, fallback: f64) -> f64 {
     v.and_then(|x| x.as_f64()).unwrap_or(fallback)
 }
 
-// ── 饱和度/黑白（shared/saturation.cjs） ──
+// ── 饱和度/黑白（shared/saturation.js） ──
 
 const SATURATION_LUMA: [f64; 3] = [0.213, 0.715, 0.072];
 const HSL_LUMA: [f64; 3] = [0.2126, 0.7152, 0.0722];
@@ -61,14 +61,14 @@ impl Round255 for f64 {
     }
 }
 
-// ── 暗角（shared/lens.cjs） ──
+// ── 暗角（shared/lens.js） ──
 
 fn vignette_falloff(d: f64) -> f64 {
     ((d - 0.5) / 0.5).clamp(0.0, 1.0)
 }
 
 /// 镜头几何校正：径向畸变（k）+ 横向色散（ca）逆映射，双线性采样。
-/// 语义与 shared/lens.cjs lensGeomScale 同式（半宽/半高椭圆归一；色散随 r² 增长）。
+/// 语义与 shared/lens.js lensGeomScale 同式（半宽/半高椭圆归一；色散随 r² 增长）。
 /// 逐像素逐通道独立采样（R/G/B 各自半径），src 出界钳到边界。全零参数恒等。
 pub fn apply_lens_geometry_in_place(
     data: &mut [u8],
@@ -172,7 +172,7 @@ pub fn apply_vignette_in_place(
     }
 }
 
-// ── 颜色分级（shared/colorGrading.cjs） ──
+// ── 颜色分级（shared/colorGrading.js） ──
 
 fn normalize_range(v: Option<&Value>) -> Option<(f64, f64)> {
     let arr = v?.as_array()?;
@@ -290,7 +290,7 @@ pub fn apply_color_grading_in_place(data: &mut [u8], grading: &Value, channels: 
     }
 }
 
-// ── HSL 8 色相带（shared/hsl.cjs） ──
+// ── HSL 8 色相带（shared/hsl.js） ──
 
 const HSL_BANDS: [f64; 8] = [0.0, 30.0, 60.0, 120.0, 180.0, 240.0, 280.0, 320.0];
 const BAND_RADIUS: f64 = 60.0;
@@ -435,7 +435,7 @@ pub fn apply_hsl_in_place(data: &mut [u8], hsl: &Value, channels: usize) {
     }
 }
 
-// ── 色调曲线（shared/curves.cjs） ──
+// ── 色调曲线（shared/curves.js） ──
 
 pub fn normalize_points(arr: &[f64]) -> Vec<(f64, f64)> {
     let mut pts: Vec<(f64, f64)> = arr
@@ -553,7 +553,7 @@ pub fn build_curve_luts(curves: &Value) -> Option<CurveLuts> {
     }
 }
 
-// ── 蒙版（shared/masks.cjs） ──
+// ── 蒙版（shared/masks.js） ──
 
 #[derive(Default, Clone, Copy)]
 pub struct MaskAdjustments {

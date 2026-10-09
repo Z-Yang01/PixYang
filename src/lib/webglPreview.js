@@ -38,7 +38,7 @@ uniform vec3 uGradingDelta1;
 uniform vec3 uGradingDelta2;
 uniform float uSaturation;
 uniform float uMono;
-uniform float uLensDistortion;  // 畸变校正系数 k（±0.25，与 shared/lens.cjs lensGeomScale 同式）
+uniform float uLensDistortion;  // 畸变校正系数 k（±0.25，与 shared/lens.js lensGeomScale 同式）
 uniform float uLensChromatic;   // 色散校正系数 ca（±0.01，随 r² 增长）
 uniform float uLensGeomOn;      // 0/1：重采样段开关
 uniform float uVignette;
@@ -90,7 +90,7 @@ void applyMaskedAdjust(int i, float w, inout vec3 c) {
     float y = dot(c, vec3(0.2126, 0.7152, 0.0722));
     c = y + (c - y) * (1.0 + (uMaskAdjSat[i] / 100.0) * w);
   }
-  // 与 shared/masks.cjs applyMaskedAdjustment 一致：每个蒙版独立钳制，避免越界值串入下一蒙版
+  // 与 shared/masks.js applyMaskedAdjustment 一致：每个蒙版独立钳制，避免越界值串入下一蒙版
   c = clamp(c, 0.0, 1.0);
 }
 

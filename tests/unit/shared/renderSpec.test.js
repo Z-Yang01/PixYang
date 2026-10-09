@@ -1,11 +1,15 @@
 import { describe, it, expect } from 'vitest';
-import editSchema from '../../../shared/editSchema.cjs';
-import * as renderSpec from '../../../shared/renderSpec.cjs';
-import * as pipelineOrder from '../../../shared/pipelineOrder.cjs';
+import editSchema from '../../../shared/editSchema.js';
+import renderSpecMod from '../../../shared/renderSpec.js';
+
+const renderSpec = renderSpecMod;
+import pipelineOrderMod from '../../../shared/pipelineOrder.js';
+
+const { PIPELINE_ORDER, UNSUPPORTED_STAGES } = pipelineOrderMod;
 
 describe('pipelineOrder（渲染阶段顺序铁律）', () => {
   it('阶段顺序锁定：像素操作在几何之前，encode 永远最后', () => {
-    const order = pipelineOrder.PIPELINE_ORDER;
+    const order = PIPELINE_ORDER;
     expect(order[0]).toBe('decode');
     expect(order.indexOf('whiteBalance')).toBeLessThan(order.indexOf('exposure'));
     expect(order.indexOf('exposure')).toBeLessThan(order.indexOf('tone'));
@@ -14,7 +18,7 @@ describe('pipelineOrder（渲染阶段顺序铁律）', () => {
   });
 
   it('未实现阶段清单：空（14 阶段全部支持）', () => {
-    expect([...pipelineOrder.UNSUPPORTED_STAGES].sort()).toEqual([]);
+    expect([...UNSUPPORTED_STAGES].sort()).toEqual([]);
   });
 });
 
@@ -25,7 +29,7 @@ describe('editParamsToRenderSpec（纯函数转换）', () => {
   it('1. identity：默认参数产出完整 14 阶段 spec', () => {
     const spec = build({});
     expect(spec.specVersion).toBe(1);
-    expect(spec.stages.map((s) => s.kind)).toEqual(pipelineOrder.PIPELINE_ORDER);
+    expect(spec.stages.map((s) => s.kind)).toEqual(PIPELINE_ORDER);
     expect(renderSpec.listUnsupported(spec)).toEqual([]);
   });
 

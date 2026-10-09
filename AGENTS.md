@@ -49,13 +49,13 @@ src-tauri/        Rust/Tauri 后端（唯一运行时桌面端）
   src/progress.rs 进度事件（rebuild-progress 等，Tauri Emitter）
   tauri.conf.json withGlobalTauri=true、frontendDist=../dist、assetProtocol（$CONFIG/pixyang scope）、CSP connect-src 含 https:（AI 调色端点外呼）
 shared/           12 个 .cjs；被前端以默认导入消费（20+ 处），仅由 vite build 的 rollup interop 提供 default
-  editSchema.cjs  EditParams v1 zod schema（非破坏编辑参数唯一事实源，前后端同构）
-  renderSpec.cjs  EditParams → RenderSpec 纯函数（渲染指令序列，预览/导出唯一消费格式）
-  pipelineOrder.cjs  渲染阶段固定顺序 + 能力矩阵（14 阶段全部支持，仅测试直接消费）
-  builtinPresets.cjs  内置风格预设参数集
-  maskGeometry.cjs  蒙版手柄/命中几何映射（MaskOverlay 与查看器共用）
-  curves.cjs / colorGrading.cjs / hsl.cjs / lens.cjs / masks.cjs / saturation.cjs  各渲染阶段语义唯一实现（执行器 raw pass 与 WebGL2 shader 同公式；负阴影指数分支曾两端反向——预览施加 e、导出施加 1/e，R65 已对齐为预览侧 1/e 变暗，与执行器 libvips 语义一致；见 NIGHTLY_LOG R59/R65）
-  autoGrade.cjs  本地自动调色建议（analyze_image 统计 → basic 域参数；符号对齐执行器 whiteBalance/tone，输出全量九字段整域替换、幂等）
+  editSchema.js  EditParams v1 zod schema（非破坏编辑参数唯一事实源，前后端同构）
+  renderSpec.js  EditParams → RenderSpec 纯函数（渲染指令序列，预览/导出唯一消费格式）
+  pipelineOrder.js  渲染阶段固定顺序 + 能力矩阵（14 阶段全部支持，仅测试直接消费）
+  builtinPresets.js  内置风格预设参数集
+  maskGeometry.js  蒙版手柄/命中几何映射（MaskOverlay 与查看器共用）
+  curves.js / colorGrading.js / hsl.js / lens.js / masks.js / saturation.js  各渲染阶段语义唯一实现（执行器 raw pass 与 WebGL2 shader 同公式；负阴影指数分支曾两端反向——预览施加 e、导出施加 1/e，R65 已对齐为预览侧 1/e 变暗，与执行器 libvips 语义一致；见 NIGHTLY_LOG R59/R65）
+  autoGrade.js  本地自动调色建议（analyze_image 统计 → basic 域参数；符号对齐执行器 whiteBalance/tone，输出全量九字段整域替换、幂等）
 error/
   README.md       历史归档说明：旧层（Electron/sharp/sql.js）引用 → 现行 Rust 落点对照表
   *.md            严重 bug 建档（Symptom/Root Cause/Fix/Prevention 格式，时点事实不改写）
@@ -80,7 +80,8 @@ tests/            vitest（node 环境 + per-file happy-dom pragma）
 ## 编码约定
 
 - 不要添加代码注释，除非用户明确要求。
-- shared/ 与测试辅助脚本使用 CommonJS（`.cjs`）；前端使用 ESM + JSX。
+- shared/ 已于 2026-10-09 全量转 ESM（`export default`，原名 `.cjs`→`.js`；Electron 主进程当年是
+  它唯一的非打包消费者，R36 已删，CJS 形态仅剩历史包袱）；测试辅助脚本（`tests/webgl-parity/*.cjs`）仍 CommonJS；前端使用 ESM + JSX。
 - JSX 为 automatic runtime（生产走 @vitejs/plugin-react；vitest 在 `vitest.config.js` 显式 `esbuild: { jsx: 'automatic' }`）：**不要**为 JSX 写 `import React`，需要 React API 时用命名导入（如 `import { useState } from 'react'`）；仅 main.jsx 与个别测试因使用 `React.StrictMode`/`React.useState` 保留默认导入。
 - 前端组件/store **不得直调 `window.__TAURI__` 或 `window.pixyang`**，一律经 `src/lib/api.js`（守卫集中在该层，无桥时方法返回 undefined）。
 - 错误处理保持现有风格：`try/catch` + `console.error('[xxx] ...', e.message)`。
@@ -153,7 +154,7 @@ tests/            vitest（node 环境 + per-file happy-dom pragma）
 ## agent 调色与编辑扩展（2026-09-28）
 
 - **agent 调色三通道**：①本地算法——`analyze_image`（id → 64 桶直方图/均值/亮度分位/裁切占比，
-  内核在 image_stats.rs，统计对象为磁盘原图）→ `shared/autoGrade.cjs suggestGrade`（全量 basic 九字段
+  内核在 image_stats.rs，统计对象为磁盘原图）→ `shared/autoGrade.js suggestGrade`（全量 basic 九字段
   整域替换、幂等）→ 编辑器「自动调色」走 applyPreset 进历史栈 / 批量走 saveEdits(preserveGeometry)；
   ②视觉模型——`src/lib/aiGrade.js suggestByVision`（OpenAI 兼容 chat/completions，设置页 ai_base_url/
   ai_api_key/ai_model 配置，CSP connect-src 已放行 https:），模型 JSON 经白名单+值域钳制+normalizeEdits
@@ -162,7 +163,7 @@ tests/            vitest（node 环境 + per-file happy-dom pragma）
 - **外部 agent CLI 通道**：`pixyang cli <子命令> --out <文件>` 直连内核（无窗口不触发单实例；
   WAL 多进程并发，写锁被运行实例占用时 5s 超时中文报错）。子命令：analyze / get-edits /
   save-edits / undo；结果 JSON 写 --out 文件（release 无控制台，文件为唯一可靠回传）+ stdout。
-  Rust 侧无 params→spec 构建器，export 子命令未提供（需要时先移植 shared/renderSpec.cjs）。
+  Rust 侧无 params→spec 构建器，export 子命令未提供（需要时先移植 shared/renderSpec.js）。
 - **持久化编辑撤销**：编辑器历史之外的跨会话撤销——查看器工具栏按钮 → api.undoLastEdit（Rust
   原子命令 `undo_last_edit`：读回退目标 → save_edit_params 链写回，全程持写锁；CLI `pixyang cli
   undo` 共用同一 undo_last_edit_conn，GUI/CLI 双端单实现）。回退目标语义：最新步 before → 缺失
@@ -176,7 +177,7 @@ tests/            vitest（node 环境 + per-file happy-dom pragma）
   历史快照合同：saveEdits 的 command.before/after 必须是 EditParams v1 形状（含 basic 键），
   平铺 ops 会被 get_last_edit_undo 的 has_basic 判无效 → 撤销直接回默认清空全部编辑（审查 P0）。
 - **镜头校正**：lens.distortion（径向畸变 k=±0.25）与 chromatic（横向色散 ca=±0.01，随 r² 增长）
-  三端实现（shared/lens.cjs lensGeomScale = GLSL 邻域采样 = 执行器双线性）；出界填黑（与拉直同
+  三端实现（shared/lens.js lensGeomScale = GLSL 邻域采样 = 执行器双线性）；出界填黑（与拉直同
   口径 [0,0,0,255]，RGBA 出界 alpha 补 255；出界判据=采样中心落在首/末纹素中心之外
   pos∉[0.5, size−0.5]，R96 起 GLSL 与执行器逐式对齐，且畸变为零时 G 通道回退 vUv 恒等防
   f32 噪声假黑行——像素对拍 s26-s30 落缺省档，源串锁在 webglPreview.test.js）。
@@ -208,7 +209,7 @@ tests/            vitest（node 环境 + per-file happy-dom pragma）
   无头 Edge/Chrome（CDP，Node 22 原生 WebSocket，无新依赖）驱动 dist 产物：假桥注入 → 真实 App 编辑
   模式（savedEdits 载入 tests/webgl-parity/cases.json 的 8 组参数）→ 真实 WebGL2 canvas 出帧，与
   `cargo run --example webgl_parity -- gen|render|diff`（确定性底图 + render_spec_to_file + 独立复核）
-  对拍；spec 由前端同一套模块（src/lib/editParams.js + shared/renderSpec.cjs）计算，两端同源，且
+  对拍；spec 由前端同一套模块（src/lib/editParams.js + shared/renderSpec.js）计算，两端同源，且
   encode 段强制 format:'png'（默认 jpeg q92 会把 Rust 参考帧变有损——R58 全部「超容差」的量级来源，
   R59 已定案为工具链缺陷）。examples 不被 cargo test 运行，门禁数字不受影响。
   R59 定案（R58「色彩管理」假设被排除：--headed/--force-color-profile=srgb/gl.readPixels 三条对照
@@ -254,11 +255,8 @@ tests/            vitest（node 环境 + per-file happy-dom pragma）
   `release/`（旧 Electron 打包产物，466MB，2026-10-01 已物理删除）一旦不被忽略，其第三方 JS 与
   `LICENSES.chromium.html` 会被当作 class 源，多产出约 13 kB 死 utility（实测 96.75 kB → 110.12 kB）。
   忽略项保留（防未来再生成时复发）。
-- **`npm run dev`（vite dev）当前不可用**：`shared/*.cjs` 被前端以默认导入消费，而 vite dev 原样直出
-  `.cjs`（不做 CJS→ESM 转换，Electron 时代靠 vite build 的 rollup commonjs interop），首屏模块图报错、
-  `#root` 空且控制台无异常。生产走 `frontendDist=../dist` 不受影响，故长期未暴露。修法二选一（待人工裁决）：
-  引入 dev-only commonjs 插件（新依赖），或 `shared/` 全量转 ESM（约 13 源文件 + 13 消费点 + 14 测试；
-  全仓已无任何 Node `require()` 消费 shared/，Electron 主进程/worker 是它当初唯一非打包消费者，R36 已删）。
+- `npm run dev`（vite dev）可用：shared/ 转 ESM 后 vite dev 原生模块图直出（历史上 .cjs 被 dev 原样直出、
+  无 rollup interop 导致首屏模块图报错 #root 空，该病根已随转换根治）。生产链 `frontendDist=../dist` 不变。
 - 真机浏览器 QA 口径：`npx vite build` 出包后用 `npx vite preview` 起静态服务，假数据经 `window.pixyang`
   注入（`api.js` 的 `px()` 每次调用现读桥，故可先注入再挂载）；不要指望 dev server。
 - `npm run tauri:dev` 可用且与 `npm run dev` 无关：`tauri.conf.json` 的 `build` 只有 `frontendDist: "../dist"`

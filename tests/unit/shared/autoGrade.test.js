@@ -1,9 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { createRequire } from 'module';
 
-const require_ = createRequire(import.meta.url);
-const { suggestGrade } = require_('../../../shared/autoGrade.cjs');
-const editSchema = require_('../../../shared/editSchema.cjs');
+import sharedMod_autoGrade from '../../../shared/autoGrade.js';
+const { suggestGrade } = sharedMod_autoGrade;
+import editSchema from '../../../shared/editSchema.js';
 
 // 欠曝均匀灰图（64/255 ≈ 0.25098）：中位/分位同一值、无裁切、无色偏
 const UNDEREXPOSED_GRAY = {

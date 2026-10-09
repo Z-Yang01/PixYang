@@ -35,7 +35,7 @@
 //   --cases        用例集文件路径（默认 cases.json；R63 编辑审计逐阶段用例集 cases-edit-audit.json）
 // 流程（详见 UNATTENDED.md §6.4 / AGENTS.md 验证节）：
 //   1. cargo run --example webgl_parity -- gen      生成确定性底图 fixture.png（%TEMP%/pixyang_parity）
-//   2. 由 cases.json 经前端同一套模块（src/lib/editParams.js + shared/renderSpec.cjs）计算 RenderSpec
+//   2. 由 cases.json 经前端同一套模块（src/lib/editParams.js + shared/renderSpec.js）计算 RenderSpec
 //      ——与页面内 editParamsToRenderSpec(toEditParams(composeOps())) 模块同源、逐字节一致
 //   3. cargo run --example webgl_parity -- render   Rust 执行器渲染同 spec → rust/<case>.png（PNG 无编码损失）
 //   4. fixture+PNG 注入 dist/parity → vite preview → 无头 Edge/Chrome（CDP，Node 原生 WebSocket）驱动

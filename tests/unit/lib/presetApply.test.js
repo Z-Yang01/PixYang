@@ -3,10 +3,9 @@
 // 裁剪逻辑抽为唯一实现后在此锁死——变异验证：去掉 curves/分级/暗角的显式性判断
 // （改为无条件覆写）→ 本文件「非显式保留」组红；去掉 basic 展开 → 「显式覆盖」组红。
 import { describe, it, expect } from 'vitest';
-import { createRequire } from 'module';
 
-const require_ = createRequire(import.meta.url);
-const { BUILTIN_PRESETS } = require_('../../../shared/builtinPresets.cjs');
+import sharedMod_builtinPresets from '../../../shared/builtinPresets.js';
+const { BUILTIN_PRESETS } = sharedMod_builtinPresets;
 import { applyPresetToOps } from '@/lib/presetApply';
 
 describe('applyPresetToOps（预设字段裁剪唯一实现）', () => {

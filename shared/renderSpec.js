@@ -1,12 +1,15 @@
+import pipelineOrderLib from './pipelineOrder.js';
+import editSchemaLib from './editSchema.js';
 // EditParams → RenderSpec 归一化：纯函数、无 IO、无副作用。
 // RenderSpec 是确定、有序、平台无关的渲染指令——预览（前端）与导出（sharp）唯一消费格式。
 //
 // 三铁律：
 // 1. stage 顺序由 pipelineOrder.cjs 锁定，任何一端不得重排；
+const { PIPELINE_ORDER, isSupportedStage } = pipelineOrderLib;
+const { normalizeEdits } = editSchemaLib;
+
 // 2. 未实现的 stage 显式标 unsupported: true，由渲染器记录警告并跳过（禁止静默丢弃）；
 // 3. 本文件不做任何像素操作，行为由 golden 测试锁定。
-const { PIPELINE_ORDER, isSupportedStage } = require('./pipelineOrder.cjs');
-const { normalizeEdits } = require('./editSchema.cjs');
 
 const SPEC_VERSION = 1;
 
@@ -233,7 +236,7 @@ function listUnsupported(spec) {
   return spec.stages.filter((s) => s.unsupported).map((s) => s.kind);
 }
 
-module.exports = {
+export default {
   SPEC_VERSION,
   PIPELINE_ORDER,
   editParamsToRenderSpec,

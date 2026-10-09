@@ -1,7 +1,7 @@
 // 内置风格预设（随应用分发的出厂预设，不存数据库、不可删除）。
-// 参数为 EditParams.basic 子集 + 可选 curves（点对平铺数组，约定见 shared/curves.cjs），
+// 参数为 EditParams.basic 子集 + 可选 curves（点对平铺数组，约定见 shared/curves.js），
 // 经 applyPreset 覆盖影调（几何/锐化不动）。
-// 值域与 shared/editSchema.cjs 的 BasicSchema 对齐（超出会被归一化裁剪）。
+// 值域与 shared/editSchema.js 的 BasicSchema 对齐（超出会被归一化裁剪）。
 const BUILTIN_PRESETS = [
   {
     name: '经典黑白',
@@ -145,4 +145,4 @@ function validateBuiltinPresets() {
   return true;
 }
 
-module.exports = { BUILTIN_PRESETS, validateBuiltinPresets };
+export default { BUILTIN_PRESETS, validateBuiltinPresets };

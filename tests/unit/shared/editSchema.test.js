@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import editSchema from '../../../shared/editSchema.cjs';
+import editSchema from '../../../shared/editSchema.js';
 
 const { DEFAULT_EDITS, normalizeEdits, upgradeEdits, fromLegacyImage, SCHEMA_VERSION } = editSchema;
 

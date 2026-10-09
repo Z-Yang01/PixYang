@@ -1,9 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { createRequire } from 'module';
 
-const require_ = createRequire(import.meta.url);
-const { BUILTIN_PRESETS, validateBuiltinPresets } = require_('../../../shared/builtinPresets.cjs');
-const editSchema = require_('../../../shared/editSchema.cjs');
+import sharedMod_builtinPresets from '../../../shared/builtinPresets.js';
+import curvesLib from '../../../shared/curves.js';
+const { BUILTIN_PRESETS, validateBuiltinPresets } = sharedMod_builtinPresets;
+import editSchema from '../../../shared/editSchema.js';
 
 describe('内置风格预设', () => {
   it('至少 8 个，名称唯一，结构合法', () => {
@@ -41,8 +41,6 @@ describe('内置风格预设', () => {
 });
 
 describe('内置预设曲线（curves）', () => {
-  const curvesLib = require_('../../../shared/curves.cjs');
-
   it('含曲线预设可生成有效 LUT 与预览表（黑白胶片/电影青橙）', () => {
     const withCurves = BUILTIN_PRESETS.filter((p) => p.curves);
     expect(withCurves.map((p) => p.name)).toEqual(expect.arrayContaining(['黑白胶片', '电影青橙']));

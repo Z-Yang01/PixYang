@@ -4,13 +4,13 @@
 // 通路。传输面仅 ≤400px JPEG（base64）与文字摘要，原图不出库；密钥存本机 settings 表。
 // 端点须支持浏览器直连（CORS）：OpenAI 官方/多数代理/本地 Ollama（需 OLLAMA_ORIGINS）均可。
 
-import editSchemaModule from '../../shared/editSchema.cjs';
+import editSchemaModule from '../../shared/editSchema.js';
 
 const { normalizeEdits } = editSchemaModule;
 
 export const AI_DEFAULT_BASE_URL = 'https://api.openai.com/v1';
 
-// 与 shared/editSchema.cjs BasicSchema 同域：九个影调字段
+// 与 shared/editSchema.js BasicSchema 同域：九个影调字段
 const BASIC_KEYS = [
   'exposure',
   'contrast',
@@ -72,7 +72,7 @@ export function buildMessages({ imageDataUrl, analysis, exif } = {}) {
   ];
 }
 
-// 各字段值域（与 shared/editSchema.cjs BasicSchema 同域）：先钳到边界再交给
+// 各字段值域（与 shared/editSchema.js BasicSchema 同域）：先钳到边界再交给
 // normalizeEdits，轻微越界（如 exposure 2.5）保留为边界值而非被 .catch 归零
 const BASIC_RANGES = {
   exposure: [-2, 2],

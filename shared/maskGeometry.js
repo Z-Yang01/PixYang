@@ -1,6 +1,6 @@
 // 蒙版 overlay 几何辅助：display↔image 双向坐标映射（纯函数，无副作用、无渲染权重）。
 // 语义约定：
-// - image 空间：decode 后未旋转/未翻转/未裁剪的底图像素坐标（与 shared/masks.cjs 的 pre-crop 语义一致）。
+// - image 空间：decode 后未旋转/未翻转/未裁剪的底图像素坐标（与 shared/masks.js 的 pre-crop 语义一致）。
 // - display 空间：0..1 归一化坐标，原点在「用户可见区域」左上角。可见区域 = 底图按
 //   rotation（90 的倍数）+ flipH/flipV 变换后，被 crop（底图空间矩形）裁出的部分；crop 为空即整幅。
 // - 变换次序与编辑器一致：CSS `rotate() scale(flip)` 先翻转后旋转，故 image→display 先翻转再旋转，
@@ -136,7 +136,7 @@ function displayToImage(nx, ny, view) {
   return { x: p.x * v.width, y: p.y * v.height };
 }
 
-module.exports = {
+export default {
   normalizeView,
   imageToDisplay,
   displayToImage,

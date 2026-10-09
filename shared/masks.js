@@ -192,7 +192,7 @@ function applyMasksInPlace(data, width, height, masks, channels) {
   }
 }
 
-module.exports = {
+export default {
   normalizeAdjustments,
   normalizeMasks,
   hasMaskData,

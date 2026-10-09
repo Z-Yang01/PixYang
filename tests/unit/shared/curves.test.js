@@ -1,8 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { createRequire } from 'module';
 
-const require_ = createRequire(import.meta.url);
-const curves = require_('../../../shared/curves.cjs');
+import curves from '../../../shared/curves.js';
 
 describe('normalizePoints（点归一化）', () => {
   it('成对取数、排序、钳制到 0..1', () => {

@@ -6,7 +6,7 @@ import { render, screen, fireEvent, cleanup, act } from '@testing-library/react'
 import useBatchActions from '@/hooks/useBatchActions';
 import BatchBar from '@/components/Browser/BatchBar';
 import useGalleryStore from '@/store/galleryStore';
-import builtinPresetsModule from '../../../shared/builtinPresets.cjs';
+import builtinPresetsModule from '../../../shared/builtinPresets.js';
 
 const { BUILTIN_PRESETS } = builtinPresetsModule;
 const initialSnapshot = useGalleryStore.getState();

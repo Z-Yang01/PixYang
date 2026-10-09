@@ -39,8 +39,8 @@ export default [
     },
   },
   {
-    // 共享渲染模块与测试辅助脚本为 CommonJS（含 .cjs）
-    files: ['shared/**/*.cjs', 'tests/**/*.cjs', '*.cjs'],
+    // 测试辅助脚本为 CommonJS（shared/ 已于 2026-10-09 转 ESM，归默认 module 组）
+    files: ['tests/**/*.cjs', '*.cjs'],
     languageOptions: {
       ecmaVersion: 'latest',
       sourceType: 'commonjs',

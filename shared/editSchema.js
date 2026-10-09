@@ -1,6 +1,6 @@
+import { z } from 'zod';
 // EditParams v1：非破坏编辑参数的唯一事实源（zod schema + 默认值 + 版本迁移链）
 // 前端（vite cjs interop）与主进程/worker（require）共用，保证参数语义前后端一致。
-const { z } = require('zod');
 
 const SCHEMA_VERSION = 1;
 const HISTORY_LIMIT = 50; // 每图历史保留步数
@@ -36,7 +36,7 @@ const BasicSchema = z.object({
 });
 
 // 曲线：每通道为点对平铺数组 [x0,y0, x1,y1, ...]，取值 0..1，x 升序，≥2 点有效；
-// 分段线性插值，端点外横向延伸。语义实现唯一在 shared/curves.cjs（渲染 LUT 与预览 tableValues 共用）。
+// 分段线性插值，端点外横向延伸。语义实现唯一在 shared/curves.js（渲染 LUT 与预览 tableValues 共用）。
 const CurvesSchema = z.object({
   rgb: z.array(z.number()).catch([]),
   r: z.array(z.number()).catch([]),
@@ -51,7 +51,7 @@ const HslSchema = z.object({
 });
 
 // 颜色分级：每亮度区间（shadows/midtones/highlights）为 [hue 0..360, sat 0..100]，
-// sat=0/空数组即该区间无偏移。语义实现唯一在 shared/colorGrading.cjs。
+// sat=0/空数组即该区间无偏移。语义实现唯一在 shared/colorGrading.js。
 const ColorGradingSchema = z.object({
   shadows: z.array(z.number()).catch([]),
   midtones: z.array(z.number()).catch([]),
@@ -63,7 +63,7 @@ const DetailSchema = z.object({
   noise: z.number().min(0).max(100).catch(0),
 });
 
-// 镜头校正：vignette -100..100（负压暗/正提亮）已实现（shared/lens.cjs，pre-crop 语义）；
+// 镜头校正：vignette -100..100（负压暗/正提亮）已实现（shared/lens.js，pre-crop 语义）；
 // profile/distortion/chromatic 预留（渲染端警告跳过）
 const LensSchema = z.object({
   profile: z.string().catch(''),
@@ -72,7 +72,7 @@ const LensSchema = z.object({
   chromatic: z.number().catch(0),
 });
 
-// 蒙版 v2（shared/masks.cjs 唯一实现）：radial（椭圆+羽化+反相+旋转）、linear（渐变线，
+// 蒙版 v2（shared/masks.js 唯一实现）：radial（椭圆+羽化+反相+旋转）、linear（渐变线，
 // p0→p1 线性 0→1，feather 字段保留不适用）与 range（亮度范围带：center 0..1 / range 半宽
 // 0..1 / feather 带外衰减 0..1）。坐标系为 decode 后未旋转未裁剪图像。
 // brush/ai 类型暂不支持——非法/未知类型元素在归一化层丢弃。
@@ -252,7 +252,7 @@ function stripOutput(params) {
   return rest;
 }
 
-module.exports = {
+export default {
   SCHEMA_VERSION,
   HISTORY_LIMIT,
   EditParamsSchema,

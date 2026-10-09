@@ -1,5 +1,5 @@
 import { useRef, useState, useCallback, useEffect } from 'react';
-import curvesLib from '../../../shared/curves.cjs';
+import curvesLib from '../../../shared/curves.js';
 
 const { normalizePoints, evalAt } = curvesLib;
 
@@ -19,7 +19,7 @@ const MAX_CURVE_POINTS = 16;
 // 曲线编辑器（受控组件）：空曲线按恒等对角线显示，首次拖拽即写入显式点。
 // 交互：点击空处添加锚点（y 吸附当前曲线值）、拖拽调整、锚点拖出面板删除、端点 x 锁定；
 // 每通道锚点上限 MAX_CURVE_POINTS（达上限拒绝再添加，悬停 svg 有 title 提示）。
-// 曲线语义与渲染端共用 shared/curves.cjs（分段线性）。
+// 曲线语义与渲染端共用 shared/curves.js（分段线性）。
 // onCommit 在手势结束（mouseup/拖出删除）时回调——由父组件把终态推入历史栈；
 // epoch 变化（外部撤销/跳转）立即中断进行中的拖拽，防止旧 dragRef 写回污染已跳转状态。
 export default function CurveEditor({ curves, onCommit, onChange, epoch = 0 }) {

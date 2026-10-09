@@ -137,7 +137,7 @@ function applyHslInPlace(data, hslParams, channels) {
   }
 }
 
-module.exports = {
+export default {
   HSL_BANDS,
   BAND_RADIUS,
   HUE_MAX_DEG,
