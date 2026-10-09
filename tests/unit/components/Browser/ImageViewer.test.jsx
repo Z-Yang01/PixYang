@@ -112,6 +112,29 @@ describe('ImageViewer', () => {
     expect(onPrev).toHaveBeenCalledTimes(1);
   });
 
+  it('查看态删除：工具栏按钮/Delete 键开确认框，确认回调 onDeleteInViewer(image)；编辑态 Delete 不接', () => {
+    const onDeleteInViewer = vi.fn();
+    render(<ImageViewer {...baseProps({ onDeleteInViewer })} />);
+    fireEvent.click(screen.getByTitle(/删除当前图片/));
+    fireEvent.click(screen.getByRole('button', { name: '删除' }));
+    expect(onDeleteInViewer).toHaveBeenCalledWith(testImage);
+
+    // Delete 键同通道（独立 mock 分段计数）
+    cleanup();
+    const onDeleteInViewer2 = vi.fn();
+    render(<ImageViewer {...baseProps({ onDeleteInViewer: onDeleteInViewer2 })} />);
+    fireEvent.keyDown(window, { key: 'Delete' });
+    fireEvent.click(screen.getByRole('button', { name: '删除' }));
+    expect(onDeleteInViewer2).toHaveBeenCalledTimes(1);
+
+    // 未接 onDeleteInViewer（如旧调用方）：无工具栏入口，Delete 键无副作用
+    cleanup();
+    render(<ImageViewer {...baseProps()} />);
+    expect(screen.queryByTitle(/删除当前图片/)).toBeNull();
+    fireEvent.keyDown(window, { key: 'Delete' });
+    expect(screen.queryByRole('button', { name: '删除' })).toBeNull();
+  });
+
   it('几何工具精简：垂直翻转入口已移除，水平翻转可用；存量 flip_v 仍渲染', () => {
     render(<ImageViewer {...baseProps()} />);
     expect(screen.queryByTitle(/垂直翻转/)).toBeNull();

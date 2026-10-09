@@ -10,6 +10,7 @@ import {
   removeImageFromList,
   removeIdsFromSet,
   matchesListFilters,
+  viewerIndexAfterDelete,
 } from './lib/gallery';
 import api from './lib/api';
 import { normalizeTheme } from './lib/themes';
@@ -18,6 +19,8 @@ import useGalleryData from './hooks/useGalleryData';
 import useGlobalShortcuts from './hooks/useGlobalShortcuts';
 import useDragImport from './hooks/useDragImport';
 import useBatchActions from './hooks/useBatchActions';
+import { offerDeleteUndo } from './lib/trashUndo';
+import { errText, friendlyError } from './lib/errorText';
 import Sidebar from './components/Layout/Sidebar';
 import TopBar from './components/Layout/TopBar';
 import ImageGrid from './components/Browser/ImageGrid';
@@ -332,6 +335,42 @@ export default function App() {
     const idx = viewerIndexRef.current;
     if (idx < useGalleryStore.getState().totalImages - 1) navigateViewer(idx + 1);
   }, [navigateViewer]);
+
+  // 查看器内删除当前图（进回收站，可撤销）：删后列表收缩一格——非末张停在原全局索引
+  // 即自动前进到下一张，末张回退一格，删空关闭查看器（浏览流不中断的淘汰工作流）
+  const handleViewerDelete = useCallback(
+    async (image) => {
+      if (!api.isBridgeAvailable() || !image) return;
+      let result;
+      try {
+        result = await api.deleteImageToTrash(image.id);
+      } catch (e) {
+        result = { error: errText('删除失败', e) };
+      }
+      if (result?.error) {
+        toast.error(friendlyError(result.error));
+        return;
+      }
+      offerDeleteUndo([result], `已删除「${image.filename}」`, {
+        onRestored: async () => {
+          const s2 = useGalleryStore.getState();
+          await Promise.all([s2.loadImages(), s2.loadStats(), s2.loadAppData()]);
+        },
+        onFailed: (n, msg) => toast.error(msg || `撤销失败（${n} 张）`),
+      });
+      const store = useGalleryStore.getState();
+      const totalAfter = Math.max(0, store.totalImages - 1);
+      await Promise.all([store.loadImages(), store.loadStats(), store.loadAppData()]);
+      const next = viewerIndexAfterDelete(viewerIndexRef.current, totalAfter);
+      if (next < 0) {
+        setViewerImage(null);
+        setViewerIndex(-1);
+      } else {
+        await navigateViewer(next);
+      }
+    },
+    [navigateViewer]
+  );
 
   // 幻灯片下一张预取：查看器驻留时按同一筛选预取 viewerIndex+1 的记录（既有 getImages
   // 通道，不新增 IPC 端点），交 ImageViewer 离屏预解码；失败静默，不影响翻页主路径
@@ -662,6 +701,7 @@ export default function App() {
             onJumpTo={navigateViewer}
             nextImage={viewerNextImage}
             onImageUpdated={handleImageUpdated}
+            onDeleteInViewer={handleViewerDelete}
             onOpenInfo={(img) => {
               if (!img) return;
               if (infoImageRef.current?.id === img.id) {

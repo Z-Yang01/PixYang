@@ -16,6 +16,7 @@ import {
   matchesListFilters,
   removeImageFromList,
   createLoadSequencer,
+  viewerIndexAfterDelete,
 } from '@/lib/gallery';
 
 const grid = { rows: 3, columns: 5, gap: 12, padding: 16 };
@@ -341,5 +342,16 @@ describe('星级筛选：仅未评分剪枝', () => {
     expect(matchesListFilters({ rating: undefined }, base)).toBe(true);
     expect(hasActiveFilters({ filterUnrated: true })).toBe(true);
     expect(hasActiveFilters({ filterUnrated: false })).toBe(false);
+  });
+});
+
+describe('查看器删除落点：viewerIndexAfterDelete', () => {
+  it('非末张停在原索引（列表收缩后即下一张）；末张回退一格；删空关查看器', () => {
+    // 在 idx 2 删除，剩 9 张：原索引 2 现指向原第 3 张（自动前进）
+    expect(viewerIndexAfterDelete(2, 9)).toBe(2);
+    // 删除的是末张（idx 9，剩 9 张）：回退到最后一张
+    expect(viewerIndexAfterDelete(9, 9)).toBe(8);
+    // 删空：-1 → 调用方关闭查看器
+    expect(viewerIndexAfterDelete(0, 0)).toBe(-1);
   });
 });

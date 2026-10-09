@@ -36,6 +36,7 @@ import {
   Pause,
   Square,
   Repeat,
+  Trash2,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
@@ -118,6 +119,7 @@ export default function ImageViewer({
   onImageUpdated,
   onOpenInfo,
   onEnterEdit,
+  onDeleteInViewer,
   closeGuardRef,
 }) {
   const [thumbSrc, setThumbSrc] = useState(null);
@@ -160,8 +162,9 @@ export default function ImageViewer({
   const [showExportDialog, setShowExportDialog] = useState(false);
   const [exportOpts, setExportOpts] = useState({ format: 'auto', quality: 92, maxEdge: 0 });
   const [bakeConfirm, setBakeConfirm] = useState(false);
+  const [deleteConfirm, setDeleteConfirm] = useState(false);
   const dialogsOpenRef = useRef(false);
-  dialogsOpenRef.current = !!(exitConfirm || showExportDialog || bakeConfirm);
+  dialogsOpenRef.current = !!(exitConfirm || showExportDialog || bakeConfirm || deleteConfirm);
   const [histInfo, setHistInfo] = useState({ canUndo: false, canRedo: false, index: 0, length: 0 });
   const [editEpoch, setEditEpoch] = useState(0); // 外部替换 ops（撤销/跳转/清除）时递增，中断进行中的手势
   const webglAvailable = useRef(isWebGL2Available()).current;
@@ -1437,6 +1440,10 @@ export default function ImageViewer({
         case VIEWER_ACTIONS.SaveEdits:
           if (editingRef.current) saveParamsRef.current?.();
           break;
+        case VIEWER_ACTIONS.Delete:
+          // 删除当前图仅查看态可达：编辑态 Delete 不接（防误删正编辑的图）
+          if (!editingRef.current && onDeleteInViewer) setDeleteConfirm(true);
+          break;
         case VIEWER_ACTIONS.ZoomReset:
           setZoom(1);
           setPos({ x: 0, y: 0 });
@@ -1471,6 +1478,7 @@ export default function ImageViewer({
     applyHistory,
     compareActive,
     bumpSlideshowEpoch,
+    onDeleteInViewer,
   ]);
 
   // 加载策略：中图占位，原图异步替换；列表小图不用于查看器
@@ -2052,6 +2060,16 @@ export default function ImageViewer({
                 <Star className="size-5" fill={n <= localRating ? 'currentColor' : 'none'} />
               </Button>
             ))}
+            {onDeleteInViewer && (
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => setDeleteConfirm(true)}
+                title="删除当前图片（Delete；进回收站 24 小时可恢复）"
+              >
+                <Trash2 className="size-5" />
+              </Button>
+            )}
           </>
         )}
         <Button
@@ -3402,6 +3420,20 @@ export default function ImageViewer({
           danger
           onConfirm={bakeEdits}
           onCancel={() => setBakeConfirm(false)}
+        />
+      )}
+
+      {deleteConfirm && (
+        <ConfirmDialog
+          title="删除当前图片？"
+          message={`「${image.filename}」将移入回收站，24 小时内可在回收站恢复；配对 NEF 与编辑一并随迁。`}
+          confirmLabel="删除"
+          danger
+          onConfirm={() => {
+            setDeleteConfirm(false);
+            onDeleteInViewer?.(image);
+          }}
+          onCancel={() => setDeleteConfirm(false)}
         />
       )}
 

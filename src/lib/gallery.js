@@ -190,3 +190,10 @@ export function createLoadSequencer() {
     },
   };
 }
+
+// 查看器内删除后的落点：列表收缩一格，删除项非末张时原全局索引恰好指向下一张
+// （停在原位即自动前进）；删除的是末张则回退一格；删空返回 -1（调用方关闭查看器）
+export function viewerIndexAfterDelete(idx, totalAfter) {
+  if (totalAfter <= 0) return -1;
+  return Math.min(idx, totalAfter - 1);
+}

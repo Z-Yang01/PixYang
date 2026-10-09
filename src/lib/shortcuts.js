@@ -72,6 +72,7 @@ export const VIEWER_ACTIONS = {
   ClearRating: 'clearRating',
   ToggleInfo: 'toggleInfo',
   SaveEdits: 'saveEdits',
+  Delete: 'delete',
 };
 
 export const SHORTCUT_GROUPS = [
@@ -101,6 +102,7 @@ export const SHORTCUT_GROUPS = [
       { keys: ['F'], desc: '切换收藏' },
       { keys: ['1–5'], desc: '设置评分' },
       { keys: ['I'], desc: '打开 / 关闭详情面板' },
+      { keys: ['Delete'], desc: '删除当前图片（进回收站，可撤销）' },
       { keys: ['Esc'], desc: '关闭查看器' },
       { keys: ['Ctrl/⌘', 'S'], desc: '编辑态：保存参数（原图不动）' },
     ],
@@ -174,6 +176,8 @@ export function matchViewerShortcut(e) {
   if (key === 'f' || key === 'F') return VIEWER_ACTIONS.Favorite;
   if (key === 'i' || key === 'I') return VIEWER_ACTIONS.ToggleInfo;
   if (key >= '1' && key <= '5') return /** @type {any} */ (`rate${key}`);
+  // Delete 删除当前图（进回收站）：仅查看态消费，编辑态由调用方守卫
+  if (key === 'Delete') return VIEWER_ACTIONS.Delete;
   return null;
 }
 
