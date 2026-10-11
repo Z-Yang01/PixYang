@@ -278,11 +278,14 @@ describe('ImageGrid', () => {
     seedStore({ images: [makeImage()], totalImages: 1 });
     const { rerender } = render(<ImageGrid />);
     await screen.findByText('sunset');
+    // 原图 URL 按需化：正常库（有缩略图路径）只解析缩略图，filepath 不再预解析
     await vi.waitFor(() => {
       expect(window.pixyang.toFileUrls).toHaveBeenCalledWith(
-        expect.arrayContaining(['C:/pics/sunset.jpg'])
+        expect.arrayContaining(['C:/thumbs/sunset.jpg'])
       );
     });
+    const requested = window.pixyang.toFileUrls.mock.calls.flat(2);
+    expect(requested).not.toContain('C:/pics/sunset.jpg');
     const callsBefore = window.pixyang.toFileUrls.mock.calls.length;
     // 编辑预览写回新路径 → 缓存失效重解析
     useGalleryStore.setState({
@@ -293,6 +296,25 @@ describe('ImageGrid', () => {
       expect(window.pixyang.toFileUrls.mock.calls.length).toBeGreaterThan(callsBefore);
       const last = window.pixyang.toFileUrls.mock.calls.at(-1)[0];
       expect(last).toContain('C:/edit/sunset.png');
+    });
+  });
+
+  it('回归：缩略图加载失败按需补原图 URL（回退链不再依赖预解析的 fileUrls）', async () => {
+    window.pixyang.toFileUrls = vi.fn(async (paths) =>
+      Object.fromEntries(paths.map((p) => [p, `file:///${encodeURIComponent(p)}`]))
+    );
+    seedStore({ images: [makeImage()], totalImages: 1 });
+    render(<ImageGrid />);
+    await screen.findByText('sunset');
+    await vi.waitFor(() => {
+      expect(window.pixyang.toFileUrls).toHaveBeenCalled();
+    });
+    // 首轮只解析缩略图
+    expect(window.pixyang.toFileUrls.mock.calls.flat(2)).toEqual(['C:/thumbs/sunset.jpg']);
+    // 模拟缩略图 <img> onError → 触发原图按需解析
+    fireEvent.error(document.querySelector('img.image-card-thumb'));
+    await vi.waitFor(() => {
+      expect(window.pixyang.toFileUrls.mock.calls.flat(2)).toContain('C:/pics/sunset.jpg');
     });
   });
 

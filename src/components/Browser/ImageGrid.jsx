@@ -304,6 +304,8 @@ export default function ImageGrid({
   const fileUrlsRef = useRef(fileUrls);
   fileUrlsRef.current = fileUrls;
 
+  // 原图 URL 按需补解析（缺缩略图回退用）：仅在卡片实际需要展示原图（无可用缩略图路径）
+  // 时才把 filepath 加入解析清单——正常库全部有缩略图，预解析每页 N 条原图 URL 是纯浪费
   const loadUrls = async (imgs) => {
     if (!api.isBridgeAvailable()) return;
     const token = urlSeqRef.current.next();
@@ -315,7 +317,7 @@ export default function ImageGrid({
       if (preferredThumb && thumbUrlsRef.current[preferredThumb] === undefined) {
         needThumbPaths.push(preferredThumb);
       }
-      if (fileUrlsRef.current[img.id] === undefined) {
+      if (!preferredThumb && fileUrlsRef.current[img.id] === undefined) {
         needOrigPaths.push(img.filepath);
       }
     }
@@ -339,6 +341,14 @@ export default function ImageGrid({
     if (Object.keys(thumbByPath).length > 0) setThumbUrls((prev) => ({ ...prev, ...thumbByPath }));
     if (Object.keys(origById).length > 0) setFileUrls((prev) => ({ ...prev, ...origById }));
   };
+
+  // 缩略图加载失败 → 补解析原图 URL 作回退（删库内 thumbnail 路径坏行仍有图可看）
+  const requestOriginalUrl = useCallback(async (img) => {
+    if (!api.isBridgeAvailable() || fileUrlsRef.current[img.id] !== undefined) return;
+    const urlMap = (await api.toFileUrls([img.filepath])) || {};
+    const url = urlMap[img.filepath];
+    if (url) setFileUrls((prev) => ({ ...prev, [img.id]: url }));
+  }, []);
 
   const tagSeqRef = useRef(null);
   if (!tagSeqRef.current) tagSeqRef.current = createLoadSequencer();
@@ -574,9 +584,15 @@ export default function ImageGrid({
     onCountsChanged?.();
   };
 
-  const handleThumbError = useCallback((id) => {
-    setBrokenThumbnails((prev) => new Set([...prev, id]));
-  }, []);
+  const handleThumbError = useCallback(
+    (id) => {
+      setBrokenThumbnails((prev) => new Set([...prev, id]));
+      // 回退链推进：坏缩略图 → 卡片将改走 originalSrc，此处按需补 URL（正常库不触发）
+      const img = useGalleryStore.getState().images.find((i) => i.id === id);
+      if (img) requestOriginalUrl(img);
+    },
+    [requestOriginalUrl]
+  );
 
   const handleOriginalError = useCallback((id) => {
     setFileUrls((prev) => {
