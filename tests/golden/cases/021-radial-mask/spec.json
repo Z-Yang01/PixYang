@@ -102,6 +102,7 @@
       "kind": "detail",
       "params": {
         "sharpness": 0,
+        "texture": 0,
         "noise": 0,
         "grain": 0
       }
@@ -138,6 +139,6 @@
   ],
   "meta": {
     "fromEditParamsVersion": 0,
-    "generatedAt": "2026-10-12T17:01:54.451Z"
+    "generatedAt": "2026-10-12T17:40:36.630Z"
   }
 }

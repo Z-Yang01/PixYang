@@ -36,7 +36,7 @@ export const EDIT_DEFAULTS = {
     sat: [0, 0, 0, 0, 0, 0, 0, 0],
     lum: [0, 0, 0, 0, 0, 0, 0, 0],
   },
-  detail: { sharpness: 0, noise: 0, grain: 0 }, // 锐化/降噪/颗粒 0..100
+  detail: { sharpness: 0, texture: 0, noise: 0, grain: 0 }, // 锐化/纹理(±)/降噪/颗粒
   // 八带分色，每带 -100..100（normalizeHsl 恒补齐 8 项），见 shared/hsl.js
   vignette: 0, // -100..100（负压暗/正提亮），pre-crop 语义，见 shared/lens.js
   distortion: 0, // -100..100（径向畸变校正：+ 桶形 / − 枕形），见 shared/lens.js lensGeomParams
@@ -98,6 +98,7 @@ export function sanitizeEditOps(input = {}) {
     hsl: normalizeHsl(ops.hsl),
     detail: {
       sharpness: clamp(Math.round(Number(ops.detail?.sharpness)) || 0, 0, 100),
+      texture: clamp(Math.round(Number(ops.detail?.texture)) || 0, -100, 100),
       noise: clamp(Math.round(Number(ops.detail?.noise)) || 0, 0, 100),
       grain: clamp(Math.round(Number(ops.detail?.grain)) || 0, 0, 100),
     },
@@ -130,6 +131,7 @@ export function hasEdits(ops) {
     hasColorGradingData(s.colorGrading) ||
     hasHslData(s.hsl) ||
     s.detail.sharpness !== 0 ||
+    s.detail.texture !== 0 ||
     s.detail.noise !== 0 ||
     s.detail.grain !== 0 ||
     s.vignette !== 0 ||
@@ -174,6 +176,7 @@ export function toEditParams(ops) {
     hsl: s.hsl,
     detail: {
       sharpness: s.detail.sharpness,
+      texture: s.detail.texture,
       noise: s.detail.noise,
       grain: s.detail.grain,
     },
@@ -225,6 +228,7 @@ export function fromEditParams(params) {
     hsl: normalizeHsl(p.hsl),
     detail: {
       sharpness: clamp(Math.round(Number(p.detail?.sharpness)) || 0, 0, 100),
+      texture: clamp(Math.round(Number(p.detail?.texture)) || 0, -100, 100),
       noise: clamp(Math.round(Number(p.detail?.noise)) || 0, 0, 100),
       grain: clamp(Math.round(Number(p.detail?.grain)) || 0, 0, 100),
     },

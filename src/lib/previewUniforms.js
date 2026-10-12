@@ -88,6 +88,9 @@ export function specToShaderUniforms(spec, imageSize = [0, 0]) {
 
   // detail：锐化开关 + 降噪亮度域混合系数（noise/100·0.85，与执行器 apply_noise_reduction_in_place 同式）
   const detailSharp = (by.detail?.params?.sharpness || 0) > 0 ? 1 : 0;
+  // 纹理：-100..100 → k = t/100 ∈ [-1,1]（负=柔化，与锐化同邻域差值方向语义）
+  const detailTexture =
+    Math.min(100, Math.max(-100, Number(by.detail?.params?.texture) || 0)) / 100;
   const detailNoise = ((by.detail?.params?.noise || 0) / 100) * 0.85;
   // 颗粒：传归一化强度（shader 内乘 0.15 满档）；模拟器同式
   const detailGrain = Math.min(100, Math.max(0, Number(by.detail?.params?.grain) || 0)) / 100;
@@ -184,6 +187,7 @@ export function specToShaderUniforms(spec, imageSize = [0, 0]) {
     curveLut,
     hslOn,
     detailSharp,
+    detailTexture,
     detailNoise,
     detailGrain,
     hslHue: hsl.hue,

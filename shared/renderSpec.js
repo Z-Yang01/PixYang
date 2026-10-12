@@ -95,6 +95,7 @@ function buildStages(p) {
       kind: 'detail',
       params: {
         sharpness: p.detail?.sharpness || 0,
+        texture: p.detail?.texture || 0,
         noise: p.detail?.noise || 0,
         grain: p.detail?.grain || 0,
       },

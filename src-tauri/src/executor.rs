@@ -183,6 +183,7 @@ fn apply_unsharp_approx(
     width: u32,
     height: u32,
     sigma: f64,
+    gain: f64,
     channels: usize,
 ) -> Result<(), PixError> {
     let img = RgbaImage::from_raw(width, height, data.to_vec())
@@ -192,7 +193,7 @@ fn apply_unsharp_approx(
     // 取回 blurred 的 Rgba8 用借用替代 to_rgba8 回克隆（Rgba8→blur→Rgba8 恒成立）。
     let blurred = DynamicImage::ImageRgba8(img).blur(sigma.max(0.1) as f32);
     let blur_rgba = as_or_to_rgba8(&blurred);
-    let k = 1.0;
+    let k = gain;
     for (i, px) in data.chunks_exact_mut(channels).enumerate() {
         for c in 0..3.min(channels) {
             let x = px[c] as f64;
@@ -759,6 +760,23 @@ pub fn render_spec_to_file(
                         p.width,
                         p.height,
                         0.8 + sharpness / 50.0,
+                        1.0,
+                        p.channels,
+                    )?;
+                }
+                // 纹理（中频 USM）：σ=1.5 固定中半径、k=texture/100（负=柔化）；
+                // 预览为画布分辨率 3×3 邻域近似（同锐化声明口径，不入对拍矩阵）
+                let texture = params.get("texture").and_then(|v| v.as_f64()).unwrap_or(0.0);
+                if texture != 0.0 {
+                    flush_affine(&mut pixels, &mut affine, input)?;
+                    ensure_decoded(&mut pixels, input)?;
+                    let p = pixels.as_mut().unwrap();
+                    apply_unsharp_approx(
+                        &mut p.data,
+                        p.width,
+                        p.height,
+                        1.5,
+                        texture / 100.0,
                         p.channels,
                     )?;
                 }
@@ -1146,6 +1164,41 @@ mod tests {
     }
 
     use super::*;
+
+    #[test]
+    fn 纹理_usm_方向锁_正增强负柔化_零恒等() {
+        // 5×1 阶跃图（中心白两侧黑）：USM 后边缘对比方向由 k 符号决定
+        let dir = std::env::temp_dir().join("pixyang_texture_test");
+        std::fs::create_dir_all(&dir).unwrap();
+        let w = 5u32;
+        let h = 1u32;
+        let make = || {
+            let mut v = vec![0u8; (w * h * 4) as usize];
+            for x in 2..w {
+                for c in 0..3 {
+                    v[(x as usize) * 4 + c] = 255;
+                }
+                v[(x as usize) * 4 + 3] = 255;
+            }
+            for x in 0..2 {
+                v[(x as usize) * 4 + 3] = 255;
+            }
+            v
+        };
+        // k=+0.5（texture 50）：边界暗侧更暗/亮侧更亮（边缘对比增强）
+        let mut pos = make();
+        apply_unsharp_approx(&mut pos, w, h, 1.5, 0.5, 4).unwrap();
+        assert!(pos[1 * 4] == 0 || pos[1 * 4] <= 5, "暗侧不应变亮: {}", pos[1 * 4]);
+        // k=−0.5（texture −50）：阶跃被柔化，边界暗侧抬升
+        let mut neg = make();
+        apply_unsharp_approx(&mut neg, w, h, 1.5, -0.5, 4).unwrap();
+        assert!(neg[1 * 4] > 0, "柔化应抬升暗侧边界: {}", neg[1 * 4]);
+        // k=0 恒等
+        let mut zero = make();
+        apply_unsharp_approx(&mut zero, w, h, 1.5, 0.0, 4).unwrap();
+        assert_eq!(zero, make());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     fn write_test_png(path: &std::path::Path, pixels: &[u8], w: u32, h: u32) {
         let mut img = RgbaImage::new(w, h);

@@ -62,6 +62,7 @@ const ColorGradingSchema = z.object({
 
 const DetailSchema = z.object({
   sharpness: z.number().min(0).max(100).catch(0),
+  texture: z.number().min(-100).max(100).catch(0), // 纹理（中频 USM，负=柔化）
   noise: z.number().min(0).max(100).catch(0),
   grain: z.number().min(0).max(100).catch(0), // 胶片颗粒（shared/grain.js，单色 u32 hash 网格）
 });
@@ -190,7 +191,7 @@ function DEFAULT_EDITS() {
     curves: { rgb: [], r: [], g: [], b: [] },
     hsl: { hue: [], sat: [], lum: [] },
     colorGrading: { shadows: [], midtones: [], highlights: [] },
-    detail: { sharpness: 0, noise: 0, grain: 0 },
+    detail: { sharpness: 0, texture: 0, noise: 0, grain: 0 },
     lens: { profile: '', distortion: 0, vignette: 0, chromatic: 0 },
     masks: [],
     output: { format: 'jpeg', quality: 92, icc: '', resize: null },

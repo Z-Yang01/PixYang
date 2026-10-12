@@ -766,16 +766,17 @@ describe('ImageViewer', () => {
     );
     expect(section).toBeTruthy();
     const inputs = section.querySelectorAll('.editor-slider-row input');
-    expect(inputs.length).toBe(3); // 锐化/降噪/颗粒
+    expect(inputs.length).toBe(4); // 锐化/纹理/降噪/颗粒
     expect(inputs[0].value).toBe('0');
     fireEvent.change(inputs[0], { target: { value: '55' } });
-    fireEvent.change(inputs[1], { target: { value: '30' } });
-    fireEvent.change(inputs[2], { target: { value: '20' } });
+    fireEvent.change(inputs[1], { target: { value: '-30' } });
+    fireEvent.change(inputs[2], { target: { value: '30' } });
+    fireEvent.change(inputs[3], { target: { value: '20' } });
     fireEvent.click(screen.getByTitle('保存编辑参数（原图不动，可随时回到当前效果）'));
     await vi.waitFor(() => {
       expect(window.pixyang.saveEdits).toHaveBeenCalledTimes(1);
       const params = window.pixyang.saveEdits.mock.calls[0][1];
-      expect(params.detail).toEqual({ sharpness: 55, noise: 30, grain: 20 });
+      expect(params.detail).toEqual({ sharpness: 55, texture: -30, noise: 30, grain: 20 });
     });
   });
 

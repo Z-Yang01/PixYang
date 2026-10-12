@@ -3041,3 +3041,19 @@ R103 宣言 → R116 六笔快包 → 本轮 R117-R119 终版快包，此后再�
     提交范围：tests/webgl-parity/run.cjs tests/webgl-parity/cases-edit-audit.json src/lib/webglPreview.js NIGHTLY_LOG.md
   待人工复核：① grain 预览/导出的格坐标浮点分叉若要彻底逐位闭合，需 shader 传整数格索引或 Rust 侧
      改用与插值同式的坐标取整（收益纯精度洁癖，代价=两端各改一处，未做）。
+
+- 2026-10-13 03:00 R123 纹理 Texture（LR 基本面板最后一根补全，夜间轮）：
+  ① 选题：R3 计划项——LR 基本面板质感域 text/texture 与 clarity 构成粗细对比对，缺 texture；
+  ② 语义：中频 USM——执行器 σ=1.5 固定中半径、k=texture/100 ∈ [-1,1]（负=柔化，数学对称），
+     apply_unsharp_approx 加 gain 参数（sharpness 调用点 k=1.0 不变）；预览端与锐化同 3×3 邻域差值
+     近似（uDetailTexture 独立系数方向，能力矩阵 partial 同 sharpness 口径不入对拍矩阵）；
+  ③ 全链：schema/spec/GLSL/uniforms/editParams/细节区第四滑杆（-100..100）；
+  ④ 回归锁：Rust 方向锁（5×1 阶跃图：k=+0.5 边界对比增强暗侧不亮、k=−0.5 柔化抬升、k=0 恒等逐位）；
+     变异验证：k 符号翻转 → 方向锁红 → 复绿；前端 detail 域用例扩 texture（往返/钳制/hasEdits）；golden 23 例重导出+像素零变化；
+  ⑤ 真机取证：纯算子，UI 由单测覆盖（ImageViewer 4 滑杆保存落库断言）；
+  - 验证：npm 77/1044 全绿；cargo 234+golden_audit 绿；lint 0E/10W；tsc/prettier/build 干净。
+    提交范围：shared/editSchema.js shared/renderSpec.js src/lib/editParams.js src/lib/previewUniforms.js
+    src/lib/webglPreview.js src/components/Viewer/ImageViewer.jsx src-tauri/src/executor.rs
+    tests/unit/lib/editParams.test.js tests/unit/components/Viewer/ImageViewer.test.jsx
+    tests/golden/cases/*/spec.json(23) NIGHTLY_LOG.md
+  待人工复核：无新增（texture 预览为声明近似口径，同 sharpness R96 先例）。

@@ -45,6 +45,7 @@ uniform float uLensChromatic;   // 色散校正系数 ca（±0.01，随 r² 增�
 uniform float uLensGeomOn;      // 0/1：重采样段开关
 uniform float uVignette;
 uniform float uDetailSharp;     // 0/1：锐化开关（导出端为原图分辨率 USM，预览为画布邻域近似）
+uniform float uDetailTexture;   // -1..1：纹理中频系数（同锐化邻域差值口径；负=柔化）
 uniform float uDetailNoise;     // 0..1：降噪亮度域混合系数（noise/100·0.85，与执行器同式）
 uniform float uGrain;           // 0..1：胶片颗粒强度（grain/100；u32 hash 网格，与执行器逐位同式）
 uniform float uMaskOn;
@@ -290,7 +291,7 @@ void main() {
   }
   // detail：画布分辨率 3×3 邻域近似（导出按原图分辨率计算；同为视觉近似，不做像素对拍）。
   // 锐化源用原纹理邻域——色调编辑属低频，高频与处理结果一致
-  if (uDetailSharp > 0.5 || uDetailNoise > 0.001) {
+  if (uDetailSharp > 0.5 || uDetailNoise > 0.001 || uDetailTexture != 0.0) {
     vec2 texel = 1.0 / uImageSize;
     vec3 c0 = c;
     vec3 acc = vec3(0.0);
@@ -312,6 +313,11 @@ void main() {
     }
     if (uDetailSharp > 0.5) {
       c += (c0 - neigh) * 0.7;
+    }
+    // 纹理（中频 USM 近似）：与锐化同邻域差值、独立系数与方向；导出端 σ=1.5 全图高斯，
+    // 预览画布分辨率 3×3 近似（同锐化声明口径，不入对拍矩阵）
+    if (uDetailTexture != 0.0) {
+      c += (c0 - neigh) * uDetailTexture;
     }
     c = clamp(c, 0.0, 1.0);
   }
@@ -445,6 +451,7 @@ function getUniformLocations(gl, program) {
     'uVignette',
     'uDetailSharp',
     'uDetailNoise',
+    'uDetailTexture',
     'uGrain',
     'uMaskOn',
     'uImageSize',
@@ -667,6 +674,7 @@ export async function renderWebGLPreview(canvas, image, uniforms, opts = {}) {
     gl.uniform1f(locs.uVignette, uniforms.vignette);
     gl.uniform1f(locs.uDetailSharp, uniforms.detailSharp || 0);
     gl.uniform1f(locs.uDetailNoise, uniforms.detailNoise || 0);
+    gl.uniform1f(locs.uDetailTexture, uniforms.detailTexture ?? 0);
     gl.uniform1f(locs.uGrain, uniforms.detailGrain ?? 0);
     gl.uniform1f(locs.uMaskOn, uniforms.maskOn || 0);
     gl.uniform2fv(locs.uImageSize, uniforms.imageSize || [0, 0]);

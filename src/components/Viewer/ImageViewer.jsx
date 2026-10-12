@@ -3126,6 +3126,46 @@ export default function ImageViewer({
             </label>
             <label
               className="editor-slider-row"
+              title="纹理：中频质感增强，负值柔化；双击重置"
+              onDoubleClick={() => {
+                const next = {
+                  ...editOpsRef.current,
+                  detail: { ...editOpsRef.current.detail, texture: 0 },
+                };
+                pushHistory(next, '重置纹理');
+                setEditOps(next);
+              }}
+            >
+              <span>纹理</span>
+              <input
+                type="range"
+                min={-100}
+                max={100}
+                step={1}
+                value={editOps.detail?.texture ?? 0}
+                onPointerDown={() => {
+                  sliderDragRef.current = 'detail.texture';
+                }}
+                onPointerUp={() => {
+                  if (sliderDragRef.current === 'detail.texture') {
+                    sliderDragRef.current = null;
+                    pushHistory(editOpsRef.current, '纹理');
+                  }
+                }}
+                onBlur={settleKeyGesture}
+                onChange={(e) => {
+                  const next = {
+                    ...editOpsRef.current,
+                    detail: { ...editOpsRef.current.detail, texture: Number(e.target.value) },
+                  };
+                  setEditOps(next);
+                  if (!sliderDragRef.current) recordKeyAdjust(next, '纹理');
+                }}
+              />
+              <em>{editOps.detail?.texture ?? 0}</em>
+            </label>
+            <label
+              className="editor-slider-row"
               title="双击重置该项"
               onDoubleClick={() => {
                 const next = {

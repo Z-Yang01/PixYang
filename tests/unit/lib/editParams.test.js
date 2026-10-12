@@ -78,22 +78,22 @@ describe('sanitizeEditOps', () => {
   });
 
   it('detail：越界钳制、四舍五入取整、往返保真，hasEdits 识别锐化/颗粒', () => {
-    const s = sanitizeEditOps({ detail: { sharpness: -5, noise: 77.6, grain: 120 } });
-    expect(s.detail).toEqual({ sharpness: 0, noise: 78, grain: 100 });
+    const s = sanitizeEditOps({ detail: { sharpness: -5, texture: 150, noise: 77.6, grain: 120 } });
+    expect(s.detail).toEqual({ sharpness: 0, texture: 100, noise: 78, grain: 100 });
     const params = toEditParams({
       ...EDIT_DEFAULTS,
-      detail: { sharpness: 60, noise: 0, grain: 25 },
+      detail: { sharpness: 60, texture: -30, noise: 0, grain: 25 },
     });
-    expect(params.detail).toEqual({ sharpness: 60, noise: 0, grain: 25 });
+    expect(params.detail).toEqual({ sharpness: 60, texture: -30, noise: 0, grain: 25 });
     const back = fromEditParams(params);
-    expect(back.detail).toEqual({ sharpness: 60, noise: 0, grain: 25 });
+    expect(back.detail).toEqual({ sharpness: 60, texture: -30, noise: 0, grain: 25 });
     expect(hasEdits(EDIT_DEFAULTS)).toBe(false);
-    expect(hasEdits({ ...EDIT_DEFAULTS, detail: { sharpness: 35, noise: 0, grain: 0 } })).toBe(
-      true
-    );
-    expect(hasEdits({ ...EDIT_DEFAULTS, detail: { sharpness: 0, noise: 0, grain: 40 } })).toBe(
-      true
-    );
+    expect(
+      hasEdits({ ...EDIT_DEFAULTS, detail: { sharpness: 35, texture: 0, noise: 0, grain: 0 } })
+    ).toBe(true);
+    expect(
+      hasEdits({ ...EDIT_DEFAULTS, detail: { sharpness: 0, texture: -20, noise: 0, grain: 0 } })
+    ).toBe(true);
   });
 
   it('hsl：toEditParams/fromEditParams 往返保真，hasEdits 识别 hsl 变更', () => {
