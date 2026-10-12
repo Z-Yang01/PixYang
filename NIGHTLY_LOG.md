@@ -3232,3 +3232,10 @@ R103 宣言 → R116 六笔快包 → 本轮 R117-R119 终版快包，此后再�
     提交范围：src/components/Viewer/ImageViewer.jsx src/hooks/useBatchActions.js
     tests/unit/components/Viewer/ImageViewer.test.jsx NIGHTLY_LOG.md
   待人工复核：无新增。
+
+- 2026-10-13 11:20 R138 终态打包（R137 代码落地后）：
+  PixYang_1.0.0（Oct 13 04:17）哈希链双向命中/旧哈希 0——安装包跟 3a03723（夜间批最终 HEAD）。
+  夜间批最终终账：R121-R138，18 轮 20 提交。功能 7 件（蒙版扩展/纹理/去朦胧/HSL 精调/
+  结构拆分两刀/取证例 11）；深审三轮共 12 真缺陷全修（1 P0 全链死/1 P0 误报落地/3 P1 断线渗漏
+  抹零/7 P2）；过程事故 2 起（E0689 CI 红、提交消息编码撕裂）均当轮修复勘正。
+  停机：计划队列+自续队列尽，时间余量留白。待人工复核清单见 R131/R135/R137 各条。
