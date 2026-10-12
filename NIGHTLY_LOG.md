@@ -3121,3 +3121,14 @@ R103 宣言 → R116 六笔快包 → 本轮 R117-R119 终版快包，此后再�
   ④ 参数口味属「待人工复核」范围（胶片特性有客观判据故按判据调参，数值口味留用户裁决）。
   - 提交范围：shared/builtinPresets.js tests/unit/shared/builtinPresets.test.js NIGHTLY_LOG.md
   待人工复核：三款 HSL 数值口味（±20% 内微调属正常口味范围）。
+
+- 2026-10-13 07:10 R128 新算子取证例补全 + AGENTS 口径同步（夜间轮）：
+  ① R125 dehaze/R121 蒙版新字段取证例缺位（R122 只覆盖 clarity/vibrance/grain）；
+  ② +3 例：s41/s42 dehaze ±（缺省档 PASS）、s43 蒙版 vibrance+clarity 组合——首标掩蔽族档
+     {4,1.5} 实测 max[1,1,1]/mean 0.0013 远优（逐点算子无 smoothstep 带放大），降回缺省档；
+  ③ 编辑审计集 45→48 例全绿；主集 31 例全绿；texture 不入对拍矩阵（邻域近似口径同 sharpness）；
+  ④ AGENTS.md：R121-R127 批次条目（含 normalizeAdjustments 漏斗教训）、基线 78 文件/1050 例、
+     Rust 235 例。
+  - 验证：npm 78/1050；lint 0E/10W；prettier 干净；两套对拍全量 PASS。
+    提交范围：tests/webgl-parity/cases-edit-audit.json AGENTS.md NIGHTLY_LOG.md
+  待人工复核：无新增。

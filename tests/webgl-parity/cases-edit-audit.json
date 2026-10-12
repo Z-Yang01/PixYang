@@ -115,16 +115,7 @@
     "name": "s15-curves-rgb-s",
     "params": {
       "curves": {
-        "rgb": [
-          0,
-          0.03,
-          0.25,
-          0.18,
-          0.75,
-          0.82,
-          1,
-          0.97
-        ],
+        "rgb": [0, 0.03, 0.25, 0.18, 0.75, 0.82, 1, 0.97],
         "r": [],
         "g": [],
         "b": []
@@ -136,23 +127,9 @@
     "params": {
       "curves": {
         "rgb": [],
-        "r": [
-          0,
-          0.02,
-          0.5,
-          0.55,
-          1,
-          1
-        ],
+        "r": [0, 0.02, 0.5, 0.55, 1, 1],
         "g": [],
-        "b": [
-          0,
-          0,
-          0.5,
-          0.44,
-          1,
-          0.96
-        ]
+        "b": [0, 0, 0.5, 0.44, 1, 0.96]
       }
     }
   },
@@ -160,36 +137,9 @@
     "name": "s17-hsl",
     "params": {
       "hsl": {
-        "hue": [
-          0,
-          -25,
-          0,
-          18,
-          6,
-          28,
-          0,
-          -12
-        ],
-        "sat": [
-          0,
-          35,
-          0,
-          -25,
-          0,
-          30,
-          0,
-          15
-        ],
-        "lum": [
-          0,
-          12,
-          0,
-          -10,
-          0,
-          8,
-          0,
-          10
-        ]
+        "hue": [0, -25, 0, 18, 6, 28, 0, -12],
+        "sat": [0, 35, 0, -25, 0, 30, 0, 15],
+        "lum": [0, 12, 0, -10, 0, 8, 0, 10]
       }
     }
   },
@@ -197,10 +147,7 @@
     "name": "s18-grading-shadows",
     "params": {
       "colorGrading": {
-        "shadows": [
-          200,
-          50
-        ],
+        "shadows": [200, 50],
         "midtones": [],
         "highlights": []
       }
@@ -211,10 +158,7 @@
     "params": {
       "colorGrading": {
         "shadows": [],
-        "midtones": [
-          90,
-          40
-        ],
+        "midtones": [90, 40],
         "highlights": []
       }
     }
@@ -225,10 +169,7 @@
       "colorGrading": {
         "shadows": [],
         "midtones": [],
-        "highlights": [
-          40,
-          45
-        ]
+        "highlights": [40, 45]
       }
     }
   },
@@ -349,27 +290,14 @@
         "blacks": -8
       },
       "curves": {
-        "rgb": [
-          0,
-          0,
-          0.5,
-          0.55,
-          1,
-          1
-        ],
+        "rgb": [0, 0, 0.5, 0.55, 1, 1],
         "r": [],
         "g": [],
         "b": []
       },
       "colorGrading": {
-        "shadows": [
-          215,
-          35
-        ],
-        "midtones": [
-          90,
-          25
-        ],
+        "shadows": [215, 35],
+        "midtones": [90, 25],
         "highlights": []
       }
     }
@@ -387,30 +315,15 @@
         "contrast": 15
       },
       "curves": {
-        "rgb": [
-          0,
-          0,
-          0.25,
-          0.18,
-          0.75,
-          0.82,
-          1,
-          1
-        ],
+        "rgb": [0, 0, 0.25, 0.18, 0.75, 0.82, 1, 1],
         "r": [],
         "g": [],
         "b": []
       },
       "colorGrading": {
-        "shadows": [
-          215,
-          35
-        ],
+        "shadows": [215, 35],
         "midtones": [],
-        "highlights": [
-          40,
-          25
-        ]
+        "highlights": [40, 25]
       },
       "lens": {
         "profile": "",
@@ -698,5 +611,83 @@
       "maxDelta": 18,
       "meanDelta": 2.0
     }
+  },
+  {
+    "name": "s41-dehaze-plus-60",
+    "params": {
+      "basic": {
+        "exposure": 0,
+        "contrast": 0,
+        "highlights": 0,
+        "shadows": 0,
+        "whites": 0,
+        "blacks": 0,
+        "saturation": 0,
+        "vibrance": 0,
+        "clarity": 0,
+        "dehaze": 60,
+        "temperature": 0,
+        "tint": 0
+      }
+    },
+    "toleranceBasis": "R125 新算子首测：dehaze 三端同式（黑场窗 x(1−x) + 三角窗中调对比 + 饱和回拉，0.213 族 luma），纯逐点。预期缺省档 {max 2, mean 0.6}。"
+  },
+  {
+    "name": "s42-dehaze-minus-40",
+    "params": {
+      "basic": {
+        "exposure": 0,
+        "contrast": 0,
+        "highlights": 0,
+        "shadows": 0,
+        "whites": 0,
+        "blacks": 0,
+        "saturation": 0,
+        "vibrance": 0,
+        "clarity": 0,
+        "dehaze": -40,
+        "temperature": 0,
+        "tint": 0
+      }
+    },
+    "toleranceBasis": "R125 负向加雾方向锁，缺省档预期。"
+  },
+  {
+    "name": "s43-mask-vibrance-clarity",
+    "params": {
+      "basic": {
+        "exposure": 0,
+        "contrast": 0,
+        "highlights": 0,
+        "shadows": 0,
+        "whites": 0,
+        "blacks": 0,
+        "saturation": 0,
+        "vibrance": 0,
+        "clarity": 0,
+        "dehaze": 0,
+        "temperature": 0,
+        "tint": 0
+      },
+      "masks": [
+        {
+          "type": "radial",
+          "cx": 0.5,
+          "cy": 0.5,
+          "rx": 0.35,
+          "ry": 0.35,
+          "adjustments": {
+            "exposure": 0,
+            "contrast": 0,
+            "saturation": 0,
+            "vibrance": 60,
+            "clarity": -40,
+            "temperature": 0,
+            "tint": 0
+          }
+        }
+      ]
+    },
+    "toleranceBasis": "R121 蒙版新算子首测：实测 max[1,1,1] / mean 0.0013——远优于掩蔽族档（vibrance/clarity 在蒙版内为逐点算子，无 smoothstep 掩蔽带放大），落缺省档。"
   }
 ]
