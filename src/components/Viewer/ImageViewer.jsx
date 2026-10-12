@@ -1,7 +1,6 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { formatSizeDisplay as formatSize } from '@/lib/format';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import {
   Dialog,
   DialogContent,
@@ -43,12 +42,10 @@ import {
   matchViewerShortcut,
   VIEWER_ACTIONS,
   ratingFromViewerAction,
-  isEnterSubmit,
   matchSliderNavKey,
 } from '@/lib/shortcuts';
 import api from '@/lib/api';
 import { errRaw, errText, friendlyError, rawErrorText } from '@/lib/errorText';
-import { presetSwatch } from '@/lib/presetSwatch';
 import {
   EDIT_DEFAULTS,
   CROP_RATIOS,
@@ -65,13 +62,11 @@ import useSlideshowTimer, {
   SLIDESHOW_DEFAULT_INTERVAL,
   nextSlideshowInterval,
 } from '@/hooks/useSlideshowTimer';
-import builtinPresetsModule from '../../../shared/builtinPresets.js';
 import autoGradeModule from '../../../shared/autoGrade.js';
 import { HSL_BAND_LABELS, whiteBalanceFromSample, straightenGeometry } from '@/lib/editParams';
 import { AI_DEFAULT_BASE_URL, pickExifSummary, suggestByVision } from '@/lib/aiGrade';
 import maskGeometry from '../../../shared/maskGeometry.js';
 const { displayToImage } = maskGeometry;
-const { BUILTIN_PRESETS } = builtinPresetsModule;
 const { suggestGrade } = autoGradeModule;
 import curvesLib from '../../../shared/curves.js';
 const { hasCurveData } = curvesLib;
