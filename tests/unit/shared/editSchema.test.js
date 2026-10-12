@@ -52,7 +52,9 @@ describe('editSchema（EditParams v1）', () => {
       exposure: 0,
       contrast: 0,
       saturation: 0,
-      temperature: 0,
+      vibrance: 0,
+        clarity: 0,
+        temperature: 0,
       tint: 0,
     });
     expect(n.masks[1].adjustments.exposure).toBe(0);

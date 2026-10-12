@@ -94,6 +94,8 @@ const MaskAdjustmentsFieldSchema = MaskAdjustmentsSchema.catch({
   exposure: 0,
   contrast: 0,
   saturation: 0,
+  vibrance: 0,
+  clarity: 0,
   temperature: 0,
   tint: 0,
 });

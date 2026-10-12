@@ -167,12 +167,18 @@ describe('applyPresetToOps（预设字段裁剪唯一实现）', () => {
     expect(out.exposure).toBeUndefined();
   });
 
-  it('detail：预设显式携带才覆盖，缺省保留当前值', () => {
+  it('detail：预设显式携带才覆盖，缺省保留当前值（P1-2：逐字段合并不清零未含字段）', () => {
     const detail = { sharpness: 45, noise: 0 };
     const out = applyPresetToOps({ name: 'P', basic: { contrast: 5 }, detail }, {});
-    expect(out.detail).toEqual(detail);
+    expect(out.detail).toEqual({ sharpness: 45, texture: 0, noise: 0, grain: 0 });
     const kept = applyPresetToOps({ name: 'P', basic: { contrast: 5 } }, { detail, saturation: 0 });
     expect(kept.detail).toEqual(detail);
+    // 审计 P1-2 核心断言：旧预设 detail 块（无 texture）不清零当前 texture
+    const withTex = applyPresetToOps(
+      { name: 'P', basic: { contrast: 5 }, detail: { sharpness: 0, noise: 0, grain: 35 } },
+      { detail: { sharpness: 10, texture: 40, noise: 20, grain: 5 } }
+    );
+    expect(withTex.detail).toEqual({ sharpness: 0, texture: 40, noise: 0, grain: 35 });
   });
 
   it('hsl：预设显式携带才覆盖，缺省保留当前值', () => {

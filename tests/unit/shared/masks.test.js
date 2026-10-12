@@ -323,3 +323,22 @@ describe('蒙版 adjustments 扩展：vibrance/clarity（三端同式带 w 权�
     expect(apply([0.5, 0.5, 0.5], adj2, 1)).toEqual([0.5, 0.5, 0.5]);
   });
 });
+
+describe('蒙版新字段端到端（审计 P0-1 回归锁）', () => {
+  it('经 normalizeMasks 全链存活：vibrance/clarity 不被归一化层剥离', () => {
+    const lib = masks.default || masks;
+    const out = lib.normalizeMasks([
+      {
+        type: 'radial',
+        cx: 0.5,
+        cy: 0.5,
+        rx: 0.3,
+        ry: 0.3,
+        adjustments: { vibrance: 80, clarity: -30 },
+      },
+    ]);
+    expect(out[0].adjustments.vibrance).toBe(80);
+    expect(out[0].adjustments.clarity).toBe(-30);
+    expect(lib.hasMaskData(out)).toBe(true);
+  });
+});

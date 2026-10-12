@@ -17,6 +17,8 @@ function normalizeAdjustments(adj = {}) {
     exposure: num(adj?.exposure, -2, 2),
     contrast: num(adj?.contrast, -50, 50),
     saturation: num(adj?.saturation, -100, 100),
+    vibrance: num(adj?.vibrance, -100, 100),
+    clarity: num(adj?.clarity, -100, 100),
     temperature: num(adj?.temperature, -100, 100),
     tint: num(adj?.tint, -100, 100),
   };

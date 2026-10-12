@@ -3057,3 +3057,23 @@ R103 宣言 → R116 六笔快包 → 本轮 R117-R119 终版快包，此后再�
     tests/unit/lib/editParams.test.js tests/unit/components/Viewer/ImageViewer.test.jsx
     tests/golden/cases/*/spec.json(23) NIGHTLY_LOG.md
   待人工复核：无新增（texture 预览为声明近似口径，同 sharpness R96 先例）。
+
+- 2026-10-13 03:50 R124 新鲜眼深审——抓 1×P0+2×P1+3×P2 全修（夜间轮）：
+  ① 深审范围：34fa4f7..HEAD 十轮新码（vibrance/clarity/grain/预设强度/两批胶片预设/蒙版扩展/取证例/texture）；
+  ② P0-1 蒙版 vibrance/clarity 全链死：normalizeAdjustments（masks.js）漏加两键——UI 滑杆弹回 0/预览 uniform
+     恒 0/保存丢字段三路全断，R121 的新算子+滑杆+Rust 实现实际全不可达；新单测手造全字段对象绕过归一化
+     层故全绿未拦截。修：补两键（+editSchema catch 兜底对象同步 P2-3）+ 端到端回归锁（经 normalizeMasks
+     全链断言存活）+ 变异验证（删 vibrance 键 → 锁红 → 复绿）；
+  ③ P1-1 预设强度跨图渗漏：lastPresetRef/presetStrength 不随 cleanupEditSession 复位——A 图混合基点可
+     写进 B 图。修：会话清理补复位；P1-2 预设 detail 整对象替换清零用户 texture（违 R63「不得静默清零」
+     契约）：applyPresetToOps detail 改四字段逐字段合并，预设未含字段保留当前值（核心断言：旧预设 grain 块
+     套用不清零 texture 40）；
+  ④ P2×3：强度混合 detailKeys 补 texture + basicKeys 补 distortion/chromatic；强度滑杆键盘调整入历史
+     （recordKeyAdjust，R91 口径）；蒙版 schema catch 兜底补两键；
+  ⑤ P3 记录不改：grain.js 注释与实现不符（行缓存仅 gy）、蒙版内 sat→vibrance 与全局 vibrance→sat 序反
+     （三端一致有意锁定）、强度 150% 外推可越值域被 sanitize 钳（滑杆读数≠生效值，口味留复核）、0% 分支
+     引用覆盖 masks/crop 与 t>0 不连续。
+  - 验证：npm 77 文件/1045 例全绿；lint 0E/10W；tsc/prettier/build 干净。
+    提交范围：shared/masks.js shared/editSchema.js src/lib/presetApply.js src/components/Viewer/ImageViewer.jsx
+    tests/unit/shared/masks.test.js tests/unit/shared/editSchema.test.js tests/unit/lib/presetApply.test.js NIGHTLY_LOG.md
+  待人工复核：P3-3（强度 150% 越值域的滑杆读数口径——可改为混合时钳值域，属交互口味）。

@@ -15,7 +15,20 @@ export function applyPresetToOps(presetParams, currentOps = {}) {
     ...(presetParams.curves ? { curves: presetParams.curves } : {}),
     ...(presetParams.colorGrading ? { colorGrading: presetParams.colorGrading } : {}),
     ...(presetParams.hsl ? { hsl: presetParams.hsl } : {}),
-    ...(presetParams.detail ? { detail: presetParams.detail } : {}),
+    ...(presetParams.detail
+      ? {
+          // detail 逐字段合并（审计 P1-2）：预设未含的字段保留当前值（R63 P2-1 契约，
+          // texture 等新字段在旧预设 detail 块缺席时不得被静默清零）
+          detail: Object.fromEntries(
+            ['sharpness', 'texture', 'noise', 'grain'].map((k) => [
+              k,
+              Number.isFinite(Number(presetParams.detail?.[k]))
+                ? Number(presetParams.detail[k])
+                : (currentOps.detail?.[k] ?? 0),
+            ])
+          ),
+        }
+      : {}),
     ...(Number.isFinite(presetParams.lens?.vignette)
       ? { vignette: presetParams.lens.vignette }
       : {}),

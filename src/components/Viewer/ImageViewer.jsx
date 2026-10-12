@@ -846,6 +846,8 @@ export default function ImageViewer({
       'temperature',
       'tint',
       'vignette',
+      'distortion',
+      'chromatic',
     ];
     const next = { ...editOpsRef.current };
     if (t <= 0) {
@@ -858,7 +860,7 @@ export default function ImageViewer({
         next[k] = b + (v - b) * t;
       }
       // detail 域同为数值（锐化/降噪/颗粒），一并线性混合
-      const detailKeys = ['sharpness', 'noise', 'grain'];
+      const detailKeys = ['sharpness', 'texture', 'noise', 'grain'];
       const bDetail = before.detail || {};
       const tDetail = target.detail || {};
       next.detail = { ...tDetail };
@@ -2474,7 +2476,14 @@ export default function ImageViewer({
                     }
                   }}
                   onBlur={settleKeyGesture}
-                  onChange={(e) => applyPresetStrength(Number(e.target.value))}
+                  onChange={(e) => {
+                    applyPresetStrength(Number(e.target.value));
+                    if (!sliderDragRef.current)
+                      recordKeyAdjust(
+                        editOpsRef.current,
+                        `预设「${lastPresetRef.current.name}」强度 ${e.target.value}%`
+                      );
+                  }}
                 />
                 <em>{presetStrength}%</em>
               </label>
