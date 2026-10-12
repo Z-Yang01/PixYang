@@ -1179,7 +1179,7 @@ mod tests {
         let x = 0.6f64;
         let d = 1.0f64;
         let x1 = x - 0.3 * d * x * (1.0 - x);
-        let w = 1.0 - (2.0 * 0.6 - 1.0).abs();
+        let w: f64 = 1.0 - (2.0f64 * 0.6 - 1.0).abs();
         let x2 = x1 + ((x1 - 0.5) * (1.0 + 0.4 * d) + 0.5 - x1) * w;
         let expect = (x2 * 255.0).round() as u8;
         let mut px = [153u8, 153, 153];

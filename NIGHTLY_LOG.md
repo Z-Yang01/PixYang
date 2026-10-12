@@ -3132,3 +3132,16 @@ R103 宣言 → R116 六笔快包 → 本轮 R117-R119 终版快包，此后再�
   - 验证：npm 78/1050；lint 0E/10W；prettier 干净；两套对拍全量 PASS。
     提交范围：tests/webgl-parity/cases-edit-audit.json AGENTS.md NIGHTLY_LOG.md
   待人工复核：无新增。
+
+- 2026-10-13 07:35 R129 CI rust 红修复（E0689 字面量类型歧义）：
+  ① 50cca3e 的 CI rust job 失败：render.rs:1182 `let w = 1.0 - (2.0*0.6 − 1.0).abs();` E0689——
+     2.0*0.6 为 {float} 歧义字面量，.abs() 无法解析（w 的 f64 约束来自下游 x2 行，但 CI 版 rustc
+     的推断在该表达式形态下未回传成功；本地曾复现同错一次）；
+  ② 修复：`let w: f64 = 1.0 - (2.0f64 * 0.6 - 1.0).abs();` 显式锚类型；
+  ③ 教训（入档）：① Rust 测试里浮点字面量链式方法调用必须显式 f64 锚（项目内已有先例 R121 的
+     y_low: f64 系列）；② R125 提交前只跑了 --lib 过滤测试而未跑全目标 CI 同款命令，且过滤运行
+     的增量编译掩盖了该文件的编译失败——**Rust 侧改动后必须跑 `cargo test --jobs 1` 全目标**（本地
+     全目标复现红→修→绿，教训写进本条）；
+  ④ 验证：cargo test 全目标 235+golden_audit 1 绿（CI 同款命令）。
+    提交范围：src-tauri/src/render.rs NIGHTLY_LOG.md
+  待人工复核：无新增。
