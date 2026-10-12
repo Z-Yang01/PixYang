@@ -560,7 +560,7 @@ describe('ImageViewer', () => {
     render(<ImageViewer {...baseProps()} />);
     fireEvent.click(screen.getByTitle(/编辑模式/));
     await screen.findByText('编辑');
-    expect(screen.getByText('颜色分级')).toBeInTheDocument();
+    expect(screen.getByText('颜色分级', { selector: 'span' })).toBeInTheDocument();
     const hue = screen.getByLabelText('阴影色相');
     const strength = screen.getByLabelText('阴影强度');
     // 拖色相（键盘调整路径：无指针直接 change；sat=0 时无渲染效果不入历史）
@@ -840,7 +840,9 @@ describe('ImageViewer', () => {
     mockEditBridge();
     render(<ImageViewer {...baseProps()} />);
     await enterEdit();
-    const section = screen.getByText('HSL 分色').closest('.editor-crop-section');
+    const section = screen
+      .getByText('HSL 分色', { selector: 'span' })
+      .closest('.editor-crop-section');
     const inputs = section.querySelectorAll('.editor-slider-row input');
     expect(inputs.length).toBe(24);
     // 红·色相 +40 → 预览滑杆即时反映（不直接写库）
@@ -1665,7 +1667,11 @@ describe('复制/粘贴字段域一致性（R66 P2-2：粘贴与复制/批量同
   }
 
   function sectionClearButton(headerText) {
-    return screen.getByText(headerText).closest('.editor-crop-section').querySelector('button');
+    // selector 限定 span：锚点跳转条按钮与段标题同名，须取段标题
+    return screen
+      .getByText(headerText, { selector: 'span' })
+      .closest('.editor-crop-section')
+      .querySelector('button');
   }
 
   afterEach(() => {

@@ -48,6 +48,7 @@ import {
 } from '@/lib/shortcuts';
 import api from '@/lib/api';
 import { errRaw, errText, friendlyError, rawErrorText } from '@/lib/errorText';
+import { presetSwatch } from '@/lib/presetSwatch';
 import {
   EDIT_DEFAULTS,
   CROP_RATIOS,
@@ -166,7 +167,8 @@ export default function ImageViewer({
   const dialogsOpenRef = useRef(false);
   dialogsOpenRef.current = !!(exitConfirm || showExportDialog || bakeConfirm || deleteConfirm);
   const [histInfo, setHistInfo] = useState({ canUndo: false, canRedo: false, index: 0, length: 0 });
-  const [editEpoch, setEditEpoch] = useState(0); // 外部替换 ops（撤销/跳转/清除）时递增，中断进行中的手势
+  const [editEpoch, setEditEpoch] = useState(0);
+  const editorPanelRef = useRef(null); // 外部替换 ops（撤销/跳转/清除）时递增，中断进行中的手势
   const webglAvailable = useRef(isWebGL2Available()).current;
   const [webglFailed, setWebglFailed] = useState(false);
   // 真实上下文恢复（webglcontextrestored，驱动重置/远程桌面切换后）时递增：
@@ -2295,7 +2297,7 @@ export default function ImageViewer({
 
       {/* 编辑参数面板 */}
       {editing && editSession && (
-        <div className="editor-panel" onClick={(e) => e.stopPropagation()}>
+        <div className="editor-panel" ref={editorPanelRef} onClick={(e) => e.stopPropagation()}>
           {histogram && (
             <HistogramView
               histogram={histogram}
@@ -2327,6 +2329,165 @@ export default function ImageViewer({
               {wbPicking ? '点击图中中性区域…（再点此取消）' : '白平衡吸管'}
             </Button>
           </div>
+
+          {/* 预设与参数剪贴板 */}
+          <div className="editor-section-nav">
+            {[
+              ['presets', '预设'],
+              ['basic', '基本'],
+              ['curves', '曲线'],
+              ['grading', '分级'],
+              ['hsl', 'HSL'],
+              ['detail', '细节'],
+              ['lens', '镜头'],
+              ['masks', '蒙版'],
+              ['crop', '裁剪'],
+              ['history', '历史'],
+            ].map(([key, label]) => (
+              <button
+                key={key}
+                className="editor-section-nav-btn"
+                onClick={() => {
+                  const panel = editorPanelRef.current;
+                  if (!panel) return;
+                  if (key === 'basic') {
+                    panel.scrollTo({ top: 0 });
+                    return;
+                  }
+                  panel
+                    .querySelector(`[data-sec="${key}"]`)
+                    ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                }}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+
+          <div className="editor-crop-section" data-sec="presets">
+            <div className="editor-crop-header">
+              <span>预设</span>
+              <div style={{ display: 'flex', gap: 4 }}>
+                <Button
+                  variant="ghost"
+                  size="xs"
+                  className={applyWithGeometry ? 'is-active' : ''}
+                  onClick={() => setApplyWithGeometry((v) => !v)}
+                  title="开启后，点击预设会连旋转/翻转/裁剪一起应用（裁剪坐标基于保存时的底图尺寸）；拉直角度跨图不适配，不随预设应用，套用预设裁剪也会丢弃当前拉直角度"
+                >
+                  含几何
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="xs"
+                  onClick={copySettings}
+                  title="复制当前调整参数（影调/曲线/分级/暗角 + 几何，同步时可选择范围）"
+                >
+                  复制
+                </Button>
+                <Button variant="ghost" size="xs" onClick={pasteSettings} title="粘贴已复制的参数">
+                  粘贴
+                </Button>
+              </div>
+            </div>
+            <div className="editor-builtin-row">
+              <button
+                className="editor-builtin-chip"
+                title="按画面直方图分析自动设置影调（进历史栈，可撤销，Ctrl+S 才保存）"
+                disabled={editBusy || autoGradeBusy || aiGradeBusy}
+                onClick={handleAutoGrade}
+              >
+                {autoGradeBusy ? '分析中...' : '自动调色'}
+              </button>
+              <button
+                className="editor-builtin-chip"
+                title="把压缩底图与统计摘要发给视觉模型，由 AI 建议影调（进历史栈，可撤销；需在设置中配置）"
+                disabled={editBusy || autoGradeBusy || aiGradeBusy}
+                onClick={handleAiGrade}
+              >
+                {aiGradeBusy ? 'AI 分析中...' : 'AI 调色'}
+              </button>
+            </div>
+            {['胶片模拟', '风格'].map((group) => (
+              <div key={group}>
+                <p className="editor-crop-hint" style={{ margin: '6px 0 4px' }}>
+                  {group}
+                </p>
+                <div className="editor-builtin-row">
+                  {BUILTIN_PRESETS.filter((bp) => bp.group === group).map((bp) => (
+                    <button
+                      key={bp.name}
+                      className="editor-builtin-chip"
+                      title={bp.desc}
+                      onClick={() =>
+                        applyPreset({
+                          name: bp.name,
+                          basic: bp.basic,
+                          curves: bp.curves,
+                          colorGrading: bp.colorGrading,
+                          lens: bp.lens,
+                        })
+                      }
+                    >
+                      <span
+                        className="preset-swatch"
+                        style={{ background: presetSwatch(bp.basic) }}
+                      />
+                      {bp.name}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ))}
+            {presets.length > 0 && (
+              <p className="editor-crop-hint" style={{ marginTop: 8 }}>
+                我的预设
+              </p>
+            )}
+            {presets.length === 0 && (
+              <p className="editor-crop-hint" style={{ marginTop: 8 }}>
+                暂无自定义预设，调整参数后可保存为预设。
+              </p>
+            )}
+            {presets.map((pr) => (
+              <div className="editor-preset-row" key={pr.id}>
+                <button
+                  className="editor-preset-name"
+                  onClick={() => applyPreset(pr.params, applyWithGeometry ? 'all' : 'basic')}
+                  title={
+                    applyWithGeometry
+                      ? '应用全部（含旋转/翻转/裁剪；拉直角度跨图不适配不随预设应用，套用预设裁剪将丢弃当前拉直角度）'
+                      : '应用预设（仅影调）'
+                  }
+                >
+                  {pr.name}
+                </button>
+                <Button
+                  variant="ghost"
+                  size="icon-xs"
+                  onClick={() => removePreset(pr.id)}
+                  title="删除预设"
+                >
+                  <X className="size-3" />
+                </Button>
+              </div>
+            ))}
+            <div className="inline-create-row">
+              <Input
+                className="h-8 text-xs"
+                value={presetName}
+                onChange={(e) => setPresetName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (isEnterSubmit(e)) savePreset();
+                }}
+                placeholder="预设名称（保存当前影调）"
+              />
+              <Button size="sm" onClick={savePreset} disabled={!presetName.trim() || editBusy}>
+                保存
+              </Button>
+            </div>
+          </div>
+
           <div className="editor-panel-header">
             <SlidersHorizontal className="size-4" />
             <span>编辑</span>
@@ -2552,7 +2713,7 @@ export default function ImageViewer({
           ))}
 
           {/* 色调曲线：渲染端 LUT 与预览端 tableValues 同语义（shared/curves.js） */}
-          <div className="editor-crop-section">
+          <div className="editor-crop-section" data-sec="curves">
             <div className="editor-crop-header">
               <span>曲线</span>
               {hasCurveData(editOps.curves) && (
@@ -2582,7 +2743,7 @@ export default function ImageViewer({
           </div>
 
           {/* 颜色分级：分离色调（渲染端真亮度加权，预览逐通道近似，见 shared/colorGrading.js） */}
-          <div className="editor-crop-section">
+          <div className="editor-crop-section" data-sec="grading">
             <div className="editor-crop-header">
               <span>颜色分级</span>
               {hasColorGradingData(editOps.colorGrading) && (
@@ -2717,7 +2878,7 @@ export default function ImageViewer({
           </div>
 
           {/* HSL 八带分色：三端同式（shared/hsl.js = shader = 执行器），仅 SVG 回退不渲染 */}
-          <div className="editor-crop-section">
+          <div className="editor-crop-section" data-sec="hsl">
             <div className="editor-crop-header">
               <span>HSL 分色</span>
               <div style={{ display: 'flex', gap: 4 }}>
@@ -2829,7 +2990,7 @@ export default function ImageViewer({
           </div>
 
           {/* 细节：锐化（近似 USM）/降噪（亮度域 3×3 高斯）三路实现，预览为画布分辨率邻域近似 */}
-          <div className="editor-crop-section">
+          <div className="editor-crop-section" data-sec="detail">
             <div className="editor-crop-header">
               <span>细节</span>
             </div>
@@ -2921,7 +3082,7 @@ export default function ImageViewer({
           </div>
 
           {/* 镜头校正：畸变/色散（shared/lens.js lensGeomScale 同式；重采样段，SVG 回退不渲染） */}
-          <div className="editor-crop-section">
+          <div className="editor-crop-section" data-sec="lens">
             <div className="editor-crop-header">
               <span>镜头</span>
             </div>
@@ -2978,7 +3139,7 @@ export default function ImageViewer({
           </div>
 
           {/* 局部蒙版：radial/linear，渲染与 WebGL 预览同公式（shared/masks.js） */}
-          <div className="editor-crop-section">
+          <div className="editor-crop-section" data-sec="masks">
             <div className="editor-crop-header">
               <span>蒙版（{(editOps.masks || []).length}/8）</span>
               <div style={{ display: 'flex', gap: 4 }}>
@@ -3048,7 +3209,7 @@ export default function ImageViewer({
             )}
           </div>
 
-          <div className="editor-crop-section">
+          <div className="editor-crop-section" data-sec="crop">
             <div className="editor-crop-header">
               <span>裁剪比例</span>
               {crop && (
@@ -3152,7 +3313,7 @@ export default function ImageViewer({
           </div>
 
           {/* 历史记录（任务书第 12 节）：点击跳转到任意步骤 */}
-          <div className="editor-crop-section">
+          <div className="editor-crop-section" data-sec="history">
             <div className="editor-crop-header">
               <span>历史</span>
               <span className="editor-crop-hint">{histInfo.length} 步</span>
@@ -3168,118 +3329,6 @@ export default function ImageViewer({
                   <span className="editor-history-label">{entry.label}</span>
                 </button>
               ))}
-            </div>
-          </div>
-
-          {/* 预设与参数剪贴板 */}
-          <div className="editor-crop-section">
-            <div className="editor-crop-header">
-              <span>预设</span>
-              <div style={{ display: 'flex', gap: 4 }}>
-                <Button
-                  variant="ghost"
-                  size="xs"
-                  className={applyWithGeometry ? 'is-active' : ''}
-                  onClick={() => setApplyWithGeometry((v) => !v)}
-                  title="开启后，点击预设会连旋转/翻转/裁剪一起应用（裁剪坐标基于保存时的底图尺寸）；拉直角度跨图不适配，不随预设应用，套用预设裁剪也会丢弃当前拉直角度"
-                >
-                  含几何
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="xs"
-                  onClick={copySettings}
-                  title="复制当前调整参数（影调/曲线/分级/暗角 + 几何，同步时可选择范围）"
-                >
-                  复制
-                </Button>
-                <Button variant="ghost" size="xs" onClick={pasteSettings} title="粘贴已复制的参数">
-                  粘贴
-                </Button>
-              </div>
-            </div>
-            <div className="editor-builtin-row">
-              <button
-                className="editor-builtin-chip"
-                title="按画面直方图分析自动设置影调（进历史栈，可撤销，Ctrl+S 才保存）"
-                disabled={editBusy || autoGradeBusy || aiGradeBusy}
-                onClick={handleAutoGrade}
-              >
-                {autoGradeBusy ? '分析中...' : '自动调色'}
-              </button>
-              <button
-                className="editor-builtin-chip"
-                title="把压缩底图与统计摘要发给视觉模型，由 AI 建议影调（进历史栈，可撤销；需在设置中配置）"
-                disabled={editBusy || autoGradeBusy || aiGradeBusy}
-                onClick={handleAiGrade}
-              >
-                {aiGradeBusy ? 'AI 分析中...' : 'AI 调色'}
-              </button>
-              {BUILTIN_PRESETS.map((bp) => (
-                <button
-                  key={bp.name}
-                  className="editor-builtin-chip"
-                  title={bp.desc}
-                  onClick={() =>
-                    applyPreset({
-                      name: bp.name,
-                      basic: bp.basic,
-                      curves: bp.curves,
-                      colorGrading: bp.colorGrading,
-                      lens: bp.lens,
-                    })
-                  }
-                >
-                  {bp.name}
-                </button>
-              ))}
-            </div>
-            {presets.length > 0 && (
-              <p className="editor-crop-hint" style={{ marginTop: 8 }}>
-                我的预设
-              </p>
-            )}
-            {presets.length === 0 && (
-              <p className="editor-crop-hint" style={{ marginTop: 8 }}>
-                暂无自定义预设，调整参数后可保存为预设。
-              </p>
-            )}
-            {presets.map((pr) => (
-              <div className="editor-preset-row" key={pr.id}>
-                <button
-                  className="editor-preset-name"
-                  onClick={() => applyPreset(pr.params, applyWithGeometry ? 'all' : 'basic')}
-                  title={
-                    applyWithGeometry
-                      ? '应用全部（含旋转/翻转/裁剪；拉直角度跨图不适配不随预设应用，套用预设裁剪将丢弃当前拉直角度）'
-                      : '应用预设（仅影调）'
-                  }
-                >
-                  {pr.name}
-                </button>
-                <Button
-                  variant="ghost"
-                  size="icon-xs"
-                  onClick={() => removePreset(pr.id)}
-                  title="删除预设"
-                >
-                  <X className="size-3" />
-                </Button>
-              </div>
-            ))}
-            <div className="inline-create-row">
-              <Input
-                className="h-8 text-xs"
-                value={presetName}
-                onChange={(e) => setPresetName(e.target.value)}
-                onKeyDown={(e) => {
-                  if (isEnterSubmit(e)) savePreset();
-                }}
-                placeholder="预设名称（保存当前影调）"
-              />
-              <Button size="sm" onClick={savePreset} disabled={!presetName.trim() || editBusy}>
-                保存
-              </Button>
             </div>
           </div>
 
@@ -3495,6 +3544,9 @@ export default function ImageViewer({
       {/* 底部信息 */}
       {!editing && (
         <div className="viewer-info">
+          {!editing && fullSrc && !fullLoaded && (
+            <Loader2 className="size-3.5 spin" title="正在加载原图…" />
+          )}
           <span className="viewer-counter">
             {imageIndex + 1} / {totalCount}
           </span>

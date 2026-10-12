@@ -3569,6 +3569,17 @@ body {
   flex-wrap: wrap;
   gap: 4px;
 }
+.preset-swatch {
+  display: inline-block;
+  width: 16px;
+  height: 8px;
+  border-radius: 2px;
+  margin-right: 5px;
+  vertical-align: middle;
+  border: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
 .editor-builtin-chip {
   padding: 3px 9px;
   font-size: 11px;
@@ -3928,4 +3939,44 @@ body {
   display: block;
   width: 100%;
   height: 100%;
+}
+
+/* 编辑面板分区锚点条（sticky 吸顶，一键跳段）：basic 跳回顶，其余 scrollIntoView 对应段 */
+.editor-section-nav {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+  padding: 6px 0;
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--border);
+}
+
+.editor-section-nav-btn {
+  font-size: 11px;
+  padding: 2px 7px;
+  border-radius: var(--radius-md);
+  color: var(--text-muted);
+  background: transparent;
+  border: 1px solid transparent;
+  cursor: pointer;
+}
+
+.editor-section-nav-btn:hover {
+  color: var(--text-primary);
+  border-color: var(--border);
+  background: var(--bg-primary);
+}
+
+/* 查看态原图加载指示（缩略图兜底期间的小 spinner，原图就绪即消失） */
+.spin {
+  animation: pixyang-spin 0.9s linear infinite;
+}
+
+@keyframes pixyang-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }

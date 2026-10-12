@@ -192,6 +192,10 @@ tests/            vitest（node 环境 + per-file happy-dom pragma）
   预览管线序合同：重采样位于最前（重映射 UV 采样原图 → 完整颜色链 → 出界置黑 → 暗角；蒙版/detail
   位置用重映射后源位置），与执行器 stage 序（颜色→detail→lens→vignette）同构——禁止尾部用原始
   纹理替换已处理颜色（R85 回归锁：webglPreview 源串顺序断言）。
+- **编辑面板 UX（2026-10-12）**：预设区上移至面板顶（原在底部需滚 ~2.6 屏）并按 group 分组
+  （胶片模拟/风格，group 字段进 builtinPresets validate）；面板顶 sticky 锚点跳转条（editor-section-nav，
+  data-sec 十段一键 scrollIntoView，basic 回顶）；预设色卡 presetSwatch（basic→CSS 渐变纯装饰可视化，
+  src/lib/presetSwatch.js，黑白→灰阶/暖调→橙黄/冷调→蓝方向锁）；查看态原图加载小 spinner（底部信息栏）。
 - **编辑面板扩展**：HSL 八带分色（editParams 平铺模型 hsl{hue,sat,lum} 恒 8 项，域接入四处=
   presetApply/copySettings/pasteSettings/handleSyncEdits）；detail 锐化+降噪（锐化为执行器近似 USM，
   降噪为亮度域 3×3 高斯混合 `apply_noise_reduction_in_place`，预览为画布分辨率邻域近似——不做像素

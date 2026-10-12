@@ -5,22 +5,26 @@
 const BUILTIN_PRESETS = [
   {
     name: '经典黑白',
+    group: '风格',
     desc: '高对比纯黑白，适合街拍与建筑',
     basic: { saturation: -100, contrast: 15, whites: 10, blacks: 20 },
   },
   {
     name: '黑白胶片',
+    group: '风格',
     desc: '强反差黑白，暗部深沉',
     basic: { saturation: -100, contrast: 15, whites: 10, blacks: 20, shadows: -10 },
     curves: { rgb: [0, 0, 0.3, 0.18, 0.7, 0.85, 1, 1] },
   },
   {
     name: '柔和黑白',
+    group: '风格',
     desc: '低对比灰调，空气感',
     basic: { saturation: -100, contrast: -10, shadows: 30, blacks: -20 },
   },
   {
     name: '电影青橙',
+    group: '风格',
     desc: '青橙分离的院线质感',
     basic: {
       contrast: 12,
@@ -35,6 +39,7 @@ const BUILTIN_PRESETS = [
   },
   {
     name: '唯美柔光',
+    group: '风格',
     desc: '柔和高光，梦幻空气感',
     basic: {
       exposure: 0.15,
@@ -48,6 +53,7 @@ const BUILTIN_PRESETS = [
   },
   {
     name: '日系清新',
+    group: '风格',
     desc: '明亮低饱和，微冷调',
     basic: {
       exposure: 0.3,
@@ -61,6 +67,7 @@ const BUILTIN_PRESETS = [
   },
   {
     name: '复古胶片',
+    group: '风格',
     desc: '暖调褪色，胶片灰雾感',
     basic: {
       temperature: 18,
@@ -74,6 +81,7 @@ const BUILTIN_PRESETS = [
   },
   {
     name: '港风霓虹',
+    group: '风格',
     desc: '夜色浓艳，洋红高光',
     basic: {
       contrast: 30,
@@ -87,6 +95,7 @@ const BUILTIN_PRESETS = [
   },
   {
     name: '清透人像',
+    group: '风格',
     desc: '肤色透亮，柔和高光',
     basic: {
       exposure: 0.2,
@@ -100,6 +109,7 @@ const BUILTIN_PRESETS = [
   },
   {
     name: '富士 经典负片',
+    group: '胶片模拟',
     desc: '致敬 Classic Neg：青绿影调、硬朗对比的街头纪实风',
     basic: {
       contrast: 15,
@@ -114,6 +124,7 @@ const BUILTIN_PRESETS = [
   },
   {
     name: '富士 经典铬',
+    group: '胶片模拟',
     desc: '致敬 Classic Chrome：沉稳克制、微冷平面感',
     basic: {
       contrast: 8,
@@ -126,6 +137,7 @@ const BUILTIN_PRESETS = [
   },
   {
     name: '富士 维尔维亚',
+    group: '胶片模拟',
     desc: '致敬 Velvia：浓艳风光反转片，深黑高对比',
     basic: {
       contrast: 25,
@@ -138,11 +150,13 @@ const BUILTIN_PRESETS = [
   },
   {
     name: '富士 ACROS',
+    group: '胶片模拟',
     desc: '致敬 ACROS：细腻中调黑白，暗部层次丰富',
     basic: { saturation: -100, clarity: 25, contrast: 10, shadows: 10, whites: 5 },
   },
   {
     name: '理光 正片',
+    group: '胶片模拟',
     desc: '致敬 GR Positive Film：暖调明快、SNAP 立体感',
     basic: {
       temperature: 12,
@@ -155,6 +169,7 @@ const BUILTIN_PRESETS = [
   },
   {
     name: '理光 负片',
+    group: '胶片模拟',
     desc: '致敬 GR Negative Film：平缓柔和、高光细腻',
     basic: {
       contrast: -8,
@@ -166,6 +181,7 @@ const BUILTIN_PRESETS = [
   },
   {
     name: '柯达 金200',
+    group: '胶片模拟',
     desc: '致敬 Gold 200：暖黄日常负片，轻快柔和',
     basic: {
       exposure: 0.1,
@@ -178,6 +194,7 @@ const BUILTIN_PRESETS = [
   },
   {
     name: '柯达 波特拉400',
+    group: '胶片模拟',
     desc: '致敬 Portra 400：暖肤低饱和人像，柔对比',
     basic: {
       temperature: 10,
@@ -191,6 +208,7 @@ const BUILTIN_PRESETS = [
   },
   {
     name: '风光艳丽',
+    group: '风格',
     desc: '高饱和风光，天空深邃',
     basic: { contrast: 20, saturation: 30, highlights: -15, shadows: 10, whites: 15, blacks: 10 },
     lens: { profile: '', distortion: 0, vignette: -20, chromatic: 0 },
@@ -204,6 +222,8 @@ function validateBuiltinPresets() {
     if (names.has(p.name)) throw new Error(`内置预设名称重复: ${p.name}`);
     names.add(p.name);
     if (!p.basic || typeof p.basic !== 'object') throw new Error(`内置预设缺少 basic: ${p.name}`);
+    if (p.group !== '风格' && p.group !== '胶片模拟')
+      throw new Error(`内置预设 ${p.name} group 非法：需 风格|胶片模拟`);
     if (p.curves) {
       for (const c of ['rgb', 'r', 'g', 'b']) {
         const arr = p.curves[c];

@@ -21,6 +21,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import useGalleryStore from '@/store/galleryStore';
 import api from '@/lib/api';
+import { presetSwatch } from '@/lib/presetSwatch';
 import builtinPresetsModule from '../../../shared/builtinPresets.js';
 
 const { BUILTIN_PRESETS } = builtinPresetsModule;
@@ -183,14 +184,20 @@ export default function BatchBar({
           >
             自动调色（按画面分析）
           </DropdownMenuItem>
-          {BUILTIN_PRESETS.map((bp) => (
-            <DropdownMenuItem
-              key={bp.name}
-              title={bp.desc}
-              onClick={() => onApplyPreset?.(presetPayload(bp))}
-            >
-              {bp.name}
-            </DropdownMenuItem>
+          {['胶片模拟', '风格'].map((group) => (
+            <div key={group}>
+              <DropdownMenuLabel>{group}</DropdownMenuLabel>
+              {BUILTIN_PRESETS.filter((bp) => bp.group === group).map((bp) => (
+                <DropdownMenuItem
+                  key={bp.name}
+                  title={bp.desc}
+                  onClick={() => onApplyPreset?.(presetPayload(bp))}
+                >
+                  <span className="preset-swatch" style={{ background: presetSwatch(bp.basic) }} />
+                  {bp.name}
+                </DropdownMenuItem>
+              ))}
+            </div>
           ))}
           {userPresets.length > 0 && <DropdownMenuSeparator />}
           {userPresets.length > 0 && <DropdownMenuLabel>我的预设</DropdownMenuLabel>}
