@@ -613,7 +613,11 @@ describe('ImageViewer', () => {
     const overlay = () => container.querySelector('.editor-vignette-overlay');
     expect(overlay()).toBeNull();
     // 输入负值 → overlay 出现且用 multiply 黑渐变
-    const vigSlider = [...container.querySelectorAll('input[type="range"]')][12]; // 基础滑杆第 13 个 = 暗角（含清晰度/去朦胧/鲜艳度）
+    // 脆弱断言改良（R139）：label 定位替代全容器裸索引 [12]——range 增删/重排（预设强度滑杆等
+    // 条件渲染）不再误断；此断言历史上随 clarity/dehaze/vibrance 增配挪过三次位
+    const vigSlider = [...container.querySelectorAll('.editor-slider-row')]
+      .find((l) => l.querySelector('span')?.textContent === '暗角')
+      ?.querySelector('input');
     fireEvent.change(vigSlider, { target: { value: '-40' } });
     await vi.waitFor(() => {
       expect(overlay()).toBeTruthy();
@@ -1692,7 +1696,10 @@ describe('复制/粘贴字段域一致性（R66 P2-2：粘贴与复制/批量同
   }
 
   function exposureSlider() {
-    return document.querySelectorAll('.editor-slider-row input[type="range"]')[0];
+    // label 定位（R139）：裸 [0] 依赖滑杆区排序
+    return [...document.querySelectorAll('.editor-slider-row')]
+      .find((l) => l.querySelector('span')?.textContent === '曝光')
+      ?.querySelector('input');
   }
 
   function sectionClearButton(headerText) {
