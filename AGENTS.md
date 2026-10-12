@@ -52,7 +52,7 @@ shared/           12 个 .cjs；被前端以默认导入消费（20+ 处），�
   editSchema.js  EditParams v1 zod schema（非破坏编辑参数唯一事实源，前后端同构）
   renderSpec.js  EditParams → RenderSpec 纯函数（渲染指令序列，预览/导出唯一消费格式）
   pipelineOrder.js  渲染阶段固定顺序 + 能力矩阵（14 阶段全部支持，仅测试直接消费）
-  builtinPresets.js  内置风格预设参数集（18 款：含富士经典负片/经典铬/维尔维亚/ACROS、理光正片/负片、柯达金200/波特拉400 胶片模拟致敬系列，消费 vibrance/clarity 字段）
+  builtinPresets.js  内置风格预设参数集（28 款：胶片模拟 18 款——富士 PROVIA/ASTIA/ETERNA/经典负片/经典铬/维尔维亚/ACROS/PRO NEG Hi、理光正片/负片/高对比黑白/柔和黑白、柯达金200/EKTAR/波特拉/TRI-X、伊尔福 HP5、电影 800T 致敬系列，消费 vibrance/clarity/grain 字段；颗粒梯度按真实胶片特性：理光 HC 45 > ACROS 35 > TRI-X 30 > HP5 25）
   maskGeometry.js  蒙版手柄/命中几何映射（MaskOverlay 与查看器共用）
   curves.js / colorGrading.js / hsl.js / lens.js / masks.js / saturation.js / clarity.js  各渲染阶段语义唯一实现
                   （clarity.js 2026-10-12 新增：中间调对比，w=1−|2L−1| 三角窗 Rec.709 掩蔽，tone 段末施加；

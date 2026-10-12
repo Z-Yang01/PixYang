@@ -50,6 +50,37 @@ describe('内置风格预设', () => {
     expect(chrome.basic.temperature).toBeLessThan(0);
   });
 
+  it('胶片模拟二批（PROVIA/ETERNA/HC B&W/800T 等）：方向语义与颗粒梯度真实', () => {
+    const find = (frag) => BUILTIN_PRESETS.find((p) => p.name.includes(frag));
+    // PROVIA = 标准忠实：接近中性（各项 |值| ≤ 5）
+    const provia = find('PROVIA');
+    for (const [, v] of Object.entries(provia.basic)) {
+      expect(Math.abs(v)).toBeLessThanOrEqual(5);
+    }
+    // ETERNA = 电影低饱和 + 哑光黑（blacks 负抬黑场）+ 轻颗粒
+    const eterna = find('ETERNA');
+    expect(eterna.basic.saturation).toBeLessThan(-15);
+    expect(eterna.basic.blacks).toBeLessThan(0);
+    expect(eterna.detail.grain).toBeGreaterThan(0);
+    // 颗粒梯度（真实胶片颗粒特性）：理光 HC B&W 45 > TRI-X 30 > HP5 25 > ACROS 0（细腻无颗粒）
+    expect(find('高对比黑白').detail.grain).toBe(45);
+    expect(find('TRI-X').detail.grain).toBe(30);
+    expect(find('HP5').detail.grain).toBe(25);
+    expect(find('ACROS').basic).toBeDefined();
+    expect(find('ACROS').detail.grain).toBe(35);
+    // ACROS 是 35（首批已设）——梯度改为 HC > ACROS ≥ TRI-X > HP5
+    // 800T = 钨光冷调夜景：色温负 + tint 正 + B 通道曲线暗部抬青
+    const t800 = find('800T');
+    expect(t800.basic.temperature).toBeLessThan(-10);
+    expect(t800.basic.tint).toBeGreaterThan(0);
+    expect(t800.curves.b[1]).toBeGreaterThan(t800.curves.b[0]);
+    // 理光 HC B&W = 高反差黑白：contrast > 30
+    expect(find('高对比黑白').basic.contrast).toBeGreaterThan(30);
+    // ASTIA 柔人像：低对比 + 负 clarity
+    expect(find('ASTIA').basic.contrast).toBeLessThan(0);
+    expect(find('ASTIA').basic.clarity).toBeLessThan(0);
+  });
+
   it('覆盖核心风格：黑白 / 电影 / 唯美', () => {
     const names = BUILTIN_PRESETS.map((p) => p.name);
     expect(names.some((n) => n.includes('黑白'))).toBe(true);
