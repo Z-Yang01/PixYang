@@ -3145,3 +3145,12 @@ R103 宣言 → R116 六笔快包 → 本轮 R117-R119 终版快包，此后再�
   ④ 验证：cargo test 全目标 235+golden_audit 1 绿（CI 同款命令）。
     提交范围：src-tauri/src/render.rs NIGHTLY_LOG.md
   待人工复核：无新增。
+
+- 2026-10-13 08:00 R130 夜间批总打包（UNATTENDED §5）：
+  ① NSIS 重打包：PixYang_1.0.0_x64-setup.exe 3.97MiB（Oct 13 03:15 本地/mtime）——版本号对齐 1.0.0
+     后的首个安装包；旧 0.1.0 包从 bundle 目录清除（target/ 不入库，仅本地清理）；
+  ② 哈希链核对：exe 内嵌 index-MqnIIoiA.js / index-B31CcEk5.css 与 dist/index.html 引用逐值命中，
+     旧哈希残留 0——安装包与 HEAD（80f3bde）等价；
+  ③ git 噪声检查：Cargo.toml/gen/schemas 无构建期改写残留（LF 重写仅显示层，无实际 diff）。
+  - 验证：哈希链双向命中 + 旧哈希 0；tauri build EXIT=0。
+  待人工复核：无新增。
