@@ -4,7 +4,7 @@ import api from '@/lib/api';
 import { isEnterSubmit } from '@/lib/shortcuts';
 import { errText, friendlyError } from '@/lib/errorText';
 import ConfirmDialog from '../Layout/ConfirmDialog';
-import BatchExportDialog from '../Browser/BatchExportDialog';
+import BatchExportDialog from '../Batch/BatchExportDialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { FolderOpen, Plus } from 'lucide-react';

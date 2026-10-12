@@ -1,0 +1,150 @@
+// @vitest-environment happy-dom
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { render, cleanup, act, waitFor } from '@testing-library/react';
+import useGalleryData from '@/hooks/useGalleryData';
+import useGalleryStore from '@/store/galleryStore';
+
+const initialSnapshot = useGalleryStore.getState();
+
+function HookHarness({ hook, hookProps }) {
+  hook(hookProps);
+  return <div>harness</div>;
+}
+
+describe('useGalleryData wiring', () => {
+  beforeEach(() => {
+    useGalleryStore.setState(initialSnapshot, true);
+    window.pixyang = {
+      getImages: vi.fn().mockResolvedValue({ images: [], total: 0 }),
+      getStats: vi
+        .fn()
+        .mockResolvedValue({ totalImages: 0, totalTags: 0, totalAlbums: 0, favorites: 0 }),
+      getTags: vi.fn().mockResolvedValue([]),
+      getAlbums: vi.fn().mockResolvedValue([]),
+      getImportDates: vi.fn().mockResolvedValue([]),
+      onThumbnailsReady: vi.fn().mockReturnValue(() => {}),
+    };
+  });
+
+  afterEach(() => {
+    cleanup();
+    delete window.pixyang;
+  });
+
+  it('筛选变化立即触发 loadImages，搜索输入走防抖', async () => {
+    vi.useFakeTimers();
+    try {
+      render(<HookHarness hook={useGalleryData} hookProps={{}} />);
+      await vi.advanceTimersByTimeAsync(0);
+      const callsAfterMount = window.pixyang.getImages.mock.calls.length;
+      expect(callsAfterMount).toBeGreaterThanOrEqual(1);
+
+      act(() => {
+        useGalleryStore.setState({ search: 'sun' });
+      });
+      // 防抖窗口内不立即请求
+      await vi.advanceTimersByTimeAsync(50);
+      expect(window.pixyang.getImages.mock.calls.length).toBe(callsAfterMount);
+      await vi.advanceTimersByTimeAsync(300);
+      expect(window.pixyang.getImages.mock.calls.length).toBeGreaterThan(callsAfterMount);
+      expect(window.pixyang.getImages).toHaveBeenCalledWith(
+        expect.objectContaining({ search: 'sun' })
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('onThumbnailsReady 回调 bump thumbVersion 并刷新列表', async () => {
+    let readyCb;
+    window.pixyang.onThumbnailsReady = vi.fn((cb) => {
+      readyCb = cb;
+      return () => {};
+    });
+    render(<HookHarness hook={useGalleryData} hookProps={{}} />);
+    await waitFor(() => expect(readyCb).toBeDefined());
+    const before = useGalleryStore.getState().thumbVersion;
+    await act(async () => {
+      readyCb();
+    });
+    expect(useGalleryStore.getState().thumbVersion).toBe(before + 1);
+  });
+
+  it('onEditPreviewReady 携带 {id,path} 时把新缩略图路径就地写回当前页记录', async () => {
+    let previewCb;
+    window.pixyang.getImages = vi.fn().mockResolvedValue({
+      images: [{ id: 1, filename: 'a.jpg', thumbnail_path: 'C:/t/a_old.jpg' }],
+      total: 1,
+    });
+    window.pixyang.onEditPreviewReady = vi.fn((cb) => {
+      previewCb = cb;
+      return () => {};
+    });
+    render(<HookHarness hook={useGalleryData} hookProps={{}} />);
+    await waitFor(() => expect(previewCb).toBeDefined());
+    const before = useGalleryStore.getState().thumbVersion;
+    await act(async () => {
+      previewCb({ id: 1, path: 'C:/edit/a.png' });
+    });
+    const st = useGalleryStore.getState();
+    expect(st.thumbVersion).toBe(before + 1);
+    expect(st.images[0].thumbnail_edit_path).toBe('C:/edit/a.png');
+    // 无载荷（批 8 R-6 起）既不 bump 也不动列表：无法判定页内归属的事件一律忽略
+    await act(async () => {
+      previewCb(undefined);
+    });
+    expect(useGalleryStore.getState().images[0].thumbnail_edit_path).toBe('C:/edit/a.png');
+  });
+
+  it('onEditPreviewReady 非页内图片事件不 bump thumbVersion（批 8 R-6）', async () => {
+    let previewCb;
+    window.pixyang.getImages = vi.fn().mockResolvedValue({
+      images: [{ id: 1, filename: 'a.jpg' }],
+      total: 1,
+    });
+    window.pixyang.onEditPreviewReady = vi.fn((cb) => {
+      previewCb = cb;
+      return () => {};
+    });
+    render(<HookHarness hook={useGalleryData} hookProps={{}} />);
+    await waitFor(() => expect(previewCb).toBeDefined());
+    const before = useGalleryStore.getState().thumbVersion;
+    await act(async () => {
+      previewCb({ id: 99, path: 'C:/edit/z.png' });
+    });
+    await act(async () => {
+      previewCb({ id: 1 });
+    });
+    expect(useGalleryStore.getState().thumbVersion).toBe(before);
+    await act(async () => {
+      previewCb({ id: 1, path: 'C:/edit/a.png' });
+    });
+    expect(useGalleryStore.getState().thumbVersion).toBe(before + 1);
+  });
+
+  it('无关字段变化不触发 wiring 宿主重渲染（审查批 8 R-7 选择器化）', async () => {
+    let renders = 0;
+    function CountingHarness() {
+      renders += 1;
+      useGalleryData({});
+      return null;
+    }
+    render(<CountingHarness />);
+    await waitFor(() => expect(renders).toBeGreaterThan(0));
+    const before = renders;
+    act(() => {
+      useGalleryStore.setState({ thumbVersion: 99 });
+    });
+    act(() => {
+      useGalleryStore.setState({ selectedIds: new Set([1, 2]) });
+    });
+    act(() => {
+      useGalleryStore.setState({ loading: true });
+    });
+    expect(renders).toBe(before);
+    act(() => {
+      useGalleryStore.setState({ page: 3 });
+    });
+    expect(renders).toBeGreaterThan(before);
+  });
+});

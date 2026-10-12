@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { describe, it, expect, vi } from 'vitest';
 import { render, fireEvent } from '@testing-library/react';
-import HistogramView from '@/components/Browser/HistogramView';
+import HistogramView from '@/components/Viewer/HistogramView';
 
 const HISTOGRAM = {
   r: Array.from({ length: 64 }, (_, i) => i),

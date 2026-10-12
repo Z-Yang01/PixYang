@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, fireEvent, cleanup } from '@testing-library/react';
-import MaskOverlay from '@/components/Browser/MaskOverlay';
+import MaskOverlay from '@/components/Viewer/MaskOverlay';
 
 const radial = (over = {}) => ({
   type: 'radial',

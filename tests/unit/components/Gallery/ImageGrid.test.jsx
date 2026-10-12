@@ -3,7 +3,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, cleanup } from '@testing-library/react';
 import { toast } from 'sonner';
-import ImageGrid from '@/components/Browser/ImageGrid';
+import ImageGrid from '@/components/Gallery/ImageGrid';
 import useGalleryStore from '@/store/galleryStore';
 
 const initialSnapshot = useGalleryStore.getState();

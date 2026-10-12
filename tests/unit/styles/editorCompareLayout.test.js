@@ -60,7 +60,7 @@ describe('编辑滑杆行标签列宽（历史缺陷：44px 栅格列装不下 4
   const labelLens = ['ImageViewer.jsx', 'MaskPanel.jsx'].flatMap((f) =>
     [
       ...readFileSync(
-        new URL(`../../../src/components/Browser/${f}`, import.meta.url),
+        new URL(`../../../src/components/Viewer/${f}`, import.meta.url),
         'utf8'
       ).matchAll(/label:\s*'([^']+)'/g),
     ]

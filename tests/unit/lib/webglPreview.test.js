@@ -604,7 +604,7 @@ describe('isWebGL2Available（R107：探针回收 + 失败不永久缓存）', (
 describe('ImageViewer 预览生命周期契约（R107，源码级防回退）', () => {
   // vitest 恒从仓库根运行（门禁串行跑全），cwd 相对定位即可
   const viewerSrc = readFileSync(
-    resolve(process.cwd(), 'src/components/Browser/ImageViewer.jsx'),
+    resolve(process.cwd(), 'src/components/Viewer/ImageViewer.jsx'),
     'utf8'
   );
 

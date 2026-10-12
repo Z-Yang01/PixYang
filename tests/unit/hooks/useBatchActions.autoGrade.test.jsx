@@ -5,7 +5,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, cleanup, act } from '@testing-library/react';
 import useBatchActions from '@/hooks/useBatchActions';
-import BatchBar from '@/components/Browser/BatchBar';
+import BatchBar from '@/components/Batch/BatchBar';
 import useGalleryStore from '@/store/galleryStore';
 
 const initialSnapshot = useGalleryStore.getState();

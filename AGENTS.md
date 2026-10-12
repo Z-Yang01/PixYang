@@ -65,7 +65,9 @@ src/
   hooks/          useGalleryData（加载 wiring）/ useGlobalShortcuts / useDragImport / useBatchActions（批量操作）/ useMarqueeSelection（网格框选）
   lib/            api.js（通道封装与守卫）/ tauriBridge.js、tauriBridgeMedia.js（invoke/事件/URL）/ errorText.js（错误文案中文映射唯一事实源）/ gallery.js / shortcuts.js / format.js / utils.ts
   components/
-    Browser/      图片网格（ImageCard/PaginationBar/GridDialogs 拆分组件）、全屏查看器（含非破坏编辑面板）、批量操作栏、CompareView 对比视图
+    Gallery/     图片网格域（ImageGrid/ImageCard/PaginationBar/GridDialogs）
+    Viewer/      查看与编辑域（ImageViewer 全屏查看器含非破坏编辑面板、CompareView 对比、CurveEditor/HistogramView/MaskPanel/MaskOverlay）
+    Batch/       批量操作域（BatchBar 批量操作栏、BatchExportDialog 导出对话框）
     Explorer/     导入对话框、相册视图
     Info/         图片详情面板
     Layout/       侧边栏、顶栏、确认对话框、右键菜单、Toast

@@ -4,7 +4,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, cleanup, waitFor } from '@testing-library/react';
 import { toast } from 'sonner';
-import BatchExportDialog from '@/components/Browser/BatchExportDialog';
+import BatchExportDialog from '@/components/Batch/BatchExportDialog';
 import useGalleryStore from '@/store/galleryStore';
 
 const initialSnapshot = useGalleryStore.getState();

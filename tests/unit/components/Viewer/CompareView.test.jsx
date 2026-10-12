@@ -2,7 +2,7 @@
 // CompareView 冒烟：分屏布局、Before/After 标签、分割线拖动更新位置。
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, fireEvent, cleanup } from '@testing-library/react';
-import CompareView from '@/components/Browser/CompareView';
+import CompareView from '@/components/Viewer/CompareView';
 
 describe('CompareView（Before/After 分屏）', () => {
   afterEach(() => cleanup());

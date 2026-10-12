@@ -2,7 +2,7 @@
 // BatchBar 冒烟：勾选集/总数/标签来自 galleryStore。
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, cleanup } from '@testing-library/react';
-import BatchBar from '@/components/Browser/BatchBar';
+import BatchBar from '@/components/Batch/BatchBar';
 import useGalleryStore from '@/store/galleryStore';
 
 const initialSnapshot = useGalleryStore.getState();

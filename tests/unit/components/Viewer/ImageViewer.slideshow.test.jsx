@@ -3,7 +3,7 @@
 // 暂停恢复 / 随查看器卸载停止（计时状态机本体另见 useSlideshowTimer.test.js）
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, cleanup, act } from '@testing-library/react';
-import ImageViewer from '@/components/Browser/ImageViewer';
+import ImageViewer from '@/components/Viewer/ImageViewer';
 
 const testImage = {
   id: 3,
