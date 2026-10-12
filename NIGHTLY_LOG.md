@@ -3262,3 +3262,6 @@ R103 宣言 → R116 六笔快包 → 本轮 R117-R119 终版快包，此后再�
   - 验证：npm 78 文件/1052 例；lint 0E/10W；prettier 干净；两套对拍全绿。
     提交范围：src/lib/webglPreview.js tests/webgl-parity/cases-edit-audit.json NIGHTLY_LOG.md
   待人工复核：无新增（挂账 ④ 已清）。
+
+- 2026-10-13 13:45 终态打包跟进（R140 grain 闭合入包）：PixYang_1.0.0（Oct 13 05:43）哈希链双向
+  命中/旧哈希 0——安装包跟 56c0c0f。夜间批最终 HEAD 即此。
