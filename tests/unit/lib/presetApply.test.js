@@ -181,6 +181,28 @@ describe('applyPresetToOps（预设字段裁剪唯一实现）', () => {
     expect(withTex.detail).toEqual({ sharpness: 0, texture: 40, noise: 0, grain: 35 });
   });
 
+  it('接线锁（R135 P1）：内置预设 payload 构造必须携带 hsl 域——含 HSL 的预设应用后 hsl 落入 ops', async () => {
+    // 模拟 EditorPresetSection chip 的载荷构造形态（R127 三款 HSL 预设曾因载荷漏 hsl 整体不生效）
+    const { BUILTIN_PRESETS } = sharedMod_builtinPresets;
+    const withHsl = BUILTIN_PRESETS.find((p) => p.hsl);
+    const chipPayload = {
+      name: withHsl.name,
+      basic: withHsl.basic,
+      curves: withHsl.curves,
+      colorGrading: withHsl.colorGrading,
+      hsl: withHsl.hsl,
+      detail: withHsl.detail,
+      lens: withHsl.lens,
+    };
+    const out = applyPresetToOps(chipPayload, {});
+    expect(out.hsl).toEqual(withHsl.hsl);
+    // 反向哨兵：载荷漏 hsl 时预设的 hsl 不落入（此形态正是缺陷——锁住「必须传」的语义）
+    const leaky = { ...chipPayload };
+    delete leaky.hsl;
+    const out2 = applyPresetToOps(leaky, {});
+    expect(out2.hsl).toBeUndefined();
+  });
+
   it('hsl：预设显式携带才覆盖，缺省保留当前值', () => {
     const hsl = {
       hue: [40, 0, 0, 0, 0, 0, 0, -30],

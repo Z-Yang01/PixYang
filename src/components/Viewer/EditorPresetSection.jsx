@@ -18,6 +18,8 @@ export default function EditorPresetSection({
   onStrengthChange,
   onStrengthDragStart,
   onStrengthCommit,
+  onStrengthBlur,
+  onStrengthKeyAdjust,
   onCopy,
   onPaste,
   onApplyPreset,
@@ -73,7 +75,11 @@ export default function EditorPresetSection({
             value={presetStrength}
             onPointerDown={onStrengthDragStart}
             onPointerUp={onStrengthCommit}
-            onChange={(e) => onStrengthChange(Number(e.target.value))}
+            onBlur={onStrengthBlur}
+            onChange={(e) => {
+              onStrengthChange(Number(e.target.value));
+              onStrengthKeyAdjust?.(e.target.value);
+            }}
           />
           <em>{presetStrength}%</em>
         </label>
@@ -113,6 +119,7 @@ export default function EditorPresetSection({
                     basic: bp.basic,
                     curves: bp.curves,
                     colorGrading: bp.colorGrading,
+                    hsl: bp.hsl,
                     detail: bp.detail,
                     lens: bp.lens,
                   })

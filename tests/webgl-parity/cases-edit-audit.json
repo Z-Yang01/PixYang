@@ -672,10 +672,10 @@
       "masks": [
         {
           "type": "radial",
-          "cx": 0.5,
-          "cy": 0.5,
-          "rx": 0.35,
-          "ry": 0.35,
+          "cx": 400,
+          "cy": 500,
+          "rx": 280,
+          "ry": 350,
           "adjustments": {
             "exposure": 0,
             "contrast": 0,

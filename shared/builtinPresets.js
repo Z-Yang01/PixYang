@@ -359,6 +359,14 @@ function validateBuiltinPresets() {
         }
       }
     }
+    if (p.hsl) {
+      for (const c of ['hue', 'sat', 'lum']) {
+        const arr = p.hsl[c];
+        if (arr === undefined) continue;
+        if (!Array.isArray(arr) || arr.length !== 8 || arr.some((v) => !Number.isFinite(v)))
+          throw new Error(`内置预设 ${p.name} hsl.${c} 非法：需 8 带有限数值`);
+      }
+    }
     if (
       p.lens &&
       (!Number.isFinite(p.lens.vignette) || p.lens.vignette < -100 || p.lens.vignette > 100)

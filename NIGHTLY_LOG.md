@@ -3182,3 +3182,22 @@ R103 宣言 → R116 六笔快包 → 本轮 R117-R119 终版快包，此后再�
   二次编码呈 mojibake（NIGHTLY_LOG 条目本体完好，仅 git 消息坏）。不可 amend（已推送+红线），
   本条勘正：R132 正确标题为「新算子实机冒烟——五滑杆 CDP 驱动回显正确 + 便携库 edits 落库六字段
   逐值命中」。后续提交改用 -F 文件参数避免命令行编码路径。
+
+- 2026-10-13 09:40 R135 二批深审——三个真缺陷全修（同模式：数据在、接线漏）：
+  ① P1 HSL 预设域双断线：EditorPresetSection chip 载荷与 BatchBar presetPayload 都没传 hsl——
+     R127 三款 HSL 精调（800T/波特拉/经典铬）整体不生效（applyPresetToOps 支持但调用方不传，
+     R127 测试只断数据不断接线故全绿放行）。修：双载荷补 hsl + 接线锁用例（payload 携带→hsl 落
+     ops；漏传→不落，锁死「必须传」语义）+ validateBuiltinPresets 补 hsl 八带校验（P3）；
+  ② P2 拆分丢强度滑杆键盘历史：EditorPresetSection 拆分时 onBlur/recordKeyAdjust 语义未随 props
+     迁移（方向键调整不入历史，R67 收敛契约退化）。修：onStrengthBlur/onStrengthKeyAdjust 双回调
+     接线（父级 recordKeyAdjust 语义回归）；
+  ③ P2 s43 取证例蒙版坐标单位错：radial 用归一化坐标（0.5/0.35）被 zod 改写成左上角 200×200px
+     小椭圆（.catch(100) 静默吞单位错误）——覆盖面与用例意图不符。修：改像素域（cx400/cy500/
+     rx280/ry350，800×1000 底图居中 35%），复跑 PASS（mean 0.0013→0.0079，覆盖面如实扩大）；
+  ④ 已查无问题方向：dehaze 三端逐符号一致（系数/顺序/clamp/取整）、拆分组件 props 全消费、
+     lastPresetName 时序、E0689 修复同表、滑杆断言无失锁。
+  - 验证：npm 78 文件/1051 例（+1 接线锁）；lint 0E/10W；tsc/prettier/build 干净；s43 复跑 PASS。
+    提交范围：src/components/Viewer/EditorPresetSection.jsx src/components/Viewer/ImageViewer.jsx
+    src/components/Batch/BatchBar.jsx shared/builtinPresets.js tests/unit/lib/presetApply.test.js
+    tests/webgl-parity/cases-edit-audit.json NIGHTLY_LOG.md
+  待人工复核：无新增（三缺陷全闭环）。
