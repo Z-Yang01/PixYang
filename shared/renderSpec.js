@@ -63,6 +63,7 @@ function buildStages(p) {
         shadows: b.shadows || 0,
         whites: b.whites || 0,
         blacks: b.blacks || 0,
+        clarity: b.clarity || 0,
       },
     },
     stageDeclared('curves', {
@@ -83,7 +84,11 @@ function buildStages(p) {
     }),
     {
       kind: 'saturation',
-      params: { value: b.saturation || 0, mono: (b.saturation || 0) === -100 },
+      params: {
+        value: b.saturation || 0,
+        mono: (b.saturation || 0) === -100,
+        vibrance: b.vibrance || 0,
+      },
     },
     stageDeclared('masks', { list: p.masks ?? [] }),
     {
@@ -164,11 +169,13 @@ function specToPreviewTweaks(spec) {
   return {
     exposure: by.exposure?.params.ev || 0,
     contrast: tone.contrast || 0,
+    clarity: tone.clarity || 0,
     highlights: tone.highlights || 0,
     shadows: tone.shadows || 0,
     whites: tone.whites || 0,
     blacks: tone.blacks || 0,
     saturation: sat.value || 0,
+    vibrance: sat.vibrance || 0,
     temperature: wb.temp || 0,
     tint: wb.tint || 0,
   };

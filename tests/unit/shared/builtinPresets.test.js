@@ -27,6 +27,29 @@ describe('内置风格预设', () => {
     }
   });
 
+  it('胶片模拟批次：富士/理光/柯达在库且方向语义真实', () => {
+    const find = (frag) => BUILTIN_PRESETS.find((p) => p.name.includes(frag));
+    // 维尔维亚 = 浓艳反转片：饱和/鲜艳双正且对比正
+    const velvia = find('维尔维亚');
+    expect(velvia.basic.saturation).toBeGreaterThan(20);
+    expect(velvia.basic.vibrance).toBeGreaterThan(0);
+    expect(velvia.basic.contrast).toBeGreaterThan(10);
+    // ACROS = 黑白 + 中调立体：饱和 -100 且清晰度正
+    const acros = find('ACROS');
+    expect(acros.basic.saturation).toBe(-100);
+    expect(acros.basic.clarity).toBeGreaterThan(0);
+    // 波特拉 = 柔人像：对比负、清晰度负（柔化）
+    const portra = find('波特拉');
+    expect(portra.basic.contrast).toBeLessThan(0);
+    expect(portra.basic.clarity).toBeLessThan(0);
+    // 理光正片 = 暖调：色温正
+    expect(find('理光 正片').basic.temperature).toBeGreaterThan(0);
+    // 经典铬 = 克制冷调：饱和负、色温负
+    const chrome = find('经典铬');
+    expect(chrome.basic.saturation).toBeLessThan(0);
+    expect(chrome.basic.temperature).toBeLessThan(0);
+  });
+
   it('覆盖核心风格：黑白 / 电影 / 唯美', () => {
     const names = BUILTIN_PRESETS.map((p) => p.name);
     expect(names.some((n) => n.includes('黑白'))).toBe(true);

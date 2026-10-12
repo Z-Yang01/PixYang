@@ -34,7 +34,8 @@
         "highlights": 0,
         "shadows": -80,
         "whites": 0,
-        "blacks": 0
+        "blacks": 0,
+        "clarity": 0
       }
     },
     {
@@ -66,7 +67,8 @@
       "kind": "saturation",
       "params": {
         "value": 0,
-        "mono": false
+        "mono": false,
+        "vibrance": 0
       }
     },
     {
@@ -114,6 +116,6 @@
   ],
   "meta": {
     "fromEditParamsVersion": 0,
-    "generatedAt": "2026-09-19T06:32:51.702Z"
+    "generatedAt": "2026-10-12T07:32:08.219Z"
   }
 }

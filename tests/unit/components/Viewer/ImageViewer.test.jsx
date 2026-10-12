@@ -613,7 +613,7 @@ describe('ImageViewer', () => {
     const overlay = () => container.querySelector('.editor-vignette-overlay');
     expect(overlay()).toBeNull();
     // 输入负值 → overlay 出现且用 multiply 黑渐变
-    const vigSlider = [...container.querySelectorAll('input[type="range"]')][9]; // 基础滑杆第 10 个 = 暗角
+    const vigSlider = [...container.querySelectorAll('input[type="range"]')][11]; // 基础滑杆第 12 个 = 暗角（含清晰度/鲜艳度）
     fireEvent.change(vigSlider, { target: { value: '-40' } });
     await vi.waitFor(() => {
       expect(overlay()).toBeTruthy();

@@ -12,11 +12,12 @@ import gradingLib from '../../shared/colorGrading.js';
 import hslLib from '../../shared/hsl.js';
 import masksLib from '../../shared/masks.js';
 import saturationLib from '../../shared/saturation.js';
+import clarityLib from '../../shared/clarity.js';
 
 const { buildCurveLuts } = curvesLib;
 const { buildGradeLuts } = gradingLib;
 const { normalizeHsl, HSL_BANDS } = hslLib;
-const { saturate01 } = saturationLib;
+const { saturate01, vibrance01 } = saturationLib;
 
 const clamp = (v, min, max) => Math.min(max, Math.max(min, v));
 const smoothstep = (e0, e1, x) => {
@@ -58,6 +59,8 @@ export function specToShaderUniforms(spec, imageSize = [0, 0]) {
         ? { exponent: 1 / clamp(1 + -shadowsVal / 220, 1, 1.45), invert: 1 }
         : null;
   const highlightsSlope = tone.highlights !== 0 ? clamp(1 + tone.highlights / 400, 0.75, 1.15) : 1;
+  // 清晰度（中间调对比）：传算好的 k（shared/clarity.js clarityK），shader 内算三角窗
+  const clarityK = clarityLib.clarityK(tone.clarity || 0);
 
   // 曲线：复合 rgb+通道 → 256 级 RGBA LUT 纹理数据（A 通道占位 255）
   const luts = buildCurveLuts(by.curves?.params || {});
@@ -107,6 +110,8 @@ export function specToShaderUniforms(spec, imageSize = [0, 0]) {
   const satVal = by.saturation?.params?.value || 0;
   const mono = by.saturation?.params?.mono ? 1 : 0;
   const saturation = mono ? 1 : 1 + satVal / 100;
+  // 鲜艳度（智能饱和度）：传原值，增益随像素 chroma 在 shader 内自适应
+  const vibrance = clamp(Number(by.saturation?.params?.vibrance) || 0, -100, 100);
 
   // 暗角（pre-crop 椭圆，shader 内线性衰减，公式与 shared/lens.js 一致）
   const vignette = clamp(Number(by.lens?.params?.vignette) || 0, -100, 100);
@@ -162,6 +167,7 @@ export function specToShaderUniforms(spec, imageSize = [0, 0]) {
     maskAdjTint,
     affineSlope,
     affineOffset255,
+    clarity: clarityK,
     shadows,
     highlightsSlope,
     shadowBand: [0, 0.5],
@@ -179,6 +185,7 @@ export function specToShaderUniforms(spec, imageSize = [0, 0]) {
     gradingDelta,
     gradingKind,
     saturation,
+    vibrance,
     mono,
     vignette,
     lensDistortion,
@@ -211,6 +218,16 @@ export function simulateShaderPixel(rgb255, uniforms, uv = [0.5, 0.5]) {
     c = c.map((x) => {
       const f = clamp(x * uniforms.highlightsSlope, 0, 1);
       return x + (f - x) * w;
+    });
+  }
+  if (uniforms.clarity !== 1) {
+    // 清晰度（shared/clarity.js 同式；uniforms.clarity 已是算好的 k，手写 k 版避免反解）：
+    // w = 1−|2L−1| 三角窗，f = (x−0.5)k+0.5，mix 后整体钳（与执行器段末写回 clamp 同口径）
+    const L = 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+    const w = 1 - Math.abs(2 * L - 1);
+    c = c.map((x) => {
+      const f = (x - 0.5) * uniforms.clarity + 0.5;
+      return clamp(x + (f - x) * w, 0, 1);
     });
   }
   if (uniforms.curveLut) {
@@ -249,6 +266,10 @@ export function simulateShaderPixel(rgb255, uniforms, uv = [0.5, 0.5]) {
       ];
     }
     c = c.map((x) => clamp(x, 0, 1));
+  }
+  if (uniforms.vibrance) {
+    // 鲜艳度（shared/saturation.js vibrance01）：mix 后整体钳（同 GLSL D1 口径）
+    c = vibrance01(c, uniforms.vibrance).map((x) => clamp(x, 0, 1));
   }
   if (uniforms.mono || uniforms.saturation !== 1) {
     // 与 GLSL 预览同钳（D1）：导出端逐阶段钳制，模拟器代表点必须同口径

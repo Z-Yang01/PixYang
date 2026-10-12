@@ -15,12 +15,14 @@ const VALID = {
   whites: 0,
   blacks: -10,
   saturation: 5,
+  vibrance: 0,
+  clarity: 0,
   temperature: 20,
   tint: -8,
 };
 
 describe('parseSuggestion 模型回复解析', () => {
-  it('裸 JSON：九字段全收', () => {
+  it('裸 JSON：十一字段全收', () => {
     const { name, basic } = parseSuggestion(JSON.stringify({ basic: VALID }));
     expect(name).toBe('AI 调色');
     expect(basic).toEqual(VALID);

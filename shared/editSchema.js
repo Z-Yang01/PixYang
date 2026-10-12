@@ -31,6 +31,8 @@ const BasicSchema = z.object({
   whites: z.number().min(-100).max(100).catch(0), // 白色色阶
   blacks: z.number().min(-100).max(100).catch(0), // 黑色色阶
   saturation: z.number().min(-100).max(100).catch(0), // -100 黑白
+  vibrance: z.number().min(-100).max(100).catch(0), // 鲜艳度：智能饱和度（低饱和多提/高饱和少提），亮度保持
+  clarity: z.number().min(-100).max(100).catch(0), // 清晰度：中间调对比（三角亮度窗掩蔽）
   temperature: z.number().min(-100).max(100).catch(0), // 暖+ 冷-
   tint: z.number().min(-100).max(100).catch(0), // 绿- 品红+
 });
@@ -177,6 +179,8 @@ function DEFAULT_EDITS() {
       whites: 0,
       blacks: 0,
       saturation: 0,
+      vibrance: 0,
+      clarity: 0,
       temperature: 0,
       tint: 0,
     },

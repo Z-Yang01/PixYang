@@ -21,6 +21,8 @@ export const EDIT_DEFAULTS = {
   exposure: 0, // -2..2 EV
   contrast: 0, // -50..50
   saturation: 0, // -100..100（0 为原色，-100 黑白）
+  vibrance: 0, // -100..100 鲜艳度：智能饱和度（低饱和多提/高饱和少提），亮度保持
+  clarity: 0, // -100..100 清晰度：中间调对比（三角亮度窗掩蔽）
   temperature: 0, // -100..100（暖+ 冷-，预览为叠加近似）
   highlights: 0, // -100..100（亮度掩蔽域：正=提亮高光，负=压暗高光，LR 惯例）
   shadows: 0, // -100..100（正=提亮暗部，负=压暗暗部）
@@ -82,6 +84,8 @@ export function sanitizeEditOps(input = {}) {
     whites: clamp(Number(ops.whites) || 0, -100, 100),
     blacks: clamp(Number(ops.blacks) || 0, -100, 100),
     saturation: clamp(Number(ops.saturation) || 0, -100, 100),
+    vibrance: clamp(Number(ops.vibrance) || 0, -100, 100),
+    clarity: clamp(Number(ops.clarity) || 0, -100, 100),
     temperature: clamp(Number(ops.temperature) || 0, -100, 100),
     tint: clamp(Number(ops.tint) || 0, -100, 100),
     curves: {
@@ -113,6 +117,8 @@ export function hasEdits(ops) {
     s.exposure !== 0 ||
     s.contrast !== 0 ||
     s.saturation !== 0 ||
+    s.vibrance !== 0 ||
+    s.clarity !== 0 ||
     s.temperature !== 0 ||
     s.highlights !== 0 ||
     s.shadows !== 0 ||
@@ -156,6 +162,8 @@ export function toEditParams(ops) {
       whites: s.whites || 0,
       blacks: s.blacks || 0,
       saturation: s.saturation,
+      vibrance: s.vibrance,
+      clarity: s.clarity,
       temperature: s.temperature,
       tint: s.tint || 0,
     },
@@ -197,6 +205,8 @@ export function fromEditParams(params) {
     whites: p.basic.whites,
     blacks: p.basic.blacks,
     saturation: p.basic.saturation,
+    vibrance: p.basic.vibrance,
+    clarity: p.basic.clarity,
     temperature: p.basic.temperature,
     tint: p.basic.tint,
     curves: {

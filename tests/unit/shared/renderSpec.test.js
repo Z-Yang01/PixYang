@@ -55,7 +55,7 @@ describe('editParamsToRenderSpec（纯函数转换）', () => {
     const sat = build({ basic: { saturation: -100 } }).stages.find(
       (s) => s.kind === 'saturation'
     ).params;
-    expect(sat).toEqual({ value: -100, mono: true });
+    expect(sat).toEqual({ value: -100, mono: true, vibrance: 0 });
     expect(
       build({ basic: { saturation: 0 } }).stages.find((s) => s.kind === 'saturation').params.mono
     ).toBe(false);

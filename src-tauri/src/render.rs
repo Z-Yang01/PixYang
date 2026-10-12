@@ -61,6 +61,59 @@ impl Round255 for f64 {
     }
 }
 
+// ── 鲜艳度（shared/saturation.js vibrance01） ──
+// 智能饱和度：增益随像素 chroma（max−min/255）自适应——正向低饱和多提/高饱和少提，
+// 负向高饱和多降/近灰少动；围绕 luma 缩放保持亮度。与上方均匀 k 的饱和度是两个算子。
+pub fn apply_vibrance_in_place(data: &mut [u8], vibrance: f64, channels: usize) {
+    let v = vibrance.clamp(-100.0, 100.0);
+    if v == 0.0 || channels < 3 {
+        return;
+    }
+    let amt = v / 100.0;
+    let mut i = 0;
+    while i + 2 < data.len() {
+        let (r, g, b) = (data[i] as f64, data[i + 1] as f64, data[i + 2] as f64);
+        let max = r.max(g).max(b);
+        let min = r.min(g).min(b);
+        let chroma = (max - min) / 255.0;
+        let k = 1.0 + amt * if amt > 0.0 { 1.0 - chroma } else { chroma };
+        let y = SATURATION_LUMA[0] * r + SATURATION_LUMA[1] * g + SATURATION_LUMA[2] * b;
+        data[i] = (y + (r - y) * k).clamp255_round();
+        data[i + 1] = (y + (g - y) * k).clamp255_round();
+        data[i + 2] = (y + (b - y) * k).clamp255_round();
+        i += channels;
+    }
+}
+
+// ── 清晰度（shared/clarity.js） ──
+// 中间调对比：w = 1−|2L−1| 三角窗（Rec.709 L，与 apply_tone_masked 同系数），
+// f = (x−0.5)k+0.5 不预钳，out = x+(f−x)w 段末写回 clamp——与 shader「mix 后整体钳」同口径。
+// ±100 → k∈[0,2]；k=1 恒等跳过。
+pub fn apply_clarity_in_place(data: &mut [u8], clarity: f64, channels: usize) {
+    let k = 1.0 + clarity.clamp(-100.0, 100.0) / 100.0;
+    if k == 1.0 {
+        return;
+    }
+    let c_count = if channels >= 3 { 3 } else { 1 };
+    let mut i = 0;
+    while i + c_count <= data.len() {
+        let l = if c_count >= 3 {
+            (0.2126 * data[i] as f64 + 0.7152 * data[i + 1] as f64 + 0.0722 * data[i + 2] as f64)
+                / 255.0
+        } else {
+            data[i] as f64 / 255.0
+        };
+        let w = 1.0 - (2.0 * l - 1.0).abs();
+        for cc in 0..c_count {
+            let x = data[i + cc] as f64 / 255.0;
+            let f = (x - 0.5) * k + 0.5;
+            let out = x + (f - x) * w;
+            data[i + cc] = (out * 255.0).clamp(0.0, 255.0).trunc() as u8;
+        }
+        i += channels;
+    }
+}
+
 // ── 暗角（shared/lens.js） ──
 
 fn vignette_falloff(d: f64) -> f64 {
@@ -862,6 +915,101 @@ mod tests {
             .map(|x| x.as_u64().unwrap() as u8)
             .collect();
         assert_eq!(data, expected, "case {name_case} 对拍不一致");
+    }
+
+    // ── 鲜艳度/清晰度手算锁（shared/saturation.js vibrance01、shared/clarity.js 同式）──
+
+    #[test]
+    fn 鲜艳度_灰像素恒等_低饱和增益高于高饱和_亮度保持() {
+        // 纯灰 (128,128,128)：chroma=0 → 正向增益 k=1+1·(1−0)=2，但 r=g=b ⇒ mix(y,c,k)=c 恒等
+        let mut gray = [128u8, 128, 128];
+        apply_vibrance_in_place(&mut gray[..], 100.0, 3);
+        assert_eq!(gray, [128, 128, 128]);
+
+        // 低饱和 (130,128,126) vs 高饱和 (200,128,56)，同 +100：
+        // 低饱和 chroma=4/255 → k=2−4/255≈1.9843；高饱和 chroma=144/255 → k=2−144/255≈1.4353
+        // y_low = .213·130+.715·128+.072·126 = 128.428（round 钳制后手算）
+        let low = &mut [130u8, 128, 126];
+        apply_vibrance_in_place(&mut low[..], 100.0, 3);
+        let y_low: f64 = 0.213 * 130.0 + 0.715 * 128.0 + 0.072 * 126.0;
+        let k_low: f64 = 1.0 + (1.0 - 4.0 / 255.0);
+        // r: y+(130−y)k；方向锁：低饱和像素的 |Δr| 增幅比例高于高饱和像素
+        let exp_low_r = (y_low + (130.0 - y_low) * k_low).round();
+        assert_eq!(low[0] as f64, exp_low_r, "低饱和 R 手算");
+
+        let hi = &mut [200u8, 128, 56];
+        apply_vibrance_in_place(&mut hi[..], 100.0, 3);
+        let y_hi: f64 = 0.213 * 200.0 + 0.715 * 128.0 + 0.072 * 56.0;
+        let k_hi: f64 = 1.0 + (1.0 - 144.0 / 255.0);
+        let exp_hi_r = (y_hi + (200.0 - y_hi) * k_hi).round();
+        assert_eq!(hi[0] as f64, exp_hi_r, "高饱和 R 手算");
+        // 增益对比：低饱和 k > 高饱和 k（智能性核心，防退化成均匀饱和度）
+        assert!(k_low > k_hi);
+
+        // 亮度保持（luma 不动）：y_hi 与像素无关地保存于输出（mix 围绕 y）
+        let out_y = 0.213 * hi[0] as f64 + 0.715 * hi[1] as f64 + 0.072 * hi[2] as f64;
+        assert!((out_y - y_hi).abs() <= 0.5, "亮度漂移 {out_y} vs {y_hi}");
+    }
+
+    #[test]
+    fn 鲜艳度_负向_高饱和多降_近灰少动() {
+        // −100：gain = 1 − chroma——高饱和 (200,128,56) chroma=144/255 → k≈0.4353 大幅去饱和；
+        // 近灰 (130,128,126) chroma=4/255 → k≈0.9843 几乎不动
+        let hi = &mut [200u8, 128, 56];
+        apply_vibrance_in_place(&mut hi[..], -100.0, 3);
+        let y: f64 = 0.213 * 200.0 + 0.715 * 128.0 + 0.072 * 56.0;
+        let k: f64 = 1.0 - 144.0 / 255.0;
+        assert_eq!(hi[0] as f64, (y + (200.0 - y) * k).round());
+
+        let near_gray = &mut [130u8, 128, 126];
+        apply_vibrance_in_place(&mut near_gray[..], -100.0, 3);
+        // 近灰只微动（防「去鲜艳」把中性色啃掉）
+        assert!((near_gray[0] as i32 - 130).abs() <= 1);
+    }
+
+    #[test]
+    fn 清晰度_中间调动_纯黑纯白不动_方向与手算() {
+        // 纯黑/纯白：L=0/1 → w=0，恒等
+        let mut ends = [0u8, 255, 0, 255, 0, 255];
+        apply_clarity_in_place(&mut ends[..], 100.0, 3);
+        assert_eq!(ends, [0, 255, 0, 255, 0, 255]);
+
+        // 中灰 (128,128,128) +100：k=2，w=1（L≈0.502），f=(x−.5)·2+.5 → 对比拉开
+        let mid = &mut [128u8, 128, 128];
+        apply_clarity_in_place(&mut mid[..], 100.0, 3);
+        // x=128/255≈0.50196，f=x·2−0.5≈0.50392 → out≈0.50392·255→128.5→trunc 128？
+        // 手算：x=0.501961，f=0.503922，w=1−|2·0.501961−1|=0.996078，
+        // out=0.501961+(0.503922−0.501961)·0.996078=0.503914 → trunc(128.498)=128
+        assert_eq!(mid[0], 128);
+        // 用明显中调色 (96,128,160)：L=0.7152·128+…≈0.5024? 手算 y=0.2126·96+0.7152·128+0.0722·160
+        let y: f64 = (0.2126 * 96.0 + 0.7152 * 128.0 + 0.0722 * 160.0) / 255.0;
+        let w: f64 = 1.0 - (2.0 * y - 1.0).abs();
+        let px = &mut [96u8, 128, 160];
+        apply_clarity_in_place(&mut px[..], 100.0, 3);
+        let x0: f64 = 96.0 / 255.0;
+        let f0: f64 = (x0 - 0.5) * 2.0 + 0.5;
+        let exp = ((x0 + (f0 - x0) * w) * 255.0).trunc();
+        assert_eq!(px[0] as f64, exp, "中调手算 R");
+        // 方向锁：+清晰度让暗侧中调更暗
+        assert!(px[0] < 96, "中调暗侧应更暗");
+        assert!(px[2] > 160, "中调亮侧应更亮");
+
+        // −100：k=0 → f=0.5，中调向 0.5 收（柔化）
+        let soft = &mut [96u8, 128, 160];
+        apply_clarity_in_place(&mut soft[..], -100.0, 3);
+        assert!(soft[0] > 96 && soft[2] < 160, "负清晰度=柔化（向中灰收）");
+    }
+
+    #[test]
+    fn 清晰度_零值恒等() {
+        let mut data = [10u8, 200, 77, 1, 2, 3];
+        let before = data;
+        apply_clarity_in_place(&mut data[..], 0.0, 3);
+        assert_eq!(data, before);
+        let mut v = [10u8, 200, 77];
+        let before = v;
+        apply_vibrance_in_place(&mut v[..], 0.0, 3);
+        assert_eq!(v, before);
     }
 
     #[test]

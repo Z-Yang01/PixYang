@@ -621,18 +621,20 @@ pub fn render_spec_to_file(
             }
             "tone" => {
                 let g = |k: &str| params.get(k).and_then(|v| v.as_f64()).unwrap_or(0.0);
-                let (contrast, highlights, shadows, whites, blacks) = (
+                let (contrast, highlights, shadows, whites, blacks, clarity) = (
                     g("contrast"),
                     g("highlights"),
                     g("shadows"),
                     g("whites"),
                     g("blacks"),
+                    g("clarity"),
                 );
                 if contrast == 0.0
                     && highlights == 0.0
                     && shadows == 0.0
                     && whites == 0.0
                     && blacks == 0.0
+                    && clarity == 0.0
                 {
                     continue;
                 }
@@ -652,7 +654,9 @@ pub fn render_spec_to_file(
                 } else {
                     None
                 };
-                if shadow_op.is_none() && highlight_slope == 1.0 {
+                // 清晰度在掩蔽之后施加（shared/clarity.js 管线位）：clarity 单独激活也要物化
+                let clarity_k = 1.0 + clarity / 100.0;
+                if shadow_op.is_none() && highlight_slope == 1.0 && clarity_k == 1.0 {
                     continue;
                 }
                 // 亮度掩蔽后高光/阴影不再是可折叠的纯仿射/gamma 段（负阴影亦不走 negate
@@ -661,6 +665,9 @@ pub fn render_spec_to_file(
                 ensure_decoded(&mut pixels, input)?;
                 let p = pixels.as_mut().unwrap();
                 apply_tone_masked(&mut p.data, shadow_op, highlight_slope, p.channels);
+                if clarity_k != 1.0 {
+                    crate::render::apply_clarity_in_place(&mut p.data, clarity, p.channels);
+                }
             }
             "curves" => {
                 let Some(luts) = build_curve_luts(&params) else {
@@ -695,12 +702,17 @@ pub fn render_spec_to_file(
                     .and_then(|v| v.as_bool())
                     .unwrap_or(false);
                 let value = params.get("value").and_then(|v| v.as_f64()).unwrap_or(0.0);
-                if !mono && value == 0.0 {
+                let vibrance = params.get("vibrance").and_then(|v| v.as_f64()).unwrap_or(0.0);
+                if !mono && value == 0.0 && vibrance == 0.0 {
                     continue;
                 }
                 flush_affine(&mut pixels, &mut affine, input)?;
                 ensure_decoded(&mut pixels, input)?;
                 let p = pixels.as_mut().unwrap();
+                // 鲜艳度先于均匀饱和度（shared/saturation.js 家族内定序，三端一致）
+                if vibrance != 0.0 {
+                    crate::render::apply_vibrance_in_place(&mut p.data, vibrance, p.channels);
+                }
                 apply_saturation_in_place(&mut p.data, &params, p.channels);
             }
             "masks" => {

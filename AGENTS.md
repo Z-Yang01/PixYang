@@ -52,9 +52,12 @@ shared/           12 个 .cjs；被前端以默认导入消费（20+ 处），�
   editSchema.js  EditParams v1 zod schema（非破坏编辑参数唯一事实源，前后端同构）
   renderSpec.js  EditParams → RenderSpec 纯函数（渲染指令序列，预览/导出唯一消费格式）
   pipelineOrder.js  渲染阶段固定顺序 + 能力矩阵（14 阶段全部支持，仅测试直接消费）
-  builtinPresets.js  内置风格预设参数集
+  builtinPresets.js  内置风格预设参数集（18 款：含富士经典负片/经典铬/维尔维亚/ACROS、理光正片/负片、柯达金200/波特拉400 胶片模拟致敬系列，消费 vibrance/clarity 字段）
   maskGeometry.js  蒙版手柄/命中几何映射（MaskOverlay 与查看器共用）
-  curves.js / colorGrading.js / hsl.js / lens.js / masks.js / saturation.js  各渲染阶段语义唯一实现（执行器 raw pass 与 WebGL2 shader 同公式；负阴影指数分支曾两端反向——预览施加 e、导出施加 1/e，R65 已对齐为预览侧 1/e 变暗，与执行器 libvips 语义一致；见 NIGHTLY_LOG R59/R65）
+  curves.js / colorGrading.js / hsl.js / lens.js / masks.js / saturation.js / clarity.js  各渲染阶段语义唯一实现
+                  （clarity.js 2026-10-12 新增：中间调对比，w=1−|2L−1| 三角窗 Rec.709 掩蔽，tone 段末施加；
+                  saturation.js 同批增 vibrance01 智能饱和度——增益随 chroma 自适应、亮度恒定，saturation 段首
+                  施加先于均匀饱和度；两算子三端同式：GLSL 逐像素/JS 模拟/Rust render.rs 直译，手算锁双侧）（执行器 raw pass 与 WebGL2 shader 同公式；负阴影指数分支曾两端反向——预览施加 e、导出施加 1/e，R65 已对齐为预览侧 1/e 变暗，与执行器 libvips 语义一致；见 NIGHTLY_LOG R59/R65）
   autoGrade.js  本地自动调色建议（analyze_image 统计 → basic 域参数；符号对齐执行器 whiteBalance/tone，输出全量九字段整域替换、幂等）
 error/
   README.md       历史归档说明：旧层（Electron/sharp/sql.js）引用 → 现行 Rust 落点对照表
