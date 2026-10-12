@@ -11,6 +11,7 @@ const BUILTIN_PRESETS = [
   },
   {
     name: '黑白胶片',
+    detail: { sharpness: 0, noise: 0, grain: 25 },
     group: '风格',
     desc: '强反差黑白，暗部深沉',
     basic: { saturation: -100, contrast: 15, whites: 10, blacks: 20, shadows: -10 },
@@ -67,6 +68,7 @@ const BUILTIN_PRESETS = [
   },
   {
     name: '复古胶片',
+    detail: { sharpness: 0, noise: 0, grain: 22 },
     group: '风格',
     desc: '暖调褪色，胶片灰雾感',
     basic: {
@@ -109,6 +111,7 @@ const BUILTIN_PRESETS = [
   },
   {
     name: '富士 经典负片',
+    detail: { sharpness: 0, noise: 0, grain: 18 },
     group: '胶片模拟',
     desc: '致敬 Classic Neg：青绿影调、硬朗对比的街头纪实风',
     basic: {
@@ -150,6 +153,7 @@ const BUILTIN_PRESETS = [
   },
   {
     name: '富士 ACROS',
+    detail: { sharpness: 0, noise: 0, grain: 35 },
     group: '胶片模拟',
     desc: '致敬 ACROS：细腻中调黑白，暗部层次丰富',
     basic: { saturation: -100, clarity: 25, contrast: 10, shadows: 10, whites: 5 },

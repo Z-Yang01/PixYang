@@ -762,6 +762,20 @@ pub fn render_spec_to_file(
                         p.channels,
                     )?;
                 }
+                // 胶片颗粒（shared/grain.js 同式，段内末位）：u32 wrapping hash 逐位对拍
+                let grain = params.get("grain").and_then(|v| v.as_f64()).unwrap_or(0.0);
+                if grain > 0.0 {
+                    flush_affine(&mut pixels, &mut affine, input)?;
+                    ensure_decoded(&mut pixels, input)?;
+                    let p = pixels.as_mut().unwrap();
+                    crate::render::apply_grain_in_place(
+                        &mut p.data,
+                        p.width as usize,
+                        p.height as usize,
+                        grain,
+                        p.channels,
+                    );
+                }
             }
             "lens" => {
                 let vignette = params

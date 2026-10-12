@@ -766,15 +766,16 @@ describe('ImageViewer', () => {
     );
     expect(section).toBeTruthy();
     const inputs = section.querySelectorAll('.editor-slider-row input');
-    expect(inputs.length).toBe(2);
+    expect(inputs.length).toBe(3); // 锐化/降噪/颗粒
     expect(inputs[0].value).toBe('0');
     fireEvent.change(inputs[0], { target: { value: '55' } });
     fireEvent.change(inputs[1], { target: { value: '30' } });
+    fireEvent.change(inputs[2], { target: { value: '20' } });
     fireEvent.click(screen.getByTitle('保存编辑参数（原图不动，可随时回到当前效果）'));
     await vi.waitFor(() => {
       expect(window.pixyang.saveEdits).toHaveBeenCalledTimes(1);
       const params = window.pixyang.saveEdits.mock.calls[0][1];
-      expect(params.detail).toEqual({ sharpness: 55, noise: 30 });
+      expect(params.detail).toEqual({ sharpness: 55, noise: 30, grain: 20 });
     });
   });
 
@@ -1308,6 +1309,33 @@ describe('预设应用范围（Phase 16）', () => {
   afterEach(() => {
     cleanup();
     delete window.pixyang;
+  });
+
+  it('预设强度滑杆：应用后出现，0% 回应用前 / 150% 超量混合（basic 线性插值）', async () => {
+    render(<ImageViewer {...baseProps()} />);
+    fireEvent.click(screen.getByTitle(/编辑模式/));
+    await screen.findByText('我的风格');
+    // 应用前先把曝光手动调到 0（savedEdits 的 0.5 不进滑杆态——直接看滑杆）
+    // 点击预设（曝光 +1）→ 强度滑杆出现（默认 100%）
+    expect(screen.queryByText('强度')).toBeNull();
+    fireEvent.click(screen.getByText('我的风格'));
+    const strength = await screen.findByText('强度');
+    const sInput = strength.closest('label').querySelector('input');
+    expect(sInput.value).toBe('100');
+    // 主面板曝光滑杆（basic 区第一根）应 = 预设值 1
+    const expSlider = [...document.querySelectorAll('.editor-panel input[type="range"]')].find(
+      (i) => i.closest('.editor-slider-row')?.querySelector('span')?.textContent === '曝光'
+    );
+    expect(Number(expSlider.value)).toBe(1);
+    // 应用前 = 回读的 savedEdits exposure 0.5；混合 50% = 0.5+(1−0.5)·0.5 = 0.75
+    fireEvent.change(sInput, { target: { value: '50' } });
+    expect(Number(expSlider.value)).toBe(0.75);
+    // 150%：超量外推 0.5+(1−0.5)·1.5 = 1.25
+    fireEvent.change(sInput, { target: { value: '150' } });
+    expect(Number(expSlider.value)).toBe(1.25);
+    // 0%：回应用前 0.5
+    fireEvent.change(sInput, { target: { value: '0' } });
+    expect(Number(expSlider.value)).toBe(0.5);
   });
 
   it('点击预设名默认仅影调（几何保持当前值）；开启含几何后写入旋转/翻转', async () => {

@@ -63,6 +63,7 @@ const ColorGradingSchema = z.object({
 const DetailSchema = z.object({
   sharpness: z.number().min(0).max(100).catch(0),
   noise: z.number().min(0).max(100).catch(0),
+  grain: z.number().min(0).max(100).catch(0), // 胶片颗粒（shared/grain.js，单色 u32 hash 网格）
 });
 
 // 镜头校正：vignette -100..100（负压暗/正提亮）已实现（shared/lens.js，pre-crop 语义）；
@@ -187,7 +188,7 @@ function DEFAULT_EDITS() {
     curves: { rgb: [], r: [], g: [], b: [] },
     hsl: { hue: [], sat: [], lum: [] },
     colorGrading: { shadows: [], midtones: [], highlights: [] },
-    detail: { sharpness: 0, noise: 0 },
+    detail: { sharpness: 0, noise: 0, grain: 0 },
     lens: { profile: '', distortion: 0, vignette: 0, chromatic: 0 },
     masks: [],
     output: { format: 'jpeg', quality: 92, icc: '', resize: null },

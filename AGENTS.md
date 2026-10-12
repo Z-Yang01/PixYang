@@ -192,6 +192,11 @@ tests/            vitest（node 环境 + per-file happy-dom pragma）
   预览管线序合同：重采样位于最前（重映射 UV 采样原图 → 完整颜色链 → 出界置黑 → 暗角；蒙版/detail
   位置用重映射后源位置），与执行器 stage 序（颜色→detail→lens→vignette）同构——禁止尾部用原始
   纹理替换已处理颜色（R85 回归锁：webglPreview 源串顺序断言）。
+- **胶片颗粒 Grain + 预设强度（2026-10-12）**：detail 域第三字段 grain（0..100，shared/grain.js——
+  u32 wrapping hash 三端逐位同式：cell=max(w,h)/256 网格、单色三通道同加、满档 ±38/255；GLSL 源坐标用
+  重映射 uvG（R85 合同），JS/Rust 手算锁同表三基准点）；胶片预设消费（ACROS 35/黑白胶片 25/复古 22/经典负片 18）。
+  预设强度（0..150%）：applyPreset 记录 lastPreset 快照（before+presetOps），强度滑杆实时混合——basic 数值
+  字段与 detail 域线性插值、曲线/分级/HSL 结构域 s>0 全量 s=0 整体回应用前（tooltip 注明口径），停手入历史。
 - **编辑面板 UX（2026-10-12）**：预设区上移至面板顶（原在底部需滚 ~2.6 屏）并按 group 分组
   （胶片模拟/风格，group 字段进 builtinPresets validate）；面板顶 sticky 锚点跳转条（editor-section-nav，
   data-sec 十段一键 scrollIntoView，basic 回顶）；预设色卡 presetSwatch（basic→CSS 渐变纯装饰可视化，

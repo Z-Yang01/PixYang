@@ -168,6 +168,8 @@ export default function ImageViewer({
   dialogsOpenRef.current = !!(exitConfirm || showExportDialog || bakeConfirm || deleteConfirm);
   const [histInfo, setHistInfo] = useState({ canUndo: false, canRedo: false, index: 0, length: 0 });
   const [editEpoch, setEditEpoch] = useState(0);
+  const [presetStrength, setPresetStrength] = useState(100);
+  const lastPresetRef = useRef(null);
   const editorPanelRef = useRef(null); // 外部替换 ops（撤销/跳转/清除）时递增，中断进行中的手势
   const webglAvailable = useRef(isWebGL2Available()).current;
   const [webglFailed, setWebglFailed] = useState(false);
@@ -806,6 +808,13 @@ export default function ImageViewer({
       }
       pushHistory(next, presetParams?.name ? `预设「${presetParams.name}」` : '应用预设');
       setEditOps(next);
+      // 预设强度混合基点：应用前快照 + 预设参数（几何不参与强度——混合域为 basic 数值字段）
+      lastPresetRef.current = {
+        name: presetParams?.name || '预设',
+        before: editOpsRef.current,
+        presetOps: next,
+      };
+      setPresetStrength(100);
       const scopeLabel = scope === 'all' ? '（含几何）' : '';
       toast.success(
         presetParams?.name
@@ -815,6 +824,56 @@ export default function ImageViewer({
     },
     [pushHistory]
   );
+
+  // 预设强度（0..150%）：对 basic 数值字段线性混合 before/presetOps（曲线/分级/HSL 等结构域
+  // 不插值——s>0 维持预设值、s=0 整体回 before；滑杆 tooltip 注明口径）
+  const applyPresetStrength = useCallback((pct) => {
+    const lp = lastPresetRef.current;
+    if (!lp) return;
+    const t = Math.min(150, Math.max(0, pct)) / 100;
+    const before = lp.before;
+    const target = lp.presetOps;
+    const basicKeys = [
+      'exposure',
+      'contrast',
+      'highlights',
+      'shadows',
+      'whites',
+      'blacks',
+      'saturation',
+      'vibrance',
+      'clarity',
+      'temperature',
+      'tint',
+      'vignette',
+    ];
+    const next = { ...editOpsRef.current };
+    if (t <= 0) {
+      // 0%：整体回到应用前（含结构域）
+      Object.assign(next, before);
+    } else {
+      for (const k of basicKeys) {
+        const b = Number(before[k]) || 0;
+        const v = Number(target[k]) || 0;
+        next[k] = b + (v - b) * t;
+      }
+      // detail 域同为数值（锐化/降噪/颗粒），一并线性混合
+      const detailKeys = ['sharpness', 'noise', 'grain'];
+      const bDetail = before.detail || {};
+      const tDetail = target.detail || {};
+      next.detail = { ...tDetail };
+      for (const dk of detailKeys) {
+        const b = Number(bDetail[dk]) || 0;
+        const v = Number(tDetail[dk]) || 0;
+        next.detail[dk] = b + (v - b) * t;
+      }
+      next.curves = target.curves;
+      next.colorGrading = target.colorGrading;
+      next.hsl = target.hsl;
+    }
+    setPresetStrength(pct);
+    setEditOps(next);
+  }, []);
 
   // 自动调色（agent 建议进历史栈）：分析原图统计 → suggestGrade 出 basic 建议 →
   // 走 applyPreset 同款路径（只套影调域）。预览即时可见、可撤销，Ctrl+S 才落库——
@@ -2390,6 +2449,36 @@ export default function ImageViewer({
                 </Button>
               </div>
             </div>
+            {lastPresetRef.current && (
+              <label
+                className="editor-slider-row"
+                title="最近应用的预设强度：basic 数值字段线性混合应用前后；0% 完全回到应用前，150% 超量"
+              >
+                <span>强度</span>
+                <input
+                  type="range"
+                  min={0}
+                  max={150}
+                  step={5}
+                  value={presetStrength}
+                  onPointerDown={() => {
+                    sliderDragRef.current = 'preset.strength';
+                  }}
+                  onPointerUp={() => {
+                    if (sliderDragRef.current === 'preset.strength') {
+                      sliderDragRef.current = null;
+                      pushHistory(
+                        editOpsRef.current,
+                        `预设「${lastPresetRef.current.name}」强度 ${presetStrength}%`
+                      );
+                    }
+                  }}
+                  onBlur={settleKeyGesture}
+                  onChange={(e) => applyPresetStrength(Number(e.target.value))}
+                />
+                <em>{presetStrength}%</em>
+              </label>
+            )}
             <div className="editor-builtin-row">
               <button
                 className="editor-builtin-chip"
@@ -2425,6 +2514,7 @@ export default function ImageViewer({
                           basic: bp.basic,
                           curves: bp.curves,
                           colorGrading: bp.colorGrading,
+                          detail: bp.detail,
                           lens: bp.lens,
                         })
                       }
@@ -3074,10 +3164,50 @@ export default function ImageViewer({
               />
               <em>{editOps.detail?.noise ?? 0}</em>
             </label>
+            <label
+              className="editor-slider-row"
+              title="胶片颗粒：三端同式精确预览；双击重置"
+              onDoubleClick={() => {
+                const next = {
+                  ...editOpsRef.current,
+                  detail: { ...editOpsRef.current.detail, grain: 0 },
+                };
+                pushHistory(next, '重置颗粒');
+                setEditOps(next);
+              }}
+            >
+              <span>颗粒</span>
+              <input
+                type="range"
+                min={0}
+                max={100}
+                step={1}
+                value={editOps.detail?.grain ?? 0}
+                onPointerDown={() => {
+                  sliderDragRef.current = 'detail.grain';
+                }}
+                onPointerUp={() => {
+                  if (sliderDragRef.current === 'detail.grain') {
+                    sliderDragRef.current = null;
+                    pushHistory(editOpsRef.current, '颗粒');
+                  }
+                }}
+                onBlur={settleKeyGesture}
+                onChange={(e) => {
+                  const next = {
+                    ...editOpsRef.current,
+                    detail: { ...editOpsRef.current.detail, grain: Number(e.target.value) },
+                  };
+                  setEditOps(next);
+                  if (!sliderDragRef.current) recordKeyAdjust(next, '颗粒');
+                }}
+              />
+              <em>{editOps.detail?.grain ?? 0}</em>
+            </label>
             <p className="editor-crop-hint">
               {webglFailed
                 ? 'SVG 回退预览不渲染细节效果，导出仍生效'
-                : '锐化/降噪实时预览为画布分辨率近似，导出按原图分辨率计算'}
+                : '锐化/降噪实时预览为画布分辨率近似，导出按原图分辨率计算；颗粒为精确预览'}
             </p>
           </div>
 

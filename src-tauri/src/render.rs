@@ -114,6 +114,48 @@ pub fn apply_clarity_in_place(data: &mut [u8], clarity: f64, channels: usize) {
     }
 }
 
+// ── 胶片颗粒（shared/grain.js） ──
+// cell = max(w,h)/256 网格，u32 wrapping hash 单色抖动：h = (gx·1973 + gy·9277 + 26699)
+// → h = (h ^ h>>13) · 1274126177（全 wrapping）→ n = (h & 0xFFFF)/65535 − 0.5。
+// 与 GLSL/JS 用 u32 整数运算逐位一致（勿改浮点 hash——f64/f32 必分叉）；amount=0 恒等。
+pub fn apply_grain_in_place(
+    data: &mut [u8],
+    width: usize,
+    height: usize,
+    amount: f64,
+    channels: usize,
+) {
+    let v = amount.clamp(0.0, 100.0);
+    if v == 0.0 || width == 0 || height == 0 {
+        return;
+    }
+    let k = (v / 100.0) * 0.15 * 255.0;
+    let long = width.max(height) as f64;
+    let cell = long / 256.0;
+    let c_count = channels.min(3);
+    let hash = |gx: u32, gy: u32| -> f64 {
+        let mut h = gx
+            .wrapping_mul(1973)
+            .wrapping_add(gy.wrapping_mul(9277))
+            .wrapping_add(26699);
+        h = (h ^ (h >> 13)).wrapping_mul(1274126177);
+        (h & 0xFFFF) as f64 / 65535.0 - 0.5
+    };
+    for y in 0..height {
+        let gy = (y as f64 / cell) as u32;
+        for x in 0..width {
+            let gx = (x as f64 / cell) as u32;
+            let n = hash(gx, gy);
+            let delta = n * k;
+            let i = (y * width + x) * channels;
+            for cc in 0..c_count {
+                let out = data[i + cc] as f64 + delta;
+                data[i + cc] = out.clamp(0.0, 255.0).round() as u8;
+            }
+        }
+    }
+}
+
 // ── 暗角（shared/lens.js） ──
 
 fn vignette_falloff(d: f64) -> f64 {
@@ -1010,6 +1052,70 @@ mod tests {
         let before = v;
         apply_vibrance_in_place(&mut v[..], 0.0, 3);
         assert_eq!(v, before);
+    }
+
+    // ── 胶片颗粒手算锁（shared/grain.js 同式）──
+
+    #[test]
+    fn 颗粒_hash_与_js_逐位一致_手算三点() {
+        // 手算（u32 wrapping）：
+        // (0,0): h=26699 → h^h>>13=26699^3=26696 → ×1274126177 (wrapping) = ?
+        // 直接锁 JS 侧 grainNoiseAt 的既有输出（tests/unit/shared/grain.test.js 同表）
+        let cases: [(u32, u32, f64); 3] = [
+            (0, 0, -0.2684290837),
+            (3, 5, 0.0989166094),
+            (100, 77, 0.3395208667),
+        ];
+        for (gx, gy, expect) in cases {
+            let mut h = gx
+                .wrapping_mul(1973)
+                .wrapping_add(gy.wrapping_mul(9277))
+                .wrapping_add(26699);
+            h = (h ^ (h >> 13)).wrapping_mul(1274126177);
+            let n = (h & 0xFFFF) as f64 / 65535.0 - 0.5;
+            assert!(
+                (n - expect).abs() < 1e-9,
+                "({gx},{gy}) n={n} expect={expect}"
+            );
+        }
+    }
+
+    #[test]
+    fn 颗粒_单色同网格_零值恒等_alpha_不动() {
+        // 512×1 图（cell = 512/256 = 2）：x=0/1 同属 gx=0 网格 → 两像素同 n；
+        // x=2 起进入 gx=1 网格（值应与 gx=0 不同才证明网格生效）
+        let mut data = vec![100u8; 512 * 4];
+        let before = data.clone();
+        apply_grain_in_place(&mut data, 512, 1, 0.0, 4);
+        assert_eq!(data, before, "amount=0 恒等");
+
+        apply_grain_in_place(&mut data, 512, 1, 50.0, 4);
+        let px = |i: usize| [data[i * 4], data[i * 4 + 1], data[i * 4 + 2]];
+        let p0 = px(0);
+        assert_eq!(p0[0], p0[1], "单色：R=G");
+        assert_eq!(p0[1], p0[2], "单色：G=B");
+        assert_eq!(p0, px(1), "同网格（cell=2 内两像素同值）");
+        assert_ne!(p0, px(2), "跨网格值不同（hash 生效）");
+        assert_eq!(data[3], 100, "alpha 不动（初始 100 亦不被触碰）");
+        assert_ne!(p0[0], 100, "非零强度必有变化");
+    }
+
+    #[test]
+    fn 颗粒_量值单调_满档幅度() {
+        // 同点不同强度：|Δ| 随 amount 单调不减（n 同号）
+        let base = 128u8;
+        let mut prev_delta = 0.0f64;
+        for amount in [10.0f64, 50.0, 100.0] {
+            let mut d = [base, base, base];
+            apply_grain_in_place(&mut d[..], 1, 1, amount, 3);
+            let delta = (d[0] as f64 - base as f64).abs();
+            assert!(delta >= prev_delta, "量值单调");
+            prev_delta = delta;
+        }
+        // 满档幅度 ≤ 0.15·255 ≈ 38.25
+        let mut d = [0u8, 0, 0];
+        apply_grain_in_place(&mut d[..], 1, 1, 100.0, 3);
+        assert!(d[0] <= 39, "满档幅度上界");
     }
 
     #[test]

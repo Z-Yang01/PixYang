@@ -33,6 +33,7 @@ function presetPayload(preset) {
     basic: preset.basic,
     curves: preset.curves,
     colorGrading: preset.colorGrading,
+    detail: preset.detail,
     lens: preset.lens,
   };
 }

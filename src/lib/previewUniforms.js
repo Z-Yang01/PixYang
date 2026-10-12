@@ -13,6 +13,7 @@ import hslLib from '../../shared/hsl.js';
 import masksLib from '../../shared/masks.js';
 import saturationLib from '../../shared/saturation.js';
 import clarityLib from '../../shared/clarity.js';
+import grainLib from '../../shared/grain.js';
 
 const { buildCurveLuts } = curvesLib;
 const { buildGradeLuts } = gradingLib;
@@ -88,6 +89,8 @@ export function specToShaderUniforms(spec, imageSize = [0, 0]) {
   // detail：锐化开关 + 降噪亮度域混合系数（noise/100·0.85，与执行器 apply_noise_reduction_in_place 同式）
   const detailSharp = (by.detail?.params?.sharpness || 0) > 0 ? 1 : 0;
   const detailNoise = ((by.detail?.params?.noise || 0) / 100) * 0.85;
+  // 颗粒：传归一化强度（shader 内乘 0.15 满档）；模拟器同式
+  const detailGrain = Math.min(100, Math.max(0, Number(by.detail?.params?.grain) || 0)) / 100;
 
   // 分级：预计算 tint 偏移与标度（shader 端做真亮度权重，公式与 shared/colorGrading.js 一致）
   const gradeLuts = buildGradeLuts(by.colorGrading?.params || {});
@@ -176,6 +179,7 @@ export function specToShaderUniforms(spec, imageSize = [0, 0]) {
     hslOn,
     detailSharp,
     detailNoise,
+    detailGrain,
     hslHue: hsl.hue,
     hslSat: hsl.sat,
     hslLum: hsl.lum,
@@ -315,6 +319,14 @@ export function simulateShaderPixel(rgb255, uniforms, uv = [0.5, 0.5]) {
         w
       );
     }
+  }
+  if (uniforms.detailGrain) {
+    // 颗粒（shared/grain.js 同式）：uv → 像素 → cell 网格 → u32 hash；单色三通道同加
+    const cell = Math.max(uniforms.imageSize[0], uniforms.imageSize[1]) / 256;
+    const gx = Math.floor((uv[0] * uniforms.imageSize[0]) / cell);
+    const gy = Math.floor((uv[1] * uniforms.imageSize[1]) / cell);
+    const n = grainLib.grainNoiseAt(gx, gy);
+    c = c.map((x) => clamp(x + n * uniforms.detailGrain * 0.15, 0, 1));
   }
   if (uniforms.vignette) {
     const dx = (uv[0] - 0.5) * 2;

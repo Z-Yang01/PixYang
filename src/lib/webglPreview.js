@@ -46,6 +46,7 @@ uniform float uLensGeomOn;      // 0/1：重采样段开关
 uniform float uVignette;
 uniform float uDetailSharp;     // 0/1：锐化开关（导出端为原图分辨率 USM，预览为画布邻域近似）
 uniform float uDetailNoise;     // 0..1：降噪亮度域混合系数（noise/100·0.85，与执行器同式）
+uniform float uGrain;           // 0..1：胶片颗粒强度（grain/100；u32 hash 网格，与执行器逐位同式）
 uniform float uMaskOn;
 uniform vec2 uImageSize;        // 底图全尺寸（蒙版几何为 pre-crop 像素坐标）
 uniform float uMaskType[8];     // 0 none, 1 radial, 2 linear, 3 range（与 previewUniforms 打包一致）
@@ -297,6 +298,18 @@ void main() {
     }
     c = clamp(c, 0.0, 1.0);
   }
+  // 胶片颗粒（shared/grain.js 同式）：cell = max(w,h)/256 网格，u32 wrapping hash 单色抖动。
+  // 与邻域近似不同，本算子逐点精确——三端逐位对拍（f32 仅在最终量化处参与）
+  if (uGrain > 0.0) {
+    float cell = max(uImageSize.x, uImageSize.y) / 256.0;
+    // 源位置用重映射 uvG（R85 同合同）：执行器 grain 在 lens 之前的坐标系，畸变时颗粒跟随内容
+    vec2 px = uvG * uImageSize;
+    vec2 g = floor(px / cell);
+    uint h = uint(g.x) * 1973u + uint(g.y) * 9277u + 26699u;
+    h = (h ^ (h >> 13u)) * 1274126177u;
+    float n = float(h & 0xFFFFu) / 65535.0 - 0.5;
+    c = clamp(c + n * uGrain * 0.15, 0.0, 1.0);
+  }
   // 镜头重采样出界置黑（在暗角前，与执行器 lens 段「先填黑、vignette 随后」同序）：
   // 处理链结束后乘回入界标记，clamp 采样到的边缘色不外泄
   c *= vec3(inR, inG, inB);
@@ -416,6 +429,7 @@ function getUniformLocations(gl, program) {
     'uVignette',
     'uDetailSharp',
     'uDetailNoise',
+    'uGrain',
     'uMaskOn',
     'uImageSize',
     'uMaskType',
@@ -635,6 +649,7 @@ export async function renderWebGLPreview(canvas, image, uniforms, opts = {}) {
     gl.uniform1f(locs.uVignette, uniforms.vignette);
     gl.uniform1f(locs.uDetailSharp, uniforms.detailSharp || 0);
     gl.uniform1f(locs.uDetailNoise, uniforms.detailNoise || 0);
+    gl.uniform1f(locs.uGrain, uniforms.detailGrain ?? 0);
     gl.uniform1f(locs.uMaskOn, uniforms.maskOn || 0);
     gl.uniform2fv(locs.uImageSize, uniforms.imageSize || [0, 0]);
     gl.uniform1fv(locs.uMaskType, uniforms.maskType);
