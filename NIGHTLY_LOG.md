@@ -3201,3 +3201,17 @@ R103 宣言 → R116 六笔快包 → 本轮 R117-R119 终版快包，此后再�
     src/components/Batch/BatchBar.jsx shared/builtinPresets.js tests/unit/lib/presetApply.test.js
     tests/webgl-parity/cases-edit-audit.json NIGHTLY_LOG.md
   待人工复核：无新增（三缺陷全闭环）。
+
+- 2026-10-13 10:05 R136 夜间批终态收尾：
+  ① HSL 接线修复实机验证：经典铬 chip 应用→保存→便携库落库 hsl.sat=[0,0,0,−12,0,0,0,0]
+     （green 带 −12 ✓）+ basic.saturation=−15 ✓——R135 修复真机闭环；
+  ② 终态重打包：PixYang_1.0.0（Oct 13 03:56，4.16MB）哈希链双向命中/旧哈希 0——安装包跟
+     终态 HEAD（efe5e65）等价；
+  ③ 夜间批终账（R121-R136，16 轮 17 提交 dae90ba..efe5e65）：
+     功能 6 件——蒙版 vibrance/clarity、texture 纹理、dehaze 去朦胧（basic 12 字段全齐）、
+     三款 HSL 精调、预设分组/色卡/强度（前夜批次）、两刀结构拆分；
+     质量 7 件——新算子取证 11 例（48 例审计集全绿）、run.cjs ESM 修复、两批深审
+     （1×P0+3×P1+5×P2 全修，HSL 双断线/蒙版全链死/跨图渗漏等）、E0689 CI 当轮修复、
+     编码撕裂勘正、五算子+HSL 实机冒烟、终态打包哈希链。
+  待人工复核（累积清单，见 R131）：SliderRow 立项/强度 150% 读数口径/HSL 数值口味/
+  grain 格坐标闭合/蒙版序与全局序表述。
