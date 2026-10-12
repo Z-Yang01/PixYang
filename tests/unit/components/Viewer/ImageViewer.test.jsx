@@ -59,6 +59,13 @@ describe('ImageViewer', () => {
     delete window.__TAURI__; // 生产桥 mock（撤销测试）不得泄漏到其他用例
   });
 
+  function exposureRange() {
+    // label 定位（R139 脆弱断言改良）：全局裸 [0] 依赖滑杆排序
+    return [...document.querySelectorAll('.editor-slider-row')]
+      .find((l) => l.querySelector('span')?.textContent === '曝光')
+      ?.querySelector('input');
+  }
+
   it('image 为空时渲染 null', () => {
     const { container } = render(<ImageViewer {...baseProps({ image: null })} />);
     expect(container).toBeEmptyDOMElement();
@@ -330,7 +337,7 @@ describe('ImageViewer', () => {
     render(<ImageViewer {...baseProps()} />);
     fireEvent.click(screen.getByTitle(/编辑模式/));
     await screen.findByText('编辑');
-    fireEvent.change(document.querySelectorAll('.editor-slider-row input[type="range"]')[0], {
+    fireEvent.change(exposureRange(), {
       target: { value: '0.5' },
     });
     fireEvent.click(screen.getByText('保存参数'));
@@ -349,7 +356,7 @@ describe('ImageViewer', () => {
     render(<ImageViewer {...baseProps({ onImageUpdated })} />);
     fireEvent.click(screen.getByTitle(/编辑模式/));
     await screen.findByText('编辑');
-    fireEvent.change(document.querySelectorAll('.editor-slider-row input[type="range"]')[0], {
+    fireEvent.change(exposureRange(), {
       target: { value: '0.5' },
     });
     fireEvent.click(screen.getByText('烘焙替代…'));
@@ -369,7 +376,7 @@ describe('ImageViewer', () => {
     render(<ImageViewer {...baseProps({ onImageUpdated })} />);
     fireEvent.click(screen.getByTitle(/编辑模式/));
     await screen.findByText('编辑');
-    fireEvent.change(document.querySelectorAll('.editor-slider-row input[type="range"]')[0], {
+    fireEvent.change(exposureRange(), {
       target: { value: '0.5' },
     });
     fireEvent.click(screen.getByText('导出…'));
@@ -887,7 +894,7 @@ describe('ImageViewer', () => {
     const saveMock = window.pixyang.saveEdits;
     render(<ImageViewer {...baseProps()} />);
     await enterEdit();
-    const exposure = document.querySelector('.editor-slider-row input[type="range"]');
+    const exposure = exposureRange();
     expect(Number(exposure.value)).toBe(0);
     fireEvent.click(screen.getByTitle(/按画面直方图分析自动设置影调/));
     await vi.waitFor(() => {
@@ -927,7 +934,7 @@ describe('ImageViewer', () => {
     const saveMock = window.pixyang.saveEdits;
     render(<ImageViewer {...baseProps()} />);
     await enterEdit();
-    const exposure = document.querySelector('.editor-slider-row input[type="range"]');
+    const exposure = exposureRange();
     fireEvent.click(screen.getByTitle(/由 AI 建议影调/));
     await vi.waitFor(() => {
       // 请求面：去尾斜杠的 base + Bearer + 仅 text 部件（happy-dom 底图无 naturalWidth，纯统计请求）
@@ -1013,7 +1020,7 @@ describe('ImageViewer', () => {
     mockEditBridge();
     render(<ImageViewer {...baseProps()} />);
     await enterEdit();
-    fireEvent.change(document.querySelectorAll('.editor-slider-row input[type="range"]')[0], {
+    fireEvent.change(exposureRange(), {
       target: { value: '0.5' },
     });
     fireEvent.click(screen.getByText('导出…'));
@@ -1027,7 +1034,7 @@ describe('ImageViewer', () => {
     mockEditBridge();
     render(<ImageViewer {...baseProps({ image: { ...testImage, format: 'png' } })} />);
     await enterEdit();
-    fireEvent.change(document.querySelectorAll('.editor-slider-row input[type="range"]')[0], {
+    fireEvent.change(exposureRange(), {
       target: { value: '0.5' },
     });
     fireEvent.click(screen.getByText('导出…'));

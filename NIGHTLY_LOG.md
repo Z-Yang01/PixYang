@@ -3265,3 +3265,11 @@ R103 宣言 → R116 六笔快包 → 本轮 R117-R119 终版快包，此后再�
 
 - 2026-10-13 13:45 终态打包跟进（R140 grain 闭合入包）：PixYang_1.0.0（Oct 13 05:43）哈希链双向
   命中/旧哈希 0——安装包跟 56c0c0f。夜间批最终 HEAD 即此。
+
+- 2026-10-13 14:15 R141 脆弱断言改良余批 + 基线同步（值守轮）：
+  ① exposureRange() 辅助（label 定位）替换 7 处全局裸 [0]/querySelector 首个 range（R139 改 2 处
+     后余批）——ImageViewer 全部跨区滑杆断言现已 label 定位（区内断言有 length 锁不动）；
+  ② AGENTS：1052 例基线、s40 缺省档/R140 闭合口径。
+  - 验证：npm 78/1052；lint 0E/10W；prettier 干净。
+    提交范围：tests/unit/components/Viewer/ImageViewer.test.jsx AGENTS.md NIGHTLY_LOG.md
+  待人工复核：无新增。
