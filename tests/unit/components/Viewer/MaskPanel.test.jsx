@@ -114,11 +114,11 @@ describe('MaskPanel（蒙版面板）', () => {
     expect(onChange.mock.calls.at(-1)[0][0].invert).toBe(true);
     expect(onCommit).toHaveBeenCalledTimes(1);
     const linearPanel = setup([linear], 'm2');
-    // 线性几何 4 + 羽化 + 5 调整 = 10 个滑杆；羽化（第 5 个）对线性蒙版禁用
+    // 线性几何 4 + 羽化 + 7 调整（含鲜艳度/清晰度）= 12 个滑杆；羽化（第 5 个）对线性蒙版禁用
     const feather = linearPanel.container.querySelectorAll(
       '.editor-slider-row input[type="range"]'
     );
-    expect(feather).toHaveLength(10);
+    expect(feather).toHaveLength(12);
     expect(feather[4].disabled).toBe(true);
   });
 
@@ -192,8 +192,8 @@ describe('MaskPanel（蒙版面板）', () => {
     const chips = container.querySelectorAll('.editor-mask-list button');
     expect(chips[1].textContent).toContain('亮度');
     const sliders = [...container.querySelectorAll('.editor-slider-row input[type="range"]')];
-    // 几何 2 + 羽化 + 调整 5 = 8；羽化（第 3 个）对 range 可用
-    expect(sliders).toHaveLength(8);
+    // 几何 2 + 羽化 + 调整 7（含鲜艳度/清晰度）= 10；羽化（第 3 个）对 range 可用
+    expect(sliders).toHaveLength(10);
     expect(sliders[2].disabled).toBe(false);
     expect(sliders[2].value).toBe('0.25');
     const labels = [...container.querySelectorAll('.editor-slider-row span')].map(

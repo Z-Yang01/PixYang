@@ -655,6 +655,8 @@ pub struct MaskAdjustments {
     pub exposure: f64,
     pub contrast: f64,
     pub saturation: f64,
+    pub vibrance: f64,
+    pub clarity: f64,
     pub temperature: f64,
     pub tint: f64,
 }
@@ -710,6 +712,9 @@ pub fn normalize_masks(v: &Value) -> Vec<Mask> {
             contrast: num_or(adjustments.and_then(|a| a.get("contrast")), 0.0).clamp(-50.0, 50.0),
             saturation: num_or(adjustments.and_then(|a| a.get("saturation")), 0.0)
                 .clamp(-100.0, 100.0),
+            vibrance: num_or(adjustments.and_then(|a| a.get("vibrance")), 0.0)
+                .clamp(-100.0, 100.0),
+            clarity: num_or(adjustments.and_then(|a| a.get("clarity")), 0.0).clamp(-100.0, 100.0),
             temperature: num_or(adjustments.and_then(|a| a.get("temperature")), 0.0)
                 .clamp(-100.0, 100.0),
             tint: num_or(adjustments.and_then(|a| a.get("tint")), 0.0).clamp(-100.0, 100.0),
@@ -877,9 +882,30 @@ fn apply_masked_adjustment(
         g = (g - 0.5) * cf + 0.5;
         b = (b - 0.5) * cf + 0.5;
     }
+    // 清晰度（shared/masks.js 同式：三角窗 Rec.709，蒙版权重并入 k）
+    if adj.clarity != 0.0 {
+        let k = 1.0 + (adj.clarity / 100.0) * w;
+        let l = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+        let wt = 1.0 - (2.0 * l - 1.0).abs();
+        r += ((r - 0.5) * k + 0.5 - r) * wt;
+        g += ((g - 0.5) * k + 0.5 - g) * wt;
+        b += ((b - 0.5) * k + 0.5 - b) * wt;
+    }
     if adj.saturation != 0.0 {
         let y = HSL_LUMA[0] * r + HSL_LUMA[1] * g + HSL_LUMA[2] * b;
         let s = 1.0 + (adj.saturation / 100.0) * w;
+        r = y + (r - y) * s;
+        g = y + (g - y) * s;
+        b = y + (b - y) * s;
+    }
+    // 鲜艳度（shared/masks.js 同式：chroma 自适应增益，蒙版权重并入 amt）
+    if adj.vibrance != 0.0 {
+        let amt = (adj.vibrance / 100.0) * w;
+        let mx = r.max(g).max(b);
+        let mn = r.min(g).min(b);
+        let chroma = mx - mn;
+        let s = 1.0 + amt * if amt > 0.0 { 1.0 - chroma } else { chroma };
+        let y = HSL_LUMA[0] * r + HSL_LUMA[1] * g + HSL_LUMA[2] * b;
         r = y + (r - y) * s;
         g = y + (g - y) * s;
         b = y + (b - y) * s;

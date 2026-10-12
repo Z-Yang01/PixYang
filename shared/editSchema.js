@@ -83,6 +83,8 @@ const MaskAdjustmentsSchema = z.object({
   exposure: z.number().min(-2).max(2).catch(0),
   contrast: z.number().min(-50).max(50).catch(0),
   saturation: z.number().min(-100).max(100).catch(0),
+  vibrance: z.number().min(-100).max(100).catch(0), // 鲜艳度（智能饱和度，与全局 basic 同式带 w 权重）
+  clarity: z.number().min(-100).max(100).catch(0), // 清晰度（中间调对比，同式带 w 权重）
   temperature: z.number().min(-100).max(100).catch(0),
   tint: z.number().min(-100).max(100).catch(0),
 });

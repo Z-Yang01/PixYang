@@ -152,10 +152,32 @@ function applyMaskedAdjustment(rgb01, adjustments, w) {
     g = (g - 0.5) * cf + 0.5;
     b = (b - 0.5) * cf + 0.5;
   }
+  // 清晰度（与全局 basic.clarity 同式，蒙版权重并入力度：k = 1+(clarity/100)·w；
+  // 三角窗 w_tri = 1−|2L−1|，L = Rec.709——与 shared/clarity.js 语义唯一实现保持同系数）
+  if (adjustments.clarity) {
+    const k = 1 + (adjustments.clarity / 100) * w;
+    const L = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    const wt = 1 - Math.abs(2 * L - 1);
+    r += ((r - 0.5) * k + 0.5 - r) * wt;
+    g += ((g - 0.5) * k + 0.5 - g) * wt;
+    b += ((b - 0.5) * k + 0.5 - b) * wt;
+  }
   // 饱和度（luma mix）
   if (adjustments.saturation) {
     const y = HSL_LUMA[0] * r + HSL_LUMA[1] * g + HSL_LUMA[2] * b;
     const s = 1 + (adjustments.saturation / 100) * w;
+    r = y + (r - y) * s;
+    g = y + (g - y) * s;
+    b = y + (b - y) * s;
+  }
+  // 鲜艳度（与全局 basic.vibrance 同式，权重并入 amt：增益随 chroma 自适应、亮度保持）
+  if (adjustments.vibrance) {
+    const amt = (adjustments.vibrance / 100) * w;
+    const mx = Math.max(r, g, b);
+    const mn = Math.min(r, g, b);
+    const chroma = mx - mn;
+    const s = 1 + amt * (amt > 0 ? 1 - chroma : chroma);
+    const y = HSL_LUMA[0] * r + HSL_LUMA[1] * g + HSL_LUMA[2] * b;
     r = y + (r - y) * s;
     g = y + (g - y) * s;
     b = y + (b - y) * s;

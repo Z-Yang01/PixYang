@@ -222,3 +222,104 @@ describe('rangeWeight / range 亮度蒙版', () => {
     expect(d2[3]).toBe(204);
   });
 });
+
+describe('蒙版 adjustments 扩展：vibrance/clarity（三端同式带 w 权重）', () => {
+  const apply = (rgb, adj, w) => masks.applyMaskedAdjustment(rgb, adj, w);
+
+  it('clarity：中调对比随蒙版权重缩放，纯黑纯白不动', () => {
+    // w=1、clarity=100：k=2（与全局 clarity 同力度）；灰 (0.3,0.3,0.3) L=0.3 → wt=0.6
+    const out = apply(
+      [0.3, 0.3, 0.3],
+      {
+        exposure: 0,
+        contrast: 0,
+        saturation: 0,
+        temperature: 0,
+        tint: 0,
+        clarity: 100,
+        vibrance: 0,
+      },
+      1
+    );
+    expect(out[0]).toBeCloseTo(0.18, 9); // x+(2x−0.5−x)·0.6 = 0.3−0.2·0.6
+    // w=0.5：k=1.5 → f=(0.3−0.5)·1.5+0.5=0.2 → out=0.3+(0.2−0.3)·0.6=0.24
+    const half = apply(
+      [0.3, 0.3, 0.3],
+      {
+        exposure: 0,
+        contrast: 0,
+        saturation: 0,
+        temperature: 0,
+        tint: 0,
+        clarity: 100,
+        vibrance: 0,
+      },
+      0.5
+    );
+    expect(half[0]).toBeCloseTo(0.24, 9);
+    // 黑白端 wt=0 恒等
+    expect(
+      apply(
+        [0, 0, 0],
+        {
+          exposure: 0,
+          contrast: 0,
+          saturation: 0,
+          temperature: 0,
+          tint: 0,
+          clarity: 100,
+          vibrance: 0,
+        },
+        1
+      )
+    ).toEqual([0, 0, 0]);
+  });
+
+  it('vibrance：chroma 自适应增益（低饱和 k>高饱和 k），灰像素恒等', () => {
+    const adj = (v) => ({
+      exposure: 0,
+      contrast: 0,
+      saturation: 0,
+      temperature: 0,
+      tint: 0,
+      clarity: 0,
+      vibrance: v,
+    });
+    // 灰恒等（chroma=0 但 r=g=b）
+    expect(apply([0.5, 0.5, 0.5], adj(100), 1)).toEqual([0.5, 0.5, 0.5]);
+    // 手算 (0.6,0.5,0.4)：chroma=0.2 → k=1+1·(1−0.2)=1.8；y=.213·.6+.715·.5+.072·.4=.5141
+    const y = 0.2126 * 0.6 + 0.7152 * 0.5 + 0.0722 * 0.4; // masks.js HSL_LUMA = Rec.709
+    const out = apply([0.6, 0.5, 0.4], adj(100), 1);
+    expect(out[0]).toBeCloseTo(y + (0.6 - y) * 1.8, 9);
+    // 权重 w=0.5：amt=0.5 → k=1+0.5·0.8=1.4
+    const half = apply([0.6, 0.5, 0.4], adj(100), 0.5);
+    expect(half[0]).toBeCloseTo(y + (0.6 - y) * 1.4, 9);
+  });
+
+  it('顺序合同：clarity 在 saturation 前、vibrance 在 saturation 后（手算复合点）', () => {
+    // clarity=100 + saturation=100：先 clarity 再 saturation mix——顺序错了中点必偏
+    const adj = {
+      exposure: 0,
+      contrast: 0,
+      saturation: 100,
+      temperature: 0,
+      tint: 0,
+      clarity: 100,
+      vibrance: 0,
+    };
+    const out = apply([0.3, 0.3, 0.3], adj, 1);
+    // clarity 后 r=g=b=0.18 → saturation 对灰像素恒等（y=c）→ 仍 0.18
+    expect(out[0]).toBeCloseTo(0.18, 9);
+    // vibrance 在 saturation 后：sat 拉满后灰仍灰，vibrance 不改变
+    const adj2 = {
+      exposure: 0,
+      contrast: 0,
+      saturation: 100,
+      temperature: 0,
+      tint: 0,
+      clarity: 0,
+      vibrance: 100,
+    };
+    expect(apply([0.5, 0.5, 0.5], adj2, 1)).toEqual([0.5, 0.5, 0.5]);
+  });
+});

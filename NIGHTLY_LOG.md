@@ -3005,3 +3005,21 @@ src-tauri 零改动 → 打包时工作树净（仅 .zcodeignore 未跟踪，dis
 
 待人工复核：无新增。提交范围：NIGHTLY_LOG.md（pathspec 点名）。未 push。本轮后代码冻结：
 R103 宣言 → R116 六笔快包 → 本轮 R117-R119 终版快包，此后再无计划内改动。
+
+- 2026-10-13 01:20 R121 蒙版 adjustments 扩展 vibrance/clarity（夜间无人值守轮）：
+  ① 用户夜间授权「持续优化到早上九点」（计划已批准，push 授权随会话既有模式延续）；
+  ② 缺口：全局 basic 已有鲜艳度/清晰度，蒙版局部调整无此两算子——径向提亮+局部增艳等组合无法表达；
+  ③ 修法：MaskAdjustmentsSchema +masks.js applyMaskedAdjustment（clarity 插 contrast 后/saturation 前、
+     vibrance 插 saturation 后，与全局管线序一致；蒙版权重 w 并入力度 k/amt）三端镜像（GLSL uMaskAdjClarity/Vibrance[8]、
+     Rust MaskAdjustments+apply_masked_adjustment、模拟器走 masksLib 自动跟随）+ MaskPanel 两滑杆；
+  ④ 回归锁 +3 例（中调对比随 w 缩放/黑白端恒等、chroma 自适应增益 k 手算、顺序合同灰像素复合点）；
+     变异验证：vibrance 增益式改均匀 → 手算例红 → 复绿；golden spec 021/022 重导出（adjustments 结构 +两默认 0 字段）；
+  ⑤ 真机取证：本轮纯算子扩展，三端对拍由单测+模拟器承载（实机 CDP 见后续轮汇总）；未实测项：无；
+  ⑥ 附带发现：masks.js HSL_LUMA 为 Rec.709（0.2126 系）而非 saturation.js 的 0.213——蒙版域 luma 口径本就与
+     饱和度家族不同源，属既有设计（蒙版内饱和度也用 Rec.709），新算子跟随蒙版域口径。
+  - 验证：npm 77 文件/1044 例全绿；lint 0E/10W 基线；tsc/prettier/vite build 干净；cargo 233+golden_audit 绿。
+    提交范围：shared/editSchema.js shared/masks.js src/lib/previewUniforms.js src/lib/webglPreview.js
+    src-tauri/src/render.rs src/components/Viewer/MaskPanel.jsx tests/unit/shared/masks.test.js
+    tests/unit/components/Viewer/MaskPanel.test.jsx tests/golden/cases/021-radial-mask/spec.json
+    tests/golden/cases/022-range-mask/spec.json
+  待人工复核：无新增。

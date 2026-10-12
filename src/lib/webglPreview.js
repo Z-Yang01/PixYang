@@ -59,6 +59,8 @@ uniform float uMaskAdjContrast[8];
 uniform float uMaskAdjSat[8];
 uniform float uMaskAdjTemp[8];
 uniform float uMaskAdjTint[8];
+uniform float uMaskAdjClarity[8];
+uniform float uMaskAdjVibrance[8];
 
 float maskWeight(int i, vec2 px, vec3 c) {
   vec4 g = uMaskGeo[i];
@@ -89,9 +91,24 @@ void applyMaskedAdjust(int i, float w, inout vec3 c) {
   float gk = uMaskAdjTint[i] / 100.0 * w;
   if (tk != 0.0 || gk != 0.0) c = vec3(c.r * (1.0 + tk * 0.1), c.g * (1.0 - gk * 0.06), c.b * (1.0 - tk * 0.1));
   if (uMaskAdjContrast[i] != 0.0) c = (c - 0.5) * (1.0 + (uMaskAdjContrast[i] / 50.0) * w) + 0.5;
+  // 清晰度（shared/masks.js 同式：三角窗 Rec.709，蒙版权重并入 k）
+  if (uMaskAdjClarity[i] != 0.0) {
+    float kc = 1.0 + (uMaskAdjClarity[i] / 100.0) * w;
+    float Lc = dot(c, vec3(0.2126, 0.7152, 0.0722));
+    float wt = 1.0 - abs(2.0 * Lc - 1.0);
+    c += (((c - 0.5) * kc + 0.5) - c) * wt;
+  }
   if (uMaskAdjSat[i] != 0.0) {
     float y = dot(c, vec3(0.2126, 0.7152, 0.0722));
     c = y + (c - y) * (1.0 + (uMaskAdjSat[i] / 100.0) * w);
+  }
+  // 鲜艳度（shared/masks.js 同式：chroma 自适应增益，蒙版权重并入 amt）
+  if (uMaskAdjVibrance[i] != 0.0) {
+    float amt = (uMaskAdjVibrance[i] / 100.0) * w;
+    float chroma = max(c.r, max(c.g, c.b)) - min(c.r, min(c.g, c.b));
+    float k = 1.0 + amt * (amt > 0.0 ? 1.0 - chroma : chroma);
+    float yv = dot(c, vec3(0.2126, 0.7152, 0.0722));
+    c = yv + (c - yv) * k;
   }
   // 与 shared/masks.js applyMaskedAdjustment 一致：每个蒙版独立钳制，避免越界值串入下一蒙版
   c = clamp(c, 0.0, 1.0);
@@ -442,6 +459,8 @@ function getUniformLocations(gl, program) {
     'uMaskAdjSat',
     'uMaskAdjTemp',
     'uMaskAdjTint',
+    'uMaskAdjClarity',
+    'uMaskAdjVibrance',
   ];
   const locs = {};
   for (const n of names) locs[n] = gl.getUniformLocation(program, n);
@@ -662,6 +681,8 @@ export async function renderWebGLPreview(canvas, image, uniforms, opts = {}) {
     gl.uniform1fv(locs.uMaskAdjSat, uniforms.maskAdjSat);
     gl.uniform1fv(locs.uMaskAdjTemp, uniforms.maskAdjTemp);
     gl.uniform1fv(locs.uMaskAdjTint, uniforms.maskAdjTint);
+    gl.uniform1fv(locs.uMaskAdjClarity, uniforms.maskAdjClarity || new Float32Array(8));
+    gl.uniform1fv(locs.uMaskAdjVibrance, uniforms.maskAdjVibrance || new Float32Array(8));
 
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
     return true;

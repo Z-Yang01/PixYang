@@ -86,6 +86,8 @@
               "exposure": 0.6,
               "contrast": 0,
               "saturation": -50,
+              "vibrance": 0,
+              "clarity": 0,
               "temperature": -15,
               "tint": 0
             }
@@ -133,6 +135,6 @@
   ],
   "meta": {
     "fromEditParamsVersion": 0,
-    "generatedAt": "2026-10-12T15:37:30.173Z"
+    "generatedAt": "2026-10-12T17:01:54.456Z"
   }
 }

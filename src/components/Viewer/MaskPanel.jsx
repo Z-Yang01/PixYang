@@ -27,6 +27,22 @@ const MASK_ADJ_SLIDERS = [
     fmt: (v) => `${v > 0 ? '+' : ''}${v}`,
   },
   {
+    key: 'vibrance',
+    label: '鲜艳度',
+    min: -100,
+    max: 100,
+    step: 1,
+    fmt: (v) => `${v > 0 ? '+' : ''}${v}`,
+  },
+  {
+    key: 'clarity',
+    label: '清晰度',
+    min: -100,
+    max: 100,
+    step: 1,
+    fmt: (v) => `${v > 0 ? '+' : ''}${v}`,
+  },
+  {
     key: 'temperature',
     label: '色温',
     min: -100,

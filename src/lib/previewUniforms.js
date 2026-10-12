@@ -135,6 +135,8 @@ export function specToShaderUniforms(spec, imageSize = [0, 0]) {
   const maskAdjExposure = new Array(MASK_COUNT).fill(0);
   const maskAdjContrast = new Array(MASK_COUNT).fill(0);
   const maskAdjSat = new Array(MASK_COUNT).fill(0);
+  const maskAdjClarity = new Array(MASK_COUNT).fill(0);
+  const maskAdjVibrance = new Array(MASK_COUNT).fill(0);
   const maskAdjTemp = new Array(MASK_COUNT).fill(0);
   const maskAdjTint = new Array(MASK_COUNT).fill(0);
   maskList.forEach((m, i) => {
@@ -151,6 +153,8 @@ export function specToShaderUniforms(spec, imageSize = [0, 0]) {
     maskAdjExposure[i] = m.adjustments.exposure;
     maskAdjContrast[i] = m.adjustments.contrast;
     maskAdjSat[i] = m.adjustments.saturation;
+    maskAdjClarity[i] = m.adjustments.clarity || 0;
+    maskAdjVibrance[i] = m.adjustments.vibrance || 0;
     maskAdjTemp[i] = m.adjustments.temperature;
     maskAdjTint[i] = m.adjustments.tint;
   });
@@ -166,6 +170,8 @@ export function specToShaderUniforms(spec, imageSize = [0, 0]) {
     maskAdjExposure,
     maskAdjContrast,
     maskAdjSat,
+    maskAdjClarity,
+    maskAdjVibrance,
     maskAdjTemp,
     maskAdjTint,
     affineSlope,
@@ -313,6 +319,8 @@ export function simulateShaderPixel(rgb255, uniforms, uv = [0.5, 0.5]) {
           exposure: uniforms.maskAdjExposure[i],
           contrast: uniforms.maskAdjContrast[i],
           saturation: uniforms.maskAdjSat[i],
+          clarity: uniforms.maskAdjClarity?.[i] || 0,
+          vibrance: uniforms.maskAdjVibrance?.[i] || 0,
           temperature: uniforms.maskAdjTemp[i],
           tint: uniforms.maskAdjTint[i],
         },
