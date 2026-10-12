@@ -3250,3 +3250,15 @@ R103 宣言 → R116 六笔快包 → 本轮 R117-R119 终版快包，此后再�
   - 验证：npm 78 文件/1052 例；lint 0E/10W；prettier 干净。
     提交范围：tests/unit/components/Viewer/ImageViewer.test.jsx NIGHTLY_LOG.md
   待人工复核：无新增。
+
+- 2026-10-13 13:40 R140 grain 格坐标逐位闭合（挂账清偿，值守轮）：
+  ① R122 挂账「grain 预览/导出格坐标浮点分叉闭合」复核：属纯技术实现选择（两个等价实现取更准者），
+     不涉产品口径，可自决；
+  ② 正解是 GLSL 两级 floor（floor(floor(uvG·size)/cell)）——先取整像素索引再除 cell，与执行器/
+     JS 的整数索引语义对齐。R122 时试的 +0.5 是画蛇添足（vUv 本是像素中心，加 0.5 反偏 1px）；
+  ③ 实测：s40 从 max[16,16,16]/mean 1.17（分档 {18,2}）→ max[1,1,1]/mean 0.0031 落缺省档——
+     分档撤销，编辑审计集 48 例中 44 缺省 4 分档（全部分档均有多阶段量化依据，无「浮点换格」类）；
+  ④ 主集 31 例复跑 PASS；webglPreview 单测 34 例绿（含 R85 源串锁）。
+  - 验证：npm 78 文件/1052 例；lint 0E/10W；prettier 干净；两套对拍全绿。
+    提交范围：src/lib/webglPreview.js tests/webgl-parity/cases-edit-audit.json NIGHTLY_LOG.md
+  待人工复核：无新增（挂账 ④ 已清）。

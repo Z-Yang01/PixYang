@@ -335,8 +335,10 @@ void main() {
   // 与邻域近似不同，本算子逐点精确——三端逐位对拍（f32 仅在最终量化处参与）
   if (uGrain > 0.0) {
     float cell = max(uImageSize.x, uImageSize.y) / 256.0;
-    // 源位置用重映射 uvG（R85 同合同）：执行器 grain 在 lens 之前的坐标系，畸变时颗粒跟随内容
-    vec2 g = floor((uvG * uImageSize) / cell);
+    // 源位置用重映射 uvG（R85 同合同）：执行器 grain 在 lens 之前的坐标系，畸变时颗粒跟随内容。
+    // 两级 floor 先取整像素索引再除 cell——与执行器/JS 的整数索引语义对齐（R140：裸 uv 除 cell
+    // 在格边界的浮点舍入会换格即换 hash，s40 实测 max 16 被迫分档 {18,2}；对齐后可回缺省档）
+    vec2 g = floor(floor(uvG * uImageSize) / cell);
     uint h = uint(g.x) * 1973u + uint(g.y) * 9277u + 26699u;
     h = (h ^ (h >> 13u)) * 1274126177u;
     float n = float(h & 0xFFFFu) / 65535.0 - 0.5;
