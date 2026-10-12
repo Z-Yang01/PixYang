@@ -127,6 +127,11 @@ const BUILTIN_PRESETS = [
   },
   {
     name: '富士 经典铬',
+    hsl: {
+      hue: [0, 0, 0, 0, 0, 0, 0, 0],
+      sat: [0, 0, 0, -12, 0, 0, 0, 0],
+      lum: [0, 0, 0, 0, 0, 0, 0, 0],
+    },
     group: '胶片模拟',
     desc: '致敬 Classic Chrome：沉稳克制、微冷平面感',
     basic: {
@@ -198,6 +203,11 @@ const BUILTIN_PRESETS = [
   },
   {
     name: '柯达 波特拉400',
+    hsl: {
+      hue: [0, 0, 0, 0, 0, 0, 0, 0],
+      sat: [0, -8, 0, 0, 0, 0, 0, 0],
+      lum: [0, 8, 0, 0, 0, 0, 0, 0],
+    },
     group: '胶片模拟',
     desc: '致敬 Portra 400：暖肤低饱和人像，柔对比',
     basic: {
@@ -291,6 +301,11 @@ const BUILTIN_PRESETS = [
   },
   {
     name: '电影 800T',
+    hsl: {
+      hue: [0, 0, 0, 0, 0, 0, 0, 0],
+      sat: [0, 0, 0, 0, 18, 12, 0, 0],
+      lum: [0, 0, 0, 0, 10, 0, 0, 0],
+    },
     desc: '致敬 Cinestill 800T：钨光电影片，夜色青蓝',
     group: '胶片模拟',
     basic: {

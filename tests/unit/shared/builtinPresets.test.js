@@ -81,6 +81,21 @@ describe('内置风格预设', () => {
     expect(find('ASTIA').basic.clarity).toBeLessThan(0);
   });
 
+  it('HSL 精调批次（R127）：800T 青蓝分离/波特拉肤色橙带/经典铬干涩绿', () => {
+    const find = (frag) => BUILTIN_PRESETS.find((p) => p.name.includes(frag));
+    // 800T：aqua(4) sat+18 lum+10、blue(5) sat+12——冷色分离
+    const t = find('800T').hsl;
+    expect(t.sat[4]).toBe(18);
+    expect(t.lum[4]).toBe(10);
+    expect(t.sat[5]).toBe(12);
+    // 波特拉：orange(1) sat−8 lum+8——肤色透亮
+    const po = find('波特拉').hsl;
+    expect(po.sat[1]).toBe(-8);
+    expect(po.lum[1]).toBe(8);
+    // 经典铬：green(3) sat−12——干涩绿
+    expect(find('经典铬').hsl.sat[3]).toBe(-12);
+  });
+
   it('覆盖核心风格：黑白 / 电影 / 唯美', () => {
     const names = BUILTIN_PRESETS.map((p) => p.name);
     expect(names.some((n) => n.includes('黑白'))).toBe(true);

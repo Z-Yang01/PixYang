@@ -3110,3 +3110,14 @@ R103 宣言 → R116 六笔快包 → 本轮 R117-R119 终版快包，此后再�
     src/components/Viewer/ImageViewer.jsx NIGHTLY_LOG.md
   待人工复核：① 剩余段（细节/镜头/蒙版/裁剪/basic 滑杆区）继续拆分需先立项 SliderRow 通用滑杆组件
   （新抽象，接口由你裁决：受控 value + drag/commit/keyAdjust/reset 回调四件套打包）。
+
+- 2026-10-13 06:35 R127 预设 HSL 精调（夜间轮收尾）：
+  ① R7 计划项；三款预设加 HSL 八带精调（方向按胶片真实色彩特性）：
+     电影 800T——aqua sat+18/lum+10、blue sat+12（钨光片冷色分离）；柯达波特拉400——orange
+     sat−8/lum+8（肤色透亮不闷）；富士经典铬——green sat−12（标志性「干涩绿」）；
+  ② HSL 数组按八带序（red/orange/yellow/green/aqua/blue/purple/magenta），0=不调；
+     编辑器与批量的 presetPayload 已透传 hsl 域（R121 detail 同链路）无需改接线；
+  ③ 回归锁 +1 例（三款方向逐带断言）；validate 绿；npm 78 文件/1050 例全绿；
+  ④ 参数口味属「待人工复核」范围（胶片特性有客观判据故按判据调参，数值口味留用户裁决）。
+  - 提交范围：shared/builtinPresets.js tests/unit/shared/builtinPresets.test.js NIGHTLY_LOG.md
+  待人工复核：三款 HSL 数值口味（±20% 内微调属正常口味范围）。
