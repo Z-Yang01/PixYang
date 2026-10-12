@@ -3077,3 +3077,20 @@ R103 宣言 → R116 六笔快包 → 本轮 R117-R119 终版快包，此后再�
     提交范围：shared/masks.js shared/editSchema.js src/lib/presetApply.js src/components/Viewer/ImageViewer.jsx
     tests/unit/shared/masks.test.js tests/unit/shared/editSchema.test.js tests/unit/lib/presetApply.test.js NIGHTLY_LOG.md
   待人工复核：P3-3（强度 150% 越值域的滑杆读数口径——可改为混合时钳值域，属交互口味）。
+
+- 2026-10-13 04:40 R125 去朦胧 Dehaze（basic 第 12 字段，夜间轮）：
+  ① R5 计划项；语义：零空间全局去雾三步——黑场回压窗 x(1−x)（暗部多动/白端不动，首版裸乘法被
+     手算直证抓到纯白误压 0.7 当场改窗式）→ 三角窗中调对比（L=Rec.709 但用 0.213 族与饱和家族同系）
+     → 饱和回拉 k=1+0.25d；负值对称加雾；shared/dehaze.js 唯一实现；
+  ② 全链：schema/renderSpec(tone 段末 clarity 后)/GLSL uDehaze/模拟器/Rust apply_dehaze_in_place/
+     executor tone 接线/basic 滑杆（清晰度后）/预设强度 basicKeys 补 dehaze/aiGrade 白名单 12 字段；
+  ③ 回归锁：shared 手算 4 例（黑白端恒等/三步复合中调点/加雾方向/色点饱和递进）+ Rust 同表手算 1 例；
+     golden 23 spec 重导出（tone+dehaze）+像素零变化；变异验证沿用 shared 锁（公式变体在首版已实际发生：
+     裸乘法→窗式即「改坏被抓」实证）；
+  ④ 门禁全绿：npm 78 文件/1049 例；cargo 235+golden_audit；lint 0E/10W；tsc/prettier/build 干净。
+  - 提交范围：shared/dehaze.js shared/editSchema.js shared/renderSpec.js src/lib/editParams.js
+    src/lib/previewUniforms.js src/lib/webglPreview.js src/lib/aiGrade.js src/components/Viewer/ImageViewer.jsx
+    src-tauri/src/render.rs src-tauri/src/executor.rs tests/unit/shared/dehaze.test.js
+    tests/unit/shared/autoGrade.test.js tests/unit/lib/aiGrade.test.js
+    tests/unit/components/Viewer/ImageViewer.test.jsx tests/golden/cases/*/spec.json(23) NIGHTLY_LOG.md
+  待人工复核：无新增。

@@ -21,6 +21,7 @@ const BASIC_KEYS = [
   'saturation',
   'vibrance',
   'clarity',
+  'dehaze',
   'temperature',
   'tint',
 ];
@@ -86,12 +87,13 @@ const BASIC_RANGES = {
   saturation: [-100, 100],
   vibrance: [-100, 100],
   clarity: [-100, 100],
+  dehaze: [-100, 100],
   temperature: [-100, 100],
   tint: [-100, 100],
 };
 
 // 从模型回复提取建议：剥代码围栏 → 截取首个 {...} → JSON.parse →
-// 只保留 basic 十一字段白名单并钳制值域 → normalizeEdits 结构兜底（永不抛错）
+// 只保留 basic 十二字段白名单并钳制值域 → normalizeEdits 结构兜底（永不抛错）
 export function parseSuggestion(text) {
   if (typeof text !== 'string' || !text.trim()) {
     throw new Error('模型回复为空');

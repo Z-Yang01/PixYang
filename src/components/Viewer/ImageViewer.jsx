@@ -843,6 +843,7 @@ export default function ImageViewer({
       'saturation',
       'vibrance',
       'clarity',
+      'dehaze',
       'temperature',
       'tint',
       'vignette',
@@ -2698,6 +2699,14 @@ export default function ImageViewer({
             {
               key: 'clarity',
               label: '清晰度',
+              min: -100,
+              max: 100,
+              step: 1,
+              fmt: (v) => `${v > 0 ? '+' : ''}${v}`,
+            },
+            {
+              key: 'dehaze',
+              label: '去朦胧',
               min: -100,
               max: 100,
               step: 1,

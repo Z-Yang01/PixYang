@@ -33,6 +33,7 @@ const BasicSchema = z.object({
   saturation: z.number().min(-100).max(100).catch(0), // -100 黑白
   vibrance: z.number().min(-100).max(100).catch(0), // 鲜艳度：智能饱和度（低饱和多提/高饱和少提），亮度保持
   clarity: z.number().min(-100).max(100).catch(0), // 清晰度：中间调对比（三角亮度窗掩蔽）
+  dehaze: z.number().min(-100).max(100).catch(0), // 去朦胧：黑场回压+中调对比+饱和回拉（shared/dehaze.js）
   temperature: z.number().min(-100).max(100).catch(0), // 暖+ 冷-
   tint: z.number().min(-100).max(100).catch(0), // 绿- 品红+
 });
@@ -187,6 +188,7 @@ function DEFAULT_EDITS() {
       saturation: 0,
       vibrance: 0,
       clarity: 0,
+      dehaze: 0,
       temperature: 0,
       tint: 0,
     },

@@ -79,7 +79,7 @@ describe('suggestGrade 自动调色建议', () => {
     expect(basic.blacks).toBe(-60);
     const params = editSchema.normalizeEdits({ schemaVersion: 1, basic });
     // normalize 输出全量 basic（vibrance/clarity 默认 0 一并补齐）
-    expect(params.basic).toEqual({ ...basic, vibrance: 0, clarity: 0 });
+    expect(params.basic).toEqual({ ...basic, vibrance: 0, clarity: 0, dehaze: 0 });
   });
 
   it('微调归零：|EV·s| < 0.05 时不发曝光', () => {

@@ -622,13 +622,14 @@ pub fn render_spec_to_file(
             }
             "tone" => {
                 let g = |k: &str| params.get(k).and_then(|v| v.as_f64()).unwrap_or(0.0);
-                let (contrast, highlights, shadows, whites, blacks, clarity) = (
+                let (contrast, highlights, shadows, whites, blacks, clarity, dehaze) = (
                     g("contrast"),
                     g("highlights"),
                     g("shadows"),
                     g("whites"),
                     g("blacks"),
                     g("clarity"),
+                    g("dehaze"),
                 );
                 if contrast == 0.0
                     && highlights == 0.0
@@ -636,6 +637,7 @@ pub fn render_spec_to_file(
                     && whites == 0.0
                     && blacks == 0.0
                     && clarity == 0.0
+                    && dehaze == 0.0
                 {
                     continue;
                 }
@@ -657,7 +659,8 @@ pub fn render_spec_to_file(
                 };
                 // 清晰度在掩蔽之后施加（shared/clarity.js 管线位）：clarity 单独激活也要物化
                 let clarity_k = 1.0 + clarity / 100.0;
-                if shadow_op.is_none() && highlight_slope == 1.0 && clarity_k == 1.0 {
+                if shadow_op.is_none() && highlight_slope == 1.0 && clarity_k == 1.0 && dehaze == 0.0
+                {
                     continue;
                 }
                 // 亮度掩蔽后高光/阴影不再是可折叠的纯仿射/gamma 段（负阴影亦不走 negate
@@ -668,6 +671,9 @@ pub fn render_spec_to_file(
                 apply_tone_masked(&mut p.data, shadow_op, highlight_slope, p.channels);
                 if clarity_k != 1.0 {
                     crate::render::apply_clarity_in_place(&mut p.data, clarity, p.channels);
+                }
+                if dehaze != 0.0 {
+                    crate::render::apply_dehaze_in_place(&mut p.data, dehaze, p.channels);
                 }
             }
             "curves" => {

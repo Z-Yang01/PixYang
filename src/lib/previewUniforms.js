@@ -62,6 +62,8 @@ export function specToShaderUniforms(spec, imageSize = [0, 0]) {
   const highlightsSlope = tone.highlights !== 0 ? clamp(1 + tone.highlights / 400, 0.75, 1.15) : 1;
   // 清晰度（中间调对比）：传算好的 k（shared/clarity.js clarityK），shader 内算三角窗
   const clarityK = clarityLib.clarityK(tone.clarity || 0);
+  // 去朦胧：传原值归一（shader 内三步同式）
+  const dehaze = clamp(Number(tone.dehaze) || 0, -100, 100) / 100;
 
   // 曲线：复合 rgb+通道 → 256 级 RGBA LUT 纹理数据（A 通道占位 255）
   const luts = buildCurveLuts(by.curves?.params || {});
@@ -180,6 +182,7 @@ export function specToShaderUniforms(spec, imageSize = [0, 0]) {
     affineSlope,
     affineOffset255,
     clarity: clarityK,
+    dehaze,
     shadows,
     highlightsSlope,
     shadowBand: [0, 0.5],
@@ -243,6 +246,18 @@ export function simulateShaderPixel(rgb255, uniforms, uv = [0.5, 0.5]) {
       const f = (x - 0.5) * uniforms.clarity + 0.5;
       return clamp(x + (f - x) * w, 0, 1);
     });
+  }
+  if (uniforms.dehaze) {
+    // 去朦胧（shared/dehaze.js 同式）：黑场回压窗 x(1−x) → 三角窗中调对比 → 饱和回拉
+    const d = uniforms.dehaze;
+    const L = 0.213 * c[0] + 0.715 * c[1] + 0.072 * c[2];
+    const w = 1 - Math.abs(2 * L - 1);
+    c = c.map((x) => {
+      const x1 = x - d * 0.3 * x * (1 - x);
+      return x1 + ((x1 - 0.5) * (1 + 0.4 * d) + 0.5 - x1) * w;
+    });
+    const y = 0.213 * c[0] + 0.715 * c[1] + 0.072 * c[2];
+    c = c.map((x) => clamp(y + (x - y) * (1 + 0.25 * d), 0, 1));
   }
   if (uniforms.curveLut) {
     c = c.map((x, i) => uniforms.curveLut[Math.round(clamp(x, 0, 1) * 255) * 4 + i] / 255);

@@ -64,6 +64,7 @@ function buildStages(p) {
         whites: b.whites || 0,
         blacks: b.blacks || 0,
         clarity: b.clarity || 0,
+        dehaze: b.dehaze || 0,
       },
     },
     stageDeclared('curves', {
@@ -175,6 +176,7 @@ function specToPreviewTweaks(spec) {
     exposure: by.exposure?.params.ev || 0,
     contrast: tone.contrast || 0,
     clarity: tone.clarity || 0,
+    dehaze: tone.dehaze || 0,
     highlights: tone.highlights || 0,
     shadows: tone.shadows || 0,
     whites: tone.whites || 0,

@@ -17,6 +17,7 @@ const VALID = {
   saturation: 5,
   vibrance: 0,
   clarity: 0,
+  dehaze: 0,
   temperature: 20,
   tint: -8,
 };

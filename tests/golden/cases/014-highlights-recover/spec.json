@@ -35,7 +35,8 @@
         "shadows": 0,
         "whites": 0,
         "blacks": 0,
-        "clarity": 0
+        "clarity": 0,
+        "dehaze": 0
       }
     },
     {
@@ -118,6 +119,6 @@
   ],
   "meta": {
     "fromEditParamsVersion": 0,
-    "generatedAt": "2026-10-12T17:40:36.616Z"
+    "generatedAt": "2026-10-12T18:11:34.241Z"
   }
 }

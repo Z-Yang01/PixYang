@@ -24,6 +24,7 @@ uniform float uHighlightsSlope;
 uniform vec2 uShadowBand;       // 阴影亮度掩蔽带端点（w = 1−smoothstep(e0,e1,L)）
 uniform vec2 uHighlightBand;    // 高光亮度掩蔽带端点（w = smoothstep(e0,e1,L)）
 uniform float uClarity;         // 清晰度：中间调对比系数 k（1=off；w = 1−|2L−1| 三角窗）
+uniform float uDehaze;           // 去朦胧：-1..1（黑场回压+中调对比+饱和回拉，shared/dehaze.js 同式）
 uniform float uVibrance;        // 鲜艳度：智能饱和度原值（增益随像素 chroma 自适应）
 uniform float uHslOn;
 uniform float uHslHue[8];
@@ -234,6 +235,15 @@ void main() {
     vec3 fc = (c - 0.5) * uClarity + 0.5;
     c = clamp(mix(c, fc, wc), 0.0, 1.0);
   }
+  // 去朦胧（shared/dehaze.js 同式三步）：黑场回压窗 x(1−x)、三角窗中调对比、饱和回拉
+  if (uDehaze != 0.0) {
+    float Ld = dot(c, vec3(0.213, 0.715, 0.072));
+    float wd = 1.0 - abs(2.0 * Ld - 1.0);
+    vec3 x1 = c - uDehaze * 0.3 * c * (1.0 - c);
+    vec3 x2 = x1 + ((x1 - 0.5) * (1.0 + 0.4 * uDehaze) + 0.5 - x1) * wd;
+    float yd = dot(x2, vec3(0.213, 0.715, 0.072));
+    c = clamp(yd + (x2 - yd) * (1.0 + 0.25 * uDehaze), 0.0, 1.0);
+  }
   if (uCurveLutOn > 0.5) {
     // texelFetch 显式最近邻取整（round 语义），与执行器 applyCurveLutsInPlace 的
     // data[byte] 同式；NEAREST+floor(u*256) 在上半值区间存在差一输入档的采样分叉
@@ -442,6 +452,7 @@ function getUniformLocations(gl, program) {
     'uGradingDelta1',
     'uGradingDelta2',
     'uClarity',
+    'uDehaze',
     'uVibrance',
     'uSaturation',
     'uMono',
@@ -665,6 +676,7 @@ export async function renderWebGLPreview(canvas, image, uniforms, opts = {}) {
     gl.uniform3fv(locs.uGradingDelta1, uniforms.gradingDelta[1]);
     gl.uniform3fv(locs.uGradingDelta2, uniforms.gradingDelta[2]);
     gl.uniform1f(locs.uClarity, uniforms.clarity ?? 1);
+    gl.uniform1f(locs.uDehaze, uniforms.dehaze ?? 0);
     gl.uniform1f(locs.uVibrance, uniforms.vibrance ?? 0);
     gl.uniform1f(locs.uSaturation, uniforms.saturation);
     gl.uniform1f(locs.uMono, uniforms.mono);

@@ -23,6 +23,7 @@ export const EDIT_DEFAULTS = {
   saturation: 0, // -100..100（0 为原色，-100 黑白）
   vibrance: 0, // -100..100 鲜艳度：智能饱和度（低饱和多提/高饱和少提），亮度保持
   clarity: 0, // -100..100 清晰度：中间调对比（三角亮度窗掩蔽）
+  dehaze: 0, // -100..100 去朦胧：黑场回压+中调对比+饱和回拉
   temperature: 0, // -100..100（暖+ 冷-，预览为叠加近似）
   highlights: 0, // -100..100（亮度掩蔽域：正=提亮高光，负=压暗高光，LR 惯例）
   shadows: 0, // -100..100（正=提亮暗部，负=压暗暗部）
@@ -86,6 +87,7 @@ export function sanitizeEditOps(input = {}) {
     saturation: clamp(Number(ops.saturation) || 0, -100, 100),
     vibrance: clamp(Number(ops.vibrance) || 0, -100, 100),
     clarity: clamp(Number(ops.clarity) || 0, -100, 100),
+    dehaze: clamp(Number(ops.dehaze) || 0, -100, 100),
     temperature: clamp(Number(ops.temperature) || 0, -100, 100),
     tint: clamp(Number(ops.tint) || 0, -100, 100),
     curves: {
@@ -121,6 +123,7 @@ export function hasEdits(ops) {
     s.saturation !== 0 ||
     s.vibrance !== 0 ||
     s.clarity !== 0 ||
+    s.dehaze !== 0 ||
     s.temperature !== 0 ||
     s.highlights !== 0 ||
     s.shadows !== 0 ||
@@ -168,6 +171,7 @@ export function toEditParams(ops) {
       saturation: s.saturation,
       vibrance: s.vibrance,
       clarity: s.clarity,
+      dehaze: s.dehaze,
       temperature: s.temperature,
       tint: s.tint || 0,
     },
@@ -216,6 +220,7 @@ export function fromEditParams(params) {
     saturation: p.basic.saturation,
     vibrance: p.basic.vibrance,
     clarity: p.basic.clarity,
+    dehaze: p.basic.dehaze,
     temperature: p.basic.temperature,
     tint: p.basic.tint,
     curves: {

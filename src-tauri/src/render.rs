@@ -156,6 +156,34 @@ pub fn apply_grain_in_place(
     }
 }
 
+// ── 去朦胧（shared/dehaze.js） ──
+// 三步同式：黑场回压窗 x(1−x)（暗部多动白端不动）→ 三角窗中调对比 → 饱和回拉。
+// luma 用 0.213 族（饱和度家族系数，与 shared 实现一致——非 clarity 的 0.2126 族）；
+// 每步不预钳段末统一 clamp；d=0 恒等。
+pub fn apply_dehaze_in_place(data: &mut [u8], dehaze: f64, channels: usize) {
+    let d = dehaze.clamp(-100.0, 100.0) / 100.0;
+    if d == 0.0 || channels < 3 {
+        return;
+    }
+    let mut i = 0;
+    while i + 2 < data.len() {
+        let (r, g, b) = (data[i] as f64, data[i + 1] as f64, data[i + 2] as f64);
+        let l0 = (0.213 * r + 0.715 * g + 0.072 * b) / 255.0;
+        let w = 1.0 - (2.0 * l0 - 1.0).abs();
+        let step = |x: f64| -> f64 {
+            let x1 = x - 0.3 * d * x * (1.0 - x);
+            x1 + ((x1 - 0.5) * (1.0 + 0.4 * d) + 0.5 - x1) * w
+        };
+        let (x2r, x2g, x2b) = (step(r / 255.0), step(g / 255.0), step(b / 255.0));
+        let y = 0.213 * x2r + 0.715 * x2g + 0.072 * x2b;
+        let k = 1.0 + 0.25 * d;
+        data[i] = ((y + (x2r - y) * k).clamp(0.0, 1.0) * 255.0).round() as u8;
+        data[i + 1] = ((y + (x2g - y) * k).clamp(0.0, 1.0) * 255.0).round() as u8;
+        data[i + 2] = ((y + (x2b - y) * k).clamp(0.0, 1.0) * 255.0).round() as u8;
+        i += channels;
+    }
+}
+
 // ── 暗角（shared/lens.js） ──
 
 fn vignette_falloff(d: f64) -> f64 {
@@ -1142,6 +1170,37 @@ mod tests {
         let mut d = [0u8, 0, 0];
         apply_grain_in_place(&mut d[..], 1, 1, 100.0, 3);
         assert!(d[0] <= 39, "满档幅度上界");
+    }
+
+    #[test]
+    fn 去朦胧_三步手算_黑白端恒等_零值恒等() {
+        // 灰输入 (153,153,153)（=0.6）：L=0.6 → w=0.8；x1=0.6−0.3·0.6·0.4=0.528；
+        // x2=0.528+((0.028·1.4)+0.5−0.528)·0.8；灰输入饱和步恒等 → 输出=x2（同 shared 表）
+        let x = 0.6f64;
+        let d = 1.0f64;
+        let x1 = x - 0.3 * d * x * (1.0 - x);
+        let w = 1.0 - (2.0 * 0.6 - 1.0).abs();
+        let x2 = x1 + ((x1 - 0.5) * (1.0 + 0.4 * d) + 0.5 - x1) * w;
+        let expect = (x2 * 255.0).round() as u8;
+        let mut px = [153u8, 153, 153];
+        apply_dehaze_in_place(&mut px[..], 100.0, 3);
+        assert_eq!(px[0], expect, "中调手算");
+
+        // 纯黑纯白不动
+        let mut ends = [0u8, 255, 0, 255, 0, 255];
+        apply_dehaze_in_place(&mut ends[..], 100.0, 3);
+        assert_eq!(ends, [0, 255, 0, 255, 0, 255]);
+
+        // 零值恒等
+        let mut z = [7u8, 200, 99];
+        let before = z;
+        apply_dehaze_in_place(&mut z[..], 0.0, 3);
+        assert_eq!(z, before);
+
+        // 负向加雾：抬亮（均值）
+        let mut neg = [100u8, 100, 100];
+        apply_dehaze_in_place(&mut neg[..], -50.0, 3);
+        assert!(neg[0] > 100, "加雾应抬亮：{}", neg[0]);
     }
 
     #[test]
