@@ -76,12 +76,12 @@ PixYang 是一款基于 **Tauri 2（Rust）+ React + SQLite** 的本地桌面图
 - 编辑备注文字
 
 ### 🎨 非破坏编辑
-- 全屏查看器内编辑面板：裁剪/旋转/水平翻转、曝光对比度、高光/阴影/白色/黑色色阶、鲜艳度（智能饱和度）与清晰度（中间调对比）、色温色调、曲线、HSL 八带分色、色阶分级、暗角、蒙版（径向/线性/颜色）、细节锐化/降噪
+- 全屏查看器内编辑面板：裁剪/旋转/水平翻转、曝光对比度、高光/阴影/白色/黑色色阶、鲜艳度（智能饱和度）、清晰度（中间调对比）、去朦胧（黑场回压+中调对比+饱和回拉）、色温色调、曲线、HSL 八带分色、色阶分级、暗角、蒙版（径向/线性/颜色，局部调整含曝光/对比度/饱和/鲜艳度/清晰度/色温/色调）、细节锐化/纹理/降噪/胶片颗粒
 - 智能辅助：白平衡吸管（点中性灰自动校正色温/色调）、直方图点选黑白场、自动调色（本地算法）与 AI 调色（视觉模型）
 - 内置 28 款风格预设：含 18 款胶片模拟致敬——富士（PROVIA/ASTIA/ETERNA/经典负片/经典铬/维尔维亚/ACROS/PRO NEG Hi）、理光（正片/负片/高对比黑白/柔和黑白）、柯达（金200/EKTAR/波特拉/TRI-X）、伊尔福 HP5、电影 800T；应用后可调预设强度（0-150%），编辑器与网格批量应用同源
 - 镜头校正（畸变/色散）、裁剪拉直（±45° 自动去黑角）、细节锐化/降噪、跨会话撤销上一次编辑保存（查看器工具栏）
-- 参数以 EditParams v1 存储（`shared/editSchema.cjs` 为唯一事实源），原图不被改写，可随时还原
-- WebGL2 预览与 Rust 执行器同公式（31 例实机对拍 PASS），导出/烘焙走 Rust 渲染管线；支持烘焙进文件、单独导出、编辑历史与预设
+- 参数以 EditParams v1 存储（`shared/editSchema.js` 为唯一事实源），原图不被改写，可随时还原
+- WebGL2 预览与 Rust 执行器同公式（基线 31 例 + 编辑审计 48 例实机对拍 PASS），导出/烘焙走 Rust 渲染管线；支持烘焙进文件、单独导出、编辑历史与预设
 
 ### 🗂️ 批量操作
 - 网格多选（Ctrl+点击、框选、跨页全选）后批量收藏、加/删标签、改日期、改评分、删除
@@ -181,9 +181,8 @@ npm install
 npm run tauri:dev
 ```
 
-> ⚠️ `npm run dev` 只提供裸前端，且当前**不可用**：`shared/*.cjs` 依赖打包期的 CommonJS
-> interop 才具备 default 导出，dev server 原样伺服 `.cjs` 会让模块图报错、页面空白。
-> 前端自检请用 `npx vite build` + `npx vite preview`（详见 AGENTS.md「验证」）。
+> `npm run dev` 可用（shared/ 已全量 ESM）。注意它只提供裸前端：真实后端能力需 `npm run tauri:dev`
+> （其 dev 窗口加载磁盘 `../dist`，改前端后须先 `npx vite build` 再重载窗口）。
 
 ### 生产构建
 
@@ -247,7 +246,7 @@ cd src-tauri && cargo test   # Rust 单测 + 像素 golden 门禁
   单测通过 `window.pixyang` 注入替身。
 - 渲染内核分层：纯算法（曲线/分级/HSL/蒙版/镜头）在 `src-tauri/src/`，由 JS 对拍向量和
   像素 golden 双重锁定；tauri 命令层只做薄封装（磁盘 I/O、DTO 编排）。
-- 编辑参数 `EditParams v1` 的唯一事实源是 `shared/editSchema.cjs`，前后端同构消费。
+- 编辑参数 `EditParams v1` 的唯一事实源是 `shared/editSchema.js`，前后端同构消费。
 - 数据库列/表的变更走 Rust 侧 `ensure_business_schema` 自举 + 逐列回迁，不做手工迁移脚本。
 - 像素级改动须重跑 `cargo test --test golden_audit`（重锁基线用 `GOLDEN_RELOCK=1`）。
 
