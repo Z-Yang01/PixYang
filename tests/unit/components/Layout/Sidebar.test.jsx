@@ -30,13 +30,7 @@ function seedStore(over = {}) {
 function renderSidebar(over = {}) {
   return render(
     <MemoryRouter>
-      <Sidebar
-        collapsed={false}
-        onToggleCollapse={vi.fn()}
-        onImport={vi.fn()}
-        onShowShortcuts={vi.fn()}
-        {...over}
-      />
+      <Sidebar collapsed={false} onToggleCollapse={vi.fn()} onImport={vi.fn()} {...over} />
     </MemoryRouter>
   );
 }
@@ -70,7 +64,9 @@ describe('Sidebar', () => {
     expect(screen.queryByText('2026-01-02')).not.toBeInTheDocument();
     // 底部按钮
     expect(screen.getByText('导入图片')).toBeInTheDocument();
-    expect(screen.getByText('快捷键')).toBeInTheDocument();
+    // 界面简化：快捷键/使用说明按钮退场（? 键开唯一帮助弹窗）
+    expect(screen.queryByText('快捷键')).toBeNull();
+    expect(screen.queryByText('使用说明')).toBeNull();
   });
 
   it('日期区点击展开后显示日期条目并可再次筛选', () => {

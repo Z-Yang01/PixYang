@@ -656,7 +656,7 @@ export default function InfoPanel({ image, onClose, onImageUpdated, onCountsChan
       {deleteConfirm && (
         <ConfirmDialog
           title="删除图片"
-          message={`确定要删除「${image.filename}」吗？图片将移入回收暂存区，可在删除后的提示中撤销（6 秒内），24 小时后自动清理。`}
+          message={`将移入回收站（6 秒内可在提示中撤销，24 小时后自动清理）。`}
           confirmLabel="删除"
           danger
           onConfirm={handleDelete}

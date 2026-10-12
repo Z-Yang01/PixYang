@@ -261,7 +261,7 @@ describe('InfoPanel（补充：EXIF 全分支/标签操作/删除/评分收藏�
     renderPanel({ onClose, onImageUpdated });
     fireEvent.click(screen.getByTitle('删除图片'));
     const dialog = await deleteDialog();
-    expect(screen.getByText(/确定要删除「sunset.jpg」吗？/)).toBeInTheDocument();
+    expect(screen.getByText(/将移入回收站/)).toBeInTheDocument();
     fireEvent.click(within(dialog).getByText('取消'));
     await vi.waitFor(() => {
       expect(screen.queryByRole('alertdialog', { name: '删除图片' })).not.toBeInTheDocument();

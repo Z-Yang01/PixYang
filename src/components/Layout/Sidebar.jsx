@@ -14,19 +14,11 @@ import {
   Upload,
   ChevronDown,
   ChevronRight,
-  Keyboard,
-  BookOpen,
   Trash2,
 } from 'lucide-react';
 import useGalleryStore from '@/store/galleryStore';
 
-export default function Sidebar({
-  collapsed,
-  onToggleCollapse,
-  onImport,
-  onShowShortcuts,
-  onShowHelp,
-}) {
+export default function Sidebar({ collapsed, onToggleCollapse, onImport }) {
   const stats = useGalleryStore((s) => s.stats);
   const tags = useGalleryStore((s) => s.tags);
   const albums = useGalleryStore((s) => s.albums);
@@ -274,30 +266,6 @@ export default function Sidebar({
           <Upload />
           {!collapsed && <span>导入图片</span>}
         </Button>
-        {onShowShortcuts && (
-          <Button
-            variant="ghost"
-            size="sm"
-            className="w-full mt-1"
-            onClick={onShowShortcuts}
-            title="快捷键（?）"
-          >
-            <Keyboard />
-            {!collapsed && <span>快捷键</span>}
-          </Button>
-        )}
-        {onShowHelp && (
-          <Button
-            variant="ghost"
-            size="sm"
-            className="w-full mt-1"
-            onClick={onShowHelp}
-            title="使用说明"
-          >
-            <BookOpen />
-            {!collapsed && <span>使用说明</span>}
-          </Button>
-        )}
       </div>
     </aside>
   );

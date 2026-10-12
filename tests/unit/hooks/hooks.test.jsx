@@ -394,7 +394,8 @@ describe('useBatchActions 异步收尾守卫', () => {
     expect(useGalleryStore.getState().selectedIds.size).toBe(0);
     expect(loadImages).toHaveBeenCalled();
     expect(loadStats).toHaveBeenCalled();
-    expect(showToast).toHaveBeenCalledWith('已取消收藏（2 张）', 'success');
+    // 成功不弹 toast（界面简化）：红心即时可见，剪枝与重查已在上方断言
+    expect(showToast).not.toHaveBeenCalled();
   });
 
   it('批量删除成功数按返回行数统计：DB 只回推成功行，ghost id 计入失败（批 8 Q-02）', async () => {
@@ -518,11 +519,12 @@ describe('useBatchActions 异步收尾守卫', () => {
     expect(showToast).toHaveBeenCalledWith('批量添加标签失败：操作未成功', 'error');
 
     showToast.mockClear();
+    // 成功（含 0 计数）不弹 toast（界面简化：标签即时上卡可见），但 loadAppData 照常刷新
     window.pixyang.addTagToImages = vi.fn().mockResolvedValue(0);
     await act(async () => {
       await out.current.handleBatchTag(5);
     });
-    expect(showToast).toHaveBeenCalledWith('已为 2 张图片添加标签', 'success');
+    expect(showToast).not.toHaveBeenCalled();
     expect(loadAppData).toHaveBeenCalledTimes(1);
   });
 });

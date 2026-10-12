@@ -34,7 +34,6 @@ import BatchBar from './components/Browser/BatchBar';
 import SettingsPage from './components/Settings/SettingsPage';
 import ConfirmDialog from './components/Layout/ConfirmDialog';
 import BatchExportDialog from './components/Browser/BatchExportDialog';
-import HelpGuide from './components/Layout/HelpGuide';
 import ShortcutsHelp from './components/Layout/ShortcutsHelp';
 import { Toaster } from '@/components/ui/sonner';
 import { TooltipProvider } from '@/components/ui/tooltip';
@@ -74,7 +73,6 @@ export default function App() {
   const [importInitialFiles, setImportInitialFiles] = useState(null);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [showShortcuts, setShowShortcuts] = useState(false);
-  const [showHelp, setShowHelp] = useState(false);
   const searchInputRef = useRef(null);
 
   const location = useLocation();
@@ -97,9 +95,6 @@ export default function App() {
   useEffect(() => {
     setModal('shortcuts', !!showShortcuts);
   }, [setModal, showShortcuts]);
-  useEffect(() => {
-    setModal('help', !!showHelp);
-  }, [setModal, showHelp]);
 
   useGalleryData();
 
@@ -534,10 +529,6 @@ export default function App() {
     isInfoActive: () => !!infoImageRef.current,
     hasSelection: () => selectionSizeRef.current > 0,
     onEscape: () => {
-      if (showHelpRef.current) {
-        setShowHelp(false);
-        return true;
-      }
       if (showShortcutsRef.current) {
         setShowShortcuts(false);
         return true;
@@ -578,8 +569,6 @@ export default function App() {
   });
   const showShortcutsRef = useRef(null);
   showShortcutsRef.current = showShortcuts;
-  const showHelpRef = useRef(null);
-  showHelpRef.current = showHelp;
   const selectionSizeRef = useRef(0);
   selectionSizeRef.current = selectedIds.size;
   const handleSelectAllAllRef = useRef(null);
@@ -610,8 +599,6 @@ export default function App() {
           collapsed={sidebarCollapsed}
           onToggleCollapse={() => setSidebarCollapsed((c) => !c)}
           onImport={openImport}
-          onShowShortcuts={() => setShowShortcuts(true)}
-          onShowHelp={() => setShowHelp(true)}
         />
         <div className="main-content">
           <TopBar showFilters={isGallery} onImport={openImport} searchInputRef={searchInputRef} />
@@ -753,7 +740,7 @@ export default function App() {
         {pendingBatchAction?.type === 'delete' && (
           <ConfirmDialog
             title="批量删除图片"
-            message={`确定要删除当前筛选下的 ${selectedIds.size} 张图片吗？图片将移入回收暂存区，可在删除后的提示中撤销（6 秒内），24 小时后自动清理。`}
+            message={`将把当前筛选下的 ${selectedIds.size} 张图片移入回收站（6 秒内可在提示中撤销，24 小时后自动清理）。`}
             confirmLabel={`删除 ${selectedIds.size} 张`}
             danger
             onConfirm={executeBatchDelete}
@@ -762,7 +749,6 @@ export default function App() {
         )}
 
         <ShortcutsHelp open={showShortcuts} onClose={() => setShowShortcuts(false)} />
-        <HelpGuide open={showHelp} onClose={() => setShowHelp(false)} />
 
         <Toaster position="bottom-center" richColors />
       </div>

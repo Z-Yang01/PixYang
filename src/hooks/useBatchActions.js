@@ -74,12 +74,10 @@ export default function useBatchActions({ showToast }) {
     if (ids.every((id) => next.has(id))) {
       ids.forEach((id) => next.delete(id));
       cur.setSelectedIds(next);
-      showToast(`已取消全选 ${ids.length} 张图片`, 'info');
     } else {
       // 全量替换而非并集：勾选集必须严格等于当前筛选结果，
       // 并入陈旧 id（其他筛选/页面上的历史勾选、已删 id）会让批量删除误伤不可见图片
       cur.setSelectedIds(new Set(ids));
-      showToast(`已全选当前筛选下 ${ids.length} 张图片`, 'info');
     }
   }, [showToast]);
 
@@ -144,7 +142,7 @@ export default function useBatchActions({ showToast }) {
         return;
       }
       useGalleryStore.getState().loadAppData();
-      showToast(`已为 ${ids.length} 张图片添加标签`, 'success');
+      // 成功不弹 toast：标签即时上卡可见
     },
     [showToast]
   );
@@ -173,15 +171,7 @@ export default function useBatchActions({ showToast }) {
         );
         if ('favorite' in updates) store.loadStats();
       }
-      const desc =
-        'rating' in updates
-          ? updates.rating > 0
-            ? `已设为 ${updates.rating} 星`
-            : '已清除评分'
-          : updates.favorite
-            ? '已收藏'
-            : '已取消收藏';
-      showToast(`${desc}（${ids.length} 张）`, 'success');
+      // 成功不弹 toast：卡片星形/红心即时可见，反馈在界面本身（批量操作高频连发场景降噪）
     },
     [showToast]
   );
