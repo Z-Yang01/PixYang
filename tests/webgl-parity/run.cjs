@@ -49,7 +49,6 @@ const http = require('http');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { createRequire } = require('module');
 const { pathToFileURL } = require('url');
 
 const REPO = path.resolve(__dirname, '..', '..');
