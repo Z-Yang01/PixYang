@@ -320,8 +320,7 @@ void main() {
   if (uGrain > 0.0) {
     float cell = max(uImageSize.x, uImageSize.y) / 256.0;
     // 源位置用重映射 uvG（R85 同合同）：执行器 grain 在 lens 之前的坐标系，畸变时颗粒跟随内容
-    vec2 px = uvG * uImageSize;
-    vec2 g = floor(px / cell);
+    vec2 g = floor((uvG * uImageSize) / cell);
     uint h = uint(g.x) * 1973u + uint(g.y) * 9277u + 26699u;
     h = (h ^ (h >> 13u)) * 1274126177u;
     float n = float(h & 0xFFFFu) / 65535.0 - 0.5;

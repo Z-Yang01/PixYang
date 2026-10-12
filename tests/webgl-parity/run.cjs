@@ -269,8 +269,9 @@ function runExample(mode) {
 
 async function genSpecs(cases, editParamsMod) {
   const { fromEditParams, toEditParams, sanitizeEditOps } = editParamsMod;
-  const req = createRequire(__filename);
-  const renderSpec = req(path.join(REPO, 'shared', 'renderSpec.cjs'));
+  // shared/ 已全量 ESM（2026-10-09）：createRequire 加载 .js ESM 不可行，改动态 import
+  const renderSpec = await import(pathToFileURL(path.join(REPO, 'shared', 'renderSpec.js')).href)
+    .then((m) => m.default);
   const dir = path.join(TMP, 'specs');
   fs.mkdirSync(dir, { recursive: true });
   for (const c of cases) {

@@ -3023,3 +3023,21 @@ R103 宣言 → R116 六笔快包 → 本轮 R117-R119 终版快包，此后再�
     tests/unit/components/Viewer/MaskPanel.test.jsx tests/golden/cases/021-radial-mask/spec.json
     tests/golden/cases/022-range-mask/spec.json
   待人工复核：无新增。
+
+- 2026-10-13 02:05 R122 新算子实机对拍取证例 + run.cjs ESM 断链修复（夜间轮）：
+  ① 池子：clarity/vibrance/grain 三新算子实机取证例为零（侦察确认）；
+  ② 根因一：tests/webgl-parity/run.cjs 仍 createRequire 加载 shared/renderSpec.cjs——ESM 转换轮（ee16119 前）
+     漏改此取证工具，工具本身已断；修为动态 import（.cjs 文件 require ESM 不可行）；
+  ③ 取证例 +5：s36/s37 clarity ±（缺省档 PASS，max≤1）、s38 vibrance（缺省档）、s39 vibrance×saturation
+     顺序合同（缺省档）、s40 grain-40（分档 {18,2}）；s40 首跑 max 16 超缺省档——归因：格坐标取整路径
+     f32 插值坐标 vs f64 整数索引在 cell 边界（1000px 下 cell=3.90625）浮点舍入换格即换 hash，单格 delta
+     上界 2·k≈30.6；曾试 shader 侧 +0.5 对齐整数索引（vUv 本是像素中心，+0.5 反偏 1px，mean 1.17→1.91 更差，
+     撤回）；按 R70 分档先例入档 {18,2} 并注明归因/真缺陷哨兵口径（max 冲 30+ = hash 本身分叉）。
+     hash 本身经双端单测同表逐位锁（R121），分叉仅在格归属，视觉不可辨；
+  ④ 回归锁：两套用例全量 PASS（cases.json 28+3、cases-edit-audit 40+5——即编辑审计集从 45 例全绿；
+     webglPreview 单测 R85 源串锁等 60 例绿）；
+  ⑤ 真机取证：本工具即实机取证通道（无头 Edge + 真实 WebGL2 canvas）。
+  - 验证：npm 77 文件/1044 例；lint 0E/10W；tsc/prettier 干净；vite build ×2。
+    提交范围：tests/webgl-parity/run.cjs tests/webgl-parity/cases-edit-audit.json src/lib/webglPreview.js NIGHTLY_LOG.md
+  待人工复核：① grain 预览/导出的格坐标浮点分叉若要彻底逐位闭合，需 shader 传整数格索引或 Rust 侧
+     改用与插值同式的坐标取整（收益纯精度洁癖，代价=两端各改一处，未做）。

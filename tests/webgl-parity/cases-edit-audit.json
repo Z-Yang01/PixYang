@@ -115,7 +115,16 @@
     "name": "s15-curves-rgb-s",
     "params": {
       "curves": {
-        "rgb": [0, 0.03, 0.25, 0.18, 0.75, 0.82, 1, 0.97],
+        "rgb": [
+          0,
+          0.03,
+          0.25,
+          0.18,
+          0.75,
+          0.82,
+          1,
+          0.97
+        ],
         "r": [],
         "g": [],
         "b": []
@@ -127,9 +136,23 @@
     "params": {
       "curves": {
         "rgb": [],
-        "r": [0, 0.02, 0.5, 0.55, 1, 1],
+        "r": [
+          0,
+          0.02,
+          0.5,
+          0.55,
+          1,
+          1
+        ],
         "g": [],
-        "b": [0, 0, 0.5, 0.44, 1, 0.96]
+        "b": [
+          0,
+          0,
+          0.5,
+          0.44,
+          1,
+          0.96
+        ]
       }
     }
   },
@@ -137,9 +160,36 @@
     "name": "s17-hsl",
     "params": {
       "hsl": {
-        "hue": [0, -25, 0, 18, 6, 28, 0, -12],
-        "sat": [0, 35, 0, -25, 0, 30, 0, 15],
-        "lum": [0, 12, 0, -10, 0, 8, 0, 10]
+        "hue": [
+          0,
+          -25,
+          0,
+          18,
+          6,
+          28,
+          0,
+          -12
+        ],
+        "sat": [
+          0,
+          35,
+          0,
+          -25,
+          0,
+          30,
+          0,
+          15
+        ],
+        "lum": [
+          0,
+          12,
+          0,
+          -10,
+          0,
+          8,
+          0,
+          10
+        ]
       }
     }
   },
@@ -147,7 +197,10 @@
     "name": "s18-grading-shadows",
     "params": {
       "colorGrading": {
-        "shadows": [200, 50],
+        "shadows": [
+          200,
+          50
+        ],
         "midtones": [],
         "highlights": []
       }
@@ -158,7 +211,10 @@
     "params": {
       "colorGrading": {
         "shadows": [],
-        "midtones": [90, 40],
+        "midtones": [
+          90,
+          40
+        ],
         "highlights": []
       }
     }
@@ -169,7 +225,10 @@
       "colorGrading": {
         "shadows": [],
         "midtones": [],
-        "highlights": [40, 45]
+        "highlights": [
+          40,
+          45
+        ]
       }
     }
   },
@@ -290,14 +349,27 @@
         "blacks": -8
       },
       "curves": {
-        "rgb": [0, 0, 0.5, 0.55, 1, 1],
+        "rgb": [
+          0,
+          0,
+          0.5,
+          0.55,
+          1,
+          1
+        ],
         "r": [],
         "g": [],
         "b": []
       },
       "colorGrading": {
-        "shadows": [215, 35],
-        "midtones": [90, 25],
+        "shadows": [
+          215,
+          35
+        ],
+        "midtones": [
+          90,
+          25
+        ],
         "highlights": []
       }
     }
@@ -315,15 +387,30 @@
         "contrast": 15
       },
       "curves": {
-        "rgb": [0, 0, 0.25, 0.18, 0.75, 0.82, 1, 1],
+        "rgb": [
+          0,
+          0,
+          0.25,
+          0.18,
+          0.75,
+          0.82,
+          1,
+          1
+        ],
         "r": [],
         "g": [],
         "b": []
       },
       "colorGrading": {
-        "shadows": [215, 35],
+        "shadows": [
+          215,
+          35
+        ],
         "midtones": [],
-        "highlights": [40, 25]
+        "highlights": [
+          40,
+          25
+        ]
       },
       "lens": {
         "profile": "",
@@ -520,5 +607,96 @@
       }
     },
     "toleranceBasis": "R96 拉直反向角对拍（crop.angle=−6，fit=[95,95,710,888]，与 s34 反向构成方向锁）。判定方式同 s34。实测 max[0,0,0] / mean 0（逐位一致）。"
+  },
+  {
+    "name": "s36-clarity-plus-50",
+    "params": {
+      "basic": {
+        "exposure": 0,
+        "contrast": 0,
+        "highlights": 0,
+        "shadows": 0,
+        "whites": 0,
+        "blacks": 0,
+        "saturation": 0,
+        "vibrance": 0,
+        "clarity": 50,
+        "temperature": 0,
+        "tint": 0
+      }
+    },
+    "toleranceBasis": "R121 新算子首测：clarity 三端同式（w=1−|2L−1| 三角窗 Rec.709 + (x−0.5)k+0.5，mix 后同钳），纯逐点可精确对拍。预期落缺省档 {max 2, mean 0.6}（单阶段量化包络，参照 03-tone 掩蔽族 R72 档）；若超档先查三端 k/L 系数分叉。"
+  },
+  {
+    "name": "s37-clarity-minus-80",
+    "params": {
+      "basic": {
+        "exposure": 0,
+        "contrast": 0,
+        "highlights": 0,
+        "shadows": 0,
+        "whites": 0,
+        "blacks": 0,
+        "saturation": 0,
+        "vibrance": 0,
+        "clarity": -80,
+        "temperature": 0,
+        "tint": 0
+      }
+    },
+    "toleranceBasis": "R121 负向柔化（k=0.2）：方向锁用例，与 s36 同缺省档预期。"
+  },
+  {
+    "name": "s38-vibrance-plus-60",
+    "params": {
+      "basic": {
+        "exposure": 0,
+        "contrast": 0,
+        "highlights": 0,
+        "shadows": 0,
+        "whites": 0,
+        "blacks": 0,
+        "saturation": 0,
+        "vibrance": 60,
+        "clarity": 0,
+        "temperature": 0,
+        "tint": 0
+      }
+    },
+    "toleranceBasis": "R121 新算子首测：vibrance 三端同式（chroma 自适应增益围绕 0.213 系 luma mix），纯逐点。预期缺省档。"
+  },
+  {
+    "name": "s39-vibrance-saturation-combo",
+    "params": {
+      "basic": {
+        "exposure": 0,
+        "contrast": 0,
+        "highlights": 0,
+        "shadows": 0,
+        "whites": 0,
+        "blacks": 0,
+        "saturation": 30,
+        "vibrance": 40,
+        "clarity": 0,
+        "temperature": 0,
+        "tint": 0
+      }
+    },
+    "toleranceBasis": "R121 顺序合同：vibrance 先于均匀饱和度（executor saturation 段内定序，shader 同序）。两算子叠加仍在单 pass 量化包络内，预期缺省档。"
+  },
+  {
+    "name": "s40-grain-40",
+    "params": {
+      "detail": {
+        "sharpness": 0,
+        "noise": 0,
+        "grain": 40
+      }
+    },
+    "toleranceBasis": "R121 grain 分档：hash 三端 u32 逐位同式（单测同表锁），但格坐标取整路径不同——GLSL 为插值坐标除 cell 的 floor（f32），Rust 为整数像素索引除 cell 的 floor（f64），cell 边界（cell=max/256，1000px 下 3.90625）处浮点舍入可换格即换 hash，单格 delta 上界 2·|n1−n2|·k ≤ 2·(40/100)·0.15·255≈30.6，实测 max[16,16,16] / mean 1.17 / 1.91（两次采样）落 {18,2} 内。视觉不可辨：同格内颗粒仍完全一致，仅个别边界格归属不同。若未来 max 冲 30+ 则为 hash 本身分叉（真缺陷），本档拦不下但缺省档判红可作哨兵。",
+    "tolerance": {
+      "maxDelta": 18,
+      "meanDelta": 2.0
+    }
   }
 ]
