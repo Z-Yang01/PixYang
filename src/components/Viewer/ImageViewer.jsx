@@ -89,6 +89,8 @@ import {
 } from '@/lib/webglPreview';
 import { extractHistogram } from '@/lib/histogram';
 import HistogramView from './HistogramView';
+import EditorHistoryPanel from './EditorHistoryPanel';
+import EditorPresetSection from './EditorPresetSection';
 import { specToShaderUniforms } from '@/lib/previewUniforms';
 import CompareView from './CompareView';
 import CurveEditor from './CurveEditor';
@@ -2426,167 +2428,38 @@ export default function ImageViewer({
             ))}
           </div>
 
-          <div className="editor-crop-section" data-sec="presets">
-            <div className="editor-crop-header">
-              <span>预设</span>
-              <div style={{ display: 'flex', gap: 4 }}>
-                <Button
-                  variant="ghost"
-                  size="xs"
-                  className={applyWithGeometry ? 'is-active' : ''}
-                  onClick={() => setApplyWithGeometry((v) => !v)}
-                  title="开启后，点击预设会连旋转/翻转/裁剪一起应用（裁剪坐标基于保存时的底图尺寸）；拉直角度跨图不适配，不随预设应用，套用预设裁剪也会丢弃当前拉直角度"
-                >
-                  含几何
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="xs"
-                  onClick={copySettings}
-                  title="复制当前调整参数（影调/曲线/分级/暗角 + 几何，同步时可选择范围）"
-                >
-                  复制
-                </Button>
-                <Button variant="ghost" size="xs" onClick={pasteSettings} title="粘贴已复制的参数">
-                  粘贴
-                </Button>
-              </div>
-            </div>
-            {lastPresetRef.current && (
-              <label
-                className="editor-slider-row"
-                title="最近应用的预设强度：basic 数值字段线性混合应用前后；0% 完全回到应用前，150% 超量"
-              >
-                <span>强度</span>
-                <input
-                  type="range"
-                  min={0}
-                  max={150}
-                  step={5}
-                  value={presetStrength}
-                  onPointerDown={() => {
-                    sliderDragRef.current = 'preset.strength';
-                  }}
-                  onPointerUp={() => {
-                    if (sliderDragRef.current === 'preset.strength') {
-                      sliderDragRef.current = null;
-                      pushHistory(
-                        editOpsRef.current,
-                        `预设「${lastPresetRef.current.name}」强度 ${presetStrength}%`
-                      );
-                    }
-                  }}
-                  onBlur={settleKeyGesture}
-                  onChange={(e) => {
-                    applyPresetStrength(Number(e.target.value));
-                    if (!sliderDragRef.current)
-                      recordKeyAdjust(
-                        editOpsRef.current,
-                        `预设「${lastPresetRef.current.name}」强度 ${e.target.value}%`
-                      );
-                  }}
-                />
-                <em>{presetStrength}%</em>
-              </label>
-            )}
-            <div className="editor-builtin-row">
-              <button
-                className="editor-builtin-chip"
-                title="按画面直方图分析自动设置影调（进历史栈，可撤销，Ctrl+S 才保存）"
-                disabled={editBusy || autoGradeBusy || aiGradeBusy}
-                onClick={handleAutoGrade}
-              >
-                {autoGradeBusy ? '分析中...' : '自动调色'}
-              </button>
-              <button
-                className="editor-builtin-chip"
-                title="把压缩底图与统计摘要发给视觉模型，由 AI 建议影调（进历史栈，可撤销；需在设置中配置）"
-                disabled={editBusy || autoGradeBusy || aiGradeBusy}
-                onClick={handleAiGrade}
-              >
-                {aiGradeBusy ? 'AI 分析中...' : 'AI 调色'}
-              </button>
-            </div>
-            {['胶片模拟', '风格'].map((group) => (
-              <div key={group}>
-                <p className="editor-crop-hint" style={{ margin: '6px 0 4px' }}>
-                  {group}
-                </p>
-                <div className="editor-builtin-row">
-                  {BUILTIN_PRESETS.filter((bp) => bp.group === group).map((bp) => (
-                    <button
-                      key={bp.name}
-                      className="editor-builtin-chip"
-                      title={bp.desc}
-                      onClick={() =>
-                        applyPreset({
-                          name: bp.name,
-                          basic: bp.basic,
-                          curves: bp.curves,
-                          colorGrading: bp.colorGrading,
-                          detail: bp.detail,
-                          lens: bp.lens,
-                        })
-                      }
-                    >
-                      <span
-                        className="preset-swatch"
-                        style={{ background: presetSwatch(bp.basic) }}
-                      />
-                      {bp.name}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            ))}
-            {presets.length > 0 && (
-              <p className="editor-crop-hint" style={{ marginTop: 8 }}>
-                我的预设
-              </p>
-            )}
-            {presets.length === 0 && (
-              <p className="editor-crop-hint" style={{ marginTop: 8 }}>
-                暂无自定义预设，调整参数后可保存为预设。
-              </p>
-            )}
-            {presets.map((pr) => (
-              <div className="editor-preset-row" key={pr.id}>
-                <button
-                  className="editor-preset-name"
-                  onClick={() => applyPreset(pr.params, applyWithGeometry ? 'all' : 'basic')}
-                  title={
-                    applyWithGeometry
-                      ? '应用全部（含旋转/翻转/裁剪；拉直角度跨图不适配不随预设应用，套用预设裁剪将丢弃当前拉直角度）'
-                      : '应用预设（仅影调）'
-                  }
-                >
-                  {pr.name}
-                </button>
-                <Button
-                  variant="ghost"
-                  size="icon-xs"
-                  onClick={() => removePreset(pr.id)}
-                  title="删除预设"
-                >
-                  <X className="size-3" />
-                </Button>
-              </div>
-            ))}
-            <div className="inline-create-row">
-              <Input
-                className="h-8 text-xs"
-                value={presetName}
-                onChange={(e) => setPresetName(e.target.value)}
-                onKeyDown={(e) => {
-                  if (isEnterSubmit(e)) savePreset();
-                }}
-                placeholder="预设名称（保存当前影调）"
-              />
-              <Button size="sm" onClick={savePreset} disabled={!presetName.trim() || editBusy}>
-                保存
-              </Button>
-            </div>
-          </div>
+          <EditorPresetSection
+            applyWithGeometry={applyWithGeometry}
+            onToggleGeometry={() => setApplyWithGeometry((v) => !v)}
+            lastPresetName={lastPresetRef.current?.name}
+            presetStrength={presetStrength}
+            onStrengthChange={applyPresetStrength}
+            onStrengthDragStart={() => {
+              sliderDragRef.current = 'preset.strength';
+            }}
+            onStrengthCommit={() => {
+              if (sliderDragRef.current === 'preset.strength') {
+                sliderDragRef.current = null;
+                pushHistory(
+                  editOpsRef.current,
+                  `预设「${lastPresetRef.current.name}」强度 ${presetStrength}%`
+                );
+              }
+            }}
+            onCopy={copySettings}
+            onPaste={pasteSettings}
+            onApplyPreset={applyPreset}
+            presets={presets}
+            onRemovePreset={removePreset}
+            presetName={presetName}
+            onPresetNameChange={setPresetName}
+            onSavePreset={savePreset}
+            editBusy={editBusy}
+            autoGradeBusy={autoGradeBusy}
+            aiGradeBusy={aiGradeBusy}
+            onAutoGrade={handleAutoGrade}
+            onAiGrade={handleAiGrade}
+          />
 
           <div className="editor-panel-header">
             <SlidersHorizontal className="size-4" />
@@ -3501,24 +3374,7 @@ export default function ImageViewer({
           </div>
 
           {/* 历史记录（任务书第 12 节）：点击跳转到任意步骤 */}
-          <div className="editor-crop-section" data-sec="history">
-            <div className="editor-crop-header">
-              <span>历史</span>
-              <span className="editor-crop-hint">{histInfo.length} 步</span>
-            </div>
-            <div className="editor-history-list">
-              {(historyRef.current?.stack || []).map((entry, idx) => (
-                <button
-                  key={idx}
-                  className={`editor-history-item ${idx === histInfo.index ? 'active' : ''} ${idx > histInfo.index ? 'future' : ''}`}
-                  onClick={() => jumpToHistory(idx)}
-                >
-                  <span className="editor-history-step">#{idx}</span>
-                  <span className="editor-history-label">{entry.label}</span>
-                </button>
-              ))}
-            </div>
-          </div>
+          <EditorHistoryPanel histInfo={histInfo} historyRef={historyRef} onJump={jumpToHistory} />
 
           <div className="editor-panel-footer">
             <div className="editor-footer-row">

@@ -3094,3 +3094,19 @@ R103 宣言 → R116 六笔快包 → 本轮 R117-R119 终版快包，此后再�
     tests/unit/shared/autoGrade.test.js tests/unit/lib/aiGrade.test.js
     tests/unit/components/Viewer/ImageViewer.test.jsx tests/golden/cases/*/spec.json(23) NIGHTLY_LOG.md
   待人工复核：无新增。
+
+- 2026-10-13 05:55 R126 ImageViewer 编辑面板拆分第一/二刀（夜间轮）：
+  ① R6 计划项（巨石 3752 行，计划批准为「分步走，每步全量测试护航」）；
+  ② 第一刀：编辑历史面板拆出 EditorHistoryPanel（26 行纯展示+跳转回调，historyRef 保持父级渲染期
+     读取语义）；第二刀：预设区拆出 EditorPresetSection（181 行——内置分组 chips/色卡/强度滑杆/
+     自定义列表/保存行，18 个 props 全显式：含几何/复制/粘贴/应用/强度回调四件套/自动与 AI 调色/
+     列表 CRUD）；两刀合计 183 行出舱，ImageViewer 3752→3666；
+  ③ 过程战果：拆分被测试当场拦三次（builtinPresets 命名包装 import 错、handleAutoGrade/savePreset/
+     setApplyWithGeometry 等自由变量漏映射）——全量测试护航的价值实证；vite 单文件编译探针定位手段归档；
+  ④ 第三刀（细节区四滑杆）评估后缓行：8 自由变量 × 4 滑杆手势四件套，直接 props 化接口爆炸
+     （20+ 回调），正解是先抽 SliderRow 通用组件——属新抽象，按 UNATTENDED 裁决协议记挂账待人工复核；
+  ⑤ 门禁：npm 78 文件/1049 例全绿；lint 0E/10W 基线（新组件未引入）；tsc/prettier/build 干净。
+  - 提交范围：src/components/Viewer/EditorHistoryPanel.jsx src/components/Viewer/EditorPresetSection.jsx
+    src/components/Viewer/ImageViewer.jsx NIGHTLY_LOG.md
+  待人工复核：① 剩余段（细节/镜头/蒙版/裁剪/basic 滑杆区）继续拆分需先立项 SliderRow 通用滑杆组件
+  （新抽象，接口由你裁决：受控 value + drag/commit/keyAdjust/reset 回调四件套打包）。
