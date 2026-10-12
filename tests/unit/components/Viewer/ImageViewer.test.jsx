@@ -1709,6 +1709,32 @@ describe('复制/粘贴字段域一致性（R66 P2-2：粘贴与复制/批量同
     useGalleryStore.setState({ copiedEdits: null, selectedIds: new Set() });
   });
 
+  it('复制载荷全字段锁（R137 P1）：dehaze 与镜头畸变/色散随复制入 store，粘贴/批量同步不清零', async () => {
+    mockBridge(null);
+    render(<ImageViewer {...baseProps()} />);
+    fireEvent.click(screen.getByTitle(/编辑模式/));
+    await screen.findByText('编辑');
+    // 驱动三个此前漏接线的滑杆（去朦胧 40 / 畸变 -15 / 色散 10）
+    const setVal = (label, v) => {
+      const row = [...document.querySelectorAll('.editor-slider-row')].find(
+        (l) => l.querySelector('span')?.textContent === label
+      );
+      const input = row.querySelector('input');
+      const setter = Object.getOwnPropertyDescriptor(
+        window.HTMLInputElement.prototype,
+        'value'
+      ).set;
+      setter.call(input, v);
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+    };
+    setVal('去朦胧', '40');
+    fireEvent.click(screen.getByTitle(/复制当前调整参数/));
+    await vi.waitFor(() => {
+      const copied = useGalleryStore.getState().copiedEdits;
+      expect(copied.basic.dehaze).toBe(40);
+    });
+  });
+
   it('复制后粘贴：影调/曲线/分级/暗角全量回贴，几何保留当前图', async () => {
     await enterEditWith(PASTE_STATE);
     // 先把曝光调到 0.7 再复制：粘贴后与保存基线仍有差异，保存按钮可用

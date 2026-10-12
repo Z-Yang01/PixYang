@@ -199,6 +199,8 @@ export default function useBatchActions({ showToast }) {
           ...(copied.hsl ? { hsl: copied.hsl } : {}),
           ...(copied.detail ? { detail: copied.detail } : {}),
           ...(copied.vignette ? { vignette: copied.vignette } : {}),
+          ...(Number.isFinite(copied.distortion) ? { distortion: copied.distortion } : {}),
+          ...(Number.isFinite(copied.chromatic) ? { chromatic: copied.chromatic } : {}),
           ...(withGeometry
             ? {
                 rotation: copied.orientation?.rotate || 0,

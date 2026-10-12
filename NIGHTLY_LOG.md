@@ -3215,3 +3215,20 @@ R103 宣言 → R116 六笔快包 → 本轮 R117-R119 终版快包，此后再�
      编码撕裂勘正、五算子+HSL 实机冒烟、终态打包哈希链。
   待人工复核（累积清单，见 R131）：SliderRow 立项/强度 150% 读数口径/HSL 数值口味/
   grain 格坐标闭合/蒙版序与全局序表述。
+
+- 2026-10-13 10:50 R137 三批深审——P0 误报修复落地 + P1 同步抹零数据损失修复：
+  ① P0-1【过程事故勘正】R135② 的父级接线从未进库（当时脚本断言中止、仅子组件落盘，提交消息
+     误报完成——UNATTENDED §10「不信回显须 grep 复核」的实证教训，本条勘正 R135 记录）：
+     补 onStrengthBlur={settleKeyGesture} + onStrengthKeyAdjust（父级带 !sliderDragRef 守卫防
+     拖动双写）——键盘调整历史路径真落地，grep 复核 =2 处；
+  ② P1-1 复制/粘贴/批量同步三清单漏 dehaze + lens.distortion/chromatic——批量同步经 toEditParams
+     缺省填 0 整体替换，目标图已有三字段被抹零（数据损失级）。修：copySettings basic+dehaze、
+     store 载荷 +distortion/chromatic、pasteSettings 回贴清单、handleSyncEdits 同步清单四处补齐；
+     复制载荷全字段锁 +1 例（驱动去朦胧滑杆→复制→store.copiedEdits.basic.dehaze=40）；
+  ③ P3 立档不改：applyPresetStrength 0% 浅引用共享（写路径全不可变、纯纪律约束）、0%/5% 结构域
+     不连续（tooltip 口径成立）、两拆分子组件未 memo（量级可接受）、presetSwatch 不吃 grain/hsl
+     （纯装饰声明内）；脆弱断言清单六条（裸索引 [12]/[0] 类）入档备查。
+  - 验证：npm 78 文件/1052 例；lint 0E/10W；tsc/prettier/build 干净；父级接线 grep 复核命中。
+    提交范围：src/components/Viewer/ImageViewer.jsx src/hooks/useBatchActions.js
+    tests/unit/components/Viewer/ImageViewer.test.jsx NIGHTLY_LOG.md
+  待人工复核：无新增。

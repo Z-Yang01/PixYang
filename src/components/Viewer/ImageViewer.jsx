@@ -1084,6 +1084,7 @@ export default function ImageViewer({
         saturation: editOpsRef.current.saturation,
         vibrance: editOpsRef.current.vibrance,
         clarity: editOpsRef.current.clarity,
+        dehaze: editOpsRef.current.dehaze,
         temperature: editOpsRef.current.temperature,
         tint: editOpsRef.current.tint,
       },
@@ -1092,6 +1093,8 @@ export default function ImageViewer({
       hsl: editOpsRef.current.hsl,
       detail: editOpsRef.current.detail,
       vignette: editOpsRef.current.vignette,
+      distortion: editOpsRef.current.distortion,
+      chromatic: editOpsRef.current.chromatic,
       orientation: {
         rotate: editOpsRef.current.rotation,
         flipH: editOpsRef.current.flipH,
@@ -1120,6 +1123,7 @@ export default function ImageViewer({
       saturation: c.saturation,
       vibrance: c.vibrance,
       clarity: c.clarity,
+      dehaze: c.dehaze,
       temperature: c.temperature,
       tint: c.tint,
       ...(c.curves ? { curves: c.curves } : {}),
@@ -1127,6 +1131,8 @@ export default function ImageViewer({
       ...(c.hsl ? { hsl: c.hsl } : {}),
       ...(c.detail ? { detail: c.detail } : {}),
       ...(c.vignette ? { vignette: c.vignette } : {}),
+      ...(Number.isFinite(c.distortion) ? { distortion: c.distortion } : {}),
+      ...(Number.isFinite(c.chromatic) ? { chromatic: c.chromatic } : {}),
     };
     pushHistory(next, '粘贴参数');
     setEditOps(next);
@@ -2440,6 +2446,14 @@ export default function ImageViewer({
                   `预设「${lastPresetRef.current.name}」强度 ${presetStrength}%`
                 );
               }
+            }}
+            onStrengthBlur={settleKeyGesture}
+            onStrengthKeyAdjust={(val) => {
+              if (!sliderDragRef.current)
+                recordKeyAdjust(
+                  editOpsRef.current,
+                  `预设「${lastPresetRef.current.name}」强度 ${val}%`
+                );
             }}
             onCopy={copySettings}
             onPaste={pasteSettings}
