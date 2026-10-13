@@ -3317,3 +3317,17 @@ R103 宣言 → R116 六笔快包 → 本轮 R117-R119 终版快包，此后再�
   - 验证：npm 79 文件/1062 例；lint 0E/10W；tsc/prettier/build 干净。
     提交范围：src/components/Viewer/useCropInteraction.js src/components/Viewer/ImageViewer.jsx NIGHTLY_LOG.md
   待人工复核：无新增。
+
+- 2026-10-13 12:55 R145 P1-R2 编辑面板蒙版区出舱（四方向计划第 2 轮）：
+  ① EditorMaskSection.jsx 抽出（92 行：添加/绘制工具行 + MaskPanel 装配 + WebGL 降级提示），
+     13 props 显式化（masks/session/selectedId/maskTool/七回调/webglActive）；ImageViewer 3332→3275；
+  ② 拆分被测试拦四处（editOps/selectedMaskId/editSession/pushHistory 自由变量漏映射——每处
+     ReferenceError 定位后改 props）+ setEditOps 越界回调化（onChange prop 化后 sanitizeEditOps
+     import 随之归位子组件再清）——全量测试护航的自由变量逐个歼灭，流程与 R126 两刀同型；
+  ③ P1 结构还债累计：R144 裁剪 hook 185 行 + R145 蒙版区 92 行出舱，ImageViewer 3507→3275；
+     编辑面板剩余大块（basic/curves/grading/HSL/detail/lens 已 SliderRow 化紧凑，footer ~70 行、
+     裁剪区 JSX ~180 行）——继续出舱边际收益下降，P1 在此收线（目标 ~2200 需把 JSX 面板整体
+     一刀切，props 面 40+ 得不偿失，待后续有新 section 需求时顺势再拆）。
+  - 验证：npm 79 文件/1062 例；lint 0E/10W 基线；tsc/prettier/build 干净。
+    提交范围：src/components/Viewer/EditorMaskSection.jsx src/components/Viewer/ImageViewer.jsx NIGHTLY_LOG.md
+  待人工复核：无新增。

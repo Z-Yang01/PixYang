@@ -70,7 +70,6 @@ import {
   clampStrengthValue,
 } from '@/lib/editParams';
 import { AI_DEFAULT_BASE_URL, pickExifSummary, suggestByVision } from '@/lib/aiGrade';
-import maskGeometry from '../../../shared/maskGeometry.js';
 const { suggestGrade } = autoGradeModule;
 import curvesLib from '../../../shared/curves.js';
 const { hasCurveData } = curvesLib;
@@ -89,13 +88,13 @@ import {
 import { extractHistogram } from '@/lib/histogram';
 import HistogramView from './HistogramView';
 import EditorHistoryPanel from './EditorHistoryPanel';
+import EditorMaskSection from './EditorMaskSection';
 import EditorPresetSection from './EditorPresetSection';
 import SliderRow from './SliderRow';
 import useCropInteraction from './useCropInteraction';
 import { specToShaderUniforms } from '@/lib/previewUniforms';
 import CompareView from './CompareView';
 import CurveEditor from './CurveEditor';
-import MaskPanel from './MaskPanel';
 import MaskOverlay from './MaskOverlay';
 import ConfirmDialog from '@/components/Layout/ConfirmDialog';
 
@@ -2863,76 +2862,21 @@ export default function ImageViewer({
           </div>
 
           {/* 局部蒙版：radial/linear，渲染与 WebGL 预览同公式（shared/masks.js） */}
-          <div className="editor-crop-section" data-sec="masks">
-            <div className="editor-crop-header">
-              <span>蒙版（{(editOps.masks || []).length}/8）</span>
-              <div style={{ display: 'flex', gap: 4 }}>
-                <Button
-                  variant="ghost"
-                  size="xs"
-                  disabled={(editOps.masks || []).length >= 8}
-                  onClick={() => addMask('radial')}
-                >
-                  + 径向
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="xs"
-                  disabled={(editOps.masks || []).length >= 8}
-                  onClick={() => addMask('linear')}
-                >
-                  + 线性
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="xs"
-                  disabled={(editOps.masks || []).length >= 8}
-                  onClick={() => addMask('range')}
-                  title="按亮度范围选择区域（暗部/中间调/高光）"
-                >
-                  + 亮度
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="xs"
-                  className={maskTool === 'radial' ? 'is-active' : ''}
-                  onClick={() => startMaskTool('radial')}
-                  title="在图上拖拽绘制径向蒙版（再次点击退出）"
-                >
-                  拖拽径向
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="xs"
-                  className={maskTool === 'linear' ? 'is-active' : ''}
-                  onClick={() => startMaskTool('linear')}
-                  title="在图上拖拽绘制线性蒙版（再次点击退出）"
-                >
-                  拖拽线性
-                </Button>
-                {selectedMaskId && (
-                  <Button variant="ghost" size="xs" onClick={deleteSelectedMask}>
-                    删除
-                  </Button>
-                )}
-              </div>
-            </div>
-            <MaskPanel
-              masks={editOps.masks || []}
-              session={editSession}
-              selectedId={selectedMaskId}
-              onSelect={setSelectedMaskId}
-              onCommit={(label, next) => pushHistory(next || editOpsRef.current, label)}
-              onKeyCommit={commitMaskKeyAdjust}
-              onChange={(m) => setEditOps((o) => sanitizeEditOps({ ...o, masks: m }))}
-            />
-            {(editOps.masks || []).length > 0 && !webglActive && (
-              <p className="editor-crop-hint">
-                当前环境不支持 WebGL2，预览不显示蒙版效果（保存参数与导出/烘焙结果不受影响）
-              </p>
-            )}
-          </div>
-
+          <EditorMaskSection
+            masks={editOps.masks || []}
+            editOpsRef={editOpsRef}
+            session={editSession}
+            selectedId={selectedMaskId}
+            onSelect={setSelectedMaskId}
+            maskTool={maskTool}
+            onAddMask={addMask}
+            onStartMaskTool={startMaskTool}
+            onDeleteSelected={deleteSelectedMask}
+            onCommit={(label, next) => pushHistory(next || editOpsRef.current, label)}
+            onKeyCommit={commitMaskKeyAdjust}
+            onChange={(m) => setEditOps((o) => sanitizeEditOps({ ...o, masks: m }))}
+            webglActive={webglActive}
+          />
           <div className="editor-crop-section" data-sec="crop">
             <div className="editor-crop-header">
               <span>裁剪比例</span>
