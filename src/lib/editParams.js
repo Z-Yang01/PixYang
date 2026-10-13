@@ -368,3 +368,21 @@ export function needsMatrix(ops) {
   const s = sanitizeEditOps(ops);
   return !!(s.exposure || s.contrast || s.whites || s.blacks || s.temperature || s.tint);
 }
+
+// 预设强度混合钳（用户裁决 2026-10-13「读数=生效值」）：外推（如 150%）越过 schema 值域时
+// 就地钳回——内存态/历史/撤销链不再出现幽灵值（显示层 sanitize 本就钳，差异在中间层）。
+// 值域表与 shared/editSchema.js BasicSchema/DetailSchema 对齐；detail 域键用 'detail.xxx' 或裸
+// 'texture' 形态。未知键按 ±100。
+export const STRENGTH_RANGES = {
+  exposure: [-2, 2],
+  contrast: [-50, 50],
+  'detail.sharpness': [0, 100],
+  'detail.noise': [0, 100],
+  'detail.grain': [0, 100],
+  'detail.texture': [-100, 100],
+};
+
+export function clampStrengthValue(key, v) {
+  const [lo, hi] = STRENGTH_RANGES[key] || [-100, 100];
+  return Math.min(hi, Math.max(lo, v));
+}

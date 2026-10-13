@@ -8,6 +8,7 @@ import {
   fromEditParams,
   whiteBalanceFromSample,
   straightenGeometry,
+  clampStrengthValue,
 } from '@/lib/editParams';
 
 describe('sanitizeEditOps', () => {
@@ -346,5 +347,23 @@ describe('masks（平铺模型）', () => {
     const params = toEditParams(ops);
     expect(params.masks[0].adjustments.exposure).toBe(-0.5);
     expect(fromEditParams(params).masks[0].invert).toBe(true);
+  });
+});
+
+describe('clampStrengthValue 预设强度混合钳（用户裁决 2026-10-13）', () => {
+  it('各域值域：exposure ±2 / contrast ±50 / basic 其余 ±100 / detail 三键 0..100 / texture ±100', () => {
+    expect(clampStrengthValue('exposure', 3)).toBe(2);
+    expect(clampStrengthValue('exposure', -2.5)).toBe(-2);
+    expect(clampStrengthValue('contrast', 52.5)).toBe(50);
+    expect(clampStrengthValue('contrast', -60)).toBe(-50);
+    expect(clampStrengthValue('saturation', 150)).toBe(100);
+    expect(clampStrengthValue('detail.sharpness', 120)).toBe(100);
+    expect(clampStrengthValue('detail.grain', -5)).toBe(0);
+    expect(clampStrengthValue('detail.texture', -150)).toBe(-100);
+    expect(clampStrengthValue('vignette', 35)).toBe(35); // 值域内原样
+  });
+
+  it('顶格预设 150% 场景（理光高对比黑白 contrast 35×1.5=52.5 → 50，读数=生效值=内存值）', () => {
+    expect(clampStrengthValue('contrast', 0 + 35 * 1.5)).toBe(50);
   });
 });

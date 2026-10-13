@@ -1342,12 +1342,42 @@ describe('预设应用范围（Phase 16）', () => {
     // 应用前 = 回读的 savedEdits exposure 0.5；混合 50% = 0.5+(1−0.5)·0.5 = 0.75
     fireEvent.change(sInput, { target: { value: '50' } });
     expect(Number(expSlider.value)).toBe(0.75);
-    // 150%：超量外推 0.5+(1−0.5)·1.5 = 1.25
+    // 150%：超量外推 0.5+(1−0.5)·1.5 = 1.25（exposure 值域 ±2 内不触发钳）
     fireEvent.change(sInput, { target: { value: '150' } });
     expect(Number(expSlider.value)).toBe(1.25);
     // 0%：回应用前 0.5
     fireEvent.change(sInput, { target: { value: '0' } });
     expect(Number(expSlider.value)).toBe(0.5);
+  });
+
+  it('预设强度 150% 越值域钳（用户裁决 2026-10-13）：顶格 contrast 外推就地钳 50，读数=生效值', async () => {
+    render(<ImageViewer {...baseProps()} />);
+    fireEvent.click(screen.getByTitle(/编辑模式/));
+    await screen.findByText('我的风格');
+    // 手动把对比度拉到 35（before），再套一个 contrast 35 的预设？——直接用「我的风格」
+    // (exposure 1) 不可控 contrast。改用驱动主滑杆把 before.contrast 设 35，再套预设（contrast 未含
+    // 则 target.contrast=before.contrast，混合恒等）——需要预设显式含 contrast：
+    // 退而验证 RANGE 表本身 + exposure 未钳已锁，顶格路径用理光高对比黑白（contrast 35）在内置 chips。
+    const chip = await screen.findByText('理光 高对比黑白');
+    fireEvent.click(chip);
+    await vi.waitFor(() => {
+      const row = [...document.querySelectorAll('.editor-slider-row')].find(
+        (l) => l.querySelector('span')?.textContent === '强度'
+      );
+      expect(row).toBeTruthy();
+    });
+    // 拉到 150%：contrast 35×1.5=52.5 → 钳 50
+    const sRow = [...document.querySelectorAll('.editor-slider-row')].find(
+      (l) => l.querySelector('span')?.textContent === '强度'
+    );
+    const sInput = sRow.querySelector('input');
+    fireEvent.change(sInput, { target: { value: '150' } });
+    await vi.waitFor(() => {
+      const cRow = [...document.querySelectorAll('.editor-slider-row')].find(
+        (l) => l.querySelector('span')?.textContent === '对比度'
+      );
+      expect(Number(cRow.querySelector('input').value)).toBe(50);
+    });
   });
 
   it('点击预设名默认仅影调（几何保持当前值）；开启含几何后写入旋转/翻转', async () => {

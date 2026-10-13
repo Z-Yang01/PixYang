@@ -3273,3 +3273,21 @@ R103 宣言 → R116 六笔快包 → 本轮 R117-R119 终版快包，此后再�
   - 验证：npm 78/1052；lint 0E/10W；prettier 干净。
     提交范围：tests/unit/components/Viewer/ImageViewer.test.jsx AGENTS.md NIGHTLY_LOG.md
   待人工复核：无新增。
+
+- 2026-10-13 10:40 R142 用户裁决落地①②：预设强度混合钳 + SliderRow 立项拆分（B/A0-A2）：
+  ① 裁决来源：用户上午批复（立项拆分/混合时钳/HSL 保持现值）；
+  ② B 强度混合钳：变异验证暴露旧锁锁在显示层（sanitize 本就钳 DOM 恒 50，真差异在内存/历史层
+     幽灵值 52.5）——锁下沉函数层：clampStrengthValue/STRENGTH_RANGES 抽到 editParams.js 导出
+     （值域表与 schema 对齐），ImageViewer 混合消费；函数锁 2 例（各域值域+顶格 150% 场景）+
+     变异红绿（去钳→2 红→复绿）+ UI 层顶格锁 1 例（理光 HC 35×1.5 钳 50）；
+  ③ A0 SliderRow 组件（手势五件套：dragStart/commit/keyAdjust/reset/onBlur + R92 键盘导航
+     并入组件——Shift 粗调/Ctrl+Del 回默认走 matchSliderNavKey 唯一实现；onReset 可选参安全），
+     组件单测 7 例（含双击不误传事件对象为 defaultValue 的坑位锁）；
+  ④ A1 basic 13 根/A2 detail 4 根+lens 2 根接入（map 体替换，onChange/onKeyAdjust 职责拆分：
+     前者纯受控更新、后者更新+收敛）；ImageViewer 3666→3542 行；82 例全绿。
+  - 验证：npm 79 文件/1062 例；lint 0E/10W；tsc/prettier/build 干净。
+    提交范围：src/lib/editParams.js src/components/Viewer/SliderRow.jsx
+    src/components/Viewer/ImageViewer.jsx tests/unit/lib/editParams.test.js
+    tests/unit/components/Viewer/SliderRow.test.jsx tests/unit/components/Viewer/ImageViewer.test.jsx
+    NIGHTLY_LOG.md
+  待人工复核：无新增。

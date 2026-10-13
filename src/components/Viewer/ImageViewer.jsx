@@ -63,7 +63,12 @@ import useSlideshowTimer, {
   nextSlideshowInterval,
 } from '@/hooks/useSlideshowTimer';
 import autoGradeModule from '../../../shared/autoGrade.js';
-import { HSL_BAND_LABELS, whiteBalanceFromSample, straightenGeometry } from '@/lib/editParams';
+import {
+  HSL_BAND_LABELS,
+  whiteBalanceFromSample,
+  straightenGeometry,
+  clampStrengthValue,
+} from '@/lib/editParams';
 import { AI_DEFAULT_BASE_URL, pickExifSummary, suggestByVision } from '@/lib/aiGrade';
 import maskGeometry from '../../../shared/maskGeometry.js';
 const { displayToImage } = maskGeometry;
@@ -86,6 +91,7 @@ import { extractHistogram } from '@/lib/histogram';
 import HistogramView from './HistogramView';
 import EditorHistoryPanel from './EditorHistoryPanel';
 import EditorPresetSection from './EditorPresetSection';
+import SliderRow from './SliderRow';
 import { specToShaderUniforms } from '@/lib/previewUniforms';
 import CompareView from './CompareView';
 import CurveEditor from './CurveEditor';
@@ -855,17 +861,20 @@ export default function ImageViewer({
       for (const k of basicKeys) {
         const b = Number(before[k]) || 0;
         const v = Number(target[k]) || 0;
-        next[k] = b + (v - b) * t;
+        next[k] = clampStrengthValue(k, b + (v - b) * t);
       }
-      // detail 域同为数值（锐化/降噪/颗粒），一并线性混合
-      const detailKeys = ['sharpness', 'texture', 'noise', 'grain'];
+      // detail 域同为数值，一并线性混合（sharpness/noise/grain 0..100，texture ±100）
+      const detailKeys = ['sharpness', 'noise', 'grain', 'texture'];
       const bDetail = before.detail || {};
       const tDetail = target.detail || {};
       next.detail = { ...tDetail };
       for (const dk of detailKeys) {
         const b = Number(bDetail[dk]) || 0;
         const v = Number(tDetail[dk]) || 0;
-        next.detail[dk] = b + (v - b) * t;
+        next.detail[dk] = clampStrengthValue(
+          dk === 'texture' ? dk : `detail.${dk}`,
+          b + (v - b) * t
+        );
       }
       next.curves = target.curves;
       next.colorGrading = target.colorGrading;
@@ -2643,63 +2652,39 @@ export default function ImageViewer({
               fmt: (v) => `${v > 0 ? '+' : ''}${v}`,
             },
           ].map(({ key, label, min, max, step, fmt }) => (
-            <label
-              className="editor-slider-row"
+            <SliderRow
               key={key}
-              title="双击重置该项；Shift+←/→ 粗调；Ctrl+Del 回默认"
-              onDoubleClick={() => {
+              label={label}
+              min={min}
+              max={max}
+              step={step}
+              fmt={fmt}
+              value={editOps[key]}
+              defaultValue={EDIT_DEFAULTS[key]}
+              onDragStart={() => {
+                sliderDragRef.current = key;
+              }}
+              onCommit={() => {
+                if (sliderDragRef.current === key) {
+                  sliderDragRef.current = null;
+                  pushHistory(editOpsRef.current, label);
+                }
+              }}
+              onBlur={settleKeyGesture}
+              onChange={(v) => {
+                setEditOps({ ...editOpsRef.current, [key]: v });
+              }}
+              onKeyAdjust={(v) => {
+                const next = { ...editOpsRef.current, [key]: v };
+                setEditOps(next);
+                if (!sliderDragRef.current) recordKeyAdjust(next, label);
+              }}
+              onReset={() => {
                 const next = { ...editOpsRef.current, [key]: EDIT_DEFAULTS[key] };
                 pushHistory(next, `重置${label}`);
                 setEditOps(next);
               }}
-            >
-              <span>{label}</span>
-              <input
-                type="range"
-                min={min}
-                max={max}
-                step={step}
-                value={editOps[key]}
-                onPointerDown={() => {
-                  sliderDragRef.current = key;
-                }}
-                onPointerUp={() => {
-                  if (sliderDragRef.current === key) {
-                    sliderDragRef.current = null;
-                    pushHistory(editOpsRef.current, label);
-                  }
-                }}
-                onBlur={settleKeyGesture}
-                onChange={(e) => {
-                  const next = { ...editOpsRef.current, [key]: Number(e.target.value) };
-                  setEditOps(next);
-                  // 键盘调整（无指针拖动）进入手势收敛窗：连续按键只结算一条历史
-                  if (!sliderDragRef.current) recordKeyAdjust(next, label);
-                }}
-                onKeyDown={(e) => {
-                  // Shift+←/→：粗调（10 步）；Ctrl+Home/Del/Backspace：直接回默认值（键盘版双击重置）。
-                  // 判定与蒙版/HSL/分级/拉直共用 matchSliderNavKey 唯一实现（R92）
-                  const hit = matchSliderNavKey(e, {
-                    value: Number(editOps[key]),
-                    min,
-                    max,
-                    step,
-                  });
-                  if (!hit) return;
-                  e.preventDefault();
-                  if (hit.type === 'coarse') {
-                    const next = { ...editOpsRef.current, [key]: hit.value };
-                    setEditOps(next);
-                    if (!sliderDragRef.current) recordKeyAdjust(next, label);
-                    return;
-                  }
-                  const next = { ...editOpsRef.current, [key]: EDIT_DEFAULTS[key] };
-                  pushHistory(next, `重置${label}`);
-                  setEditOps(next);
-                }}
-              />
-              <em>{fmt(editOps[key])}</em>
-            </label>
+            />
           ))}
 
           {/* 色调曲线：渲染端 LUT 与预览端 tableValues 同语义（shared/curves.js） */}
@@ -2984,166 +2969,59 @@ export default function ImageViewer({
             <div className="editor-crop-header">
               <span>细节</span>
             </div>
-            <label
-              className="editor-slider-row"
-              title="双击重置该项"
-              onDoubleClick={() => {
-                const next = {
-                  ...editOpsRef.current,
-                  detail: { ...editOpsRef.current.detail, sharpness: 0 },
-                };
-                pushHistory(next, '重置锐化');
-                setEditOps(next);
-              }}
-            >
-              <span>锐化</span>
-              <input
-                type="range"
-                min={0}
+            {[
+              { key: 'sharpness', label: '锐化', min: 0 },
+              { key: 'texture', label: '纹理', title: '纹理：中频质感增强，负值柔化；双击重置' },
+              { key: 'noise', label: '降噪', min: 0 },
+              {
+                key: 'grain',
+                label: '颗粒',
+                min: 0,
+                title: '胶片颗粒：三端同式精确预览；双击重置',
+              },
+            ].map(({ key, label, min = -100, title }) => (
+              <SliderRow
+                key={key}
+                label={label}
+                min={min}
                 max={100}
                 step={1}
-                value={editOps.detail?.sharpness ?? 0}
-                onPointerDown={() => {
-                  sliderDragRef.current = 'detail.sharpness';
+                title={title}
+                value={editOps.detail?.[key] ?? 0}
+                onDragStart={() => {
+                  sliderDragRef.current = `detail.${key}`;
                 }}
-                onPointerUp={() => {
-                  if (sliderDragRef.current === 'detail.sharpness') {
+                onCommit={() => {
+                  if (sliderDragRef.current === `detail.${key}`) {
                     sliderDragRef.current = null;
-                    pushHistory(editOpsRef.current, '锐化');
+                    pushHistory(editOpsRef.current, label);
                   }
                 }}
                 onBlur={settleKeyGesture}
-                onChange={(e) => {
+                onChange={(v) => {
+                  setEditOps({
+                    ...editOpsRef.current,
+                    detail: { ...editOpsRef.current.detail, [key]: v },
+                  });
+                }}
+                onKeyAdjust={(v) => {
                   const next = {
                     ...editOpsRef.current,
-                    detail: { ...editOpsRef.current.detail, sharpness: Number(e.target.value) },
+                    detail: { ...editOpsRef.current.detail, [key]: v },
                   };
                   setEditOps(next);
-                  if (!sliderDragRef.current) recordKeyAdjust(next, '锐化');
+                  if (!sliderDragRef.current) recordKeyAdjust(next, label);
                 }}
-              />
-              <em>{editOps.detail?.sharpness ?? 0}</em>
-            </label>
-            <label
-              className="editor-slider-row"
-              title="纹理：中频质感增强，负值柔化；双击重置"
-              onDoubleClick={() => {
-                const next = {
-                  ...editOpsRef.current,
-                  detail: { ...editOpsRef.current.detail, texture: 0 },
-                };
-                pushHistory(next, '重置纹理');
-                setEditOps(next);
-              }}
-            >
-              <span>纹理</span>
-              <input
-                type="range"
-                min={-100}
-                max={100}
-                step={1}
-                value={editOps.detail?.texture ?? 0}
-                onPointerDown={() => {
-                  sliderDragRef.current = 'detail.texture';
-                }}
-                onPointerUp={() => {
-                  if (sliderDragRef.current === 'detail.texture') {
-                    sliderDragRef.current = null;
-                    pushHistory(editOpsRef.current, '纹理');
-                  }
-                }}
-                onBlur={settleKeyGesture}
-                onChange={(e) => {
+                onReset={() => {
                   const next = {
                     ...editOpsRef.current,
-                    detail: { ...editOpsRef.current.detail, texture: Number(e.target.value) },
+                    detail: { ...editOpsRef.current.detail, [key]: 0 },
                   };
+                  pushHistory(next, `重置${label}`);
                   setEditOps(next);
-                  if (!sliderDragRef.current) recordKeyAdjust(next, '纹理');
                 }}
               />
-              <em>{editOps.detail?.texture ?? 0}</em>
-            </label>
-            <label
-              className="editor-slider-row"
-              title="双击重置该项"
-              onDoubleClick={() => {
-                const next = {
-                  ...editOpsRef.current,
-                  detail: { ...editOpsRef.current.detail, noise: 0 },
-                };
-                pushHistory(next, '重置降噪');
-                setEditOps(next);
-              }}
-            >
-              <span>降噪</span>
-              <input
-                type="range"
-                min={0}
-                max={100}
-                step={1}
-                value={editOps.detail?.noise ?? 0}
-                onPointerDown={() => {
-                  sliderDragRef.current = 'detail.noise';
-                }}
-                onPointerUp={() => {
-                  if (sliderDragRef.current === 'detail.noise') {
-                    sliderDragRef.current = null;
-                    pushHistory(editOpsRef.current, '降噪');
-                  }
-                }}
-                onBlur={settleKeyGesture}
-                onChange={(e) => {
-                  const next = {
-                    ...editOpsRef.current,
-                    detail: { ...editOpsRef.current.detail, noise: Number(e.target.value) },
-                  };
-                  setEditOps(next);
-                  if (!sliderDragRef.current) recordKeyAdjust(next, '降噪');
-                }}
-              />
-              <em>{editOps.detail?.noise ?? 0}</em>
-            </label>
-            <label
-              className="editor-slider-row"
-              title="胶片颗粒：三端同式精确预览；双击重置"
-              onDoubleClick={() => {
-                const next = {
-                  ...editOpsRef.current,
-                  detail: { ...editOpsRef.current.detail, grain: 0 },
-                };
-                pushHistory(next, '重置颗粒');
-                setEditOps(next);
-              }}
-            >
-              <span>颗粒</span>
-              <input
-                type="range"
-                min={0}
-                max={100}
-                step={1}
-                value={editOps.detail?.grain ?? 0}
-                onPointerDown={() => {
-                  sliderDragRef.current = 'detail.grain';
-                }}
-                onPointerUp={() => {
-                  if (sliderDragRef.current === 'detail.grain') {
-                    sliderDragRef.current = null;
-                    pushHistory(editOpsRef.current, '颗粒');
-                  }
-                }}
-                onBlur={settleKeyGesture}
-                onChange={(e) => {
-                  const next = {
-                    ...editOpsRef.current,
-                    detail: { ...editOpsRef.current.detail, grain: Number(e.target.value) },
-                  };
-                  setEditOps(next);
-                  if (!sliderDragRef.current) recordKeyAdjust(next, '颗粒');
-                }}
-              />
-              <em>{editOps.detail?.grain ?? 0}</em>
-            </label>
+            ))}
             <p className="editor-crop-hint">
               {webglFailed
                 ? 'SVG 回退预览不渲染细节效果，导出仍生效'
@@ -3160,46 +3038,35 @@ export default function ImageViewer({
               { key: 'distortion', label: '畸变', hint: '正=桶形校正，负=枕形校正' },
               { key: 'chromatic', label: '色散', hint: '去除边缘蓝/红边（横向色差）' },
             ].map(({ key, label, hint }) => (
-              <label
-                className="editor-slider-row"
+              <SliderRow
                 key={key}
-                title="双击重置该项"
-                onDoubleClick={() => {
+                label={label}
+                title={`${hint}；双击重置`}
+                value={editOps[key] ?? 0}
+                onDragStart={() => {
+                  sliderDragRef.current = key;
+                }}
+                onCommit={() => {
+                  if (sliderDragRef.current === key) {
+                    sliderDragRef.current = null;
+                    pushHistory(editOpsRef.current, label);
+                  }
+                }}
+                onBlur={settleKeyGesture}
+                onChange={(v) => {
+                  setEditOps({ ...editOpsRef.current, [key]: v });
+                }}
+                onKeyAdjust={(v) => {
+                  const next = { ...editOpsRef.current, [key]: v };
+                  setEditOps(next);
+                  if (!sliderDragRef.current) recordKeyAdjust(next, label);
+                }}
+                onReset={() => {
                   const next = { ...editOpsRef.current, [key]: 0 };
                   pushHistory(next, `重置${label}`);
                   setEditOps(next);
                 }}
-              >
-                <span>{label}</span>
-                <input
-                  type="range"
-                  min={-100}
-                  max={100}
-                  step={1}
-                  value={editOps[key] ?? 0}
-                  onPointerDown={() => {
-                    sliderDragRef.current = key;
-                  }}
-                  onPointerUp={() => {
-                    if (sliderDragRef.current === key) {
-                      sliderDragRef.current = null;
-                      pushHistory(editOpsRef.current, label);
-                    }
-                  }}
-                  onBlur={settleKeyGesture}
-                  onChange={(e) => {
-                    const next = { ...editOpsRef.current, [key]: Number(e.target.value) };
-                    setEditOps(next);
-                    if (!sliderDragRef.current) recordKeyAdjust(next, label);
-                  }}
-                />
-                <em>
-                  {(() => {
-                    const v = editOps[key] ?? 0;
-                    return v > 0 ? `+${v}` : v;
-                  })()}
-                </em>
-              </label>
+              />
             ))}
             <p className="editor-crop-hint">
               {webglFailed
