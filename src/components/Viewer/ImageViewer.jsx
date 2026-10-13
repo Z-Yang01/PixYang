@@ -193,7 +193,7 @@ export default function ImageViewer({
     }
   }, []);
   const [selectedMaskId, setSelectedMaskId] = useState(null); // 当前编辑的蒙版 id
-  const [maskTool, setMaskTool] = useState(null); // 拖拽绘制蒙版的激活工具（'radial' | 'linear' | null）
+  const [maskTool, setMaskTool] = useState(null); // 拖拽绘制蒙版的激活工具（'radial' | 'linear' | 'brush' | null）
   const editImgRef = useRef(null);
   const contentRef = useRef(null);
   const sliderDragRef = useRef(null); // 拖动中的滑杆 key（pointerup 时收敛为一条历史）
@@ -701,25 +701,39 @@ export default function ImageViewer({
                 adjustments,
                 ...geometry,
               }
-            : {
-                type: 'linear',
-                id,
-                x0: 0,
-                y0: Math.round(H * 0.3),
-                x1: 0,
-                y1: Math.round(H * 0.7),
-                feather: 0.5,
-                invert: false,
-                adjustments,
-                ...geometry,
-              };
+            : type === 'brush'
+              ? {
+                  type: 'brush',
+                  id,
+                  strokes: geometry.strokes || [],
+                  invert: false,
+                  adjustments,
+                }
+              : {
+                  type: 'linear',
+                  id,
+                  x0: 0,
+                  y0: Math.round(H * 0.3),
+                  x1: 0,
+                  y1: Math.round(H * 0.7),
+                  feather: 0.5,
+                  invert: false,
+                  adjustments,
+                  ...geometry,
+                };
       const next = sanitizeEditOps({
         ...editOpsRef.current,
         masks: [...(editOpsRef.current.masks || []), mask],
       });
       pushHistory(
         next,
-        type === 'radial' ? '添加径向蒙版' : type === 'range' ? '添加亮度蒙版' : '添加线性蒙版'
+        type === 'radial'
+          ? '添加径向蒙版'
+          : type === 'range'
+            ? '添加亮度蒙版'
+            : type === 'brush'
+              ? '添加画笔蒙版'
+              : '添加线性蒙版'
       );
       setEditOps(next);
       setSelectedMaskId(id);

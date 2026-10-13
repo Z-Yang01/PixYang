@@ -66,6 +66,15 @@ export default function EditorMaskSection({
           >
             拖拽线性
           </Button>
+          <Button
+            variant="ghost"
+            size="xs"
+            className={maskTool === 'brush' ? 'is-active' : ''}
+            onClick={() => onStartMaskTool('brush')}
+            title="在图上自由手绘画笔蒙版（半径默认 30 可在面板调整，再次点击退出）"
+          >
+            拖拽画笔
+          </Button>
           {selectedId && (
             <Button variant="ghost" size="xs" onClick={onDeleteSelected}>
               删除

@@ -60,8 +60,13 @@ const MASK_ADJ_SLIDERS = [
   },
 ];
 
-const TYPE_LABEL = { radial: '径向', linear: '线性', range: '亮度' };
-const TYPE_TITLE = { radial: '径向蒙版', linear: '线性蒙版', range: '亮度范围蒙版' };
+const TYPE_LABEL = { radial: '径向', linear: '线性', range: '亮度', brush: '画笔' };
+const TYPE_TITLE = {
+  radial: '径向蒙版',
+  linear: '线性蒙版',
+  range: '亮度范围蒙版',
+  brush: '画笔蒙版（自由手绘）',
+};
 
 // 蒙版面板（受控组件）：径向/线性/亮度范围蒙版列表 + 选中蒙版的几何与调整滑杆。
 // onChange(nextMasks) 实时更新；onCommit(label, next) 在指针手势结束/增删时回调，
@@ -179,63 +184,90 @@ export default function MaskPanel({
             reset: 0, // 回默认 = 归零（其余几何是位置/尺寸语义，无中性默认，只给粗调）
           },
         ]
-      : selected.type === 'range'
+      : selected.type === 'brush'
         ? [
             {
-              key: 'center',
-              label: '中心亮度',
+              key: 'radius',
+              label: '笔刷半径',
+              min: 1,
+              max: 300,
+              step: 1,
+              get: () => selected.strokes?.[0]?.radius ?? 30,
+              set: (v) => ({
+                strokes: (selected.strokes || []).map((st) => ({ ...st, radius: v })),
+              }),
+            },
+            {
+              key: 'softness',
+              label: '边缘柔度',
               min: 0,
               max: 1,
               step: 0.01,
-              get: () => selected.center,
-              set: (v) => ({ center: v }),
+              get: () => selected.strokes?.[0]?.softness ?? 0.5,
+              set: (v) => ({
+                strokes: (selected.strokes || []).map((st) => ({ ...st, softness: v })),
+              }),
               fmt: pct,
-            },
-            {
-              key: 'range',
-              label: '范围',
-              min: 0,
-              max: 1,
-              step: 0.01,
-              get: () => selected.range,
-              set: (v) => ({ range: v }),
-              fmt: pct,
+              reset: 0.5,
             },
           ]
-        : [
-            {
-              key: 'x0',
-              label: '起点 X',
-              min: -W,
-              max: W,
-              get: () => selected.x0,
-              set: (v) => ({ x0: v }),
-            },
-            {
-              key: 'y0',
-              label: '起点 Y',
-              min: -H,
-              max: H,
-              get: () => selected.y0,
-              set: (v) => ({ y0: v }),
-            },
-            {
-              key: 'x1',
-              label: '终点 X',
-              min: -W,
-              max: W,
-              get: () => selected.x1,
-              set: (v) => ({ x1: v }),
-            },
-            {
-              key: 'y1',
-              label: '终点 Y',
-              min: -H,
-              max: H,
-              get: () => selected.y1,
-              set: (v) => ({ y1: v }),
-            },
-          ]
+        : selected.type === 'range'
+          ? [
+              {
+                key: 'center',
+                label: '中心亮度',
+                min: 0,
+                max: 1,
+                step: 0.01,
+                get: () => selected.center,
+                set: (v) => ({ center: v }),
+                fmt: pct,
+              },
+              {
+                key: 'range',
+                label: '范围',
+                min: 0,
+                max: 1,
+                step: 0.01,
+                get: () => selected.range,
+                set: (v) => ({ range: v }),
+                fmt: pct,
+              },
+            ]
+          : [
+              {
+                key: 'x0',
+                label: '起点 X',
+                min: -W,
+                max: W,
+                get: () => selected.x0,
+                set: (v) => ({ x0: v }),
+              },
+              {
+                key: 'y0',
+                label: '起点 Y',
+                min: -H,
+                max: H,
+                get: () => selected.y0,
+                set: (v) => ({ y0: v }),
+              },
+              {
+                key: 'x1',
+                label: '终点 X',
+                min: -W,
+                max: W,
+                get: () => selected.x1,
+                set: (v) => ({ x1: v }),
+              },
+              {
+                key: 'y1',
+                label: '终点 Y',
+                min: -H,
+                max: H,
+                get: () => selected.y1,
+                set: (v) => ({ y1: v }),
+              },
+            ]
     : [];
 
   // 滑杆键盘快捷键（与主滑杆同口径，R92）：Shift+←/→ 粗调（step×10）进 onKeyCommit

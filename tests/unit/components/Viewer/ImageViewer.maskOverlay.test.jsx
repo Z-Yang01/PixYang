@@ -95,6 +95,33 @@ describe('ImageViewer 蒙版 overlay（拖拽创建 + 手柄编辑）', () => {
     delete window.pixyang;
   });
 
+  it('拖拽手绘画笔：pointermove 追点、pointerup 以 brush 类型携 strokes 入参数（radius 30/softness 0.5）', async () => {
+    mockEditBridge();
+    const { container } = render(<ImageViewer {...baseProps()} />);
+    await enterEdit();
+    fireEvent.click(screen.getByText('拖拽画笔'));
+    const createLayer = container.querySelector('[data-mask-create]');
+    fireEvent.pointerDown(createLayer, {
+      clientX: 200,
+      clientY: 200,
+    });
+    fireEvent.pointerMove(window, { clientX: 260, clientY: 220 });
+    fireEvent.pointerMove(window, { clientX: 320, clientY: 240 });
+    fireEvent.pointerUp(window);
+    const chips = container.querySelectorAll('.editor-mask-list button');
+    expect(chips).toHaveLength(1);
+    expect(chips[0].textContent).toContain('画笔');
+    fireEvent.click(screen.getByText('保存参数'));
+    await vi.waitFor(() => {
+      const [, params] = window.pixyang.saveEdits.mock.calls.at(-1);
+      expect(params.masks.length).toBe(1);
+      expect(params.masks[0].type).toBe('brush');
+      expect(params.masks[0].strokes[0].radius).toBe(30);
+      expect(params.masks[0].strokes[0].softness).toBe(0.5);
+      expect(params.masks[0].strokes[0].points.length).toBeGreaterThanOrEqual(4);
+    });
+  });
+
   it('拖拽创建径向：移动中显示草稿，pointerup 入列/入历史/选中，保存携带几何', async () => {
     const { container } = render(<ImageViewer {...baseProps()} />);
     await enterEdit();

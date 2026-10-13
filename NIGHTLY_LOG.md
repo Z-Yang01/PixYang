@@ -3353,3 +3353,23 @@ R103 宣言 → R116 六笔快包 → 本轮 R117-R119 终版快包，此后再�
     src/lib/webglPreview.js src-tauri/src/render.rs tests/unit/shared/brushMask.test.js
     tests/unit/lib/webglPreview.test.js NIGHTLY_LOG.md
   待人工复核：无新增（UI 手绘入口在 R3 轮）。
+
+- 2026-10-13 15:00 R147 P2-R3 画笔蒙版 UI 手绘入口（四方向计划第 4 轮，P2 完成）：
+  ① UI 全链：EditorMaskSection「拖拽画笔」按钮（startMaskTool('brush')）→ MaskOverlay 手绘手势
+     （kind:'brush'，pointerdown 起/move 2px 阈值追点/up 提交 onCreate('brush', {strokes})）→
+     addMaskWithGeometry brush 分支（radius 30/softness 0.5 默认）；草稿轮廓 polyline/单点 circle；
+     MaskPanel brush 几何行（笔刷半径 1..300/边缘柔度，set 映射全部笔画）+ 类型标签「画笔」；
+  ② 根因二连（测试拦 + 插桩定位）：onUp 守卫 g.kind!=='create' 吞 brush（改双条件）、g.last 未设
+     使 up 读 undefined 崩（move 分支补记）——以及 **真正的 R124 同型 P0**：shared/masks.js
+     normalizeMasks（UI 层 sanitize 漏斗）没接 brush 分支，手绘全程正常但入参数即被剥离
+     （chips 恒 0）——normalizeMasks 补 brush 分支（points 数字过滤/半径软度钳/空笔画剔除）；
+     变异验证：删 type 检查 → 手绘用例红 → 复绿（revert 时正则错配一次，grep 复核落盘）；
+  ③ 实机 CDP 真实输入冒烟：Input.dispatchMouseEvent 画一笔 → chips ['1 画笔'] ✓ 笔刷半径/
+     边缘柔度滑杆在场 ✓ 保存落库 image 933 | type brush | strokes 1 | points 4 | radius 30 |
+     adjustments 七字段（exposure -0.5 默认）——手绘 UI→sanitize→params→SQLite 全链真机闭环；
+  ④ lint 修一 error（Number(x) ?? 0.5 常量 nullish——改 Number.isFinite 三元）。
+  - 验证：npm 80 文件/1069 例；cargo 238；lint 0E/9W；tsc/prettier/build 干净；实机闭环六值命中。
+    提交范围：shared/masks.js src/components/Viewer/MaskOverlay.jsx src/components/Viewer/MaskPanel.jsx
+    src/components/Viewer/EditorMaskSection.jsx src/components/Viewer/ImageViewer.jsx
+    tests/unit/components/Viewer/ImageViewer.maskOverlay.test.jsx NIGHTLY_LOG.md
+  待人工复核：无新增（画笔蒙版 P2 三轮完成：内核/三端/UI 手绘闭环）。

@@ -33,9 +33,38 @@ function normalizeMasks(masks) {
   if (!Array.isArray(masks)) return [];
   const out = [];
   for (const m of masks) {
-    if (!m || (m.type !== 'radial' && m.type !== 'linear' && m.type !== 'range')) continue;
+    if (
+      !m ||
+      (m.type !== 'radial' && m.type !== 'linear' && m.type !== 'range' && m.type !== 'brush')
+    )
+      continue;
     const adjustments = normalizeAdjustments(m.adjustments);
-    if (m.type === 'radial') {
+    if (m.type === 'brush') {
+      const strokes = Array.isArray(m.strokes)
+        ? m.strokes
+            .map((st) => ({
+              points: Array.isArray(st?.points)
+                ? st.points
+                    .map((v) => (Number.isFinite(Number(v)) ? Number(v) : null))
+                    .filter((v) => v !== null)
+                : [],
+              radius: Math.min(300, Math.max(1, Number(st?.radius) || 30)),
+              softness: Math.min(
+                1,
+                Math.max(0, Number.isFinite(Number(st?.softness)) ? Number(st.softness) : 0.5)
+              ),
+            }))
+            .filter((st) => st.points.length >= 2)
+        : [];
+      if (strokes.length === 0) continue;
+      out.push({
+        type: 'brush',
+        id: typeof m.id === 'string' ? m.id : '',
+        strokes,
+        invert: !!m.invert,
+        adjustments,
+      });
+    } else if (m.type === 'radial') {
       const rx = Math.max(1, Number(m.rx) || 0);
       const ry = Math.max(1, Number(m.ry) || 0);
       if (!Number.isFinite(m.cx) || !Number.isFinite(m.cy)) continue;

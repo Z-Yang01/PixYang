@@ -101,7 +101,19 @@ export default function MaskOverlay({
       const p = toImagePoint(e.clientX, e.clientY);
       if (!p) return;
       g.last = p;
-      if (g.kind === 'create') {
+      if (g.kind === 'brush') {
+        // 画笔：move 即追加折线顶点（阈值 2px 防密集点），草稿实时显示
+        const pts = g.points;
+        const n = pts.length;
+        g.last = p;
+        if (n < 2 || Math.hypot(p.x - pts[n - 2], p.y - pts[n - 1]) >= 2) {
+          pts.push(p.x, p.y);
+          setDraft({
+            type: 'brush',
+            strokes: [{ points: [...pts], radius: g.radius, softness: 0.5 }],
+          });
+        }
+      } else if (g.kind === 'create') {
         setDraft(
           g.type === 'radial'
             ? {
@@ -122,7 +134,7 @@ export default function MaskOverlay({
       const g = gestureRef.current;
       gestureRef.current = null;
       if (!g) return;
-      if (g.kind !== 'create') {
+      if (g.kind !== 'create' && g.kind !== 'brush') {
         onCommit?.('蒙版调整'); // 拖动全程收敛为一条历史（与滑杆 pointerup 范式一致）
         return;
       }
@@ -140,13 +152,31 @@ export default function MaskOverlay({
             rotation: 0,
           });
         }
-      } else if (Math.hypot(p.x - g.start.x, p.y - g.start.y) >= CREATE_MIN_PX) {
+      } else if (
+        g.type === 'linear' &&
+        Math.hypot(p.x - g.start.x, p.y - g.start.y) >= CREATE_MIN_PX
+      ) {
         onCreate?.('linear', {
           x0: Math.round(g.start.x),
           y0: Math.round(g.start.y),
           x1: Math.round(p.x),
           y1: Math.round(p.y),
         });
+      } else if (g.kind === 'brush') {
+        const pts = g.points;
+        const end = g.last || { x: pts[pts.length - 2], y: pts[pts.length - 1] };
+        const dist = Math.hypot(end.x - pts[0], end.y - pts[1]);
+        if (pts.length >= 4 || dist >= CREATE_MIN_PX) {
+          onCreate?.('brush', {
+            strokes: [
+              {
+                points: pts.map((v) => Math.round(v)),
+                radius: g.radius,
+                softness: 0.5,
+              },
+            ],
+          });
+        }
       }
     };
     window.addEventListener('pointermove', onMove);
@@ -183,6 +213,12 @@ export default function MaskOverlay({
     e.stopPropagation();
     const p = toImagePoint(e.clientX, e.clientY);
     if (!p) return;
+    if (tool === 'brush') {
+      // 画笔：radius 固定 30（面板可后调），softness 0.5；顶点数组动态增长
+      gestureRef.current = { kind: 'brush', points: [p.x, p.y], radius: 30 };
+      setDraft({ type: 'brush', strokes: [{ points: [p.x, p.y], radius: 30, softness: 0.5 }] });
+      return;
+    }
     gestureRef.current = { kind: 'create', type: tool, start: p, last: p };
     setDraft(
       tool === 'radial'
@@ -226,6 +262,26 @@ export default function MaskOverlay({
           rx={Math.max(0, g.rx)}
           ry={Math.max(0, g.ry)}
           transform={`rotate(${g.rotation || 0} ${g.cx} ${g.cy})`}
+          {...common}
+        />
+      );
+    }
+    if (g.type === 'brush') {
+      // 画笔轮廓：折线 + 粗描边（宽度=笔画直径）；单点笔画渲染圆
+      const st = g.strokes?.[0] || { points: [], radius: 30 };
+      const pts = st.points || [];
+      const coords = [];
+      for (let k = 0; k + 1 < pts.length; k += 2) coords.push(`${pts[k]},${pts[k + 1]}`);
+      if (coords.length === 1) {
+        return <circle cx={pts[0]} cy={pts[1]} r={st.radius} fill="none" {...common} />;
+      }
+      return (
+        <polyline
+          points={coords.join(' ')}
+          fill="none"
+          strokeWidth={st.radius * 2}
+          strokeLinecap="round"
+          strokeLinejoin="round"
           {...common}
         />
       );
