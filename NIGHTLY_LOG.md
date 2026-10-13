@@ -3331,3 +3331,25 @@ R103 宣言 → R116 六笔快包 → 本轮 R117-R119 终版快包，此后再�
   - 验证：npm 79 文件/1062 例；lint 0E/10W 基线；tsc/prettier/build 干净。
     提交范围：src/components/Viewer/EditorMaskSection.jsx src/components/Viewer/ImageViewer.jsx NIGHTLY_LOG.md
   待人工复核：无新增。
+
+- 2026-10-13 13:50 R146 P2-R1+R2 画笔蒙版内核与三端接线（四方向计划第 3 轮）：
+  ① shared/brushMask.js 唯一实现：笔画距离场软边权重——点到折线段最近距离 d，core=radius(1−soft)
+     核内 1、band=radius·soft 线性衰减、多笔 max 合成（重叠不加深）+ bbox 剔除（含 radius 膨胀）
+     + invert 作用于合成后；schema BrushMaskSchema（strokes[points 平铺/radius 1..300/softness]，
+     maskType 4 分发）；masks.js maskWeight 分发接 brushMaskLib；
+  ② Rust 直译：MaskShape::Brush 枚举 + normalize 解析（空笔画剔除/上限 8 共享）+ brush_weight
+     （seg_dist_sq 投影钳 t 同式、'outer 提前满权跳出）+ 权重 match 分支；Rust 同表手算锁 3 例
+     （权重四点/max 合成/normalize 解析——入参形态修正一次：normalize_masks 吃数组非 {masks} 包裹）；
+  ③ 预览三路：模拟器 maskStrokes 原样透传走 shared（精确）；GLSL brush 分支纹理采样——previewUniforms
+     CPU 低清栅格（长边 192，shared 公式逐格）→ R8 纹理单元 2..9（0 为 uImage/1 为 uCurveLut）
+     双线性采样，同公式声明近似口径（栅格分辨率≠导出，同 detail 锐化先例不入逐位对拍矩阵）；
+     GLSL 源串锁 +1 例（sampler 声明/采样分支——变异 sampler 改名 8 红验证锁真）；
+  ④ 过程：masks.js import 被 Prettier 吞过一次（写盘后 import 在头部注释前——lint no-undef 抓出
+     即恢复）；shared 手算锁 5 例（软边三段/折线投影/硬边/bbox/max+invert——softness=0 的 1e-6
+     硬边带尾差 7.5e-10 放宽 1e-8）。
+  - 验证：npm 80 文件/1068 例；cargo 238（+3）；golden_audit 像素零变化；lint 0E/9W（-1W：
+     上一轮清了 viewer 一条存量）；tsc/prettier/build 干净。
+    提交范围：shared/brushMask.js shared/editSchema.js shared/masks.js src/lib/previewUniforms.js
+    src/lib/webglPreview.js src-tauri/src/render.rs tests/unit/shared/brushMask.test.js
+    tests/unit/lib/webglPreview.test.js NIGHTLY_LOG.md
+  待人工复核：无新增（UI 手绘入口在 R3 轮）。

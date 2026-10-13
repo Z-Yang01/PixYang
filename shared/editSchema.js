@@ -136,8 +136,24 @@ const RangeMaskSchema = z.object({
   adjustments: MaskAdjustmentsFieldSchema,
 });
 
+// 画笔蒙版：strokes 为笔画数组（points 折线顶点平铺 pre-crop 像素/radius 半径 1..300/
+// softness 软边 0..1），多笔 max 合成；权重语义唯一实现在 shared/brushMask.js
+const BrushStrokeSchema = z.object({
+  points: z.array(z.number()).catch([]),
+  radius: z.number().min(1).max(300).catch(30),
+  softness: z.number().min(0).max(1).catch(0.5),
+});
+
+const BrushMaskSchema = z.object({
+  type: z.literal('brush'),
+  id: z.string().catch(''),
+  strokes: z.array(BrushStrokeSchema).catch([]),
+  invert: z.boolean().catch(false),
+  adjustments: MaskAdjustmentsFieldSchema,
+});
+
 const MaskSchema = z
-  .union([RadialMaskSchema, LinearMaskSchema, RangeMaskSchema])
+  .union([RadialMaskSchema, LinearMaskSchema, RangeMaskSchema, BrushMaskSchema])
   .nullable()
   .catch(null);
 

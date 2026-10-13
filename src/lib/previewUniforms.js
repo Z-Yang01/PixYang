@@ -144,14 +144,18 @@ export function specToShaderUniforms(spec, imageSize = [0, 0]) {
   const maskAdjVibrance = new Array(MASK_COUNT).fill(0);
   const maskAdjTemp = new Array(MASK_COUNT).fill(0);
   const maskAdjTint = new Array(MASK_COUNT).fill(0);
+  const maskStrokes = new Array(MASK_COUNT).fill(null); // 模拟器：笔画原样透传
+  const brushGrids = new Array(MASK_COUNT).fill(null); // GLSL：低清权重栅格 {w,h,data(R 通道 u8)}
   maskList.forEach((m, i) => {
-    maskType[i] = m.type === 'radial' ? 1 : m.type === 'linear' ? 2 : 3;
+    maskType[i] = m.type === 'radial' ? 1 : m.type === 'linear' ? 2 : m.type === 'brush' ? 4 : 3;
     maskGeo[i] =
       m.type === 'radial'
         ? [m.cx, m.cy, m.rx, m.ry]
         : m.type === 'linear'
           ? [m.x0, m.y0, m.x1, m.y1]
-          : [m.center, m.range, 0, 0];
+          : m.type === 'brush'
+            ? [0, 0, 0, 0] // 几何不入 vec4（笔画数组单独通道 maskStrokes/brushGrids）
+            : [m.center, m.range, 0, 0];
     maskRotation[i] = m.rotation || 0;
     maskFeather[i] = m.feather || 0;
     maskInvert[i] = m.invert ? 1 : 0;
@@ -162,6 +166,25 @@ export function specToShaderUniforms(spec, imageSize = [0, 0]) {
     maskAdjVibrance[i] = m.adjustments.vibrance || 0;
     maskAdjTemp[i] = m.adjustments.temperature;
     maskAdjTint[i] = m.adjustments.tint;
+    if (m.type === 'brush') {
+      maskStrokes[i] = m.strokes;
+      // shared 公式 CPU 低清栅格（长边 192）：GLSL 端纹理双线性采样——同公式声明近似口径
+      //（栅格分辨率 ≠ 导出全分辨率，权重经 1/255 量化；同 detail 锐化先例不入逐位对拍矩阵）
+      const W = imageSize[0] || 1;
+      const H = imageSize[1] || 1;
+      const scale = Math.min(1, 192 / Math.max(W, H));
+      const gw = Math.max(2, Math.round(W * scale));
+      const gh = Math.max(2, Math.round(H * scale));
+      const data = new Uint8Array(gw * gh);
+      for (let gy = 0; gy < gh; gy++) {
+        const py = ((gy + 0.5) / gh) * H;
+        for (let gx = 0; gx < gw; gx++) {
+          const px = ((gx + 0.5) / gw) * W;
+          data[gy * gw + gx] = Math.round(masksLib.maskWeight(m, px, py, 0) * 255);
+        }
+      }
+      brushGrids[i] = { w: gw, h: gh, data };
+    }
   });
 
   return {
@@ -179,6 +202,8 @@ export function specToShaderUniforms(spec, imageSize = [0, 0]) {
     maskAdjVibrance,
     maskAdjTemp,
     maskAdjTint,
+    maskStrokes,
+    brushGrids,
     affineSlope,
     affineOffset255,
     clarity: clarityK,
@@ -309,6 +334,29 @@ export function simulateShaderPixel(rgb255, uniforms, uv = [0.5, 0.5]) {
     for (let i = 0; i < 8; i++) {
       const mt = uniforms.maskType[i];
       if (mt === 0) continue;
+      if (mt === 4) {
+        // 画笔：笔画经 maskStrokes 原样透传（shared brushWeight 同式，模拟器精确）
+        const wb = masksLib.maskWeight(
+          { type: 'brush', strokes: uniforms.maskStrokes[i] || [], invert: false },
+          px[0],
+          px[1],
+          0
+        );
+        c = masksLib.applyMaskedAdjustment(
+          c,
+          {
+            exposure: uniforms.maskAdjExposure[i],
+            contrast: uniforms.maskAdjContrast[i],
+            saturation: uniforms.maskAdjSat[i],
+            clarity: uniforms.maskAdjClarity?.[i] || 0,
+            vibrance: uniforms.maskAdjVibrance?.[i] || 0,
+            temperature: uniforms.maskAdjTemp[i],
+            tint: uniforms.maskAdjTint[i],
+          },
+          uniforms.maskInvert[i] === 1 ? 1 - wb : wb
+        );
+        continue;
+      }
       const L = 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
       const w = masksLib.maskWeight(
         {

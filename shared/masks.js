@@ -1,3 +1,5 @@
+import brushMaskLib from './brushMask.js';
+
 // 蒙版（局部调整）唯一实现：radial（椭圆+羽化+反相+旋转）、linear（渐变线 p0→p1 线性 0→1）
 // 与 range（亮度范围带 + 带外羽化，权重取决于像素亮度而非位置）。
 // 坐标系为 decode 后未旋转未裁剪图像（pre-crop 语义，与 lens.vignette 一致）。
@@ -125,6 +127,7 @@ function rangeWeight(mask, L) {
 function maskWeight(mask, x, y, L = 0) {
   if (mask.type === 'radial') return radialWeight(mask, x, y);
   if (mask.type === 'range') return rangeWeight(mask, L);
+  if (mask.type === 'brush') return brushMaskLib.brushWeight(mask, x, y);
   return linearWeight(mask, x, y);
 }
 

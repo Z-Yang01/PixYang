@@ -714,6 +714,18 @@ pub enum MaskShape {
         feather: f64,
         invert: bool,
     },
+    Brush {
+        /// 笔画数组：points 折线顶点平铺（pre-crop 像素）/radius/softness
+        strokes: Vec<BrushStroke>,
+        invert: bool,
+    },
+}
+
+#[derive(Clone)]
+pub struct BrushStroke {
+    pub points: Vec<f64>,
+    pub radius: f64,
+    pub softness: f64,
 }
 
 #[derive(Clone)]
@@ -796,11 +808,110 @@ pub fn normalize_masks(v: &Value) -> Vec<Mask> {
                     adjustments: adj,
                 });
             }
+            "brush" => {
+                let Some(strokes_v) = obj.get("strokes").and_then(|x| x.as_array()) else {
+                    continue;
+                };
+                let mut strokes = Vec::new();
+                for sv in strokes_v {
+                    let pts = sv
+                        .get("points")
+                        .and_then(|x| x.as_array())
+                        .map(|a| a.iter().filter_map(|p| p.as_f64()).collect::<Vec<_>>())
+                        .unwrap_or_default();
+                    if pts.len() < 2 {
+                        continue;
+                    }
+                    strokes.push(BrushStroke {
+                        points: pts,
+                        radius: num_or(sv.get("radius"), 30.0).clamp(1.0, 300.0),
+                        softness: num_or(sv.get("softness"), 0.5).clamp(0.0, 1.0),
+                    });
+                }
+                if strokes.is_empty() {
+                    continue;
+                }
+                out.push(Mask {
+                    shape: MaskShape::Brush { strokes, invert },
+                    adjustments: adj,
+                });
+            }
             _ => continue,
         }
     }
     out.truncate(8);
     out
+}
+
+/// 画笔蒙版权重（shared/brushMask.js 同式直译）：点到折线段最近距离的软边权重，
+/// 多笔 max 合成（重叠不加深）+ bbox 快速剔除；invert 作用于合成后。
+fn brush_weight(m: &Mask, x: f64, y: f64) -> f64 {
+    let MaskShape::Brush { strokes, invert } = &m.shape else {
+        return 0.0;
+    };
+    let seg_dist_sq = |px: f64, py: f64, ax: f64, ay: f64, bx: f64, by: f64| -> f64 {
+        let dx = bx - ax;
+        let dy = by - ay;
+        let len_sq = dx * dx + dy * dy;
+        let t = if len_sq > 0.0 {
+            (((px - ax) * dx + (py - ay) * dy) / len_sq).clamp(0.0, 1.0)
+        } else {
+            0.0
+        };
+        let cx = ax + t * dx;
+        let cy = ay + t * dy;
+        (px - cx) * (px - cx) + (py - cy) * (py - cy)
+    };
+    let mut w = 0.0f64;
+    'outer: for st in strokes {
+        let radius = st.radius.max(1.0);
+        let soft = st.softness.clamp(0.0, 1.0);
+        let core = radius * (1.0 - soft);
+        let band = (radius * soft).max(1e-6);
+        let pts = &st.points;
+        if pts.len() < 2 {
+            continue;
+        }
+        // bbox 剔除（含 radius 膨胀；points 逐对扫描 min/max）
+        let (mut min_x, mut min_y, mut max_x, mut max_y) =
+            (f64::INFINITY, f64::INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY);
+        let mut k = 0;
+        while k + 1 < pts.len() {
+            min_x = min_x.min(pts[k]);
+            max_x = max_x.max(pts[k]);
+            min_y = min_y.min(pts[k + 1]);
+            max_y = max_y.max(pts[k + 1]);
+            k += 2;
+        }
+        if x < min_x - radius || x > max_x + radius || y < min_y - radius || y > max_y + radius {
+            continue;
+        }
+        let mut d_sq = f64::INFINITY;
+        if pts.len() == 2 {
+            d_sq = seg_dist_sq(x, y, pts[0], pts[1], pts[0], pts[1]);
+        } else {
+            let mut i = 0;
+            while i + 3 < pts.len() {
+                let d = seg_dist_sq(x, y, pts[i], pts[i + 1], pts[i + 2], pts[i + 3]);
+                if d < d_sq {
+                    d_sq = d;
+                }
+                i += 2;
+            }
+        }
+        let sw = ((core + band - d_sq.sqrt()) / band).clamp(0.0, 1.0);
+        if sw > w {
+            w = sw;
+        }
+        if w >= 1.0 {
+            break 'outer;
+        }
+    }
+    if *invert {
+        1.0 - w
+    } else {
+        w
+    }
 }
 
 fn radial_weight(m: &Mask, x: f64, y: f64) -> f64 {
@@ -967,6 +1078,8 @@ pub fn apply_masks_in_place(
                     _ => {
                         if matches!(m.shape, MaskShape::Radial { .. }) {
                             radial_weight(m, x as f64, y as f64)
+                        } else if matches!(m.shape, MaskShape::Brush { .. }) {
+                            brush_weight(m, x as f64, y as f64)
                         } else {
                             linear_weight(m, x as f64, y as f64)
                         }
@@ -1201,6 +1314,83 @@ mod tests {
         let mut neg = [100u8, 100, 100];
         apply_dehaze_in_place(&mut neg[..], -50.0, 3);
         assert!(neg[0] > 100, "加雾应抬亮：{}", neg[0]);
+    }
+
+    #[test]
+    fn 画笔蒙版_权重与_js_同表_手算四点() {
+        // 与 tests/unit/shared/brushMask.test.js 同表：点笔 (100,100) r=10 soft=0.5
+        let mask = |invert: bool| Mask {
+            shape: MaskShape::Brush {
+                strokes: vec![BrushStroke {
+                    points: vec![100.0, 100.0],
+                    radius: 10.0,
+                    softness: 0.5,
+                }],
+                invert,
+            },
+            adjustments: MaskAdjustments {
+                exposure: 0.0,
+                contrast: 0.0,
+                saturation: 0.0,
+                vibrance: 0.0,
+                clarity: 0.0,
+                temperature: 0.0,
+                tint: 0.0,
+            },
+        };
+        let w = |m: &Mask, x: f64, y: f64| brush_weight(m, x, y);
+        // core=5 band=5：核内 1 / d=7.5 → 0.5 / 带外 0
+        assert!((w(&mask(false), 100.0, 100.0) - 1.0).abs() < 1e-9);
+        assert!((w(&mask(false), 107.5, 100.0) - 0.5).abs() < 1e-9);
+        assert!(w(&mask(false), 115.0, 100.0).abs() < 1e-9);
+        // bbox 剔除：远点 0；invert 远点 1
+        assert!(w(&mask(false), 500.0, 500.0).abs() < 1e-9);
+        assert!((w(&mask(true), 500.0, 500.0) - 1.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn 画笔蒙版_多笔_max_合成_整图应用不叠加() {
+        // 两支点笔相距 20（各 r=10 soft=0）：中点处两笔均到边缘，max=1 而非叠加
+        let m = Mask {
+            shape: MaskShape::Brush {
+                strokes: vec![
+                    BrushStroke { points: vec![0.0, 0.0], radius: 10.0, softness: 0.0 },
+                    BrushStroke { points: vec![20.0, 0.0], radius: 10.0, softness: 0.0 },
+                ],
+                invert: false,
+            },
+            adjustments: MaskAdjustments {
+                exposure: 0.0,
+                contrast: 0.0,
+                saturation: 0.0,
+                vibrance: 0.0,
+                clarity: 0.0,
+                temperature: 0.0,
+                tint: 0.0,
+            },
+        };
+        let w = brush_weight(&m, 10.0, 0.0);
+        assert!(w <= 1.0 + 1e-9 && w > 0.99, "max 合成不越界且边缘重叠达满权: {w}");
+    }
+
+    #[test]
+    fn 画笔蒙版_normalize_解析与上限() {
+        let v: Value = serde_json::from_str(
+            r#"[{"type":"brush","strokes":[{"points":[1,2,3,4],"radius":25,"softness":0.3}],"adjustments":{"exposure":0.5}}]"#,
+        )
+        .unwrap();
+        let masks = normalize_masks(&v);
+        assert_eq!(masks.len(), 1);
+        match &masks[0].shape {
+            MaskShape::Brush { strokes, .. } => {
+                assert_eq!(strokes[0].points, vec![1.0, 2.0, 3.0, 4.0]);
+                assert_eq!(strokes[0].radius, 25.0);
+            }
+            _ => panic!("应为 Brush"),
+        }
+        // 空笔画蒙版剔除；未知类型仍剔除
+        let bad: Value = serde_json::from_str(r#"[{"type":"brush","strokes":[]}]"#).unwrap();
+        assert!(normalize_masks(&bad).is_empty());
     }
 
     #[test]

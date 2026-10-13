@@ -2,6 +2,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+
 import {
   renderWebGLPreview,
   releaseWebGLPreview,
@@ -626,5 +627,16 @@ describe('ImageViewer 预览生命周期契约（R107，源码级防回退）', 
 
   it('直方图随会话复位：cleanupEditSession 必须清 histogram（单实例跨换图，上一张图数据不得残留进新会话，R108）', () => {
     expect(viewerSrc).toContain('setHistogram(null);');
+  });
+});
+
+// 画笔蒙版 GLSL 接线源串锁（P2）：纹理采样分支与共享公式栅格声明必须在场——
+// 删分支/改名 sampler 时此处先红（happy-dom 无 WebGL2，运行时行为由实机对拍承载）
+describe('画笔蒙版 GLSL 接线（P2 源串锁）', () => {
+  const src = readFileSync(resolve(process.cwd(), 'src/lib/webglPreview.js'), 'utf8');
+  it('maskWeight 含 brush 纹理采样分支与 sampler 声明', () => {
+    expect(src).toContain('uniform sampler2D uMaskBrushTex[8]');
+    expect(src).toContain('texture(uMaskBrushTex[i], px / uImageSize).r');
+    expect(src).toContain('uMaskBrushTex[');
   });
 });

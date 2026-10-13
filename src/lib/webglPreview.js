@@ -61,6 +61,8 @@ uniform float uMaskAdjContrast[8];
 uniform float uMaskAdjSat[8];
 uniform float uMaskAdjTemp[8];
 uniform float uMaskAdjTint[8];
+uniform sampler2D uMaskBrushTex[8];  // 画笔权重栅格（shared 公式 CPU 低清 192，R 通道 u8）
+uniform vec2 uMaskBrushDim[8];       // 栅格尺寸（px→uv 归一用）
 uniform float uMaskAdjClarity[8];
 uniform float uMaskAdjVibrance[8];
 
@@ -78,10 +80,13 @@ float maskWeight(int i, vec2 px, vec3 c) {
     float len2 = dot(dir, dir);
     if (len2 <= 0.0) return uMaskInvert[i] > 0.5 ? 1.0 : 0.0;
     w = clamp(dot(px - g.xy, dir) / len2, 0.0, 1.0);
-  } else {
+  } else if (uMaskType[i] < 3.5) {
     float L = dot(c, vec3(0.2126, 0.7152, 0.0722));
     float dd = abs(L - g.x);
     w = uMaskFeather[i] > 0.0 ? clamp((g.y + uMaskFeather[i] - dd) / uMaskFeather[i], 0.0, 1.0) : (dd <= g.y ? 1.0 : 0.0);
+  } else {
+    // 画笔：shared 公式 CPU 低清栅格纹理双线性采样（同公式声明近似口径，不入逐位对拍）
+    w = texture(uMaskBrushTex[i], px / uImageSize).r;
   }
   if (uMaskInvert[i] > 0.5) w = 1.0 - w;
   return w;
@@ -478,6 +483,7 @@ function getUniformLocations(gl, program) {
     'uMaskAdjSat',
     'uMaskAdjTemp',
     'uMaskAdjTint',
+    'uMaskBrushDim[0]',
     'uMaskAdjClarity',
     'uMaskAdjVibrance',
   ];
@@ -702,6 +708,52 @@ export async function renderWebGLPreview(canvas, image, uniforms, opts = {}) {
     gl.uniform1fv(locs.uMaskAdjSat, uniforms.maskAdjSat);
     gl.uniform1fv(locs.uMaskAdjTemp, uniforms.maskAdjTemp);
     gl.uniform1fv(locs.uMaskAdjTint, uniforms.maskAdjTint);
+    // 画笔栅格纹理（shared 公式 CPU 低清 R8）：brush 槽上传、其余 1×1 黑占位；
+    // 纹理单元 2..9 专属（0 为 uImage、1 为 uCurveLut）
+    for (let bi = 0; bi < 8; bi++) {
+      const grid = uniforms.brushGrids?.[bi];
+      if (!this.__brushTex) this.__brushTex = [];
+      if (!this.__brushTex[bi]) {
+        const t = gl.createTexture();
+        gl.bindTexture(gl.TEXTURE_2D, t);
+        gl.texImage2D(
+          gl.TEXTURE_2D,
+          0,
+          gl.R8,
+          1,
+          1,
+          0,
+          gl.RED,
+          gl.UNSIGNED_BYTE,
+          new Uint8Array([0])
+        );
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+        this.__brushTex[bi] = t;
+      }
+      gl.activeTexture(gl.TEXTURE2 + bi);
+      gl.bindTexture(gl.TEXTURE_2D, this.__brushTex[bi]);
+      if (grid) {
+        gl.texImage2D(
+          gl.TEXTURE_2D,
+          0,
+          gl.R8,
+          grid.w,
+          grid.h,
+          0,
+          gl.RED,
+          gl.UNSIGNED_BYTE,
+          grid.data
+        );
+      }
+      const loc = gl.getUniformLocation(
+        gl.getParameter(gl.CURRENT_PROGRAM),
+        'uMaskBrushTex[' + bi + ']'
+      );
+      if (loc) gl.uniform1i(loc, 2 + bi);
+    }
     gl.uniform1fv(locs.uMaskAdjClarity, uniforms.maskAdjClarity || new Float32Array(8));
     gl.uniform1fv(locs.uMaskAdjVibrance, uniforms.maskAdjVibrance || new Float32Array(8));
 
