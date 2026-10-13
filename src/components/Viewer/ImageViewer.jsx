@@ -99,7 +99,6 @@ import MaskPanel from './MaskPanel';
 import MaskOverlay from './MaskOverlay';
 import ConfirmDialog from '@/components/Layout/ConfirmDialog';
 
-
 // 连续调节停止多少毫秒后把草稿预览补成全分辨率帧
 const EDIT_SETTLE_MS = 120;
 
