@@ -2879,79 +2879,44 @@ export default function ImageViewer({
                   const rowKey = `hsl.${channel}[${bandIdx}]`;
                   const rowLabel = `HSL ${bandLabel}${channel === 'hue' ? '色相' : channel === 'sat' ? '饱和' : '亮度'}`;
                   const value = editOps.hsl?.[channel]?.[bandIdx] ?? 0;
+                  const setBand = (v) => ({
+                    ...editOpsRef.current,
+                    hsl: {
+                      ...editOpsRef.current.hsl,
+                      [channel]: editOpsRef.current.hsl[channel].map((old, j) =>
+                        j === bandIdx ? v : old
+                      ),
+                    },
+                  });
                   return (
-                    <label
-                      className="editor-slider-row"
+                    <SliderRow
                       key={rowKey}
-                      title="双击重置该项；Shift+←/→ 粗调；Ctrl+Del 回默认"
-                      onDoubleClick={() => {
-                        const next = {
-                          ...editOpsRef.current,
-                          hsl: {
-                            ...editOpsRef.current.hsl,
-                            [channel]: editOpsRef.current.hsl[channel].map((v, j) =>
-                              j === bandIdx ? 0 : v
-                            ),
-                          },
-                        };
+                      label={bandLabel}
+                      value={value}
+                      onDragStart={() => {
+                        sliderDragRef.current = rowKey;
+                      }}
+                      onCommit={() => {
+                        if (sliderDragRef.current === rowKey) {
+                          sliderDragRef.current = null;
+                          pushHistory(editOpsRef.current, rowLabel);
+                        }
+                      }}
+                      onBlur={settleKeyGesture}
+                      onChange={(v) => {
+                        setEditOps(setBand(v));
+                      }}
+                      onKeyAdjust={(v) => {
+                        const next = setBand(v);
+                        setEditOps(next);
+                        if (!sliderDragRef.current) recordKeyAdjust(next, rowLabel);
+                      }}
+                      onReset={() => {
+                        const next = setBand(0);
                         pushHistory(next, `重置${rowLabel}`);
                         setEditOps(next);
                       }}
-                    >
-                      <span>{bandLabel}</span>
-                      <input
-                        type="range"
-                        min={-100}
-                        max={100}
-                        step={1}
-                        value={value}
-                        onPointerDown={() => {
-                          sliderDragRef.current = rowKey;
-                        }}
-                        onPointerUp={() => {
-                          if (sliderDragRef.current === rowKey) {
-                            sliderDragRef.current = null;
-                            pushHistory(editOpsRef.current, rowLabel);
-                          }
-                        }}
-                        onBlur={settleKeyGesture}
-                        onKeyDown={(e) => {
-                          // 与主滑杆同口径（R92）：Shift+←/→ 粗调进 700ms 收敛窗；
-                          // Ctrl+Del 回默认 = 该带归零（与双击重置同一实现）
-                          const hit = matchSliderNavKey(e, { value, min: -100, max: 100, step: 1 });
-                          if (!hit) return;
-                          e.preventDefault();
-                          const v = hit.type === 'coarse' ? hit.value : 0;
-                          const next = {
-                            ...editOpsRef.current,
-                            hsl: {
-                              ...editOpsRef.current.hsl,
-                              [channel]: editOpsRef.current.hsl[channel].map((old, j) =>
-                                j === bandIdx ? v : old
-                              ),
-                            },
-                          };
-                          setEditOps(next);
-                          if (hit.type === 'reset') pushHistory(next, `重置${rowLabel}`);
-                          else if (!sliderDragRef.current) recordKeyAdjust(next, rowLabel);
-                        }}
-                        onChange={(e) => {
-                          const v = Number(e.target.value);
-                          const next = {
-                            ...editOpsRef.current,
-                            hsl: {
-                              ...editOpsRef.current.hsl,
-                              [channel]: editOpsRef.current.hsl[channel].map((old, j) =>
-                                j === bandIdx ? v : old
-                              ),
-                            },
-                          };
-                          setEditOps(next);
-                          if (!sliderDragRef.current) recordKeyAdjust(next, rowLabel);
-                        }}
-                      />
-                      <em>{value > 0 ? `+${value}` : value}</em>
-                    </label>
+                    />
                   );
                 })}
               </div>

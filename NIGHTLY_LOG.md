@@ -3291,3 +3291,16 @@ R103 宣言 → R116 六笔快包 → 本轮 R117-R119 终版快包，此后再�
     tests/unit/components/Viewer/SliderRow.test.jsx tests/unit/components/Viewer/ImageViewer.test.jsx
     NIGHTLY_LOG.md
   待人工复核：无新增。
+
+- 2026-10-13 11:20 R143 A4 HSL 24 根接入 + A3 域特化评估结论（裁决落地收尾）：
+  ① A4：HSL 三通道×八带 24 根全部接入 SliderRow（setBand 辅助收敛重复展开）；
+  ② A3 计划偏离的正当理由（诚实记录）：分级 6 根（hue/sat 双滑杆一行 + sat=0 纯色相不入史的
+     R63/R91 特判 + 清除语义）与拉直（onChange 走 applyStraighten 自动套最大内接框）均为域特化
+     形态——强行套通用五件套需加特例 prop，破坏「通用组件保持简单」初衷，维持现状；
+  ③ 拆分终态：ImageViewer 3666→3507；39 根滑杆中 37 根（basic 13/detail 4/lens 2/HSL 24 内
+     含重复计数按渲染行算）走 SliderRow 单一实现；保留 4 处手写行均有域特化理由（拉直/预设强度/
+     蒙版面板独立组件/分级双杆）；
+  ④ 终态打包：哈希链双向命中/旧哈希 0。
+  - 验证：npm 79 文件/1062 例；lint 0E/10W；tsc/prettier/build 干净。
+    提交范围：src/components/Viewer/ImageViewer.jsx NIGHTLY_LOG.md
+  待人工复核：无新增（裁决三项全部落地：①拆分✓②钳✓③HSL 保持不动✓）。
