@@ -3304,3 +3304,16 @@ R103 宣言 → R116 六笔快包 → 本轮 R117-R119 终版快包，此后再�
   - 验证：npm 79 文件/1062 例；lint 0E/10W；tsc/prettier/build 干净。
     提交范围：src/components/Viewer/ImageViewer.jsx NIGHTLY_LOG.md
   待人工复核：无新增（裁决三项全部落地：①拆分✓②钳✓③HSL 保持不动✓）。
+
+- 2026-10-13 12:10 R144 P1-R1 裁剪交互 hook 化（四方向计划第 1 轮）：
+  ① 用户批复四方向顺序实施（结构还债→画笔蒙版→胶片条+小优化→命名快照）；
+  ② useCropInteraction.js 抽出 ImageViewer 裁剪域（toImageCoords/applyCropDrag/handleCropMouseDown/
+     window 拖动追踪含 blur 兜底与 <8px 拖废=清除入史 R91 口径，185 行出舱）；状态全参数注入
+     （cropMode/editSession/cropRatioKey/setEditOps/pushHistory/editImgRef/editOpsRef），cropDragRef
+     内部持有并返回（父级跳转丢弃手势的消费点保留）；
+  ③ 拆分被测试拦两处（shared/maskGeometry 默认导出解构形态、toImageCoords/displayToImage/clamp
+     三孤儿清理）——全绿后 ImageViewer 3507→3332；
+  ④ hook 依赖数组补稳定引用（ref/setter）消新增 exhaustive warning，lint 回 0E/10W 基线。
+  - 验证：npm 79 文件/1062 例；lint 0E/10W；tsc/prettier/build 干净。
+    提交范围：src/components/Viewer/useCropInteraction.js src/components/Viewer/ImageViewer.jsx NIGHTLY_LOG.md
+  待人工复核：无新增。
