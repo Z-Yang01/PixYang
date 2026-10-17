@@ -3406,3 +3406,22 @@ R103 宣言 → R116 六笔快包 → 本轮 R117-R119 终版快包，此后再�
     tests/unit/components/Viewer/ImageViewer.filmstrip.test.jsx NIGHTLY_LOG.md AGENTS.md
   待人工复核：胶片条视觉口径（位置/尺寸/不透明度/黑底白字是否与信息胶囊统一）、±6 窗口大小、
     折叠态不跨会话记忆（重新打开查看器回到展开）、无缩略图库里条带加载原图的开销是否符合预期。
+
+- 2026-10-17 23:55 动态复核：CI windows 抖动实证与修复（R148 推送归零时发现）：
+  ① 现象：R147 提交 613c0a1 的 CI check(windows-latest) 停在「npm test -- --coverage」红，
+     同轮 check(ubuntu-latest) 与 rust 绿；同代码本地全绿、随后 f5105ee 的 windows 作业也绿
+     → 非确定性（同一测试文件两绿一红）。
+  ② 取证：本机无 gh（日志端点 403），改走 check-runs annotations 只读接口——
+     tests/unit/hooks/useBatchActions.preset.test.jsx:203「Unable to find an element with the text:
+     我的预设」；其前置 findByRole('经典黑白') 已通过 → 内置项已渲染、用户预设组尚未出现。
+  ③ 根因（测试时序竞争，非产品缺陷）：BatchBar 打开下拉才拉 getPresets（onOpenChange→loadPresets），
+     mockResolvedValue 的 then→setUserPresets 落在内置项渲染之后，用例却在 openPresetMenu 后
+     同步 getByText('我的预设')——快则过、慢（CI windows 调度）则红。
+  ④ 因果实验（本地稳定复现）：该用例 mock 改 setTimeout(0) 解（强制一个宏任务间隔）→ 同步断言
+     必红且报错文本与 CI 一字不差；改 await screen.findByText('我的预设') 后同延迟 mock 稳定绿。
+  ⑤ 修法（锁强度只增）：断言改等待式 findByText（真回归时超时红），并保留宏任务延迟 mock 作为
+     永久异步间隔夹具——将来若有人改回同步 getByText 会确定性红。
+  - 验证：npm 82 文件/1087 例全绿（exit 0）；该文件 prettier/eslint 干净；R148 自身 CI 三作业全绿
+    （run 39045920089：rust / check(ubuntu-latest) / check(windows-latest)）。
+    提交范围：tests/unit/hooks/useBatchActions.preset.test.jsx NIGHTLY_LOG.md
+  待人工复核：无（纯测试时序加固，产品行为零改动）。

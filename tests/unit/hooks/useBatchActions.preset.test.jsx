@@ -192,14 +192,24 @@ describe('BatchBar 应用预设下拉（内置+我的预设）', () => {
   it('用户预设来自 getPresets 并单独成组；缺 params 的脏行不渲染', async () => {
     useGalleryStore.setState({ selectedIds: new Set([1]), totalImages: 5, tags: [] });
     window.pixyang = {
-      getPresets: vi.fn().mockResolvedValue([
-        { id: 11, name: '我的青橙', params: { basic: { contrast: 12 } } },
-        { id: 12, name: '脏数据', params: null },
-      ]),
+      getPresets: vi.fn().mockImplementation(
+        () =>
+          new Promise((res) =>
+            setTimeout(
+              () =>
+                res([
+                  { id: 11, name: '我的青橙', params: { basic: { contrast: 12 } } },
+                  { id: 12, name: '脏数据', params: null },
+                ]),
+              0
+            )
+          )
+      ),
     };
     const props = barProps();
     render(<BatchBar {...props} />);
     await openPresetMenu();
+    await screen.findByText('我的预设');
     expect(screen.getByText('我的预设')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('menuitem', { name: '我的青橙' }));
     expect(props.onApplyPreset).toHaveBeenCalledWith({
