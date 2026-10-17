@@ -61,6 +61,15 @@ pub struct ImageRow {
     pub updated_at: Option<String>,
 }
 
+/// 列表投影（get_images 专用）：显式列清单，剔除 legacy base64 `thumbnail`。
+/// 旧版（Electron 时代）把缩略图 base64 直接写进该列，单行可达数十 KB——列表页一次 200 行
+/// 即数 MB JSON；前端全仓无 `.thumbnail` 读取（R149 核查，网格/详情均走 thumbnail_path），
+/// 故列表路径不取该列。显式列出亦比 `i.*` 更稳（migrateSchema 追加列会改变列序）。
+pub(crate) const LIST_COLUMNS: &str = "i.id, i.filename, i.filepath, i.original_path, i.raw_path, \
+     i.original_raw_path, i.hidden, i.orientation, i.rotation, i.flip_h, i.flip_v, i.import_date, \
+     i.taken_at, i.size, i.width, i.height, i.format, i.thumbnail_path, i.thumbnail_small_path, \
+     i.rating, i.favorite, i.notes, i.created_at, i.updated_at";
+
 pub(crate) fn row_from(row: &rusqlite::Row) -> rusqlite::Result<ImageRow> {
     Ok(ImageRow {
         id: row.get("id")?,
@@ -80,7 +89,8 @@ pub(crate) fn row_from(row: &rusqlite::Row) -> rusqlite::Result<ImageRow> {
         width: row.get("width")?,
         height: row.get("height")?,
         format: row.get("format")?,
-        thumbnail: row.get("thumbnail")?,
+        // 列表投影不含该列 → None；单图/批量查询 SELECT * 仍带回原值
+        thumbnail: row.get("thumbnail").ok().flatten(),
         thumbnail_path: row.get("thumbnail_path")?,
         thumbnail_small_path: row.get("thumbnail_small_path")?,
         rating: row.get("rating")?,
@@ -167,16 +177,12 @@ pub fn get_images(conn: &Connection, q: &ImageQuery) -> rusqlite::Result<(Vec<Im
     let mut params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
     build_filters(q, &mut joins, &mut conditions, &mut params);
 
-    let base = format!(
-        "SELECT DISTINCT i.* FROM images i {} WHERE {}",
+    let from_where = format!(
+        " FROM images i {} WHERE {}",
         joins.join(" "),
         conditions.join(" AND ")
     );
-    let count_sql = base.replacen(
-        "SELECT DISTINCT i.*",
-        "SELECT COUNT(DISTINCT i.id) as total",
-        1,
-    );
+    let count_sql = format!("SELECT COUNT(DISTINCT i.id) as total{from_where}");
     let total: i64 = conn
         .query_row(
             &count_sql,
@@ -207,7 +213,7 @@ pub fn get_images(conn: &Connection, q: &ImageQuery) -> rusqlite::Result<(Vec<Im
         format!(" ORDER BY i.{safe_sort} {safe_order}, i.id {safe_order}")
     };
 
-    let sql = format!("{base}{order_clause} LIMIT ? OFFSET ?");
+    let sql = format!("SELECT DISTINCT {LIST_COLUMNS}{from_where}{order_clause} LIMIT ? OFFSET ?");
     params.push(Box::new(safe_limit));
     params.push(Box::new(safe_offset));
     let mut stmt = conn.prepare(&sql)?;
@@ -534,6 +540,57 @@ pub(crate) mod tests {
                (4, 'r5.jpg', '/r5.jpg', '2026-04-01', 5, 0);",
         )
         .unwrap();
+    }
+
+    #[test]
+    fn 列表投影剔除legacy_base64缩略图_单图查询仍带回() {
+        let conn = mem_db();
+        seed_basic(&conn);
+        // 旧版 Electron 把缩略图 base64 存进 thumbnail 列（512KB 量级）——列表路径不得搬运
+        let blob = "A".repeat(512 * 1024);
+        conn.execute(
+            "UPDATE images SET thumbnail = ?1 WHERE id = 1",
+            rusqlite::params![blob],
+        )
+        .unwrap();
+        let (rows, _) = get_images(&conn, &q()).unwrap();
+        let row = rows.iter().find(|r| r.id == 1).unwrap();
+        assert!(row.thumbnail.is_none(), "列表投影不含 thumbnail 列");
+        let payload = serde_json::to_string(row).unwrap();
+        assert!(
+            payload.len() < 2048,
+            "列表行序列化体积应远小于 legacy base64：{}",
+            payload.len()
+        );
+        // 单图查询（SELECT *）语义不变：列值照旧带回
+        let one = get_image_by_id(&conn, 1).unwrap().unwrap();
+        assert_eq!(one.thumbnail.map(|t| t.len()), Some(512 * 1024));
+    }
+
+    #[test]
+    fn 列表投影在旧库缺列时仍可读_审查R149() {
+        // 最小旧库：没有 thumbnail/hidden 之外的后加列，投影只取存在列 + thumbnail 缺列取 None
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE images (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                filename TEXT NOT NULL,
+                filepath TEXT NOT NULL UNIQUE,
+                import_date TEXT NOT NULL DEFAULT ''
+            );",
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO images (id, filename, filepath, import_date) VALUES (1, 'a.jpg', '/a.jpg', '2026-01-02')",
+            [],
+        )
+        .unwrap();
+        // 缺列时 SELECT 显式列名会报 no such column——这正是投影的边界，须显式失败而非静默空表
+        let err = get_images(&conn, &q()).unwrap_err();
+        assert!(
+            err.to_string().contains("no such column"),
+            "旧库缺列应报错（迁移负责补齐），实际: {err}"
+        );
     }
 
     #[test]

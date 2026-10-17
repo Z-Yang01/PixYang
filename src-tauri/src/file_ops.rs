@@ -4,7 +4,7 @@
 // 已记录改进型分歧：导入时由 Rust 直接生成双档缩略图并回写
 // thumbnail_path/thumbnail_small_path/width/height 三列（旧 Electron 版由渲染进程传 base64，仅 thumbnail 列）。
 
-use crate::db::{delete_image_record, PixError};
+use crate::db::{delete_image_record, Db, PixError};
 use crate::err_cn;
 use crate::image_group;
 use crate::images_query::ImageRow;
@@ -729,6 +729,25 @@ pub fn cleanup_stale_bake_temps(conn: &Connection) -> usize {
         }
     }
     removed
+}
+
+// 启动清扫派发：写锁 + 逐个可见目录 read_dir 属磁盘 I/O，setup 里同步跑会推迟首帧
+// （网络盘/大库尤甚）；改成后台线程执行——清扫用只读连接（SELECT 走 WAL、删除是纯文件面），
+// 全程不碰写锁，与启动期写命令零互斥；与暂存区启动清扫同「启动一轮」模式。
+pub fn spawn_startup_bake_temp_cleanup(db: Db) {
+    std::thread::spawn(move || {
+        let conn = match db.open_read() {
+            Ok(conn) => conn,
+            Err(e) => {
+                eprintln!("[启动] 清扫烘焙残留跳过: {e}");
+                return;
+            }
+        };
+        let removed = cleanup_stale_bake_temps(&conn);
+        if removed > 0 {
+            eprintln!("[启动] 清扫烘焙残留 temp {removed} 个");
+        }
+    });
 }
 
 // 匹配清理候选并提取主名（小写）：base-temp.(jpe?g|png|webp)[.part|.icc] 或 base.(…).bake-tmp
@@ -1808,6 +1827,52 @@ mod tests {
         assert!(dir.join("h-temp.jpg").exists(), "隐藏记录主名不参与匹配");
         assert!(managed_temp.exists(), "候选本身是托管记录时绝不删");
         assert!(photo.exists());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn 启动清扫派发到后台线程_持写锁时调用方立即返回_审查R149() {
+        let db = crate::db::Db::from_connection(mem_db());
+        let guard = db.write_lock();
+        let (tx, rx) = std::sync::mpsc::channel();
+        let worker_db = db.clone();
+        let worker = std::thread::spawn(move || {
+            spawn_startup_bake_temp_cleanup(worker_db);
+            let _ = tx.send(());
+        });
+        assert!(
+            rx.recv_timeout(std::time::Duration::from_millis(300)).is_ok(),
+            "派发必须立即返回（清扫不得在调用线程里取锁/扫盘）"
+        );
+        drop(guard);
+        worker.join().unwrap();
+    }
+
+    #[test]
+    fn 启动清扫派发到后台线程_完成残留清理() {
+        let dir = std::env::temp_dir().join("pixyang_bake_temp_spawn");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let db = crate::db::Db::open(&dir.join("pixyang.db")).unwrap();
+        let photo = dir.join("photo.jpg");
+        std::fs::write(&photo, b"jpg").unwrap();
+        {
+            let conn = db.write_lock();
+            conn.execute(
+                "INSERT INTO images (filename, filepath, import_date, hidden) VALUES ('photo.jpg', ?1, '2026-09-21', 0)",
+                rusqlite::params![photo.to_string_lossy()],
+            )
+            .unwrap();
+        }
+        let stale = dir.join("photo-temp.jpg");
+        std::fs::write(&stale, b"stale").unwrap();
+        spawn_startup_bake_temp_cleanup(db.clone());
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        while stale.exists() && std::time::Instant::now() < deadline {
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        assert!(!stale.exists(), "后台线程应完成残留清扫");
+        assert!(photo.exists(), "托管原图不得被删");
         let _ = std::fs::remove_dir_all(&dir);
     }
 

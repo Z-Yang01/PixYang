@@ -3425,3 +3425,37 @@ R103 宣言 → R116 六笔快包 → 本轮 R117-R119 终版快包，此后再�
     （run 39045920089：rust / check(ubuntu-latest) / check(windows-latest)）。
     提交范围：tests/unit/hooks/useBatchActions.preset.test.jsx NIGHTLY_LOG.md
   待人工复核：无（纯测试时序加固，产品行为零改动）。
+
+- 2026-10-18 00:40 R149 P3-R2 小优化批（四方向计划第 6 分，P3 续）：
+  ① get_images 列表投影：`SELECT DISTINCT i.*` → 显式 LIST_COLUMNS（剔除 legacy base64
+     `thumbnail` 大列）——旧版 Electron 把缩略图 base64 直接写进该列，列表页一次 200 行即数 MB
+     JSON；前端全仓核查无 `.thumbnail` 读取（网格/详情/胶片条全走 thumbnail_path/原图兜底），
+     单图/批量查询仍 SELECT * 带回原值（语义刻意不对称，锁里写明）。真库实测（933 张）：
+     thumbnail 全空（该库无 legacy 行），故本机收益为 0——受益面是仍带 base64 的旧库升级用户；
+     行载荷锁=注入 512KB base64 后列表行序列化 <2KB 且 thumbnail 为 null。顺带把计数 SQL 从
+     `base.replacen` 改为独立拼接（投影与计数不再耦合字符串前缀）。
+  ② 启动清扫线程化：setup 里同步 `cleanup_stale_bake_temps` 改为 spawn_startup_bake_temp_cleanup
+     后台线程——清扫用只读连接（SELECT 走 WAL、删除纯文件面），全程不碰写锁，与启动期写命令零互斥；
+     真库形状（12 个可见目录/1252 个目录项）下耗时本就不大，但网络盘/大库下 read_dir 会推迟首帧。
+  ③ ImageCard 回调引用稳定性核查（19 回调 + 8 数据 prop）：以 memo 包裹真实卡片计数为度量推进——
+     勾选/异步落地/键盘高亮/无关网格设置四场景全部只重渲染应重渲染的卡片，结论「已稳定，无缺陷」，
+     该四场景作为回归锁落地（变异实证：任一 prop 改内联箭头 → 4 例中 3 例红，全 9 张卡重渲染）。
+  ④ 本轮门禁首跑红（非本轮引入）：ImportDialog.extra「扫描中状态…」同步断言 toFileUrls 抢跑
+     （0 次调用；并发跑 lint/tsc 放大调度间隙）。取证：组件侧 setFoundFiles 后由 useEffect→
+     loadPreviews 异步调 toFileUrls，而行出现（findByText）早于该 effect 一个 tick；修法与 R148 补
+     同类——断言改 vi.waitFor（锁强度不变，未调用仍超时红）。派生启发式扫描（await 后同步断言桥 spy）
+     47 处待复核，未在本轮展开。
+  - 变异验证（逐条红→绿）：列表投影还原 `i.*` → 载荷锁红（thumbnail=512KB/序列化超界）；
+    清扫派发还原同步取写锁 → 非阻塞锁红（recv_timeout 300ms 超时，无挂死）；
+    某回调改内联箭头 → memo 锁 3 例红。
+  - 验证：npm 83 文件/1091 例（+1 文件 +4 例）；cargo 242（+4）；golden_audit 1 例（无渲染改动，
+    像素零变化）；lint 0E/9W；tsc/prettier/build 干净。
+    实机 CDP（WebView2 真库 933 张）：网格 15 张卡片正常 + 首图走 asset 原图兜底；
+    get_images 首行 keys 24 列、thumbnail=null、载荷 483B；查看器 1/933 + 胶片条 7 格（asset URL 解析
+    正常）+ 高亮命中；控制台零错误；截图 %TEMP%\pixyang_r149\grid.png、viewer.png。
+    启动清扫实机取证：预置 E:\PicX\2026\03\14\DSC_0738-temp.JPG → 启动后消失、原图完好，
+    dev 日志出「[启动] 清扫烘焙残留 temp 1 个」（CDP 端口注入的 tauri.conf.json 改动已 git checkout 还原）。
+    提交范围：src-tauri/src/images_query.rs src-tauri/src/file_ops.rs src-tauri/src/lib.rs
+    tests/unit/components/Gallery/ImageGrid.cardProps.test.jsx
+    tests/unit/components/Explorer/ImportDialog.extra.test.jsx NIGHTLY_LOG.md AGENTS.md
+  待人工复核：无（三件均为内部实现/性能口径，无 UI 可见变化）。

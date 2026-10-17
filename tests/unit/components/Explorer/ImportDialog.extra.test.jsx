@@ -206,8 +206,10 @@ describe('ImportDialog（补充分支）', () => {
     await screen.findByText('c.nef');
     expect(screen.getByDisplayValue('C:/import')).toBeInTheDocument();
     // 仅可预览格式请求 URL；b.png 的 URL 为空被跳过，回退图标
-    expect(window.pixyang.toFileUrls).toHaveBeenCalledWith(['C:/import/a.jpg', 'C:/import/b.png']);
-    // toFileUrls 的 promise 与扫描结果不同 tick 完成，coverage 插桩变慢时必须等 img 渲染
+    // toFileUrls 的 promise 与扫描结果不同 tick 完成，coverage 插桩/CI 变慢时同步断言会抢跑
+    await vi.waitFor(() => {
+      expect(window.pixyang.toFileUrls).toHaveBeenCalledWith(['C:/import/a.jpg', 'C:/import/b.png']);
+    });
     await vi.waitFor(() => {
       expect(document.querySelectorAll('.import-file-thumb img').length).toBe(1);
     });

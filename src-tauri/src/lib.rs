@@ -108,13 +108,7 @@ pub fn run() {
             if images_root_setting.as_deref().unwrap_or("").is_empty() {
                 let _ = database.set_setting("images_root", &images_root.to_string_lossy());
             }
-            {
-                let conn = database.write_lock();
-                let removed = file_ops::cleanup_stale_bake_temps(&conn);
-                if removed > 0 {
-                    eprintln!("[启动] 清扫烘焙残留 temp {removed} 个");
-                }
-            }
+            file_ops::spawn_startup_bake_temp_cleanup(database.clone()); // 后台线程，不阻塞首帧
             {
                 use tauri::Manager;
                 let scope = app.asset_protocol_scope();
