@@ -11,6 +11,7 @@ import {
   removeIdsFromSet,
   matchesListFilters,
   viewerIndexAfterDelete,
+  viewerQueryParams,
 } from './lib/gallery';
 import api from './lib/api';
 import { normalizeTheme } from './lib/themes';
@@ -37,19 +38,6 @@ import BatchExportDialog from './components/Batch/BatchExportDialog';
 import ShortcutsHelp from './components/Layout/ShortcutsHelp';
 import { Toaster } from '@/components/ui/sonner';
 import { TooltipProvider } from '@/components/ui/tooltip';
-
-// 查看器跨页单张查询参数：当前筛选+排序的唯一拼装（翻页 navigateViewer 与幻灯片下一张预取共用）
-const viewerQueryParams = (state) => ({
-  search: state.search,
-  sortBy: state.sortBy,
-  sortOrder: state.sortOrder,
-  tagId: state.filterTag,
-  albumId: state.filterAlbum,
-  favorite: state.filterFavorites,
-  importDate: state.filterDate,
-  dateFrom: state.dateRange.from,
-  dateTo: state.dateRange.to,
-});
 
 export default function App() {
   // 共享状态来自 galleryStore（筛选/勾选/网格/图片/共享数据）

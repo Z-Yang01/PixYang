@@ -17,6 +17,9 @@ import {
   removeImageFromList,
   createLoadSequencer,
   viewerIndexAfterDelete,
+  viewerQueryParams,
+  filmstripWindow,
+  FILMSTRIP_SPAN,
 } from '@/lib/gallery';
 
 const grid = { rows: 3, columns: 5, gap: 12, padding: 16 };
@@ -295,5 +298,61 @@ describe('查看器删除落点：viewerIndexAfterDelete', () => {
     expect(viewerIndexAfterDelete(9, 9)).toBe(8);
     // 删空：-1 → 调用方关闭查看器
     expect(viewerIndexAfterDelete(0, 0)).toBe(-1);
+  });
+});
+
+describe('查看器跨页查询口径：viewerQueryParams（翻页/预取/胶片条共用的唯一拼装）', () => {
+  it('筛选/排序字段逐项映射到后端参数名，dateRange 拆 from/to', () => {
+    expect(
+      viewerQueryParams({
+        search: '海',
+        sortBy: 'rating',
+        sortOrder: 'ASC',
+        filterTag: 4,
+        filterAlbum: 7,
+        filterFavorites: true,
+        filterDate: '2026-01-02',
+        dateRange: { from: '2026-01-01', to: '2026-01-31' },
+      })
+    ).toEqual({
+      search: '海',
+      sortBy: 'rating',
+      sortOrder: 'ASC',
+      tagId: 4,
+      albumId: 7,
+      favorite: true,
+      importDate: '2026-01-02',
+      dateFrom: '2026-01-01',
+      dateTo: '2026-01-31',
+    });
+  });
+
+  it('空 state 不抛错（dateRange 缺失时 from/to 为 undefined，SQL 侧按无筛选处理）', () => {
+    const q = viewerQueryParams();
+    expect(q.tagId).toBeUndefined();
+    expect(q.favorite).toBeUndefined();
+    expect(q.dateFrom).toBeUndefined();
+    expect(q.dateTo).toBeUndefined();
+  });
+});
+
+describe('胶片条窗口：filmstripWindow（当前全局索引 ± span 并钳到列表边界）', () => {
+  it('窗口恒为 ±FILMSTRIP_SPAN，count = end − start + 1', () => {
+    const w = filmstripWindow(50, 100);
+    expect(FILMSTRIP_SPAN).toBe(6);
+    expect(w).toEqual({ start: 44, end: 56, count: 13 });
+  });
+
+  it('列表两端钳制（首端不出现负索引，末端不越界）', () => {
+    expect(filmstripWindow(2, 10)).toEqual({ start: 0, end: 8, count: 9 });
+    expect(filmstripWindow(9, 10)).toEqual({ start: 3, end: 9, count: 7 });
+  });
+
+  it('短列表产不出空窗：total 1 夹成单格；total ≤ 0 / 脏值 → count 0（调用方不渲染）', () => {
+    expect(filmstripWindow(0, 1)).toEqual({ start: 0, end: 0, count: 1 });
+    expect(filmstripWindow(0, 0).count).toBe(0);
+    expect(filmstripWindow(-5, 0).count).toBe(0);
+    expect(filmstripWindow(1, NaN).count).toBe(0);
+    expect(filmstripWindow('abc', 5)).toEqual({ start: 0, end: 4, count: 5 });
   });
 });

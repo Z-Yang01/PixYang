@@ -62,3 +62,23 @@ describe('详情面板与查看器右栏的让位契约（历史缺陷：.info-p
     );
   });
 });
+
+describe('胶片条与底部信息条的共存契约（居中条带 vs 底部信息胶囊 / 详情面板右栏）', () => {
+  it('胶片条停在底部信息条上方：不压住「当前/总数 + 文件名」信息胶囊', () => {
+    const stripBottom = pxOf(blockOf('.viewer-filmstrip'), 'bottom');
+    const infoBottom = pxOf(blockOf('.viewer-info'), 'bottom');
+    expect(stripBottom, '胶片条未声明 bottom').not.toBeNull();
+    const infoPadding = pxOf(blockOf('.viewer-info'), 'padding');
+    // 信息胶囊自下而上 = 20 底距 + 上下 8px 内距 + 12px 字号（≈ 33px 高）：42px 起跳即不重叠
+    expect(stripBottom).toBeGreaterThanOrEqual(infoBottom + (infoPadding ?? 0) * 2 + 24);
+  });
+
+  it('详情面板在场时胶片条整体左移半个栏宽（长条尾部不压到面板下方）', () => {
+    const shiftBlock = blockOf('body:has(.info-panel) .viewer-filmstrip');
+    expect(shiftBlock, '缺少 body:has(.info-panel) 胶片条让位规则').not.toBeNull();
+    const m = shiftBlock.match(/translateX\(calc\(-50% - (\d+)px\)\)/);
+    expect(m, '让位规则未按 translateX(calc(-50% - Npx)) 形式左移').not.toBeNull();
+    const infoWidth = pxOf(blockOf('.info-panel'), 'width');
+    expect(Number(m[1])).toBeGreaterThanOrEqual(infoWidth / 2);
+  });
+});

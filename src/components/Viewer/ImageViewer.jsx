@@ -96,6 +96,7 @@ import { specToShaderUniforms } from '@/lib/previewUniforms';
 import CompareView from './CompareView';
 import CurveEditor from './CurveEditor';
 import MaskOverlay from './MaskOverlay';
+import ViewerFilmstrip from './ViewerFilmstrip';
 import ConfirmDialog from '@/components/Layout/ConfirmDialog';
 
 // 连续调节停止多少毫秒后把草稿预览补成全分辨率帧
@@ -3204,6 +3205,16 @@ export default function ImageViewer({
             <Square className="size-3.5" />
           </button>
         </div>
+      )}
+
+      {/* 胶片条：当前全局索引 ± 邻近缩略图，点击跳转；编辑态隐藏（编辑面板/对比视图让位） */}
+      {!editing && (
+        <ViewerFilmstrip
+          imageIndex={imageIndex}
+          totalCount={totalCount}
+          currentImage={image}
+          onJumpTo={onJumpTo}
+        />
       )}
 
       {/* 底部信息 */}

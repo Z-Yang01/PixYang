@@ -81,6 +81,35 @@ export function buildImageQuery({
   };
 }
 
+// 查看器跨页查询参数：当前筛选+排序的唯一拼装（App 的 navigateViewer/幻灯片预取
+// 与查看器胶片条的邻近窗口共用同一口径，避免两处 SQL 口径漂移）
+export function viewerQueryParams(state = {}) {
+  return {
+    search: state.search,
+    sortBy: state.sortBy,
+    sortOrder: state.sortOrder,
+    tagId: state.filterTag,
+    albumId: state.filterAlbum,
+    favorite: state.filterFavorites,
+    importDate: state.filterDate,
+    dateFrom: state.dateRange?.from,
+    dateTo: state.dateRange?.to,
+  };
+}
+
+// 胶片条窗口：当前全局索引 ± span，钳到 [0, total-1]；total ≤ 0 返回 count=0（调用方不渲染）
+export const FILMSTRIP_SPAN = 6;
+
+export function filmstripWindow(index, total, span = FILMSTRIP_SPAN) {
+  const t = Number.isFinite(Number(total)) ? Math.floor(Number(total)) : 0;
+  if (t <= 0) return { start: 0, end: -1, count: 0 };
+  const n = Number.isFinite(Number(span)) ? Math.max(0, Math.floor(Number(span))) : 0;
+  const i = Math.min(t - 1, Math.max(0, Number.isFinite(Number(index)) ? Math.floor(index) : 0));
+  const start = Math.max(0, i - n);
+  const end = Math.min(t - 1, i + n);
+  return { start, end, count: end - start + 1 };
+}
+
 export function toggleIdInSet(set, id) {
   const next = new Set(set);
   if (next.has(id)) next.delete(id);

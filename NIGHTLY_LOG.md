@@ -3373,3 +3373,36 @@ R103 宣言 → R116 六笔快包 → 本轮 R117-R119 终版快包，此后再�
     src/components/Viewer/EditorMaskSection.jsx src/components/Viewer/ImageViewer.jsx
     tests/unit/components/Viewer/ImageViewer.maskOverlay.test.jsx NIGHTLY_LOG.md
   待人工复核：无新增（画笔蒙版 P2 三轮完成：内核/三端/UI 手绘闭环）。
+
+- 2026-10-17 23:40 R148 P3-R1 查看器胶片条（四方向计划第 5 轮，P3 起步）：
+  ① src/components/Viewer/ViewerFilmstrip.jsx：当前全局索引 ±6 邻近条带（filmstripWindow 钳边界）；
+     数据面双源——落在网格当前页的索引直接取 store.images（页内翻页零请求、随评分/改名等轻量写回
+     即时更新），跨页缺口合并成 [first,last] 单次 getImages（viewerQueryParams 与 navigateViewer
+     同 SQL 口径）；缩略图地址按路径缓存经 api.toFileUrls 批量解析（无路径条目回退 filepath、
+     解析无果渲染空白格，均不阻塞其余条目）；点击跳转 onJumpTo(全局索引)、当前格不重复导航、
+     条带自截冒泡（overlay 点击即关查看器）；折叠开关 + 键盘翻页高亮跟随（scrollIntoView 居中）；
+     totalCount ≤ 1 不渲染；
+  ② 口径去重：viewerQueryParams 由 App 局部常量上提 src/lib/gallery.js（App 翻页/预取/胶片条共用，
+     防 SQL 口径漂移）；新增 filmstripWindow + FILMSTRIP_SPAN 纯函数（手算锁）；
+  ③ 样式：index.css .viewer-filmstrip* 一组（bottom 62px 停在底部信息胶囊上方）+ 详情面板在场时
+     整体左移半个栏宽（translateX(-50% - 168px)，与 R53 右栏让位同思路，契约并入 viewerInfoRail 测试）；
+  ④ 桥容错：api.getImages/toFileUrls 走 ?. 短路（桥缺方法时透传 undefined——沿用 setSetting?.catch?
+     惯例）。过程事故：初版直接 .then，既有 ImageViewer 测试的桥 mock 无这两方法 → 97 例红，
+     按仓库惯例改 ?. 后全绿；
+  ⑤ 实机 CDP 冒烟（WebView2，真库 933 张）：首端钳制 7 格（0..6）/中段 13 格；缩略图 src 为
+     http://asset.localhost/…（真实 asset 协议；本库 thumbnail_path 为空——网格与条带同走原图兜底，
+     逐张渐进解码）；3×→ 计数 4/933 且高亮=3（跟随）；连按越页后窗口 11..23（跨页 15..23 由真实
+     getImages 补齐）；点尾格跳 23（计数 24/933）；折叠→track 移除/标题「展开胶片条」，展开→13 格；
+     控制台无「胶片条」字样错误；截图 %TEMP%\pixyang_r148\filmstrip.png。
+     过程：CDP 端口注入受 Tauri 自带 additionalBrowserArgs 覆盖（WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS
+     无效）——临时在 tauri.conf.json 加 additionalBrowserArgs 取证，跑完已 git checkout 还原（工作树无残留）。
+  - 变异验证（5 条锁逐条红→绿）：去 stopPropagation→接线用例红(1)；去 onJumpTo→跳转用例红(1)；
+    跨页守卫反转→4 例红；filmstripWindow 去末端钳制→窗口 2 例红；删详情面板让位规则→样式用例红(1)。
+  - 验证：npm 82 文件/1087 例（+2 文件 +18 例）；cargo 238；golden_audit 1 例（本轮无 Rust 改动，
+    像素零变化）；lint 0E/9W；tsc/prettier/build 干净；实机五段闭环（见⑤）。
+    提交范围：src/components/Viewer/ViewerFilmstrip.jsx src/components/Viewer/ImageViewer.jsx
+    src/lib/gallery.js src/App.jsx src/styles/index.css tests/unit/lib/gallery.test.js
+    tests/unit/styles/viewerInfoRail.test.js tests/unit/components/Viewer/ViewerFilmstrip.test.jsx
+    tests/unit/components/Viewer/ImageViewer.filmstrip.test.jsx NIGHTLY_LOG.md AGENTS.md
+  待人工复核：胶片条视觉口径（位置/尺寸/不透明度/黑底白字是否与信息胶囊统一）、±6 窗口大小、
+    折叠态不跨会话记忆（重新打开查看器回到展开）、无缩略图库里条带加载原图的开销是否符合预期。
