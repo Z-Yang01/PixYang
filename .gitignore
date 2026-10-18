@@ -15,3 +15,5 @@ coverage/
 # index-D1t41p9t.css 96.75 kB 涨回 index-Czb4Wk9j.css 110.12 kB——release/win-unpacked 里的
 # 第三方 JS 与 LICENSES.chromium.html 被当作 class 源，多产出 13.37 kB 死 utility。勿删本行。
 release/
+
+.workbuddy/

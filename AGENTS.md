@@ -86,6 +86,13 @@ src/
 tests/            vitest（node 环境 + per-file happy-dom pragma）
 ```
 
+## 图标与品牌资源
+
+- 应用图标唯一源：`tools/make-icon.py` → `src-tauri/icons/icon.ico`（7 档：16/24/32/48/64/128 为
+  32bpp BMP 层、256 为 PNG 层）。逐尺寸 16x 超采样渲染后 LANCZOS 缩小（不做单张栅格放缩，否则小尺寸发虚）；
+  16/24/32 档自动放大字面并加粗笔画。改图标后须 `cargo build` 才会把 ico 重新编入 exe 资源（tauri-build），
+  桌面/任务栏旧图标由 Windows 图标缓存保留时执行 `ie4uinit.exe -show` 刷新。
+
 ## 编码约定
 
 - 不要添加代码注释，除非用户明确要求。
