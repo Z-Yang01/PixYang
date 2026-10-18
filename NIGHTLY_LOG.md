@@ -3543,3 +3543,36 @@ R103 宣言 → R116 六笔快包 → 本轮 R117-R119 终版快包，此后再�
   待人工复核：① 新图标观感（字面更大更粗、底色略偏紫）是否接受；② 是否需要一个带透明留白的版本
     （现为满幅出血，与旧版一致）；③ 侧栏 `.sidebar-logo` 仍是 lucide Images 线性图标 + 渐变底，
     与应用图标不是同一标识——若希望统一，可换成同一枚 P 标。
+
+- 2026-10-19 01:20 R153 全面 bug 审计（4 路并行代码扫描 + 逐条取证）：
+  ① **P0 WebGL 预览自 R146 起生产恒失败**：`webglPreview.js` 画笔纹理缓存写成 `this.__brushTex`，
+     而 `renderWebGLPreview` 是模块级函数——生产包 ESM 严格模式下 `this === undefined`，每次预览抛
+     TypeError 被函数体 catch 吞掉 → 返回 false → `setWebglFailed(true)` 静默降级 CSS 回退（导出与预览分叉）。
+     证据三重：产物串 `if(this.__brushTex||(this.__brushTex=[]))` 直接被 grep 到；测试里 `this` 退化成
+     globalThis → 缓存跨画布串用（旧断言 deleteTexture=2 恰好证明画笔纹理从未按画布创建）；变异前
+     texImage2D 计数 2（本应为 2+8）。修法：缓存改挂画布状态 `st.brushTex`，释放时一并 deleteTexture；
+     新增源扫描锁（文件内 `this` 计数必须为 0，含修复时踩到的注释措辞坑）+ 三条资源计数断言校正。
+  ② P1 `delete_broken_records` 漏删 snapshots：外键级联未启用（无 PRAGMA foreign_keys=ON），显式删五表
+     会留下孤儿快照行；补第六张表 + 夹具插入快照 + 断言，变异（删该行）红绿验证。
+  ③ P1 批量更新不做筛选剪枝：`handleBatchUpdate` 非收藏分支只本地 merge，改备注/文件名/日期/评分后
+     掉出当前搜索或日期筛选的行仍留在列表与勾选集（后续批量操作会打向视图外图片）。补
+     `matchesListFilters` 就地剪枝 + 勾选剪枝（复用单图写回 R-3 口径），两条用例（掉出剪枝/无筛选不误删）。
+  ④ P2 框选 `if (!id) return` 把合法主键 0 永久排除 → 改 `Number.isFinite`，用例锁（含 data-id=0 夹具）。
+  ⑤ P1 同图外部元数据写回不同步：`rotation/flip` 同步只依赖 `image?.id`，批量同步「含几何」直写
+     images.rotation 后查看态仍显示旧朝向。拆独立 effect（不并入主 effect——那会连带重置缩放/重拉标签），
+     用例锁（rerender 同 id 不同 rotation → transform 跟随），变异（依赖退回 [image?.id]）红绿验证。
+  - 记录在案待裁决（未改，均有代码位置与触发路径）：① `edit_session.rs:447-493` 烘焙先原子替换文件、
+    后提交 DB 事务——DB 失败会留「坏记录 + 孤立成品」，需设计回滚顺序；② `import_images` 全程持写锁
+    内含耗时 I/O（万级导入期间写命令排队）；③ `trash.rs:678-700` 还原时关联表回插 `let _ =` 吞错
+    （标签/相册/历史可能静默丢失）；④ `db.rs:311` 列存在性查询 `unwrap_or(1)` 会把异常当「已存在」；
+    ⑤ 颗粒网格索引与清晰度写回 preview/export 存在 ≤1/255 差（`webglPreview` floor 双取整 vs
+    shared 单取整、GLSL round vs 执行器 trunc）；⑥ `CropSchema w/h .min(1).catch(0)` 会把分数宽裁剪
+    吞成 0 导致裁剪整体丢弃；⑦ 收藏页外部更新后查看器残留；⑧ 缩略图事件无节流整页重查。
+  - 验证：npm 84 文件/**1106 例**（+6）；cargo 247；golden_audit 1 例（无渲染改动，像素零变化）；
+    lint 0E/9W；tsc/prettier 全仓/build 干净。
+    提交范围：src/lib/webglPreview.js src/hooks/useBatchActions.js src/hooks/useMarqueeSelection.js
+    src/components/Viewer/ImageViewer.jsx src-tauri/src/update_image.rs AGENTS.md NIGHTLY_LOG.md
+    tests/unit/lib/webglPreview.test.js tests/unit/hooks/useBatchActions.test.jsx
+    tests/unit/hooks/useMarqueeSelection.test.jsx tests/unit/components/Viewer/ImageViewer.test.jsx
+  待人工复核：P0 影响面（R146-R152 期间所有实机预览都走 CSS 回退，画笔/HSL/蒙版等 WebGL 专属效果
+    可能从未在真机生效过——需实机复验一次编辑预览，顺带补上轮未完成的 CDP 取证）。

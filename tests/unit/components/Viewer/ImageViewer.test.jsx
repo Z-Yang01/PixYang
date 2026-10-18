@@ -2063,3 +2063,20 @@ describe('R92 滑杆快捷键补全与注释（主滑杆口径推广到 HSL/分�
     expect(screen.getByText('我的风格').title).toBe('应用预设（仅影调）');
   });
 });
+
+describe('同图外部元数据写回（R153）', () => {
+  it('image.rotation 被外部改写（批量同步含几何/撤销）后显示态跟随，不卡在旧朝向', async () => {
+    const { container, rerender } = render(<ImageViewer {...baseProps()} />);
+    const styleOf = () => container.querySelector('img.viewer-image')?.style?.transform || '';
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 0));
+    });
+    expect(styleOf()).toContain('rotate(0deg)');
+    rerender(<ImageViewer {...baseProps({ image: { ...testImage, rotation: 90, flip_h: 1 } })} />);
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 0));
+    });
+    expect(styleOf()).toContain('rotate(90deg)');
+    expect(styleOf()).toContain('scale(-1');
+  });
+});

@@ -6,7 +6,7 @@ import { toEditParams } from '../lib/editParams';
 import { applyPresetToOps } from '../lib/presetApply';
 import autoGradeModule from '../../shared/autoGrade.js';
 const { suggestGrade } = autoGradeModule;
-import { pageAfterDelete, removeIdsFromSet } from '../lib/gallery';
+import { matchesListFilters, pageAfterDelete, removeIdsFromSet } from '../lib/gallery';
 import { errText, friendlyError } from '../lib/errorText';
 import { offerDeleteUndo } from '../lib/trashUndo';
 
@@ -166,10 +166,27 @@ export default function useBatchActions({ showToast }) {
         store.setSelectedIds(removeIdsFromSet(store.selectedIds, ids));
         await Promise.all([store.loadImages(), store.loadStats()]);
       } else {
-        store.setImages((prev) =>
-          prev.map((img) => (idSet.has(img.id) ? { ...img, ...updates } : img))
-        );
-        if ('favorite' in updates) store.loadStats();
+        // 与单图写回同口径（App.handleImageUpdated）：改日期/文件名/备注/评分可能让行掉出
+        // 当前筛选（搜索命中或日期桶），必须就地剪枝 + 剪勾选，否则这些行隐身留在集合里，
+        // 后续批量操作会打向视图外的图片（审查批 8 R-3 的单图版已有，批量版此前缺失）
+        const relevant = ['import_date', 'filename', 'notes', 'rating'].some((k) => k in updates);
+        const cur = useGalleryStore.getState();
+        const stale = new Set();
+        const list = cur.images
+          .map((img) => (idSet.has(img.id) ? { ...img, ...updates } : img))
+          .filter((img) => {
+            if (relevant && idSet.has(img.id) && !matchesListFilters(img, cur)) {
+              stale.add(img.id);
+              return false;
+            }
+            return true;
+          });
+        cur.setImages(list);
+        if (stale.size > 0) {
+          cur.setSelectedIds(removeIdsFromSet(cur.selectedIds, [...stale]));
+          cur.loadStats();
+        }
+        if ('favorite' in updates || 'import_date' in updates) store.loadStats();
       }
       // 成功不弹 toast：卡片星形/红心即时可见，反馈在界面本身（批量操作高频连发场景降噪）
     },

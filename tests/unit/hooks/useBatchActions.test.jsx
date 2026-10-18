@@ -444,3 +444,57 @@ describe('useBatchActions 批量导出（13a 两段式：入口开弹层，确�
     expect(showToast).toHaveBeenCalledWith('已导出 2 / 2 张图片，含配对 NEF 1 个', 'success');
   });
 });
+
+describe('批量更新后的筛选剪枝（R153）', () => {
+  const out = { current: null };
+  function Harness() {
+    out.current = useBatchActions({ showToast: vi.fn() });
+    return null;
+  }
+
+  beforeEach(() => {
+    useGalleryStore.setState(initialSnapshot, true);
+    window.pixyang = {};
+  });
+
+  afterEach(() => {
+    cleanup();
+    delete window.pixyang;
+  });
+
+  it('搜索筛选下批量改备注致行掉出筛选：列表剪枝 + 勾选集同步移除（避免误伤视图外图片）', async () => {
+    window.pixyang.updateImages = vi.fn().mockResolvedValue({ updated: 1 });
+    useGalleryStore.setState({
+      search: '假日',
+      images: [
+        { id: 1, filename: 'a.jpg', notes: '假日拍的', import_date: '2026-01-01' },
+        { id: 2, filename: 'b.jpg', notes: '假日拍的', import_date: '2026-01-01' },
+      ],
+      selectedIds: new Set([1, 2]),
+    });
+    render(<Harness />);
+    await act(async () => {
+      await out.current.handleBatchUpdate({ notes: '改掉了关键词' });
+    });
+    const st = useGalleryStore.getState();
+    expect(st.images.map((r) => r.id)).toEqual([]);
+    expect([...st.selectedIds]).toEqual([]);
+  });
+
+  it('无筛选时批量改备注：只本地合并，不得误删行或勾选', async () => {
+    window.pixyang.updateImages = vi.fn().mockResolvedValue({ updated: 1 });
+    useGalleryStore.setState({
+      search: '',
+      images: [{ id: 1, filename: 'a.jpg', notes: 'x', import_date: '2026-01-01' }],
+      selectedIds: new Set([1]),
+    });
+    render(<Harness />);
+    await act(async () => {
+      await out.current.handleBatchUpdate({ notes: 'y' });
+    });
+    const st = useGalleryStore.getState();
+    expect(st.images).toHaveLength(1);
+    expect(st.images[0].notes).toBe('y');
+    expect([...st.selectedIds]).toEqual([1]);
+  });
+});

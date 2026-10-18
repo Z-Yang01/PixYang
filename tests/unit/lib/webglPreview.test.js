@@ -316,7 +316,9 @@ describe('上下文丢失与释放（审查批 8 P-1）', () => {
     globalThis.createImageBitmap = vi.fn().mockResolvedValue({ close: vi.fn() });
     expect(await renderWebGLPreview(canvas, testImage, baseUniforms())).toBe(true);
     releaseWebGLPreview(canvas);
-    expect(gl.__calls.filter((c) => c.prop === 'deleteTexture').length).toBe(2);
+    // 底图 + 曲线 LUT + 8 个画笔纹理槽（每画布独立，R153：此前缓存在函数接收者上，
+    // 生产严格模式为 undefined 抛错，测试里又退化成全局缓存跨画布串用）
+    expect(gl.__calls.filter((c) => c.prop === 'deleteTexture').length).toBe(10);
     expect(gl.__calls.filter((c) => c.prop === 'deleteProgram').length).toBe(1);
     expect(loseContext).toHaveBeenCalledTimes(1);
     // 释放后重绘：init 重跑（第二个 createProgram），成功返回 true
@@ -396,7 +398,7 @@ describe('draft 草稿帧与上传降采样', () => {
     expect(canvas.width).toBe(2048);
     expect(await renderWebGLPreview(canvas, bigImage, baseUniforms(), { draft: true })).toBe(true);
     expect(globalThis.createImageBitmap).toHaveBeenCalledTimes(2);
-    expect(gl.__calls.filter((c) => c.prop === 'texImage2D').length).toBe(2);
+    expect(gl.__calls.filter((c) => c.prop === 'texImage2D').length).toBe(10); // 2 + 8 画笔占位
   });
 
   it('MAX_TEXTURE_SIZE 兜底：bitmap 降采样不可用且原图超上限 → 显式 false 而非黑屏谎报', async () => {
@@ -554,7 +556,7 @@ describe('上下文丢失/恢复生命周期（R107 对抗审计）', () => {
     }
     expect(gl.__calls.filter((c) => c.prop === 'createProgram').length).toBe(10);
     expect(gl.__calls.filter((c) => c.prop === 'deleteProgram').length).toBe(10);
-    expect(gl.__calls.filter((c) => c.prop === 'deleteTexture').length).toBe(20);
+    expect(gl.__calls.filter((c) => c.prop === 'deleteTexture').length).toBe(100); // 10 轮 ×(2+8)
     expect(loseContext).toHaveBeenCalledTimes(10);
     expect(canvas.__listenerCount('webglcontextlost')).toBe(0);
     expect(await renderWebGLPreview(canvas, testImage, baseUniforms())).toBe(true);
@@ -638,5 +640,19 @@ describe('画笔蒙版 GLSL 接线（P2 源串锁）', () => {
     expect(src).toContain('uniform sampler2D uMaskBrushTex[8]');
     expect(src).toContain('texture(uMaskBrushTex[i], px / uImageSize).r');
     expect(src).toContain('uMaskBrushTex[');
+  });
+});
+
+// 严格模式 P0 回归锁（R153）：生产包是 ESM 严格模式，函数内 `this` 为 undefined。
+// 曾用 this.__brushTex 缓存画笔纹理 → 每次预览抛 TypeError 被 catch 吞掉 → 恒返回 false、
+// 静默降级 CSS 回退。单测经 SSR 转译非严格（this 退化为 globalThis）不会红，故用源扫描锁死。
+describe('严格模式 this 使用锁（P0）', () => {
+  const src = readFileSync(resolve(process.cwd(), 'src/lib/webglPreview.js'), 'utf8');
+  it('webglPreview.js 内不得出现 this.（ESM 严格模式下为 undefined）', () => {
+    expect(src.match(/\bthis\b/g) || []).toHaveLength(0);
+  });
+  it('画笔纹理缓存在画布状态上（st.brushTex），且释放时一并 deleteTexture', () => {
+    expect(src).toContain('if (!st.brushTex) st.brushTex = [];');
+    expect(src).toContain('(st.brushTex || []).forEach((t) => t && gl.deleteTexture(t));');
   });
 });

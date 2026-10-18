@@ -247,6 +247,15 @@ export default function ImageViewer({
     setLocalFavorite(image?.favorite || 0);
   }, [image?.id]);
 
+  // 同图的外部元数据写回（批量同步「含几何」会直写 images.rotation/flip_h/flip_v、
+  // 撤销持久化编辑也会改这些列）：上面那个 effect 只依赖 image?.id，同 id 的字段变化不重跑，
+  // 显示态会停在旧朝向。独立同步，不并入主 effect（那会连带重置缩放并重新拉取标签）
+  useEffect(() => {
+    setRotation(Number(image?.rotation) || 0);
+    setFlipH(!!image?.flip_h);
+    setFlipV(!!image?.flip_v);
+  }, [image?.id, image?.rotation, image?.flip_h, image?.flip_v]);
+
   // 同步外部 image prop 的更新（如收藏/评分被外部刷新）
   useEffect(() => {
     if (image) {

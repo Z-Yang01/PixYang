@@ -57,7 +57,9 @@ export default function useMarqueeSelection({ selectedIdsRef }) {
       const hit = [];
       document.querySelectorAll('.image-card[data-id]').forEach((card) => {
         const id = Number(card.getAttribute('data-id'));
-        if (!id) return;
+        // 用有限性判定而非真值：id 0 是合法主键（自增异常/导入库可能命中），
+        // !id 会把这一行永远排除在框选之外（R153 审查）
+        if (!Number.isFinite(id)) return;
         const r = card.getBoundingClientRect();
         if (!(
           r.right < box.left ||

@@ -712,8 +712,11 @@ export async function renderWebGLPreview(canvas, image, uniforms, opts = {}) {
     // 纹理单元 2..9 专属（0 为 uImage、1 为 uCurveLut）
     for (let bi = 0; bi < 8; bi++) {
       const grid = uniforms.brushGrids?.[bi];
-      if (!this.__brushTex) this.__brushTex = [];
-      if (!this.__brushTex[bi]) {
+      // 纹理缓存在画布状态上：不得挂在函数接收者上——生产包是 ESM 严格模式，
+      // 该值为 undefined 会抛 TypeError 被 catch 吞掉 → 预览恒失败并静默降级 CSS；
+      // 测试环境非严格时又退化成全局单例，纹理跨画布串用
+      if (!st.brushTex) st.brushTex = [];
+      if (!st.brushTex[bi]) {
         const t = gl.createTexture();
         gl.bindTexture(gl.TEXTURE_2D, t);
         gl.texImage2D(
@@ -731,10 +734,10 @@ export async function renderWebGLPreview(canvas, image, uniforms, opts = {}) {
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-        this.__brushTex[bi] = t;
+        st.brushTex[bi] = t;
       }
       gl.activeTexture(gl.TEXTURE2 + bi);
-      gl.bindTexture(gl.TEXTURE_2D, this.__brushTex[bi]);
+      gl.bindTexture(gl.TEXTURE_2D, st.brushTex[bi]);
       if (grid) {
         gl.texImage2D(
           gl.TEXTURE_2D,
@@ -783,6 +786,7 @@ export function releaseWebGLPreview(canvas) {
     if (!gl.isContextLost()) {
       if (texture) gl.deleteTexture(texture);
       if (lutTexture) gl.deleteTexture(lutTexture);
+      (st.brushTex || []).forEach((t) => t && gl.deleteTexture(t));
       if (program) gl.deleteProgram(program);
     }
     const lose = gl.getExtension('WEBGL_lose_context');

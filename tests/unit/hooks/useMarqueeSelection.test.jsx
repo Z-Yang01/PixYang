@@ -12,6 +12,7 @@ function MarqueeHarness({ selectedIdsRef }) {
     <div data-testid="grid" onMouseDown={handleGridMouseDown}>
       <div className="image-card" data-id="1" />
       <div className="image-card" data-id="2" />
+      <div className="image-card" data-id="0" />
       <div ref={selBoxElRef} className="selection-box" style={{ display: 'none' }} />
     </div>
   );
@@ -100,5 +101,33 @@ describe('useMarqueeSelection', () => {
     const selected = useGalleryStore.getState().selectedIds;
     expect(selected.has(1)).toBe(true);
     expect(selected.has(2)).toBe(true);
+  });
+});
+
+describe('框选 id 解析边界（R153）', () => {
+  const selectedIdsRef = { current: new Set() };
+
+  beforeEach(() => {
+    useGalleryStore.setState(initialSnapshot, true);
+    selectedIdsRef.current = new Set();
+  });
+
+  afterEach(cleanup);
+
+  it('data-id="0" 是合法主键，必须能被框选（不得用真值判定漏掉）', () => {
+    document.querySelectorAll('.image-card').forEach((el) => {
+      el.getBoundingClientRect = () => ({
+        left: 0,
+        top: 0,
+        right: 10,
+        bottom: 10,
+        width: 10,
+        height: 10,
+      });
+    });
+    render(<MarqueeHarness selectedIdsRef={selectedIdsRef} />);
+    drag({ x: 0, y: 0 }, { x: 50, y: 50 });
+    const ids = [...useGalleryStore.getState().selectedIds].sort();
+    expect(ids).toEqual([0, 1, 2]);
   });
 });

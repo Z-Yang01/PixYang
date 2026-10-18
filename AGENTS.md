@@ -99,6 +99,9 @@ tests/            vitest（node 环境 + per-file happy-dom pragma）
 - shared/ 已于 2026-10-09 全量转 ESM（`export default`，原名 `.cjs`→`.js`；Electron 主进程当年是
   它唯一的非打包消费者，R36 已删，CJS 形态仅剩历史包袱）；测试辅助脚本（`tests/webgl-parity/*.cjs`）仍 CommonJS；前端使用 ESM + JSX。
 - JSX 为 automatic runtime（生产走 @vitejs/plugin-react；vitest 在 `vitest.config.js` 显式 `esbuild: { jsx: 'automatic' }`）：**不要**为 JSX 写 `import React`，需要 React API 时用命名导入（如 `import { useState } from 'react'`）；仅 main.jsx 与个别测试因使用 `React.StrictMode`/`React.useState` 保留默认导入。
+- **模块内禁用 `this` 做缓存/状态**：生产包是 ESM 严格模式，普通函数调用时 `this` 为 undefined
+  （vitest 经 SSR 转译成非严格，`this` 退化成 globalThis，测试抓不住）。曾因此让 WebGL 预览静默失败
+  整整两个版本（R153）。缓存一律挂显式对象（画布状态、模块级变量/Map）。
 - 前端组件/store **不得直调 `window.__TAURI__` 或 `window.pixyang`**，一律经 `src/lib/api.js`（守卫集中在该层，无桥时方法返回 undefined）。
 - 错误处理保持现有风格：`try/catch` + `console.error('[xxx] ...', e.message)`。
 - **上屏错误文案不得直插引擎原文**：Rust `PixError` 与 JS/WebView 错误正文是英文（`Os { code: 5, kind: PermissionDenied }`、

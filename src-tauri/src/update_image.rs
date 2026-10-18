@@ -700,6 +700,9 @@ pub fn delete_broken_records(
         tx.execute("DELETE FROM album_images WHERE image_id = ?1", params![id])?;
         tx.execute("DELETE FROM edits WHERE image_id = ?1", params![id])?;
         tx.execute("DELETE FROM edit_history WHERE image_id = ?1", params![id])?;
+        // 与 db::delete_image_record_statements 同口径补快照：外键级联未启用（无 PRAGMA
+        // foreign_keys=ON），漏删会留下孤儿 snapshots 行（R153 审查）
+        tx.execute("DELETE FROM snapshots WHERE image_id = ?1", params![id])?;
         tx.execute("DELETE FROM images WHERE id = ?1", params![id])?;
         delete_thumbnail_file(thumbs_dir, *id);
         removed.push(*id);
@@ -1233,6 +1236,11 @@ mod tests {
             params![id2],
         )
         .unwrap();
+        conn.execute(
+            "INSERT INTO snapshots (image_id, name, params_json) VALUES (?1, '我的版本', '{}')",
+            params![id2],
+        )
+        .unwrap();
 
         let result = delete_broken_records(&conn, &[id2, id3, id4], &root, &thumbs_dir).unwrap();
         assert_eq!(result["removed"], json!([id2, id4]));
@@ -1253,6 +1261,15 @@ mod tests {
             )
             .unwrap();
         assert_eq!(tag_left, 0);
+        // 快照须随图片清理（外键级联未启用，漏删即孤儿行）
+        let snap_left: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM snapshots WHERE image_id = ?1",
+                params![id2],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(snap_left, 0);
         let _ = std::fs::remove_dir_all(&dir);
     }
 
