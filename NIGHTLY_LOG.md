@@ -3488,3 +3488,33 @@ R103 宣言 → R116 六笔快包 → 本轮 R117-R119 终版快包，此后再�
   待人工复核：① 每图快照数量未设上限（预设表亦无上限；若担心膨胀可给 50 上限与编辑历史上限对齐）；
     ② 快照不含底图尺寸校验——跨尺寸同图参数无风险（同图同尺寸），预设的跨图几何钳制逻辑本不需要；
     ③ 实机冒烟顺延至 R2（本轮无 UI，真库 schema 自举将在 R2 打开编辑器时一并取证）。
+
+- 2026-10-18 23:35 R151 P4-R2 命名快照 UI 闭环（四方向计划第 8 轮，P4 完成）：
+  ① 组件：`EditorSnapshotSection.jsx`（101 行，8 props 纯受控）——历史区上方「快照」小节：标题计数、
+     列表行（点击恢复 + 删除 X，沿用 `.editor-preset-row/.editor-preset-name` 视觉）、命名输入 + 保存
+     （isEnterSubmit 回车提交）；空态「暂无快照，可把当前全部参数存成命名版本」；
+  ② ImageViewer 接线（+84 行，3298→3382）：三态 `snapshots/snapshotName/snapshotBusy`；`loadSnapshots`
+     以 image.id 为依赖、进编辑即加载（切图清空输入）；`saveSnapshot` 走 `toEditParams(composeOps())`
+     保形 → `{error}` 中文直上屏且提前返回（输入框保留可改名重试）→ 成功后清名 + 刷新 + toast；
+     `removeSnapshot` 删除后刷新；`applySnapshot` 走 `fromEditParams` 整域替换 + `pushHistory(label)`
+     → **恢复即进历史、Ctrl+Z 可退**，同时 `lastPresetRef.current = null`（强度滑杆只服务预设应用，
+     避免快照后出现语义错位的强度条）；坏参数（null/非对象）本地拦截提示，不发请求；
+  ③ 测试：`ImageViewer.snapshot.test.jsx` 6 例——按图加载 + 计数、空态、保存参数形状（含 basic 键）与
+     列表刷新、恢复落滑杆 + 历史出现「快照「暖调」」+ 强度条不出现、删除调用与刷新、重名 error 提前返回
+     （输入保留/列表不刷新）。保存例先 `waitFor(button.disabled === false)` 再点——受控输入状态未落地时
+     按钮 disabled，点击静默无声（本轮首跑即踩，属测试时序而非产品缺陷）；
+  ④ 变异验证（逐条红→绿）：删 `pushHistory` → 恢复进历史例红；删 `{error}` 提前返回 → 重名例红
+     （加载次数被断言捕获）。
+  - 实机取证：真库（`src-tauri/target/debug/data/pixyang.db`，933 张）用新构建二进制跑
+    `cli get-snapshots 933 --out`：迁移前表清单 10 张（无 snapshots）→ 运行后 11 张，`idx_snapshots_image_id`
+    与 `sqlite_autoindex_snapshots_1` 就位，--out 落盘 `[]`、退出码 0 —— 生产库 schema 自举与 CLI 链实证。
+    UI 侧 CDP 冒烟未取证：临时加 `additionalBrowserArgs=--remote-debugging-port=9222` 重建启动后
+    9222 无监听（进程在、WebView2 未暴露调试端口），配置已 git checkout 还原；UI 证据本轮为组件测试
+    + R150 契约表，实机手绘级取证顺延（详见待复核）。
+  - 验证：npm 84 文件/1100 例（+6）；cargo 247（本轮无 Rust 改动，未重跑）；golden 未动（无渲染改动）；
+    lint 0E/9W；tsc/prettier/build 干净。
+    提交范围：src/components/Viewer/EditorSnapshotSection.jsx src/components/Viewer/ImageViewer.jsx
+    tests/unit/components/Viewer/ImageViewer.snapshot.test.jsx NIGHTLY_LOG.md AGENTS.md
+  待人工复核：① 快照小节位置与视觉（历史区上方、与预设行同款）是否符合使用直觉；② 恢复后再存快照
+    会以当前（含快照）参数为准，是否需要「覆盖同名」语义（现为报错，需先删后存）；
+    ③ UI 实机 CDP 取证未完成——下轮优先补（换端口/确认 WebView2 additionalBrowserArgs 生效方式）。

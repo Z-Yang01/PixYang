@@ -176,6 +176,11 @@ tests/            vitest（node 环境 + per-file happy-dom pragma）
   save-edits / undo / get-snapshots / apply-snapshot；结果 JSON 写 --out 文件（release 无控制台，
   文件为唯一可靠回传）+ stdout。apply-snapshot 与 GUI 恢复同链（save_edit_params 带 before/after，可撤销）。
   Rust 侧无 params→spec 构建器，export 子命令未提供（需要时先移植 shared/renderSpec.js）。
+- **命名快照（P4）**：`snapshots` 表（`UNIQUE(image_id, name)`，删图随六表清理）→ 编辑面板历史区上方
+  「快照」小节（`EditorSnapshotSection`：命名保存/点击恢复/删除，空态文案）。保存走 `toEditParams(composeOps())`
+  保形；恢复走 `fromEditParams` 整域替换 + `pushHistory`（label「快照「x」」，可撤销）并清空 `lastPresetRef`
+  （预设强度滑杆只服务预设应用）。桥三通道 `getSnapshots/createSnapshot/deleteSnapshot`（params 与 preset 同款
+  `upgradeEdits` 规整，坏行出 null）；CLI `get-snapshots` / `apply-snapshot` 同链且带 before/after，撤销精确回应用前。
 - **持久化编辑撤销**：编辑器历史之外的跨会话撤销——查看器工具栏按钮 → api.undoLastEdit（Rust
   原子命令 `undo_last_edit`：读回退目标 → save_edit_params 链写回，全程持写锁；CLI `pixyang cli
   undo` 共用同一 undo_last_edit_conn，GUI/CLI 双端单实现）。回退目标语义：最新步 before → 缺失

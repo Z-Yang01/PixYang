@@ -90,6 +90,7 @@ import HistogramView from './HistogramView';
 import EditorHistoryPanel from './EditorHistoryPanel';
 import EditorMaskSection from './EditorMaskSection';
 import EditorPresetSection from './EditorPresetSection';
+import EditorSnapshotSection from './EditorSnapshotSection';
 import SliderRow from './SliderRow';
 import useCropInteraction from './useCropInteraction';
 import { specToShaderUniforms } from '@/lib/previewUniforms';
@@ -644,6 +645,10 @@ export default function ImageViewer({
   // ── 预设 / 复制粘贴 ──
   const [presets, setPresets] = useState([]);
   const [presetName, setPresetName] = useState('');
+  // 命名快照（P4）：单图参数存档，恢复走 pushHistory 进历史
+  const [snapshots, setSnapshots] = useState([]);
+  const [snapshotName, setSnapshotName] = useState('');
+  const [snapshotBusy, setSnapshotBusy] = useState(false);
   // 预设应用范围开关：关闭（默认）只套影调；开启连旋转/翻转/裁剪一起套
   const [applyWithGeometry, setApplyWithGeometry] = useState(false);
 
@@ -656,9 +661,24 @@ export default function ImageViewer({
     }
   }, []);
 
+  const loadSnapshots = useCallback(async () => {
+    if (!image?.id) return;
+    try {
+      const list = await api.getSnapshots(image.id);
+      setSnapshots(list || []);
+    } catch (e) {
+      console.error('[viewer] 快照加载失败:', e.message);
+    }
+  }, [image?.id]);
+
   useEffect(() => {
     if (editing) loadPresets();
   }, [editing, loadPresets]);
+
+  useEffect(() => {
+    setSnapshotName('');
+    if (editing) loadSnapshots();
+  }, [editing, loadSnapshots]);
 
   useEffect(() => {
     setSelectedMaskId(null);
@@ -1089,6 +1109,58 @@ export default function ImageViewer({
       await loadPresets();
     },
     [loadPresets]
+  );
+
+  // ── 命名快照动作：保存当前全部参数 / 恢复（进历史）/ 删除 ──
+  const saveSnapshot = useCallback(async () => {
+    const name = snapshotName.trim();
+    if (!name || !image || snapshotBusy) return;
+    setSnapshotBusy(true);
+    try {
+      const result = await api.createSnapshot(image.id, name, toEditParams(composeOps()));
+      if (result?.error) {
+        toast.error(friendlyError(result.error));
+        return;
+      }
+      setSnapshotName('');
+      await loadSnapshots();
+      toast.success(`快照「${name}」已保存`);
+    } catch (e) {
+      console.error('[viewer] 快照保存失败:', e.message);
+      toast.error(errText('快照保存失败', e));
+    } finally {
+      setSnapshotBusy(false);
+    }
+  }, [snapshotName, image, snapshotBusy, composeOps, loadSnapshots]);
+
+  const removeSnapshot = useCallback(
+    async (id) => {
+      try {
+        await api.deleteSnapshot(id);
+      } catch (e) {
+        console.error('[viewer] 快照删除失败:', e.message);
+        toast.error(errText('快照删除失败', e));
+        return;
+      }
+      await loadSnapshots();
+    },
+    [loadSnapshots]
+  );
+
+  // 恢复快照：整域替换（含几何），label 进历史可撤销；清掉预设强度基点（该滑杆只服务预设应用）
+  const applySnapshot = useCallback(
+    (snap) => {
+      if (!snap?.params || typeof snap.params !== 'object') {
+        toast.error('该快照的参数已损坏');
+        return;
+      }
+      const next = fromEditParams(snap.params);
+      lastPresetRef.current = null;
+      pushHistory(next, `快照「${snap.name}」`);
+      setEditOps(next);
+      toast.success(`已应用快照「${snap.name}」`);
+    },
+    [pushHistory]
   );
 
   const copySettings = useCallback(() => {
@@ -2994,6 +3066,18 @@ export default function ImageViewer({
               </p>
             )}
           </div>
+
+          {/* 命名快照：历史区上方的参数存档（恢复入历史，可撤销） */}
+          <EditorSnapshotSection
+            snapshots={snapshots}
+            snapshotName={snapshotName}
+            onNameChange={setSnapshotName}
+            onSave={saveSnapshot}
+            onApply={applySnapshot}
+            onRemove={removeSnapshot}
+            editBusy={editBusy}
+            snapshotBusy={snapshotBusy}
+          />
 
           {/* 历史记录（任务书第 12 节）：点击跳转到任意步骤 */}
           <EditorHistoryPanel histInfo={histInfo} historyRef={historyRef} onJump={jumpToHistory} />
