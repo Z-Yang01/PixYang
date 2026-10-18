@@ -3576,3 +3576,6 @@ R103 宣言 → R116 六笔快包 → 本轮 R117-R119 终版快包，此后再�
     tests/unit/hooks/useMarqueeSelection.test.jsx tests/unit/components/Viewer/ImageViewer.test.jsx
   待人工复核：P0 影响面（R146-R152 期间所有实机预览都走 CSS 回退，画笔/HSL/蒙版等 WebGL 专属效果
     可能从未在真机生效过——需实机复验一次编辑预览，顺带补上轮未完成的 CDP 取证）。
+  - 补：P0 的严格模式 A/B 实跑（node ESM 直接加载模块 + Proxy 假 GL，绕过 vitest 转译）——
+    修复前：`[webgl] 预览渲染失败: Cannot read properties of undefined (reading '__brushTex')`、
+    返回 false、texImage2D=1；修复后：返回 true、texImage2D=9（底图 + 8 画笔槽）。即生产失败路径实证。
