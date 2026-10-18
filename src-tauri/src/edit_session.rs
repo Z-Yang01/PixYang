@@ -299,6 +299,92 @@ pub fn get_edit_history(conn: &Connection, id: i64) -> Result<Vec<Value>, PixErr
     Ok(out)
 }
 
+// ── 命名快照（P4）：单图编辑参数存档，UNIQUE(image_id, name) 保证同图内命名唯一 ──
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SnapshotRow {
+    pub id: i64,
+    pub image_id: i64,
+    pub name: String,
+    pub params: Value,
+    pub created_at: String,
+}
+
+/// 按图片列快照：新→旧（同一秒内靠 id 兜底次序稳定）
+pub fn get_snapshots(conn: &Connection, image_id: i64) -> rusqlite::Result<Vec<SnapshotRow>> {
+    let mut stmt = conn.prepare(
+        "SELECT id, image_id, name, params_json, created_at FROM snapshots WHERE image_id = ?1 ORDER BY created_at DESC, id DESC",
+    )?;
+    let rows = stmt.query_map([image_id], |r| {
+        let raw: String = r.get(3)?;
+        let params = serde_json::from_str(&raw).unwrap_or(Value::Null);
+        Ok(SnapshotRow {
+            id: r.get(0)?,
+            image_id: r.get(1)?,
+            name: r.get(2)?,
+            params,
+            created_at: r.get(4)?,
+        })
+    })?;
+    rows.collect()
+}
+
+/// 建快照：返回 `{id, name} | {error: 中文}`（与 create_preset 同契约）。
+/// 名称去首尾空白并截断百字；空名与重名都在此拦下，不依赖 UNIQUE 报错文案（引擎英文）。
+pub fn create_snapshot(
+    conn: &Connection,
+    image_id: i64,
+    name: &str,
+    params: &Value,
+) -> Result<Value, PixError> {
+    if images_query::get_image_by_id(conn, image_id)?.is_none() {
+        return Ok(json!({ "error": "图片不存在" }));
+    }
+    if !params.is_object() {
+        return Ok(json!({ "error": "编辑参数必须为 JSON 对象" }));
+    }
+    let clean_name: String = name.trim().chars().take(100).collect();
+    if clean_name.is_empty() {
+        return Ok(json!({ "error": "快照名称不能为空" }));
+    }
+    let dup: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM snapshots WHERE image_id = ?1 AND name = ?2",
+        rusqlite::params![image_id, clean_name],
+        |r| r.get(0),
+    )?;
+    if dup > 0 {
+        return Ok(json!({ "error": "该名称的快照已存在" }));
+    }
+    let json_text = serde_json::to_string(params).unwrap_or_default();
+    conn.execute(
+        "INSERT INTO snapshots (image_id, name, params_json) VALUES (?1, ?2, ?3)",
+        rusqlite::params![image_id, clean_name, json_text],
+    )?;
+    let id: i64 = conn.query_row(
+        "SELECT id FROM snapshots WHERE image_id = ?1 AND name = ?2",
+        rusqlite::params![image_id, clean_name],
+        |r| r.get(0),
+    )?;
+    Ok(json!({ "id": id, "name": clean_name }))
+}
+
+pub fn delete_snapshot(conn: &Connection, id: i64) -> rusqlite::Result<()> {
+    conn.execute("DELETE FROM snapshots WHERE id = ?1", [id])?;
+    Ok(())
+}
+
+/// 按名取快照（CLI apply-snapshot 用）：不存在返回 None
+pub fn find_snapshot(
+    conn: &Connection,
+    image_id: i64,
+    name: &str,
+) -> rusqlite::Result<Option<SnapshotRow>> {
+    Ok(get_snapshots(conn, image_id)?
+        .into_iter()
+        .find(|s| s.name == name))
+}
+
 /// 镜像 saveEditedImage：编辑产物（-temp）原子替代原图，rename 成功后才更新 DB。
 /// 铁律：任何失败路径都不得先删原图——rename/写入再失败时原图必须完好。
 /// 烘焙后效果已写入像素：参数重置为默认（保留 schemaVersion 与历史记录），否则重进编辑会二次施加。
@@ -1329,5 +1415,81 @@ mod tests {
         crate::images_query::get_image_by_id(conn, id)
             .unwrap()
             .unwrap()
+    }
+
+    // ── 命名快照 CRUD ──
+
+    fn seed_image(conn: &Connection, id: i64, name: &str) {
+        conn.execute(
+            "INSERT INTO images (id, filename, filepath, import_date) VALUES (?1, ?2, ?3, '2026-10-18')",
+            rusqlite::params![id, name, format!("/x/{name}")],
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn 快照_建列删全链_按创建时间倒序() {
+        let conn = edit_mem_db();
+        seed_image(&conn, 1, "a.jpg");
+        let p1 = json!({ "schemaVersion": 1, "basic": { "exposure": 0.5 } });
+        let p2 = json!({ "schemaVersion": 1, "basic": { "exposure": -1 } });
+        let r1 = create_snapshot(&conn, 1, "暖调", &p1).unwrap();
+        assert_eq!(r1["name"], "暖调");
+        create_snapshot(&conn, 1, "冷调", &p2).unwrap();
+        let list = get_snapshots(&conn, 1).unwrap();
+        assert_eq!(list.len(), 2);
+        // 同一秒 created_at 相同 → id DESC 兜底：后建的排在前面
+        assert_eq!(list[0].name, "冷调");
+        assert_eq!(list[1].params["basic"]["exposure"], 0.5);
+        delete_snapshot(&conn, r1["id"].as_i64().unwrap()).unwrap();
+        let list = get_snapshots(&conn, 1).unwrap();
+        assert_eq!(list.len(), 1);
+        assert_eq!(list[0].name, "冷调");
+    }
+
+    #[test]
+    fn 快照_同图重名中文报错_异图同名互不干扰() {
+        let conn = edit_mem_db();
+        seed_image(&conn, 1, "a.jpg");
+        seed_image(&conn, 2, "b.jpg");
+        let p = json!({ "schemaVersion": 1 });
+        assert!(create_snapshot(&conn, 1, "版本A", &p).unwrap()["id"].is_i64());
+        let dup = create_snapshot(&conn, 1, "版本A", &p).unwrap();
+        assert_eq!(dup["error"], "该名称的快照已存在");
+        // 首尾空白归一后再判重
+        let dup_ws = create_snapshot(&conn, 1, "  版本A  ", &p).unwrap();
+        assert_eq!(dup_ws["error"], "该名称的快照已存在");
+        let other = create_snapshot(&conn, 2, "版本A", &p).unwrap();
+        assert!(other["id"].is_i64(), "不同图片可同名: {other}");
+    }
+
+    #[test]
+    fn 快照_空名非对象参数与图片不存在均中文报错() {
+        let conn = edit_mem_db();
+        seed_image(&conn, 1, "a.jpg");
+        let empty = create_snapshot(&conn, 1, "   ", &json!({})).unwrap();
+        assert_eq!(empty["error"], "快照名称不能为空");
+        let bad = create_snapshot(&conn, 1, "x", &json!([1, 2])).unwrap();
+        assert_eq!(bad["error"], "编辑参数必须为 JSON 对象");
+        let missing = create_snapshot(&conn, 99, "x", &json!({})).unwrap();
+        assert_eq!(missing["error"], "图片不存在");
+        assert!(get_snapshots(&conn, 99).unwrap().is_empty());
+    }
+
+    #[test]
+    fn 快照_按名取用与坏json参数置空() {
+        let conn = edit_mem_db();
+        seed_image(&conn, 1, "a.jpg");
+        create_snapshot(&conn, 1, "保留", &json!({ "schemaVersion": 1 })).unwrap();
+        conn.execute(
+            "INSERT INTO snapshots (image_id, name, params_json, created_at) VALUES (1, '坏行', 'not-json', '2026-01-01')",
+            [],
+        )
+        .unwrap();
+        let hit = find_snapshot(&conn, 1, "保留").unwrap().unwrap();
+        assert_eq!(hit.name, "保留");
+        assert!(find_snapshot(&conn, 1, "不存在").unwrap().is_none());
+        let bad = find_snapshot(&conn, 1, "坏行").unwrap().unwrap();
+        assert!(bad.params.is_null());
     }
 }

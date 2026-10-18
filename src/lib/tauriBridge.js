@@ -86,6 +86,26 @@ export const tauriApi = {
   createPreset: (name, params) =>
     tauriInvoke('create_preset', { name, params: upgradeEdits(params) }),
   deletePreset: (id) => tauriInvoke('delete_preset', { id }),
+  // 命名快照：与预设同款 upgradeEdits 规整（params 为完整 EditParams v1）
+  getSnapshots: async (imageId) => {
+    const rows = await tauriInvoke('get_snapshots', { imageId });
+    return rows.map((r) => ({
+      id: r.id,
+      imageId: r.imageId,
+      name: r.name,
+      params: (() => {
+        try {
+          return upgradeEdits(r.params);
+        } catch {
+          return null;
+        }
+      })(),
+      createdAt: r.createdAt,
+    }));
+  },
+  createSnapshot: (imageId, name, params) =>
+    tauriInvoke('create_snapshot', { imageId, name, params: upgradeEdits(params) }),
+  deleteSnapshot: (id) => tauriInvoke('delete_snapshot', { id }),
   getImagesRoot: () => tauriInvoke('get_images_root'),
   // 与 Rust set_images_root(dir_path) 对齐；sync_camera_folder 无用户参数（相机根取自 settings）
   setImagesRoot: (dirPath) => tauriInvoke('set_images_root', { dirPath }),

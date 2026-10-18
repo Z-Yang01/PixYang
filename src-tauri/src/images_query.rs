@@ -345,6 +345,7 @@ pub(crate) mod tests {
             CREATE TABLE album_images (album_id INTEGER NOT NULL, image_id INTEGER NOT NULL, sort_order INTEGER DEFAULT 0, PRIMARY KEY (album_id, image_id));
             CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
             CREATE TABLE presets (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL UNIQUE, params_json TEXT NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);
+            CREATE TABLE snapshots (id INTEGER PRIMARY KEY AUTOINCREMENT, image_id INTEGER NOT NULL, name TEXT NOT NULL, params_json TEXT NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, UNIQUE (image_id, name));
             CREATE TABLE edits (image_id INTEGER NOT NULL);
             CREATE TABLE edit_history (image_id INTEGER NOT NULL);",
         )

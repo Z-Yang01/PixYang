@@ -186,6 +186,14 @@ CREATE TABLE IF NOT EXISTS presets (
   params_json TEXT NOT NULL,
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
+CREATE TABLE IF NOT EXISTS snapshots (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  image_id INTEGER NOT NULL REFERENCES images(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  params_json TEXT NOT NULL,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE (image_id, name)
+);
 ";
 
 // 旧库逐列回迁清单：任意旧形态 images 表收敛到终态 28 列（超集含 legacy
@@ -346,6 +354,7 @@ CREATE INDEX IF NOT EXISTS idx_images_hidden_favorite ON images(hidden, favorite
 CREATE INDEX IF NOT EXISTS idx_image_tags_tag_id ON image_tags(tag_id);
 CREATE INDEX IF NOT EXISTS idx_album_images_image_id ON album_images(image_id);
 CREATE INDEX IF NOT EXISTS idx_images_visible_sort_date ON images(hidden, CASE WHEN taken_at != '' THEN taken_at ELSE import_date END, id);
+CREATE INDEX IF NOT EXISTS idx_snapshots_image_id ON snapshots(image_id);
 ";
 
 const SETTINGS_DEFAULTS: &str = "
@@ -503,11 +512,12 @@ fn delete_image_record_statements(conn: &Connection, id: i64) -> rusqlite::Resul
     n += conn.execute("DELETE FROM album_images WHERE image_id = ?1", [id])?;
     n += conn.execute("DELETE FROM edits WHERE image_id = ?1", [id])?;
     n += conn.execute("DELETE FROM edit_history WHERE image_id = ?1", [id])?;
+    n += conn.execute("DELETE FROM snapshots WHERE image_id = ?1", [id])?;
     n += conn.execute("DELETE FROM images WHERE id = ?1", [id])?;
     Ok(n)
 }
 
-/// 事务内清理记录：image_tags/album_images/edits/edit_history/images 五表；图不存在返回 None
+/// 事务内清理记录：image_tags/album_images/edits/edit_history/snapshots/images 六表；图不存在返回 None
 pub fn delete_image_record(
     conn: &Connection,
     id: i64,
@@ -682,7 +692,7 @@ mod delete_tests {
     use crate::images_query::tests::mem_db as full_mem_db;
 
     #[test]
-    fn 删除图片_五表清理_源文件与缩略图删除() {
+    fn 删除图片_六表清理_源文件与缩略图删除() {
         let dir = std::env::temp_dir().join("pixyang_del_test");
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(dir.join("thumbs")).unwrap();
@@ -696,7 +706,8 @@ mod delete_tests {
             "INSERT INTO images (id, filename, filepath, import_date, raw_path) VALUES (1, 'a.jpg', '{}', '2026-01-01', '{}');
              INSERT INTO tags (id, name) VALUES (1, 't'); INSERT INTO image_tags VALUES (1, 1);
              INSERT INTO albums (id, name) VALUES (1, 'al'); INSERT INTO album_images VALUES (1, 1, 0);
-             INSERT INTO edits (image_id) VALUES (1); INSERT INTO edit_history (image_id) VALUES (1);",
+             INSERT INTO edits (image_id) VALUES (1); INSERT INTO edit_history (image_id) VALUES (1);
+             INSERT INTO snapshots (image_id, name, params_json) VALUES (1, '我的快照', '{{}}');",
             f1.to_string_lossy().replace("\\", "/"),
             raw.to_string_lossy().replace("\\", "/")
         ))
@@ -715,6 +726,10 @@ mod delete_tests {
             .query_row("SELECT COUNT(*) FROM image_tags", [], |r| r.get(0))
             .unwrap();
         assert_eq!(tag_count, 0);
+        let snapshot_count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM snapshots", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(snapshot_count, 0, "快照须随图片删除清理");
         assert!(delete_image(&conn, 1, &thumbs).unwrap().is_none());
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -845,6 +860,7 @@ mod path_tests {
             "edits",
             "edit_history",
             "presets",
+            "snapshots",
             "settings",
         ] {
             let n: i64 = conn

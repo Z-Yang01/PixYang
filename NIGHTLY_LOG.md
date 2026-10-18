@@ -3459,3 +3459,32 @@ R103 宣言 → R116 六笔快包 → 本轮 R117-R119 终版快包，此后再�
     tests/unit/components/Gallery/ImageGrid.cardProps.test.jsx
     tests/unit/components/Explorer/ImportDialog.extra.test.jsx NIGHTLY_LOG.md AGENTS.md
   待人工复核：无（三件均为内部实现/性能口径，无 UI 可见变化）。
+
+- 2026-10-18 23:15 R150 P4-R1 命名快照数据层与三通道（四方向计划第 7 轮，P4 起步）：
+  ① 数据模型：BUSINESS_TABLES 增 `snapshots(id, image_id, name, params_json, created_at,
+     UNIQUE(image_id, name))` + `idx_snapshots_image_id`；删除通道 `delete_image_record_statements`
+     由五表扩六表（foreign_keys pragma 未开，不能指望 ON DELETE CASCADE 兜底——与既有显式清理同哲学，
+     变异验证即以此锁死）；`open_全新库自举业务表` 表清单与 `删除图片_六表清理` 用例同步；
+  ② 内核（edit_session.rs，与 get_edits/save_edit_params 同文件）：`SnapshotRow`（serde camelCase，
+     与 PresetRow 同形）+ `get_snapshots`（created_at DESC, id DESC——同秒建立靠 id 稳定）/`create_snapshot`
+     /`delete_snapshot`/`find_snapshot`（CLI 按名取）。返回契约镜像 create_preset：重名 → `{error}`，
+     不依赖 UNIQUE 引擎英文报错；名称 trim + 截断百字；空名/参数非对象/图片不存在 各自中文 error；
+     坏 json 的 params_json 列表出 null（不整行丢弃）；
+  ③ 命令层 + 注册：get_snapshots（只读连接）/create_snapshot/delete_snapshot（写锁）；lib.rs 三命令入册，
+     **顺带校正 AGENTS 命令计数 59→60**（git 实测 R49 定稿后实际已是 57，文档欠两笔——本轮按真值改）；
+  ④ CLI：`get-snapshots <id>` 直出数组；`apply-snapshot <id> <name>` 走 save_edit_params 并携带
+     before/after → **GUI 撤销可精确回到应用前**（只带 label 会退化为回默认参数，属本轮主动规避的坑）；
+     快照缺参损坏时报「快照「x」的参数已损坏」；
+  ⑤ 前端接缝：tauriBridge 三包装（params 经 upgradeEdits 规整，与 preset 同款，坏行 try/catch 出 null）
+     + api.js 名单三行（api.js 按包装存在性自动接缝）+ apiTauriContract 三行（getSnapshots 的 invokeImpl
+     返回数组，免桥内 .map 崩在 mock 上）。
+  - 变异验证（逐条红→绿）：判重 SQL 去掉 `image_id`（改全局名唯一）→「异图同名互不干扰」红；
+    delete_image_record 去掉 snapshots 清理 →「删除图片_六表清理」红（FK pragma 未开故非冗余语句）。
+  - 验证：npm 83 文件/1094 例（+3 契约例）；cargo 247（+5：4 内核 + 1 CLI 全链）；golden_audit 1 例
+    （无渲染改动，像素零变化）；lint 0E/9W；tsc/prettier/build 干净。
+    提交范围：src-tauri/src/db.rs src-tauri/src/edit_session.rs src-tauri/src/commands.rs
+    src-tauri/src/lib.rs src-tauri/src/cli.rs src-tauri/src/images_query.rs src/lib/tauriBridge.js
+    src/lib/api.js tests/unit/lib/apiTauriContract.test.js NIGHTLY_LOG.md AGENTS.md
+  待人工复核：① 每图快照数量未设上限（预设表亦无上限；若担心膨胀可给 50 上限与编辑历史上限对齐）；
+    ② 快照不含底图尺寸校验——跨尺寸同图参数无风险（同图同尺寸），预设的跨图几何钳制逻辑本不需要；
+    ③ 实机冒烟顺延至 R2（本轮无 UI，真库 schema 自举将在 R2 打开编辑器时一并取证）。

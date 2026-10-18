@@ -420,6 +420,34 @@ pub fn delete_preset(db: State<'_, Db>, id: i64) -> Result<(), String> {
     tags_albums::delete_preset(&conn, id).map_err(|e| err_cn::text(&e))
 }
 
+// ── 命名快照通道（P4）：单图编辑参数存档，参数在前端桥接层经 upgradeEdits 规整 ──
+
+#[tauri::command]
+pub fn get_snapshots(
+    db: State<'_, Db>,
+    image_id: i64,
+) -> Result<Vec<edit_session::SnapshotRow>, String> {
+    let conn = db.open_read().map_err(|e| err_cn::text(&e))?;
+    edit_session::get_snapshots(&conn, image_id).map_err(|e| err_cn::text(&e))
+}
+
+#[tauri::command]
+pub fn create_snapshot(
+    db: State<'_, Db>,
+    image_id: i64,
+    name: String,
+    params: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    let conn = db.write_lock();
+    edit_session::create_snapshot(&conn, image_id, &name, &params).map_err(|e| err_cn::text(&e))
+}
+
+#[tauri::command]
+pub fn delete_snapshot(db: State<'_, Db>, id: i64) -> Result<(), String> {
+    let conn = db.write_lock();
+    edit_session::delete_snapshot(&conn, id).map_err(|e| err_cn::text(&e))
+}
+
 // ── 删除通道（迁移接缝 4b） ──
 
 // ── 杂项通道（迁移接缝 14：托管根/库路径/跨页全选/托管文件判定） ──

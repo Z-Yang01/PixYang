@@ -16,7 +16,9 @@ const USAGE: &str = "用法: pixyang cli <子命令> [--out <文件>]
   analyze <id>                          图像统计（直方图/均值/分位/裁切占比）
   get-edits <id>                        读当前编辑参数
   save-edits <id> <params.json> [label] 写编辑参数（label 非空自动入历史）
-  undo <id>                             撤销上一次编辑保存";
+  undo <id>                             撤销上一次编辑保存
+  get-snapshots <id>                    列出该图命名快照
+  apply-snapshot <id> <name>            应用命名快照（链入历史，可撤销）";
 
 fn err(msg: &str) -> Value {
     json!({ "error": msg })
@@ -81,6 +83,54 @@ fn dispatch(db: &Db, args: &[String]) -> Value {
                 .unwrap_or_else(|e| err(&crate::err_cn::text(&e))),
             Err(e) => e,
         },
+        "get-snapshots" => match parse_id_at(0) {
+            Ok(id) => {
+                let conn = db.write_lock();
+                match edit_session::get_snapshots(&conn, id) {
+                    Ok(rows) => json!(rows),
+                    Err(e) => err(&crate::err_cn::text(&e)),
+                }
+            }
+            Err(e) => e,
+        },
+        "apply-snapshot" => {
+            let id = match parse_id_at(0) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let Some(name) = rest.get(1) else {
+                return err("缺少快照名称参数: apply-snapshot <id> <name>");
+            };
+            let conn = db.write_lock();
+            let found = match edit_session::find_snapshot(&conn, id, name) {
+                Ok(v) => v,
+                Err(e) => return err(&crate::err_cn::text(&e)),
+            };
+            let Some(snap) = found else {
+                return err(&format!("快照不存在: {name}"));
+            };
+            if !snap.params.is_object() {
+                return err(&format!("快照「{name}」的参数已损坏"));
+            }
+            // 历史条目带 before/after：GUI 撤销即可精确回到应用前（缺失时撤销会回默认参数）
+            let before = match edit_session::get_edits(&conn, id) {
+                Ok(v) => v.get("params").cloned().unwrap_or(Value::Null),
+                Err(e) => return err(&crate::err_cn::text(&e)),
+            };
+            match edit_session::save_edit_params(
+                &conn,
+                id,
+                &snap.params,
+                Some(&json!({
+                    "label": format!("快照「{name}」"),
+                    "before": before,
+                    "after": snap.params,
+                })),
+            ) {
+                Ok(v) => v,
+                Err(e) => err(&crate::err_cn::text(&e)),
+            }
+        }
         other => err(&format!("未知子命令: {other}\n{USAGE}")),
     }
 }
@@ -230,6 +280,51 @@ mod tests {
         assert_eq!(out["version"], 4);
         let out = dispatch(&db, &["get-edits".to_string(), id.to_string()]);
         assert_eq!(out["params"]["basic"]["exposure"], 0);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn 快照_get_snapshots与apply_snapshot全链() {
+        let (db, dir, id) = cli_db("snap");
+        let conn = db.write_lock();
+        let params = json!({ "schemaVersion": 1, "basic": { "exposure": 0.8 } });
+        edit_session::create_snapshot(&conn, id, "暖调", &params).unwrap();
+        drop(conn);
+
+        let out = dispatch(&db, &["get-snapshots".to_string(), id.to_string()]);
+        assert_eq!(out[0]["name"], "暖调", "{out}");
+        assert_eq!(out[0]["params"]["basic"]["exposure"], 0.8);
+        assert_eq!(out[0]["imageId"], id);
+
+        let out = dispatch(
+            &db,
+            &[
+                "apply-snapshot".to_string(),
+                id.to_string(),
+                "暖调".to_string(),
+            ],
+        );
+        assert_eq!(out["version"], 1, "{out}");
+        let out = dispatch(&db, &["get-edits".to_string(), id.to_string()]);
+        assert_eq!(out["params"]["basic"]["exposure"], 0.8);
+
+        // 应用链入历史 → undo 可回退到空参数
+        let out = dispatch(&db, &["undo".to_string(), id.to_string()]);
+        assert_eq!(out["version"], 2);
+        let out = dispatch(&db, &["get-edits".to_string(), id.to_string()]);
+        assert_eq!(out["params"]["basic"]["exposure"], 0);
+
+        let out = dispatch(
+            &db,
+            &[
+                "apply-snapshot".to_string(),
+                id.to_string(),
+                "不存在".to_string(),
+            ],
+        );
+        assert!(out["error"].as_str().unwrap().contains("快照不存在"));
+        let out = dispatch(&db, &["apply-snapshot".to_string(), id.to_string()]);
+        assert!(out["error"].as_str().unwrap().contains("缺少快照名称"));
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

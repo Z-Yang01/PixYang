@@ -135,6 +135,20 @@ const ROUTES = [
     invokeArgs: { name: 'p', params: upgradeEdits({ exposure: 2 }) },
   },
   { method: 'deletePreset', args: [4], cmd: 'delete_preset', invokeArgs: { id: 4 } },
+  {
+    method: 'getSnapshots',
+    args: [9],
+    cmd: 'get_snapshots',
+    invokeArgs: { imageId: 9 },
+    invokeImpl: (cmd) => (cmd === 'get_snapshots' ? [] : {}),
+  },
+  {
+    method: 'createSnapshot',
+    args: [9, '暖调', { exposure: 2 }],
+    cmd: 'create_snapshot',
+    invokeArgs: { imageId: 9, name: '暖调', params: upgradeEdits({ exposure: 2 }) },
+  },
+  { method: 'deleteSnapshot', args: [6], cmd: 'delete_snapshot', invokeArgs: { id: 6 } },
   { method: 'getImagesRoot', args: [], cmd: 'get_images_root', invokeArgs: {} },
   { method: 'getDatabasePath', args: [], cmd: 'get_database_path', invokeArgs: {} },
   {

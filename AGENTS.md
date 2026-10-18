@@ -17,7 +17,7 @@ PixYang 是一个本地桌面图片管理应用，技术栈：
 
 ```
 src-tauri/        Rust/Tauri 后端（唯一运行时桌面端）
-  src/lib.rs      模块声明 + run()（Builder + dialog/opener 插件，generate_handler! 注册 59 命令）
+  src/lib.rs      模块声明 + run()（Builder + dialog/opener 插件，generate_handler! 注册 60 命令（R150 校正：文档自 R49 起欠两笔））
   src/main.rs     桌面入口（release 隐控制台）
   src/naming.rs   唯一命名/配对主名（移植 electron/database.js 语义）
   src/image_group.rs 导入分组/日期围栏/安全文件名
@@ -37,12 +37,13 @@ src-tauri/        Rust/Tauri 后端（唯一运行时桌面端）
   src/trash.rs    删除暂存区（trash）：用户手动删除延迟物理化（移入 `{id}__` 前缀改名 +
                   manifest 全列快照 / 撤销整链还原 / 启动+每24h 清扫超期 24h 物理删）
   src/exif_relay.rs EXIF 回接（JPEG APP1/PNG eXIf 字节级注放）
-  src/db.rs       rusqlite 连接/settings/删除通道（与旧版共用 pixyang.db，schema 自举+快照迁移）
+  src/db.rs       rusqlite 连接/settings/删除通道（与旧版共用 pixyang.db，schema 自举+快照迁移；
+                  BUSINESS_TABLES 含 snapshots 命名快照表，UNIQUE(image_id,name)，删图六表清理）
   src/file_ops.rs 导入编排/改名（NEF 避让收养、双回滚）；启动烘焙残留清扫经
                   spawn_startup_bake_temp_cleanup 后台线程执行（只读连接，不碰写锁，R149）
   src/camera.rs   相机同步/图片根迁移
   src/update_image.rs 日期移动白名单更新/rebuild 缩略图/损坏记录/重复查找
-  src/edit_session.rs 编辑会话（saveEditedImage 原子替换/历史/烘焙/导出）
+  src/edit_session.rs 编辑会话（saveEditedImage 原子替换/历史/烘焙/导出/命名快照 CRUD）
   src/scan.rs     目录扫描/导入收集
   src/exif_read.rs EXIF 读取（18 字段中文映射）
   src/interact.rs 对话框/openPath/backupDatabase（tauri-plugin-dialog/opener）
@@ -172,7 +173,8 @@ tests/            vitest（node 环境 + per-file happy-dom pragma）
   闭环无后端命令，编辑底图为 sidecar 校验的复用缓存）。
 - **外部 agent CLI 通道**：`pixyang cli <子命令> --out <文件>` 直连内核（无窗口不触发单实例；
   WAL 多进程并发，写锁被运行实例占用时 5s 超时中文报错）。子命令：analyze / get-edits /
-  save-edits / undo；结果 JSON 写 --out 文件（release 无控制台，文件为唯一可靠回传）+ stdout。
+  save-edits / undo / get-snapshots / apply-snapshot；结果 JSON 写 --out 文件（release 无控制台，
+  文件为唯一可靠回传）+ stdout。apply-snapshot 与 GUI 恢复同链（save_edit_params 带 before/after，可撤销）。
   Rust 侧无 params→spec 构建器，export 子命令未提供（需要时先移植 shared/renderSpec.js）。
 - **持久化编辑撤销**：编辑器历史之外的跨会话撤销——查看器工具栏按钮 → api.undoLastEdit（Rust
   原子命令 `undo_last_edit`：读回退目标 → save_edit_params 链写回，全程持写锁；CLI `pixyang cli
