@@ -23,6 +23,7 @@ describe('ImportDialog', () => {
       toFileUrls: vi.fn().mockResolvedValue({}),
       selectDirectory: vi.fn().mockResolvedValue(null),
       scanDirectory: vi.fn().mockResolvedValue([]),
+      checkDuplicateSerials: vi.fn().mockResolvedValue({ duplicates: [] }),
     };
   });
 
@@ -66,9 +67,12 @@ describe('ImportDialog', () => {
   it('点击导入：向后台导入 store 交棒（文件与 override 入队）并调用 onSubmitted，对话框不自跑导入', async () => {
     const onSubmitted = vi.fn();
     renderDialog({ initialFiles: filesFixture, onSubmitted });
+    fireEvent.click(screen.getByText('今天')); // 显式选「今天」以锁 override
     fireEvent.click(screen.getByText('导入 2 张图片'));
+    await vi.waitFor(() => {
+      expect(useImportStore.getState().active).not.toBeNull();
+    });
     const st = useImportStore.getState();
-    expect(st.active).not.toBeNull();
     expect(st.active.files).toEqual(filesFixture);
     expect(st.active.override).toBe(todayStr());
     expect(st.active.total).toBe(2);

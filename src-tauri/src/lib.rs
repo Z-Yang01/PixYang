@@ -183,6 +183,7 @@ pub fn run() {
             commands::get_database_path,
             commands::get_all_image_ids,
             commands::import_images,
+            commands::check_duplicate_serials,
             commands::rename_image,
             commands::export_images,
             commands::export_album_images,

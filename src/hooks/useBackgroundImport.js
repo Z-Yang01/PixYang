@@ -58,10 +58,15 @@ export default function useBackgroundImport({ showToast } = {}) {
       const allImported = [];
       let attempted = 0;
       let nextRefreshAt = REFRESH_EVERY;
+      // R156：用户在导入前逐张确认跳过的重复序列号，落在此 skip 集合里；
+      // 这些文件不进后端、不落库，但计入 total/skipped 统计（不阻塞其他图片）
+      const skipSet = job.skip && job.skip.length ? new Set(job.skip) : null;
       try {
         for (let i = 0; i < job.files.length; i += BATCH_SIZE) {
           if (useImportStore.getState().isCancelRequested()) break;
-          const batch = job.files.slice(i, i + BATCH_SIZE);
+          const slice = job.files.slice(i, i + BATCH_SIZE);
+          const batch = skipSet ? slice.filter((f) => !skipSet.has(f.filepath)) : slice;
+          if (batch.length === 0) continue; // 整批都跳过则直接跳到下一批
           useImportStore.getState().patch({ currentFile: batch[0].filename, exif: null });
           attempted += batch.length;
           const imported = await api.importImages(batch, job.override);

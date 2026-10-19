@@ -164,6 +164,12 @@ const ROUTES = [
     invokeArgs: { files: [{ filename: 'a.jpg' }], dateOverride: '2026-01-01' },
   },
   {
+    method: 'checkDuplicateSerials',
+    args: [['E:/a.jpg', 'E:/b.JPG']],
+    cmd: 'check_duplicate_serials',
+    invokeArgs: { filepaths: ['E:/a.jpg', 'E:/b.JPG'] },
+  },
+  {
     method: 'renameImage',
     args: [2, 'n.jpg'],
     cmd: 'rename_image',

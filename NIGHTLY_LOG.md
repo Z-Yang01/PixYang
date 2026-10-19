@@ -3645,3 +3645,22 @@ R103 宣言 → R116 六笔快包 → 本轮 R117-R119 终版快包，此后再�
   待人工复核：① 在设置页跑一次扫描，核对 506 个的构成与预期是否一致；② 对 10/19 那 187 个，
     建议先「按拍摄日期归档入库」（会把它们移到 2026\\08\\29 并与 08\\31 的旧记录共存——
     真正的重复清理要等导入去重落地）；③ 其余 319 个 RAW 建议「原地登记入库」走挂接分支。
+
+- 2026-10-19 R156 导入去重（文件名序列号 + 逐张确认）+ 默认按拍摄日期归档：
+  ① 用户追问「当前导入重复的图片还会不会进最新日期文件夹」→ 结论：**会**。手动导入链（import_images）
+     原本无去重、且默认按导入当天归档（apply_date_override 的 EXIF 分支虽存在但默认 dateMode='today' 不触发）。
+  ② 默认日期模式改「使用拍摄日期」：`ImportDialog` 初始 `dateMode='exif'` → `override=null` →
+     后端读 EXIF 拍摄日归档（taken_at 一并落库），用户仍可切「今天」「自定义」。
+  ③ 文件名序列号查重（用户指定口径，非内容哈希）：新增 `file_ops::check_duplicate_serials(conn, filepaths)`
+     只读扫描——文件名（lower）已存在于**可见记录**(hidden=0) 即重复，返回 {filepath,filename,existing}；
+     隐藏 RAW(hidden=1) 不算以免打扰配对。命令 `check_duplicate_serials`（open_read 只读）已注册 + 契约补 1 条。
+  ④ 前端逐张确认：`ImportDialog` 点导入先调 checkDuplicateSerials，命中则进入确认步骤（默认「跳过」、
+     可逐张改「继续导入」，互不干扰、不阻塞其他图片），确认后 `enqueue(files, override, skip)`；
+     `importStore.enqueue` 透传 `skip`，`useBackgroundImport` 每批发送前用 skipSet 过滤（统计计入 total/skipped）。
+  ⑤ 验证：npm 1139 例（+5，含 2 个 R156 对话框用例 / 2 个 importStore / 1 个契约）；cargo 258（+1）；
+     tsc 0E；lint 0E/9W（遗留 hook 警告）；prettier 全绿。提交范围：src-tauri/src/file_ops.rs
+     src-tauri/src/commands.rs src-tauri/src/lib.rs src/lib/api.js src/lib/tauriBridge.js
+     src/store/importStore.js src/hooks/useBackgroundImport.js src/components/Explorer/ImportDialog.jsx
+     tests/unit/lib/apiTauriContract.test.js tests/unit/store/importStore.test.js
+     tests/unit/components/Explorer/ImportDialog.test.jsx tests/unit/components/Explorer/ImportDialog.extra.test.jsx
+     AGENTS.md NIGHTLY_LOG.md

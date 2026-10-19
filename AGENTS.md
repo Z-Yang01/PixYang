@@ -105,8 +105,20 @@ tests/            vitest（node 环境 + per-file happy-dom pragma）
   ① 对话框**不得自己跑** `importImages` 批处理循环，也不再有结果页/为自己渲染进度；
   ② 后台导入完成**不跳转路由、不清筛选**（区别于老的 `handleImportDone`）——用户正在浏览/编辑时
   不得被拽走；只做 `loadImages/loadStats` 增量可见 + toast 通知；
-  ③ 归档目录按**导入日期**生成（`file_ops` date_str ← dateOverride > 自带 importDate > EXIF > mtime > 今天，
-  见 `image_group::date_dir`），默认日期模式「今天」会把 8 月拍的照片归档到导入当天的目录。
+  ③ 归档目录按**拍摄日期优先**生成（`file_ops::apply_date_override`：dateOverride > 自带 importDate >
+  EXIF 拍摄日 > mtime > 今天，见 `image_group::date_dir`）。**默认日期模式改为「使用拍摄日期」**（R156），
+  即 `ImportDialog` 默认 `dateMode='exif'` → `override=null` → 后端读 EXIF 拍摄日归档；用户仍可切「今天」/「自定义」。
+- **R156 导入去重（文件名序列号 + 逐张确认）**：手动导入链（`import_images`）原本**无去重**，内存卡整卡重导
+  会把同一批照片再落进最新日期目录并新增重复记录。R156 在导入前加一道关卡：
+  - 后端 `file_ops::check_duplicate_serials(conn, filepaths)` 只读扫描——文件名（lower 后）已存在于
+    **可见记录**（hidden=0）即视为重复序列号，返回 `{filepath, filename, existing}`；隐藏 RAW（hidden=1）
+    不算，避免打扰配对导入。命令 `check_duplicate_serials`（open_read 只读）。
+  - 前端 `ImportDialog` 点导入先调 `api.checkDuplicateSerials`，若有重复则进入**逐张确认**步骤：默认「跳过」、
+    可逐张点选改为「继续导入」，每张决定相互独立、不阻塞其他图片；确认后 `enqueue(files, override, skip)`，
+    驱动 `useBackgroundImport` 在每批发送前剔除 `skip` 集合（统计仍计入 total/skipped）。
+  - `importStore.enqueue(files, override, skip=[])` 透传 `skip`；`useBackgroundImport` 用 `skipSet` 过滤批次。
+  - 注意：R156 只挡**手动导入**的重复；相机同步链（`camera_sync`）的静默去重是另一套。治理 10/19 那批已落库的
+    187 张重复，用 R155 的「按拍摄日期归档入库」把孤儿移回 2026/08/29，而非本功能。
 
 ## 未入库文件（孤儿文件）维护
 

@@ -124,6 +124,8 @@ export const tauriApi = {
   backupDatabase: () => tauriInvoke('backup_database'),
   importImages: (files, dateOverride) =>
     tauriInvoke('import_images', { files, dateOverride: dateOverride ?? null }),
+  // R156：导入前按文件名序列号查重（只读），返回 { duplicates: [{filepath, filename, existing}] }
+  checkDuplicateSerials: (filepaths) => tauriInvoke('check_duplicate_serials', { filepaths }),
   renameImage: (id, newFilename) => tauriInvoke('rename_image', { id, newFilename }),
   // options 缺省/null = 原样复制（Rust BatchExportOptions::from_json 的 None 回退）；转换模式传 { mode:'convert', ... }
   exportImages: (ids, destDir, options) =>

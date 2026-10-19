@@ -23,6 +23,7 @@ describe('ImportDialog（后台导入交棒）', () => {
       toFileUrls: vi.fn().mockResolvedValue({}),
       selectDirectory: vi.fn().mockResolvedValue(null),
       scanDirectory: vi.fn().mockResolvedValue([]),
+      checkDuplicateSerials: vi.fn().mockResolvedValue({ duplicates: [] }),
     };
   });
 
@@ -46,35 +47,96 @@ describe('ImportDialog（后台导入交棒）', () => {
     expect(document.querySelectorAll('.import-file-card').length).toBe(0);
   });
 
-  it('日期模式：今天交棒 override 为当天字符串', () => {
+  it('日期模式：今天交棒 override 为当天字符串', async () => {
     renderDialog({ initialFiles: filesFixture });
+    fireEvent.click(screen.getByText('今天'));
     fireEvent.click(screen.getByText('导入 2 张图片'));
+    await vi.waitFor(() => {
+      expect(useImportStore.getState().active).not.toBeNull();
+    });
     expect(useImportStore.getState().active.override).toBe(todayStr());
   });
 
-  it('日期模式：使用拍摄日期交棒 override 为 null', () => {
+  it('日期模式：使用拍摄日期交棒 override 为 null', async () => {
     renderDialog({ initialFiles: filesFixture });
     fireEvent.click(screen.getByText('使用拍摄日期'));
     fireEvent.click(screen.getByText('导入 2 张图片'));
+    await vi.waitFor(() => {
+      expect(useImportStore.getState().active).not.toBeNull();
+    });
     expect(useImportStore.getState().active.override).toBeNull();
   });
 
-  it('日期模式：自定义日期出现输入框并作为 override 交棒', () => {
+  it('日期模式：自定义日期出现输入框并作为 override 交棒', async () => {
     renderDialog({ initialFiles: filesFixture });
     fireEvent.click(screen.getByText('自定义'));
     const dateInput = document.querySelector('input[type="date"]');
     expect(dateInput).not.toBeNull();
     fireEvent.change(dateInput, { target: { value: '2030-05-06' } });
     fireEvent.click(screen.getByText('导入 2 张图片'));
+    await vi.waitFor(() => {
+      expect(useImportStore.getState().active).not.toBeNull();
+    });
     expect(useImportStore.getState().active.override).toBe('2030-05-06');
   });
 
-  it('取消勾选一张后交棒：只导入勾选的文件', () => {
+  it('取消勾选一张后交棒：只导入勾选的文件', async () => {
     renderDialog({ initialFiles: filesFixture });
     fireEvent.click(document.querySelectorAll('.import-file-card')[0]);
     fireEvent.click(screen.getByText('导入 1 张图片'));
+    await vi.waitFor(() => {
+      expect(useImportStore.getState().active).not.toBeNull();
+    });
     const st = useImportStore.getState();
     expect(st.active.files).toEqual([filesFixture[1]]);
+  });
+
+  it('R156 重复序列号：进入逐张确认，默认跳过，确认后带 skip 集合入队', async () => {
+    window.pixyang.checkDuplicateSerials.mockResolvedValue({
+      duplicates: [
+        { filepath: 'C:/import/a.jpg', filename: 'a.jpg', existing: 'E:/PicX/2026/08/29/a.jpg' },
+      ],
+    });
+    renderDialog({ initialFiles: filesFixture });
+    fireEvent.click(screen.getByText('导入 2 张图片'));
+    // 进入确认步骤
+    await vi.waitFor(() => {
+      expect(screen.getByText(/与已导入图片重复/)).toBeInTheDocument();
+    });
+    expect(screen.getByText('a.jpg')).toBeInTheDocument();
+    const existingEl = document.querySelector('.import-dup-existing');
+    expect(existingEl?.textContent).toContain('2026/08/29/a.jpg');
+    // 默认决策：继续 0 · 跳过 1
+    expect(screen.getByText('继续 0 · 跳过 1')).toBeInTheDocument();
+    fireEvent.click(screen.getByText('确认导入（继续 0 · 跳过 1）'));
+    await vi.waitFor(() => {
+      const st = useImportStore.getState();
+      expect(st.active).not.toBeNull();
+      expect(st.active.skip).toEqual(['C:/import/a.jpg']);
+    });
+  });
+
+  it('R156 重复序列号：逐张改为继续导入后 skip 为空', async () => {
+    window.pixyang.checkDuplicateSerials.mockResolvedValue({
+      duplicates: [
+        { filepath: 'C:/import/a.jpg', filename: 'a.jpg', existing: 'E:/PixX/2026/08/29/a.jpg' },
+        { filepath: 'C:/import/b.png', filename: 'b.png', existing: 'E:/PixX/2026/08/29/b.png' },
+      ],
+    });
+    renderDialog({ initialFiles: filesFixture });
+    fireEvent.click(screen.getByText('导入 2 张图片'));
+    await vi.waitFor(() => {
+      expect(screen.getByText(/与已导入图片重复/)).toBeInTheDocument();
+    });
+    // 点击「全部继续导入」
+    fireEvent.click(screen.getByText('全部继续导入'));
+    expect(screen.getByText('继续 2 · 跳过 0')).toBeInTheDocument();
+    fireEvent.click(screen.getByText('确认导入（继续 2 · 跳过 0）'));
+    await vi.waitFor(() => {
+      const st = useImportStore.getState();
+      expect(st.active).not.toBeNull();
+      expect(st.active.skip).toEqual([]);
+    });
   });
 
   it('浏览取消（selectDirectory 返回 null）：不触发扫描', async () => {

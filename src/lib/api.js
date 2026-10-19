@@ -31,6 +31,7 @@ for (const name of [
   'setImagesRoot',
   'openPath',
   'importImages',
+  'checkDuplicateSerials',
   'syncCameraFolder',
   'getImages',
   'getAllImageIds',

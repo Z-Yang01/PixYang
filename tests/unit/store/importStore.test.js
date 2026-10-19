@@ -90,4 +90,17 @@ describe('importStore', () => {
     useImportStore.getState().enqueue(files(1), null);
     expect(useImportStore.getState().finished).toBeNull();
   });
+
+  it('R156 enqueue 带 skip 集合：透传到 active 且不改变 total', () => {
+    const id = useImportStore.getState().enqueue(files(3), null, ['C:/f0.jpg', 'C:/f2.jpg']);
+    const st = useImportStore.getState();
+    expect(id).toBeGreaterThan(0);
+    expect(st.active.skip).toEqual(['C:/f0.jpg', 'C:/f2.jpg']);
+    expect(st.active.total).toBe(3); // total 仍是勾选总数，skip 只是标记
+  });
+
+  it('R156 enqueue 省略 skip 时 active.skip 为空数组', () => {
+    useImportStore.getState().enqueue(files(2), null);
+    expect(useImportStore.getState().active.skip).toEqual([]);
+  });
 });

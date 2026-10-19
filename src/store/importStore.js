@@ -6,11 +6,12 @@ import { create } from 'zustand';
 
 let jobSeq = 0;
 
-function newJob({ id, files, override }) {
+function newJob({ id, files, override, skip }) {
   return {
     id,
     files,
     override,
+    skip: skip && skip.length ? skip : [],
     total: files.length,
     attempted: 0,
     imported: 0,
@@ -29,9 +30,9 @@ export const useImportStore = create((set, get) => ({
   // 最近一个结束的任务摘要（含 error/canceled），供状态栏展示，用户手动关闭
   finished: null,
 
-  enqueue: (files, override) => {
+  enqueue: (files, override, skip = []) => {
     if (!files || files.length === 0) return null;
-    const job = { id: ++jobSeq, files, override };
+    const job = { id: ++jobSeq, files, override, skip };
     set((s) => ({
       finished: null,
       ...(s.active ? { queue: [...s.queue, job] } : { active: newJob(job) }),

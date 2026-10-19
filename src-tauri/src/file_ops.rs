@@ -485,6 +485,44 @@ pub fn import_images(
     Ok(imported)
 }
 
+/// R156：导入前按「文件名序列号」查重。文件名（lower 后）已存在于可见记录(hidden=0)
+/// 即视为重复序列号。返回每个冲突候选的 {filepath, filename, existing}。
+/// 只读、不改任何数据；是否真的跳过由前端逐张确认后回传 skip 集合决定。
+/// 只比对可见记录：RAW(NEF) 以 hidden=1 入库，重导时不应被当作「重复主图」来打扰用户，
+/// 它的配对由 import_one_impl 的 raw_path 占用判定处理。
+pub fn check_duplicate_serials(
+    conn: &Connection,
+    filepaths: &[String],
+) -> Result<Vec<Value>, PixError> {
+    let mut out = Vec::with_capacity(filepaths.len());
+    for fp in filepaths {
+        let path = Path::new(fp);
+        let fname = match path.file_name() {
+            Some(n) => n.to_string_lossy().to_lowercase(),
+            None => continue,
+        };
+        if fname.is_empty() {
+            continue;
+        }
+        let existing: Option<String> = conn
+            .query_row(
+                "SELECT filepath FROM images WHERE lower(filename) = ?1 AND hidden = 0 LIMIT 1",
+                rusqlite::params![fname],
+                |r| r.get::<_, String>(0),
+            )
+            .optional()
+            .unwrap_or(None);
+        if let Some(ex) = existing {
+            out.push(json!({
+                "filepath": fp,
+                "filename": path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default(),
+                "existing": ex,
+            }));
+        }
+    }
+    Ok(out)
+}
+
 /// R111 分块「生成→回写」共用尾段（import_images 与相机同步批量导入共用，R114 起）：
 /// 结果容器分块化——峰值 ~10MB 不随批量增长（全批一次并行的产物驻留对万级首导是 GB 级，
 /// 旧串行版为 O(1)）；原序/统计/事件面仍逐行不变（块间串行推进，块内乱序完成按 ticket
@@ -1080,6 +1118,51 @@ mod tests {
         );
         assert!(Path::new(&fp).is_absolute(), "应为绝对路径: {fp}");
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn 查重_文件名序列号命中可见记录_大小写不敏感_忽略隐藏记录() {
+        let conn = Connection::open(":memory:").unwrap();
+        conn.execute_batch(
+            "CREATE TABLE images (id INTEGER PRIMARY KEY AUTOINCREMENT, filename TEXT NOT NULL,
+             filepath TEXT NOT NULL UNIQUE, original_path TEXT DEFAULT '', raw_path TEXT DEFAULT '',
+             original_raw_path TEXT DEFAULT '', hidden INTEGER DEFAULT 0, orientation INTEGER DEFAULT 1,
+             rotation INTEGER DEFAULT 0, flip_h INTEGER DEFAULT 0, flip_v INTEGER DEFAULT 0,
+             import_date TEXT, taken_at TEXT, size INTEGER DEFAULT 0, width INTEGER, height INTEGER,
+             format TEXT DEFAULT '', thumbnail TEXT, thumbnail_path TEXT, thumbnail_small_path TEXT,
+             thumbnail_edit_path TEXT, rating INTEGER DEFAULT 0, favorite INTEGER DEFAULT 0,
+             notes TEXT DEFAULT '', created_at DATETIME, updated_at DATETIME, duration INTEGER);",
+        )
+        .unwrap();
+        // 可见主图（hidden=0）：重导时应提示重复
+        conn.execute(
+            "INSERT INTO images (filename, filepath, hidden) VALUES ('a.jpg', 'E:/PicX/2026/08/29/a.jpg', 0)",
+            [],
+        )
+        .unwrap();
+        // 隐藏 RAW（hidden=1）：配对导入落库，不应被当作「重复主图」打扰用户
+        conn.execute(
+            "INSERT INTO images (filename, filepath, hidden) VALUES ('b.nef', 'E:/PicX/2026/08/29/b.nef', 1)",
+            [],
+        )
+        .unwrap();
+
+        let candidates = vec![
+            "X:/card/a.jpg".to_string(),
+            "X:/card/A.JPG".to_string(), // 大小写不敏感应同样命中
+            "X:/card/b.nef".to_string(), // 隐藏记录不应触发重复提示
+            "X:/card/c.png".to_string(), // 不存在，不应命中
+        ];
+        let dups = super::check_duplicate_serials(&conn, &candidates).unwrap();
+        let hit: std::collections::HashSet<String> = dups
+            .iter()
+            .map(|d| d["filepath"].as_str().unwrap().to_string())
+            .collect();
+        assert_eq!(hit.len(), 2, "应命中 a.jpg 与 A.JPG 两条");
+        assert!(hit.contains("X:/card/a.jpg"));
+        assert!(hit.contains("X:/card/A.JPG"));
+        assert!(!hit.contains("X:/card/b.nef"), "隐藏 NEF 不应触发重复提示");
+        assert!(!hit.contains("X:/card/c.png"));
     }
 
     #[test]

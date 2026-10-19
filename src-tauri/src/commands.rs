@@ -506,6 +506,22 @@ pub async fn import_images(
 }
 
 #[tauri::command]
+pub async fn check_duplicate_serials(
+    db: State<'_, Db>,
+    filepaths: Vec<String>,
+) -> Result<Value, String> {
+    let db = db.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let conn = db.open_read().map_err(|e| err_cn::text(&e))?;
+        let rows =
+            file_ops::check_duplicate_serials(&conn, &filepaths).map_err(|e| err_cn::text(&e))?;
+        Ok(json!({ "duplicates": rows }))
+    })
+    .await
+    .map_err(|e| format!("后台任务失败：{}", err_cn::text(&e)))?
+}
+
+#[tauri::command]
 pub async fn rename_image(
     db: State<'_, Db>,
     id: i64,
