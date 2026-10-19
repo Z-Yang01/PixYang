@@ -15,6 +15,7 @@ pub mod image_group;
 pub mod image_stats;
 pub mod images_query;
 pub mod naming;
+pub mod orphans;
 pub mod progress;
 pub mod render;
 pub mod scan;
@@ -192,6 +193,9 @@ pub fn run() {
             commands::update_image,
             commands::update_images,
             commands::scan_broken_records,
+            commands::scan_orphan_files,
+            commands::adopt_orphan_files,
+            commands::remove_orphan_files,
             commands::delete_broken_records,
             commands::find_duplicates,
             commands::save_edit_params,

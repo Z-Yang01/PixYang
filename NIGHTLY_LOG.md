@@ -3617,3 +3617,31 @@ R103 宣言 → R116 六笔快包 → 本轮 R117-R119 终版快包，此后再�
     tests/unit/components/Explorer/ImportDialog.extra.test.jsx
   待人工复核：① 拖动导入含万级文件时底部条占比体感；② 停止后 UI 是否要保留「继续」；
     ③ 孤儿文件（磁盘有、库里没有）与导入去重见同批诊断结论。
+
+- 2026-10-19 11:20 R155 未入库文件（孤儿文件）扫描与可逆处置 + 维护扫描根目录缺陷修复：
+  ① 起因：用户报「E://PicX//2026//10//19 里是 8/29 拍的照片」。取证（三个库快照 + 磁盘 EXIF 抽样）：
+     该目录 187 个文件 EXIF 拍摄时间均为 2026:08:29，其中 47 个文件名与库内 2026\\08\\31 记录同名；
+     三个库**均无**指向该目录的记录、缩略图目录最新只到 10/13 → 属「有文件无记录」的孤儿文件。
+  ② 新增 `src-tauri/src/orphans.rs`（唯一实现，10 例）+ 三命令 scan/adopt/remove_orphan_files：
+     - scan：遍历 images_root，排除 trash/thumbnails/data/edits，输出路径/大小/拍摄日/mtime/is_raw/has_partner；
+     - adopt：`rearchive=false` 原地登记（不动文件），`true` 按日期链移到 yyyy/MM/dd 后登记；
+       NEF 与主名 JPG 成对时挂 raw_path；**绝不删除、绝不覆盖**（同名加 `_n`）；
+       RAW 命中「同目录同主名已登记图片」→ 写回 raw_path 不新建隐藏行（已占用则 skipped）；
+     - remove：搬到用户选的目录（同主名配对文件一并搬），跨盘退化为复制+删源。
+  ③ 连带缺陷（P1，已修）：`scan_broken_records` / `find_duplicates` 命令用 `AppPaths.default_images_dir`
+     （= data/images 默认）而非解析后的 `db::images_root`——用户把图片根设为 E://PicX 后，
+     「扫描失效记录」「查找重复」实际扫的是空目录，长期静默无结果。改为解析库根（orphans 侧一开始就规避）。
+  ④ 前端：设置页维护区加「扫描未入库文件」入口 + `OrphanFilesPanel`（预览/全选/三种处置，
+     确认弹窗说明「不会删除文件」）；apiTauriContract 补三条通道契约。
+  - 预演结论（只读脚本对用户真实库跑一遍）：托管树 1439 个图片文件，已登记 933，**未入库 506**——
+    其中 94 个 JPG、412 个 RAW；412 个 RAW 里 319 个的同名 JPG 已在库中（属「挂接」而非新建行）。
+    10/19 目录的 187 个只是其中最大的一块，其余 319 个散落在 03/21、04/05、04/18、05/01、05/15、08/31。
+  - 验证：npm 88 文件/**1134 例**（+14）；cargo **257**（+10）+ golden 1；lint 0E/9W；tsc/prettier/build 全绿。
+    提交范围：src-tauri/src/orphans.rs src-tauri/src/lib.rs src-tauri/src/commands.rs
+    src/lib/api.js src/lib/tauriBridge.js src/components/Settings/OrphanFilesPanel.jsx
+    src/components/Settings/SettingsPage.jsx AGENTS.md NIGHTLY_LOG.md
+    tests/unit/components/Settings/OrphanFilesPanel.test.jsx
+    tests/unit/components/Settings/SettingsPage.extra.test.jsx tests/unit/lib/apiTauriContract.test.js
+  待人工复核：① 在设置页跑一次扫描，核对 506 个的构成与预期是否一致；② 对 10/19 那 187 个，
+    建议先「按拍摄日期归档入库」（会把它们移到 2026\\08\\29 并与 08\\31 的旧记录共存——
+    真正的重复清理要等导入去重落地）；③ 其余 319 个 RAW 建议「原地登记入库」走挂接分支。

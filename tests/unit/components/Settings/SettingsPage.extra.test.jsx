@@ -49,6 +49,9 @@ describe('SettingsPage（补充：存储/相机/维护/备份/重复图片等交
       scanBrokenRecords: vi.fn().mockResolvedValue([]),
       deleteBrokenRecords: vi.fn().mockResolvedValue(0),
       findDuplicates: vi.fn().mockResolvedValue([]),
+      scanOrphanFiles: vi.fn().mockResolvedValue([]),
+      adoptOrphanFiles: vi.fn().mockResolvedValue({ adopted: 0, failed: 0 }),
+      removeOrphanFiles: vi.fn().mockResolvedValue({ moved: 0, failed: 0 }),
       toFileUrls: vi.fn().mockResolvedValue({}),
       batchDeleteImages: vi.fn().mockResolvedValue(undefined),
       backupDatabase: vi.fn().mockResolvedValue({ success: true, path: 'C:/backup.db' }),
@@ -608,5 +611,42 @@ describe('SettingsPage（补充：存储/相机/维护/备份/重复图片等交
     fireEvent.click(screen.getByText('扫描失效记录'));
     expect(await screen.findByText(/未发现失效记录/)).toBeInTheDocument();
     expect(screen.queryByText('清理失效记录')).not.toBeInTheDocument();
+  });
+
+  it('扫描未入库文件：无孤儿时提示「未发现」', async () => {
+    renderPage();
+    fireEvent.click(screen.getByText('扫描未入库文件'));
+    await vi.waitFor(() => {
+      expect(window.pixyang.scanOrphanFiles).toHaveBeenCalled();
+    });
+    expect(await screen.findByText('未发现未入库的图片文件')).toBeInTheDocument();
+  });
+
+  it('扫描未入库文件：有结果时打开处置面板（默认不改动任何文件）', async () => {
+    window.pixyang.scanOrphanFiles.mockResolvedValue([
+      {
+        filepath: 'E:/PicX/2026/10/19/DSC_1723.JPG',
+        filename: 'DSC_1723.JPG',
+        size: 8656171,
+        taken_at: '2026-08-29 16:36',
+        mtime: '2026-08-29',
+        is_raw: false,
+      },
+    ]);
+    renderPage();
+    fireEvent.click(screen.getByText('扫描未入库文件'));
+    expect(await screen.findByText(/发现 1 个未入库的图片文件/)).toBeInTheDocument();
+    expect(screen.getByText('DSC_1723.JPG')).toBeInTheDocument();
+    // 只展示不动作：确认前不得调用任何处置命令
+    expect(window.pixyang.adoptOrphanFiles).not.toHaveBeenCalled();
+    expect(window.pixyang.removeOrphanFiles).not.toHaveBeenCalled();
+  });
+
+  it('扫描未入库文件失败：显示中文错误，不开面板', async () => {
+    window.pixyang.scanOrphanFiles.mockRejectedValue(new Error('scan boom'));
+    renderPage();
+    fireEvent.click(screen.getByText('扫描未入库文件'));
+    expect(await screen.findByText(/扫描失败/)).toBeInTheDocument();
+    expect(screen.queryByText(/发现 .* 个未入库的图片文件/)).not.toBeInTheDocument();
   });
 });

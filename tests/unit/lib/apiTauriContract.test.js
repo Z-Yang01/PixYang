@@ -209,6 +209,19 @@ const ROUTES = [
     invokeArgs: { ids: [3] },
   },
   { method: 'findDuplicates', args: [], cmd: 'find_duplicates', invokeArgs: {} },
+  { method: 'scanOrphanFiles', args: [], cmd: 'scan_orphan_files', invokeArgs: {} },
+  {
+    method: 'adoptOrphanFiles',
+    args: [['E:/a.jpg'], true],
+    cmd: 'adopt_orphan_files',
+    invokeArgs: { pathsList: ['E:/a.jpg'], rearchive: true },
+  },
+  {
+    method: 'removeOrphanFiles',
+    args: [['E:/a.jpg'], 'E:/out'],
+    cmd: 'remove_orphan_files',
+    invokeArgs: { pathsList: ['E:/a.jpg'], targetDir: 'E:/out' },
+  },
   {
     method: 'saveEdits',
     args: [1, { exposure: 0.5 }, { label: 'x' }],

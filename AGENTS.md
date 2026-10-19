@@ -108,6 +108,19 @@ tests/            vitest（node 环境 + per-file happy-dom pragma）
   ③ 归档目录按**导入日期**生成（`file_ops` date_str ← dateOverride > 自带 importDate > EXIF > mtime > 今天，
   见 `image_group::date_dir`），默认日期模式「今天」会把 8 月拍的照片归档到导入当天的目录。
 
+## 未入库文件（孤儿文件）维护
+
+- 定义：托管树（`images_root`）里有文件、但 `images` 表没有记录（导入中断、外部复制、早期导入未回写
+  `raw_path` 的 RAW）。入口在设置页「维护 → 扫描未入库文件」，`src-tauri/src/orphans.rs` 是唯一实现。
+- **硬契约：本模块绝不删除文件**。只提供两种可逆处置——① 登记入库（原地登记，或按日期链
+  `EXIF 拍摄日 > mtime > 今天` 移到 `yyyy/MM/dd` 目录再登记）；② 移出托管目录（搬到用户指定目录）。
+  移出跨盘走「复制 + 删源」，同名自动加 `_n` 后缀，绝不覆盖。
+- RAW 优先挂接：孤儿 RAW 若命中「同目录同主名的已登记图片」，写回该记录的 `raw_path`，**不新建隐藏行**；
+  该记录已占 `raw_path` 时计入 `skipped` 且不覆盖（用户库里 412 个孤儿 RAW 有 319 个属此类）。
+- 维护类扫描必须解析库根 `db::images_root(conn, default_dir)`，**不能直接用 `AppPaths.default_images_dir`**
+  （那是 `data/images` 默认值；用户把图片根改到 E://PicX 后按默认目录扫描会一无所获——
+  `scan_broken_records` / `find_duplicates` 曾因此长期失效，R155 已修）。
+
 ## 编码约定
 
 - 不要添加代码注释，除非用户明确要求。

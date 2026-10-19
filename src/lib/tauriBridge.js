@@ -144,6 +144,11 @@ export const tauriApi = {
   scanBrokenRecords: () => tauriInvoke('scan_broken_records', {}),
   deleteBrokenRecords: (ids) => tauriInvoke('delete_broken_records', { ids }),
   findDuplicates: () => tauriInvoke('find_duplicates', {}),
+  scanOrphanFiles: () => tauriInvoke('scan_orphan_files', {}),
+  adoptOrphanFiles: (paths, rearchive) =>
+    tauriInvoke('adopt_orphan_files', { pathsList: paths, rearchive: !!rearchive }),
+  removeOrphanFiles: (paths, targetDir) =>
+    tauriInvoke('remove_orphan_files', { pathsList: paths, targetDir }),
   saveEdits: (id, params, command) =>
     tauriInvoke('save_edit_params', { id, params: upgradeEdits(params), command }).then(
       (result) => {

@@ -3,6 +3,7 @@ import { Button } from '@/components/ui/button';
 import ConfirmDialog from '../Layout/ConfirmDialog';
 import useGalleryStore from '@/store/galleryStore';
 import api from '@/lib/api';
+import OrphanFilesPanel from './OrphanFilesPanel';
 import { THEMES, normalizeTheme } from '@/lib/themes';
 import { errText, friendlyError } from '@/lib/errorText';
 
@@ -38,6 +39,8 @@ export default function SettingsPage({ onSettingsChanged, onImagesChanged }) {
   const [dupeKeep, setDupeKeep] = useState({});
   const [dupeUrls, setDupeUrls] = useState({});
   const [dbPath, setDbPath] = useState('');
+  const [scanningOrphans, setScanningOrphans] = useState(false);
+  const [orphans, setOrphans] = useState(null);
   const [aiDraft, setAiDraft] = useState({ baseUrl: '', apiKey: '', model: '' });
   const aiSavedRef = useRef({ baseUrl: '', apiKey: '', model: '' });
   const [aiSaving, setAiSaving] = useState(false);
@@ -363,6 +366,36 @@ export default function SettingsPage({ onSettingsChanged, onImagesChanged }) {
       });
     });
     return ids;
+  };
+
+  const handleScanOrphans = async () => {
+    if (!api.isBridgeAvailable() || scanningOrphans) return;
+    setScanningOrphans(true);
+    let list;
+    try {
+      list = await api.scanOrphanFiles();
+    } catch (e) {
+      console.error('[设置] 孤儿文件扫描失败:', e.message);
+      setMessage(errText('扫描失败', e));
+      setScanningOrphans(false);
+      return;
+    }
+    setScanningOrphans(false);
+    if (list?.error) {
+      setMessage(friendlyError(list.error));
+      return;
+    }
+    if (!Array.isArray(list) || list.length === 0) {
+      showSaved('未发现未入库的图片文件');
+      return;
+    }
+    setOrphans(list);
+  };
+
+  const handleOrphansDone = (n, kind) => {
+    setOrphans(null);
+    onImagesChanged?.();
+    showSaved(kind === 'remove' ? `已移出 ${n} 个文件` : `已登记入库 ${n} 个文件`);
   };
 
   const handleDeleteDuplicates = async () => {
@@ -712,6 +745,22 @@ export default function SettingsPage({ onSettingsChanged, onImagesChanged }) {
           </p>
 
           <div className="info-row" style={{ marginTop: 12 }}>
+            <span className="info-label">未入库文件</span>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={handleScanOrphans}
+              disabled={scanningOrphans}
+            >
+              {scanningOrphans ? '扫描中...' : '扫描未入库文件'}
+            </Button>
+          </div>
+          <p className="settings-help">
+            扫描图片目录里存在、但图库没有记录的文件（导入中断或外部复制所致）。可登记进图库或移出目录，
+            <strong>不会删除任何文件</strong>。
+          </p>
+
+          <div className="info-row" style={{ marginTop: 12 }}>
             <span className="info-label">数据库备份</span>
             <Button variant="secondary" size="sm" onClick={handleBackup}>
               备份数据库
@@ -757,6 +806,14 @@ export default function SettingsPage({ onSettingsChanged, onImagesChanged }) {
           confirmLabel={`清理 ${brokenRecords.length} 条`}
           onConfirm={handleCleanBroken}
           onCancel={() => setBrokenRecords(null)}
+        />
+      )}
+
+      {orphans && orphans.length > 0 && (
+        <OrphanFilesPanel
+          items={orphans}
+          onClose={() => setOrphans(null)}
+          onDone={handleOrphansDone}
         />
       )}
 

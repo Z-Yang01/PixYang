@@ -7,6 +7,7 @@ use crate::err_cn;
 use crate::executor;
 use crate::file_ops;
 use crate::images_query;
+use crate::orphans;
 use crate::progress;
 use crate::scan;
 use crate::tags_albums;
@@ -741,8 +742,11 @@ pub async fn scan_broken_records(
     let paths = paths.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
         let conn = db.open_read().map_err(|e| err_cn::text(&e))?;
-        update_image::scan_broken_records(&conn, &paths.default_images_dir)
-            .map_err(|e| err_cn::text(&e))
+        // 必须解析库根：default_images_dir 是 data/images（默认），用户把图片根改到
+        // E://PicX 后按默认目录扫描会一无所获（失效记录永远扫不出、查重永远「未发现」）
+        let root = crate::db::images_root(&conn, &paths.default_images_dir)
+            .map_err(|e| err_cn::text(&e))?;
+        update_image::scan_broken_records(&conn, &root).map_err(|e| err_cn::text(&e))
     })
     .await
     .map_err(|e| format!("后台任务失败：{}", err_cn::text(&e)))?
@@ -779,7 +783,59 @@ pub async fn find_duplicates(
     let paths = paths.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
         let conn = db.open_read().map_err(|e| err_cn::text(&e))?;
-        update_image::find_duplicates(&conn, &paths.default_images_dir)
+        let root = crate::db::images_root(&conn, &paths.default_images_dir)
+            .map_err(|e| err_cn::text(&e))?;
+        update_image::find_duplicates(&conn, &root).map_err(|e| err_cn::text(&e))
+    })
+    .await
+    .map_err(|e| format!("后台任务失败：{}", err_cn::text(&e)))?
+}
+
+#[tauri::command]
+pub async fn scan_orphan_files(db: State<'_, Db>, paths: State<'_, AppPaths>) -> Result<Value, String> {
+    let db = db.inner().clone();
+    let paths = paths.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let conn = db.open_read().map_err(|e| err_cn::text(&e))?;
+        // 必须解析库根而非默认目录：用户把图片根改成 E:////PicX 后，default_images_dir
+        // 仍指向 data/images，按默认目录扫会一无所获（与 scan_broken_records 同一坑，本处先规避）
+        let root = crate::db::images_root(&conn, &paths.default_images_dir).map_err(|e| err_cn::text(&e))?;
+        orphans::scan_orphan_files(&conn, &root).map_err(|e| err_cn::text(&e))
+    })
+    .await
+    .map_err(|e| format!("后台任务失败：{}", err_cn::text(&e)))?
+}
+
+#[tauri::command]
+pub async fn adopt_orphan_files(
+    db: State<'_, Db>,
+    paths: State<'_, AppPaths>,
+    paths_list: Vec<String>,
+    rearchive: bool,
+) -> Result<Value, String> {
+    let db = db.inner().clone();
+    let paths = paths.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let conn = db.write_lock();
+        let root = crate::db::images_root(&conn, &paths.default_images_dir).map_err(|e| err_cn::text(&e))?;
+        orphans::adopt_orphan_files(
+            &conn,
+            &paths_list,
+            rearchive,
+            &root,
+            &paths.thumbs_dir,
+            &file_ops::today_ymd(),
+        )
+        .map_err(|e| err_cn::text(&e))
+    })
+    .await
+    .map_err(|e| format!("后台任务失败：{}", err_cn::text(&e)))?
+}
+
+#[tauri::command]
+pub async fn remove_orphan_files(paths_list: Vec<String>, target_dir: String) -> Result<Value, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        orphans::remove_orphan_files(&paths_list, std::path::Path::new(&target_dir))
             .map_err(|e| err_cn::text(&e))
     })
     .await
