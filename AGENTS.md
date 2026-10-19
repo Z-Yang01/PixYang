@@ -93,6 +93,21 @@ tests/            vitest（node 环境 + per-file happy-dom pragma）
   16/24/32 档自动放大字面并加粗笔画。改图标后须 `cargo build` 才会把 ico 重新编入 exe 资源（tauri-build），
   桌面/任务栏旧图标由 Windows 图标缓存保留时执行 `ie4uinit.exe -show` 刷新。
 
+## 后台导入（导入不再阻塞操作）
+
+- 三段分工：`ImportDialog`（选目录/筛文件/定日期 → **只交棒**，`enqueue` 后立即由 `onSubmitted` 关闭）
+  → `useBackgroundImport`（App 级驱动：逐批 20 张调 `importImages`，每批独立命令、批间释放写锁，
+  订阅 `import-progress` 的 EXIF 细分进度，每累计 100 张成功入库刷一次图库、收尾必刷）
+  → `ImportStatusBar`（底部悬浮非阻塞进度条：进度/当前文件/排队批数/停止；完成后展示摘要，手动关闭）。
+- 任务状态集中在 `src/store/importStore.js`（active 单任务 + queue 排队 + finished 摘要）。
+  取消只在批间生效（`requestCancel` 置 canceling，驱动在下一批边界收尾）。
+- 新旧约定差异（改导入相关代码前先确认口径）：
+  ① 对话框**不得自己跑** `importImages` 批处理循环，也不再有结果页/为自己渲染进度；
+  ② 后台导入完成**不跳转路由、不清筛选**（区别于老的 `handleImportDone`）——用户正在浏览/编辑时
+  不得被拽走；只做 `loadImages/loadStats` 增量可见 + toast 通知；
+  ③ 归档目录按**导入日期**生成（`file_ops` date_str ← dateOverride > 自带 importDate > EXIF > mtime > 今天，
+  见 `image_group::date_dir`），默认日期模式「今天」会把 8 月拍的照片归档到导入当天的目录。
+
 ## 编码约定
 
 - 不要添加代码注释，除非用户明确要求。

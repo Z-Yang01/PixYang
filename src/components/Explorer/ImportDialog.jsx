@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -8,35 +8,25 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { Loader2, FileImage, CheckCircle2, Check, FolderOpen } from 'lucide-react';
+import { Loader2, FileImage, Check, FolderOpen } from 'lucide-react';
 import { formatFileSize, todayStr } from '@/lib/format';
 import { errText } from '@/lib/errorText';
 import api from '@/lib/api';
+import { useImportStore } from '@/store/importStore';
 
 const PREVIEWABLE = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp'];
 
-export default function ImportDialog({ onClose, onDone, initialFiles = null }) {
+// 导入对话框只负责选目录/筛文件/定日期；点导入即向 importStore 交棒并
+// 由 onSubmitted 关闭——实际导入在后台分批进行，进度见底部 ImportStatusBar。
+export default function ImportDialog({ onClose, onSubmitted, initialFiles = null }) {
   const [selectedDir, setSelectedDir] = useState(null);
   const [scanning, setScanning] = useState(false);
-  const [importing, setImporting] = useState(false);
   const [foundFiles, setFoundFiles] = useState([]);
   const [checkedIds, setCheckedIds] = useState(new Set());
   const [fileUrls, setFileUrls] = useState({});
   const [dateMode, setDateMode] = useState('today'); // today | exif | custom
   const [customDate, setCustomDate] = useState(todayStr());
-  const [progress, setProgress] = useState(0);
-  const [currentFile, setCurrentFile] = useState('');
-  const [result, setResult] = useState(null);
   const [error, setError] = useState('');
-  const cancelImportRef = useRef(false);
-  const importedAnyRef = useRef(false);
-  const [exifProgress, setExifProgress] = useState(null);
-
-  // 主进程 EXIF 提取的批内进度（当前批次细分显示）；相机同步的进度不属于本对话框，忽略
-  useEffect(() => {
-    if (!api.isBridgeAvailable()) return;
-    return api.onImportProgress((p) => setExifProgress(p && p.task !== 'camera-sync' ? p : null));
-  }, []);
 
   useEffect(() => {
     if (initialFiles && initialFiles.length > 0) {
@@ -75,7 +65,7 @@ export default function ImportDialog({ onClose, onDone, initialFiles = null }) {
   const handleSelectDir = async () => {
     // scanning 也算在途：扫描中允许再点会造成两个 scanDirectory 并发，
     // 先落地的把 scanning 复位、后落地的可能让文件列表与所选目录错位
-    if (!api.isBridgeAvailable() || importing || scanning) return;
+    if (!api.isBridgeAvailable() || scanning) return;
     let dir;
     try {
       dir = await api.selectDirectory();
@@ -86,7 +76,6 @@ export default function ImportDialog({ onClose, onDone, initialFiles = null }) {
     if (dir) {
       setSelectedDir(dir);
       setScanning(true);
-      setResult(null);
       setError('');
       let files;
       try {
@@ -112,69 +101,19 @@ export default function ImportDialog({ onClose, onDone, initialFiles = null }) {
 
   const checkedCount = checkedIds.size;
 
-  const handleImport = async () => {
-    if (!api.isBridgeAvailable() || importing) return;
+  const handleImport = () => {
+    if (!api.isBridgeAvailable()) return;
     const files = foundFiles.filter((f) => checkedIds.has(f.filepath));
     if (files.length === 0) return;
-    setImporting(true);
-    setProgress(0);
-    setError('');
-    setResult(null);
-    cancelImportRef.current = false;
-    importedAnyRef.current = false;
-    setExifProgress(null);
-
     const override = dateMode === 'today' ? todayStr() : dateMode === 'custom' ? customDate : null;
-    const allImported = [];
-    const batchSize = 20;
-    let canceled = false;
-    let attempted = 0;
-
-    try {
-      for (let i = 0; i < files.length; i += batchSize) {
-        if (cancelImportRef.current) {
-          canceled = true;
-          break;
-        }
-        const batch = files.slice(i, i + batchSize);
-        setCurrentFile(batch[0].filename);
-        attempted += batch.length;
-        const imported = await api.importImages(batch, override);
-        allImported.push(...(imported || []));
-        if (allImported.length > 0) importedAnyRef.current = true;
-        setProgress(Math.round(((i + batch.length) / files.length) * 100));
-      }
-      setResult({
-        total: files.length,
-        imported: allImported.length,
-        skipped: attempted - allImported.length,
-        left: files.length - attempted,
-        canceled,
-      });
-    } catch (e) {
-      setError(e?.message || '导入过程中出现错误');
-    } finally {
-      setImporting(false);
-      setCurrentFile('');
-    }
+    useImportStore.getState().enqueue(files, override);
+    onSubmitted?.();
   };
 
-  const handleCancelImport = () => {
-    cancelImportRef.current = true;
-  };
-
-  const handleDone = () => onDone();
   const formatCount = (n) => n.toLocaleString();
 
-  // Esc/X/遮罩关闭同样要触发刷新：已有导入成果时走 onDone，否则图库/统计停在旧数据
-  const handleOpenChange = (o) => {
-    if (o || importing) return;
-    if (importedAnyRef.current) onDone();
-    else onClose();
-  };
-
   return (
-    <Dialog open onOpenChange={handleOpenChange}>
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>导入图片</DialogTitle>
@@ -186,15 +125,11 @@ export default function ImportDialog({ onClose, onDone, initialFiles = null }) {
             <label className="form-label">选择包含图片的文件夹</label>
             <p className="import-hint">
               导入的图片会复制到 PixYang
-              管理目录，按日期自动整理（如：2026/06/15/图片.jpg）。原始文件不受影响。
+              管理目录，按日期自动整理（如：2026/06/15/图片.jpg）。原始文件不受影响。导入在后台进行，期间可以继续其他操作。
             </p>
             <div style={{ display: 'flex', gap: 8 }}>
               <Input value={selectedDir || ''} readOnly placeholder="未选择文件夹..." />
-              <Button
-                variant="secondary"
-                onClick={handleSelectDir}
-                disabled={importing || scanning}
-              >
+              <Button variant="secondary" onClick={handleSelectDir} disabled={scanning}>
                 <FolderOpen className="size-4" /> 浏览
               </Button>
             </div>
@@ -206,7 +141,7 @@ export default function ImportDialog({ onClose, onDone, initialFiles = null }) {
             </div>
           )}
 
-          {!scanning && foundFiles.length > 0 && !result && (
+          {foundFiles.length > 0 && (
             <>
               {/* 日期选择 */}
               <div className="form-group">
@@ -308,59 +243,16 @@ export default function ImportDialog({ onClose, onDone, initialFiles = null }) {
             </>
           )}
 
-          {importing && (
-            <div className="form-group">
-              <div className="import-scanning">
-                <Loader2 className="size-4 animate-spin" />
-                {currentFile ? `正在导入 ${currentFile}...` : `正在导入图片... ${progress}%`}
-                {exifProgress &&
-                  exifProgress.total > 0 &&
-                  `（读取信息 ${exifProgress.done}/${exifProgress.total}）`}
-              </div>
-              <div className="progress-bar" style={{ marginTop: 8 }}>
-                <div className="progress-bar-fill" style={{ width: `${progress}%` }} />
-              </div>
-            </div>
-          )}
-
           {error && <div className="form-error">{error}</div>}
-
-          {result && (
-            <div className="import-result">
-              <CheckCircle2 className="size-8" style={{ color: 'var(--success)' }} />
-              <div className="import-result-title">
-                {result.canceled ? '已停止导入' : '导入完成'}
-              </div>
-              <div className="import-result-desc">
-                成功导入 {formatCount(result.imported)} 张
-                {result.skipped > 0 && `，跳过 ${formatCount(result.skipped)} 张（已存在或失败）`}
-                {result.canceled && `，剩余 ${formatCount(result.left)} 张未导入`}
-              </div>
-            </div>
-          )}
         </div>
 
         <DialogFooter>
-          {result ? (
-            <Button onClick={handleDone}>完成</Button>
-          ) : (
-            <>
-              {/* 取消也走 handleOpenChange：直连 onClose 会绕过 importedAnyRef 的 onDone 收尾，
-                  部分导入后点取消图库停在旧数据（审查批 8 Q-04） */}
-              <Button variant="ghost" onClick={() => handleOpenChange(false)} disabled={importing}>
-                取消
-              </Button>
-              {importing ? (
-                <Button variant="secondary" onClick={handleCancelImport}>
-                  停止导入
-                </Button>
-              ) : (
-                <Button disabled={checkedCount === 0 || scanning} onClick={handleImport}>
-                  导入 {formatCount(checkedCount)} 张图片
-                </Button>
-              )}
-            </>
-          )}
+          <Button variant="ghost" onClick={() => onClose()}>
+            取消
+          </Button>
+          <Button disabled={checkedCount === 0 || scanning} onClick={handleImport}>
+            导入 {formatCount(checkedCount)} 张图片
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

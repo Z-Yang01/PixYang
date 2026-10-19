@@ -4089,3 +4089,100 @@ body {
     transform: rotate(360deg);
   }
 }
+
+/* ── 底部后台导入状态栏 ── */
+.import-status-bar {
+  position: fixed;
+  left: 50%;
+  bottom: 16px;
+  transform: translateX(-50%);
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: min(560px, calc(100vw - 32px));
+  padding: 10px 14px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+  animation: importBarUp 0.18s ease;
+}
+
+@keyframes importBarUp {
+  from {
+    transform: translate(-50%, 12px);
+    opacity: 0;
+  }
+  to {
+    transform: translate(-50%, 0);
+    opacity: 1;
+  }
+}
+
+.import-status-icon {
+  flex-shrink: 0;
+  color: var(--accent-color);
+}
+
+.import-status-ok-icon {
+  color: var(--success);
+}
+
+.import-status-error-icon {
+  color: var(--danger, #ef4444);
+}
+
+.import-status-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+}
+
+.import-status-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+
+.import-status-sub {
+  font-size: 12px;
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.import-status-progress {
+  flex: 1.2;
+  min-width: 90px;
+}
+
+.import-status-progress .progress-bar {
+  margin-top: 0;
+}
+
+.import-status-btn {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 10px;
+  font-size: 12px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.import-status-btn:hover:not(:disabled) {
+  background: var(--bg-tertiary, var(--bg-secondary));
+}
+
+.import-status-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}

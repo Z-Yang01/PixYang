@@ -2,6 +2,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, cleanup } from '@testing-library/react';
 import ImportDialog from '@/components/Explorer/ImportDialog';
+import { useImportStore } from '@/store/importStore';
+import { todayStr } from '@/lib/format';
 
 const filesFixture = [
   { filepath: 'C:/import/a.jpg', filename: 'a.jpg', size: 1024 * 300, format: '.jpg' },
@@ -9,21 +11,24 @@ const filesFixture = [
 ];
 
 function renderDialog(props = {}) {
-  return render(<ImportDialog onClose={vi.fn()} onDone={vi.fn()} initialFiles={null} {...props} />);
+  return render(
+    <ImportDialog onClose={vi.fn()} onSubmitted={vi.fn()} initialFiles={null} {...props} />
+  );
 }
 
 describe('ImportDialog', () => {
   beforeEach(() => {
+    useImportStore.setState({ active: null, queue: [], finished: null });
     window.pixyang = {
       toFileUrls: vi.fn().mockResolvedValue({}),
       selectDirectory: vi.fn().mockResolvedValue(null),
       scanDirectory: vi.fn().mockResolvedValue([]),
-      importImages: vi.fn().mockResolvedValue([]),
     };
   });
 
   afterEach(() => {
     cleanup();
+    useImportStore.setState({ active: null, queue: [], finished: null });
     delete window.pixyang;
   });
 
@@ -58,17 +63,19 @@ describe('ImportDialog', () => {
     expect(screen.getByText('导入 2 张图片')).toBeInTheDocument();
   });
 
-  it('点击导入：分批调用 importImages 并显示结果页', async () => {
-    const onDone = vi.fn();
-    window.pixyang.importImages.mockResolvedValue([{ id: 1 }, { id: 2 }]);
-    renderDialog({ initialFiles: filesFixture, onDone });
+  it('点击导入：向后台导入 store 交棒（文件与 override 入队）并调用 onSubmitted，对话框不自跑导入', async () => {
+    const onSubmitted = vi.fn();
+    renderDialog({ initialFiles: filesFixture, onSubmitted });
     fireEvent.click(screen.getByText('导入 2 张图片'));
-    expect(await screen.findByText('导入完成')).toBeInTheDocument();
-    expect(window.pixyang.importImages).toHaveBeenCalledTimes(1);
-    // 结果页出现「完成」按钮
-    expect(screen.getByText('完成')).toBeInTheDocument();
-    fireEvent.click(screen.getByText('完成'));
-    expect(onDone).toHaveBeenCalledTimes(1);
+    const st = useImportStore.getState();
+    expect(st.active).not.toBeNull();
+    expect(st.active.files).toEqual(filesFixture);
+    expect(st.active.override).toBe(todayStr());
+    expect(st.active.total).toBe(2);
+    expect(st.active.status).toBe('running');
+    expect(onSubmitted).toHaveBeenCalledTimes(1);
+    // 对话框本身不再有结果页/进度态（后台化后由 App 关闭并交底部状态栏）
+    expect(screen.queryByText('导入完成')).toBeNull();
   });
 
   it('未拖入文件时点「浏览」：选择目录后扫描文件', async () => {

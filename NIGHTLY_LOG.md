@@ -3579,3 +3579,41 @@ R103 宣言 → R116 六笔快包 → 本轮 R117-R119 终版快包，此后再�
   - 补：P0 的严格模式 A/B 实跑（node ESM 直接加载模块 + Proxy 假 GL，绕过 vitest 转译）——
     修复前：`[webgl] 预览渲染失败: Cannot read properties of undefined (reading '__brushTex')`、
     返回 false、texImage2D=1；修复后：返回 true、texImage2D=9（底图 + 8 画笔槽）。即生产失败路径实证。
+
+- 2026-10-19 02:20 R154 导入改为后台进行 + 底部非阻塞进度条（用户要求「不影响其他操作」）：
+  ① 旧形态痛点：`ImportDialog` 是模态且自己跑 20 张/批的循环，导入期间整屏被对话框锁住；
+     完成后 `handleImportDone` 还会清筛选 + `navigate('/')`，把用户从当前视图拽走。
+  ② 新形态三段分工：
+     - `src/store/importStore.js`（新）：active 单任务 + queue 排队 + finished 摘要；
+       取消只置 `canceling`、由驱动在批边界收尾（不中途截断单批命令）。
+     - `src/hooks/useBackgroundImport.js`（新，App 级）：空闲即取任务；每批 20 张独立调 import_images
+       （每批各自 release 写锁，批间其他命令可插队执行）；订阅 import-progress 写 EXIF 细分进度；
+       每累计 100 张成功入库刷一次 loadImages+loadStats（收尾必刷）——万级导入也能渐进可见，
+       又不至于 500 批 × 全量查询的刷新风暴；完成/取消/出错均 toast + 写入 finished 摘要。
+     - `src/components/Layout/ImportStatusBar.jsx`（新）：底部居中悬浮条，仅拦截自身点击，
+       显示「正在导入 x/y（n%）+ 当前文件 + 读取信息 d/t + 另有 N 批排队」与停止按钮；完成后
+       展示成功/跳过/剩余或错误摘要，手动关闭。
+  ③ `ImportDialog` 瘦身为「选目录/筛文件/定日期 + 交棒」：点导入 → `enqueue(files, override)` →
+     `onSubmitted` 关闭对话框，删除原有的批处理循环/进度/结果页/自主订阅（-158 行）；
+     `App.handleImportDone`（清筛选+跳路由）由 `handleImportSubmitted`（关闭+清拖入暂存+toast）取代。
+  ④ CSS：`.import-status-bar` 悬浮条 + `importBarUp` 入场动画，复用现有 --bg-secondary/--border/--success。
+  ⑤ 测试改写/新增：ImportDialog 两个文件改为「交棒」断言（override 三模式、勾选、自导不跑）；
+     新增 `importStore.test.js`（7）、`useBackgroundImport.test.jsx`（6，vi.mock api 层：
+     分批 20+1、取消批间截断、错误进摘要、排队顺序执行、EXIF 订阅）、`ImportStatusBar.test.jsx`（6）。
+  - 过程中踩到并修掉的三个真坑（均落到 NIGHTLY 留档）：
+    ① **驱动启动条件**写成「空闲且有排队」→ 首个任务由 enqueue 直置 active，**永远不跑**；
+       改为「有 active 即跑、否则 takeNext」，这是驱动用例由红转绿的关键差异。
+    ② `useGalleryStore` 是默认导出却被写成命名导入（`import { useGalleryStore }`）→ 运行时 undefined，
+       错误只在 unhandled rejection 里冒出来（R153 同类坑的第二次命中）。
+    ③ 单测里 `setState({...}, true)` 整体替换会**抹掉 store 的 action**（报错: enqueue is not a function）；
+       清理导入状态一律用合并式 `setState`。
+  - 验证：npm 87 文件/**1120 例**（+15）；cargo 247 + golden 1；lint 0E/9W；tsc/prettier 全仓干净；vite build 成功。
+    提交范围：src/store/importStore.js src/hooks/useBackgroundImport.js
+    src/components/Layout/ImportStatusBar.jsx src/components/Explorer/ImportDialog.jsx
+    src/App.jsx src/styles/index.css AGENTS.md NIGHTLY_LOG.md
+    tests/unit/store/importStore.test.js tests/unit/hooks/useBackgroundImport.test.jsx
+    tests/unit/components/Layout/ImportStatusBar.test.jsx
+    tests/unit/components/Explorer/ImportDialog.test.jsx
+    tests/unit/components/Explorer/ImportDialog.extra.test.jsx
+  待人工复核：① 拖动导入含万级文件时底部条占比体感；② 停止后 UI 是否要保留「继续」；
+    ③ 孤儿文件（磁盘有、库里没有）与导入去重见同批诊断结论。

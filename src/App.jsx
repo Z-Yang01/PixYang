@@ -17,6 +17,7 @@ import api from './lib/api';
 import { normalizeTheme } from './lib/themes';
 import useGalleryStore, { anyModalOpen } from './store/galleryStore';
 import useGalleryData from './hooks/useGalleryData';
+import useBackgroundImport from './hooks/useBackgroundImport';
 import useGlobalShortcuts from './hooks/useGlobalShortcuts';
 import useDragImport from './hooks/useDragImport';
 import useBatchActions from './hooks/useBatchActions';
@@ -32,6 +33,7 @@ import TagManager from './components/Tags/TagManager';
 import AlbumsView from './components/Explorer/AlbumsView';
 import TrashView from './components/Explorer/TrashView';
 import BatchBar from './components/Batch/BatchBar';
+import ImportStatusBar from './components/Layout/ImportStatusBar';
 import SettingsPage from './components/Settings/SettingsPage';
 import ConfirmDialog from './components/Layout/ConfirmDialog';
 import BatchExportDialog from './components/Batch/BatchExportDialog';
@@ -91,6 +93,9 @@ export default function App() {
     if (typeof fn === 'function') fn(message);
     else toast(message);
   }, []);
+
+  // 后台导入驱动：ImportDialog 交棒后由这里逐批执行，底部状态栏显示进度
+  useBackgroundImport({ showToast });
 
   // 批量操作（全选/导出/打标/批量更新/批量同步/删除确认）集中在此 hook
   const {
@@ -441,30 +446,13 @@ export default function App() {
     setShowImport(true);
   }, []);
 
-  const handleImportDone = useCallback(() => {
+  // 对话框交棒后立即关闭：导入在后台进行，不清筛选、不跳转路由（不影响用户当前操作）；
+  // 清拖入暂存同 handleImportDone 旧逻辑——否则下次拖拽与旧列表合并，重勾上次的文件（审查批 8 Q-05）
+  const handleImportSubmitted = useCallback(() => {
     setShowImport(false);
-    // 关闭即清拖入暂存：否则下次拖拽与旧列表合并，ImportDialog 对 initialFiles 变更
-    // 会全量重勾，用户上次取消勾选的文件被静默加回（审查批 8 Q-05）
     setImportInitialFiles(null);
-    // 清除所有筛选，确保新导入的图片在「全部图片」中可见；
-    // 有筛选被清除时防抖 effect 会自动重新加载，无筛选变化时这里兜底加载一次，避免双重请求
-    const store = useGalleryStore.getState();
-    const hadFilters = !!(
-      store.filterTag ||
-      store.filterAlbum ||
-      store.filterFavorites ||
-      store.filterDate ||
-      store.dateRange.from ||
-      store.dateRange.to ||
-      store.search
-    );
-    store.clearFilters();
-    navigate('/', { state: {} });
-    if (!hadFilters) store.loadImages();
-    store.loadStats();
-    store.loadAppData();
-    showToast('导入完成', 'success');
-  }, [navigate, showToast]);
+    showToast('已转入后台导入，进度见底部', 'info');
+  }, [showToast]);
 
   // 拖拽导入
   const handleDragCollect = useCallback(
@@ -706,10 +694,13 @@ export default function App() {
               setShowImport(false);
               setImportInitialFiles(null);
             }}
-            onDone={handleImportDone}
+            onSubmitted={handleImportSubmitted}
             initialFiles={importInitialFiles}
           />
         )}
+
+        {/* 底部后台导入状态栏（空闲时自渲染 null） */}
+        <ImportStatusBar />
 
         {dragImport && (
           <div className="drag-import-overlay">
