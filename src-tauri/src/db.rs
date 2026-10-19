@@ -402,53 +402,98 @@ pub fn legacy_data_dir() -> PathBuf {
     PathBuf::from(".")
 }
 
-/// 便携数据目录：安装目录\data（可写探测通过才启用）；失败回退旧版 %APPDATA% 位置
-pub fn exe_portable_dir() -> Option<PathBuf> {
-    let exe = std::env::current_exe().ok()?;
-    let dir = exe.parent()?.join("data");
-    std::fs::create_dir_all(&dir).ok()?;
-    let probe = dir.join(".write-test");
-    std::fs::write(&probe, b"1").ok()?;
-    std::fs::remove_file(&probe).ok()?;
-    Some(dir)
+/// 标准用户数据目录（不随程序安装位置走）：
+/// Windows `%LOCALAPPDATA%\PixYang`；macOS `~/Library/Application Support/PixYang`；
+/// Linux `$XDG_DATA_HOME/PixYang` 或 `~/.local/share/PixYang`。
+/// 选 Local（而非 Roaming/%APPDATA%）是因为 DB 与缩略图体积大，不适合随域账户漫游。
+#[cfg(windows)]
+pub fn standard_data_dir() -> PathBuf {
+    std::env::var_os("LOCALAPPDATA")
+        .map(|d| PathBuf::from(d).join("PixYang"))
+        .unwrap_or_else(legacy_data_dir)
 }
 
+#[cfg(target_os = "macos")]
+pub fn standard_data_dir() -> PathBuf {
+    std::env::var_os("HOME")
+        .map(|h| {
+            PathBuf::from(h)
+                .join("Library")
+                .join("Application Support")
+                .join("PixYang")
+        })
+        .unwrap_or_else(|| PathBuf::from("."))
+}
+
+#[cfg(all(unix, not(target_os = "macos")))]
+pub fn standard_data_dir() -> PathBuf {
+    std::env::var_os("XDG_DATA_HOME")
+        .map(|d| PathBuf::from(d).join("PixYang"))
+        .or_else(|| {
+            std::env::var_os("HOME").map(|h| {
+                PathBuf::from(h)
+                    .join(".local")
+                    .join("share")
+                    .join("PixYang")
+            })
+        })
+        .unwrap_or_else(|| PathBuf::from("."))
+}
+
+/// 数据目录：固定标准位置（不再优先「安装目录\data」的便携模式）。
 pub fn resolve_data_dir() -> PathBuf {
-    exe_portable_dir().unwrap_or_else(legacy_data_dir)
+    standard_data_dir()
 }
 
-/// 一次性快照迁移：旧位置（Electron userData）的库/缩略图复制进便携 data（非破坏，
-/// 旧版应用仍可读原位置；目标已有库视为已迁移跳过）。返回是否执行了复制。
-pub fn migrate_legacy_snapshot(data_dir: &Path) -> bool {
-    let legacy = legacy_data_dir();
-    if legacy == data_dir {
-        return false;
-    }
-    let src_db = legacy.join("pixyang.db");
-    let dst_db = data_dir.join("pixyang.db");
-    if !src_db.exists() || dst_db.exists() {
-        return false;
-    }
-    let _ = std::fs::create_dir_all(data_dir);
-    for name in ["pixyang.db", "pixyang.db-wal", "pixyang.db-shm"] {
-        let from = legacy.join(name);
-        if from.exists() {
-            let _ = std::fs::copy(&from, data_dir.join(name));
+/// 首次迁移候选源：便携 `<exe目录>\data` 优先，其次旧版 `%APPDATA%\pixyang`。
+pub fn migration_sources() -> Vec<PathBuf> {
+    let mut out = Vec::new();
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            out.push(dir.join("data"));
         }
     }
-    let (src_thumbs, dst_thumbs) = (legacy.join("thumbnails"), data_dir.join("thumbnails"));
-    if src_thumbs.is_dir() {
-        let _ = std::fs::create_dir_all(&dst_thumbs);
-        if let Ok(entries) = std::fs::read_dir(&src_thumbs) {
-            for e in entries.flatten() {
-                let to = dst_thumbs.join(e.file_name());
-                if !to.exists() {
-                    let _ = std::fs::copy(e.path(), &to);
+    out.push(legacy_data_dir());
+    out
+}
+
+/// 纯函数（可测）：目标无库时，按 sources 顺序把首个可用源的 db/缩略图复制过来。
+/// 非破坏：只复制、不删除源；目标已有库直接跳过。返回迁移来源。
+pub fn migrate_from_sources(data_dir: &Path, sources: &[PathBuf]) -> Option<PathBuf> {
+    if data_dir.join("pixyang.db").exists() {
+        return None;
+    }
+    for src in sources {
+        if src == data_dir || !src.join("pixyang.db").exists() {
+            continue;
+        }
+        let _ = std::fs::create_dir_all(data_dir);
+        for name in ["pixyang.db", "pixyang.db-wal", "pixyang.db-shm"] {
+            let from = src.join(name);
+            if from.exists() && std::fs::copy(&from, data_dir.join(name)).is_err() {
+                return None;
+            }
+        }
+        let (src_thumbs, dst_thumbs) = (src.join("thumbnails"), data_dir.join("thumbnails"));
+        if src_thumbs.is_dir() {
+            let _ = std::fs::create_dir_all(&dst_thumbs);
+            if let Ok(entries) = std::fs::read_dir(&src_thumbs) {
+                for e in entries.flatten() {
+                    let to = dst_thumbs.join(e.file_name());
+                    if !to.exists() {
+                        let _ = std::fs::copy(e.path(), &to);
+                    }
                 }
             }
         }
+        return Some(src.clone());
     }
-    true
+    None
+}
+
+/// 启动期迁移：标准目录无库时，从便携 data / 旧 %APPDATA% 复制。
+pub fn migrate_to_standard_dir(data_dir: &Path) -> Option<PathBuf> {
+    migrate_from_sources(data_dir, &migration_sources())
 }
 
 pub fn default_db_path() -> PathBuf {
@@ -608,6 +653,46 @@ mod tests {
 
     fn mem_db() -> Db {
         Db::from_connection(Connection::open_in_memory().unwrap())
+    }
+
+    #[test]
+    fn 数据目录_固定为标准用户目录_不再随exe位置() {
+        let d = resolve_data_dir();
+        assert!(
+            d.to_string_lossy().ends_with("PixYang"),
+            "应落在标准用户目录: {}",
+            d.display()
+        );
+        #[cfg(windows)]
+        {
+            let expect = PathBuf::from(std::env::var_os("LOCALAPPDATA").unwrap()).join("PixYang");
+            assert_eq!(d, expect, "Windows 应为 %LOCALAPPDATA%\\PixYang");
+        }
+    }
+
+    #[test]
+    fn 迁移_无目标库时从首个可用源复制db与缩略图_已有库则跳过() {
+        let root = std::env::temp_dir().join(format!("pixyang_mig_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let empty_src = root.join("portable_data"); // 无 db → 跳过
+        let real_src = root.join("legacy");
+        let dst = root.join("local");
+        std::fs::create_dir_all(&empty_src).unwrap();
+        std::fs::create_dir_all(real_src.join("thumbnails")).unwrap();
+        std::fs::write(real_src.join("pixyang.db"), b"DB").unwrap();
+        std::fs::write(real_src.join("thumbnails").join("1.jpg"), b"T").unwrap();
+
+        let got = migrate_from_sources(&dst, &[empty_src, real_src.clone()]);
+        assert_eq!(got, Some(real_src.clone()), "应跳过无库源，落到第二个源");
+        assert_eq!(std::fs::read(dst.join("pixyang.db")).unwrap(), b"DB");
+        assert_eq!(
+            std::fs::read(dst.join("thumbnails").join("1.jpg")).unwrap(),
+            b"T"
+        );
+
+        // 目标已有库：再次迁移直接跳过（不覆盖）
+        assert_eq!(migrate_from_sources(&dst, &[real_src]), None);
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]

@@ -42,10 +42,10 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
-            // 便携数据目录：安装目录\data（可写探测失败回退 %APPDATA%/pixyang），
-            // 首次启动把旧位置（Electron userData）的库/缩略图快照复制过来（非破坏）
+            // 标准数据目录：%LOCALAPPDATA%\PixYang（不随程序安装位置走）。
+            // 首次启动把便携 `<exe>\data`（优先）或旧 Electron userData 的库/缩略图复制过来（非破坏）
             let data_dir = db::resolve_data_dir();
-            let _ = db::migrate_legacy_snapshot(&data_dir);
+            let _ = db::migrate_to_standard_dir(&data_dir);
 
             // panic 落盘：同步命令 panic 会中止进程（闪退），此钩子保住现场供诊断
             {

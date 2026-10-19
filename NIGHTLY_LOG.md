@@ -3664,3 +3664,13 @@ R103 宣言 → R116 六笔快包 → 本轮 R117-R119 终版快包，此后再�
      tests/unit/lib/apiTauriContract.test.js tests/unit/store/importStore.test.js
      tests/unit/components/Explorer/ImportDialog.test.jsx tests/unit/components/Explorer/ImportDialog.extra.test.jsx
      AGENTS.md NIGHTLY_LOG.md
+
+- 2026-10-20 R158 数据目录改为标准用户目录（取消便携模式）：
+  ① 背景：便携 `<exe>\data` 导致「运行实例的库」与 `%APPDATA%` 旧库分叉（曾按错库做文件搬迁，造成
+     43+94 条记录路径失效）。用户要求：程序与图片由用户选位，DB/配置放"大厂同款"位置。
+  ② `db::standard_data_dir()`：Windows `%LOCALAPPDATA%\PixYang`；macOS `Application Support`；
+     Linux XDG。`resolve_data_dir()` 固定用它，删除 `exe_portable_dir()` 优先逻辑。
+  ③ 首次迁移 `migrate_from_sources`/`migrate_to_standard_dir`：目标无库时按
+     `<exe>\data`（优先，当前线上库）→ `%APPDATA%\pixyang` 复制 db(-wal/-shm)+thumbnails；
+     只复制不删源，目标已有库跳过。已把 833 条线上库预置到 `%LOCALAPPDATA%\PixYang`。
+  ④ 验证：cargo 260（+2：标准目录断言 / 迁移复制与跳过）；重打 NSIS 安装包成功（4.05 MiB）。

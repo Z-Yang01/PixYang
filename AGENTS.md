@@ -133,6 +133,19 @@ tests/            vitest（node 环境 + per-file happy-dom pragma）
   （那是 `data/images` 默认值；用户把图片根改到 E://PicX 后按默认目录扫描会一无所获——
   `scan_broken_records` / `find_duplicates` 曾因此长期失效，R155 已修）。
 
+## 数据目录（R158：标准用户目录，取消便携模式）
+
+- **程序**：安装时由用户选择目录；**原图**：`settings.images_root`（用户选定，如 `E:\PicX`）。
+- **DB / 缩略图 / 回收站**：固定标准用户目录，不再优先「安装目录\data」：
+  Windows `%LOCALAPPDATA%\PixYang\`；macOS `~/Library/Application Support/PixYang/`；
+  Linux `$XDG_DATA_HOME/PixYang/` 或 `~/.local/share/PixYang/`（`db::standard_data_dir` / `resolve_data_dir`）。
+- 选 Local 而非 Roaming（`%APPDATA%`）：DB 与缩略图体积大，随域账户漫游会拖垮登录；大厂同类数据都放 Local。
+- **首次迁移**（`db::migrate_to_standard_dir`）：新目录无库时，按顺序从
+  ① 便携 `<exe目录>\data`（优先，2026-10 前的线上库在这里）② 旧 Electron `%APPDATA%\pixyang`
+  复制 `pixyang.db(-wal/-shm)` + `thumbnails`；**只复制、不删源、不动图片**，目标已有库则跳过。
+- 备份口径：DB（`%LOCALAPPDATA%\PixYang\pixyang.db`）+ 原图（`images_root`）必须成对备份；
+  `thumbnails` 可重建，可不备。
+
 ## 编码约定
 
 - 不要添加代码注释，除非用户明确要求。
