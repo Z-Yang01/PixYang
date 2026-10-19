@@ -496,6 +496,68 @@ pub fn migrate_to_standard_dir(data_dir: &Path) -> Option<PathBuf> {
     migrate_from_sources(data_dir, &migration_sources())
 }
 
+/// 缩略图路径归一：DB 里存的是绝对路径，数据目录迁移（便携 data / %APPDATA% → 标准 Local 目录）后
+/// 这些路径会指向上级目录之外，新实例的 asset 白名单不放行 → 胶片条/网格破图。
+/// 启动时逐行把缩略图复制进当前 `thumbs_dir` 并改写列；文件已不在的列清空（交由重建补）。
+/// 幂等、只读缺失项；833 行量级开销可忽略。
+pub fn normalize_thumbnail_paths(conn: &Connection, thumbs_dir: &Path) {
+    let _ = std::fs::create_dir_all(thumbs_dir);
+    let mut updates: Vec<(i64, String, String, String)> = Vec::new();
+    {
+        let Ok(mut stmt) = conn.prepare(
+            "SELECT id, COALESCE(thumbnail_path,''), COALESCE(thumbnail_small_path,''), COALESCE(thumbnail_edit_path,'') FROM images",
+        ) else {
+            return;
+        };
+        let Ok(rows) = stmt.query_map([], |r| {
+            Ok((
+                r.get::<_, i64>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, String>(2)?,
+                r.get::<_, String>(3)?,
+            ))
+        }) else {
+            return;
+        };
+        for row in rows.flatten() {
+            let (id, t1, t2, t3) = row;
+            let fix = |v: String| -> String {
+                if v.is_empty() {
+                    return v;
+                }
+                let p = Path::new(&v);
+                let Some(name) = p.file_name() else {
+                    return String::new();
+                };
+                let dest = thumbs_dir.join(name);
+                if p.parent() == Some(thumbs_dir) && p.exists() {
+                    return v;
+                }
+                if !dest.exists() && p.exists() {
+                    let _ = std::fs::copy(p, &dest);
+                }
+                if dest.exists() {
+                    dest.to_string_lossy().to_string()
+                } else {
+                    String::new()
+                }
+            };
+            let n1 = fix(t1.clone());
+            let n2 = fix(t2.clone());
+            let n3 = fix(t3.clone());
+            if n1 != t1 || n2 != t2 || n3 != t3 {
+                updates.push((id, n1, n2, n3));
+            }
+        }
+    }
+    for (id, a, b, c) in updates {
+        let _ = conn.execute(
+            "UPDATE images SET thumbnail_path=?, thumbnail_small_path=?, thumbnail_edit_path=? WHERE id=?",
+            rusqlite::params![a, b, c, id],
+        );
+    }
+}
+
 pub fn default_db_path() -> PathBuf {
     resolve_data_dir().join("pixyang.db")
 }
@@ -668,6 +730,49 @@ mod tests {
             let expect = PathBuf::from(std::env::var_os("LOCALAPPDATA").unwrap()).join("PixYang");
             assert_eq!(d, expect, "Windows 应为 %LOCALAPPDATA%\\PixYang");
         }
+    }
+
+    #[test]
+    fn 缩略图路径归一_旧路径复制到新目录并改写_缺失则清空() {
+        let root = std::env::temp_dir().join(format!("pixyang_thumbnorm_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let old = root.join("old_thumbs");
+        let new = root.join("new_thumbs");
+        std::fs::create_dir_all(&old).unwrap();
+        std::fs::write(old.join("1.jpg"), b"T").unwrap();
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE images (id INTEGER PRIMARY KEY, thumbnail_path TEXT DEFAULT '',
+             thumbnail_small_path TEXT DEFAULT '', thumbnail_edit_path TEXT DEFAULT '');",
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO images (id, thumbnail_path) VALUES (1, ?1)",
+            [old.join("1.jpg").to_string_lossy().to_string()],
+        )
+        .unwrap();
+        normalize_thumbnail_paths(&conn, &new);
+        let p: String = conn
+            .query_row("SELECT thumbnail_path FROM images WHERE id=1", [], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        assert_eq!(Path::new(&p).parent().unwrap(), new.as_path());
+        assert!(Path::new(&p).exists());
+
+        conn.execute(
+            "INSERT INTO images (id, thumbnail_path) VALUES (2, ?1)",
+            [old.join("missing.jpg").to_string_lossy().to_string()],
+        )
+        .unwrap();
+        normalize_thumbnail_paths(&conn, &new);
+        let p2: String = conn
+            .query_row("SELECT thumbnail_path FROM images WHERE id=2", [], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        assert!(p2.is_empty(), "文件不存在应清空列: {p2}");
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]

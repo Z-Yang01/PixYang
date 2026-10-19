@@ -86,6 +86,11 @@ pub fn run() {
             let _ = std::fs::create_dir_all(&thumbs_dir);
             let trash_dir = data_dir.join("trash");
             let _ = std::fs::create_dir_all(&trash_dir);
+            // 缩略图路径归一：迁移/换数据目录后，把 DB 里的旧绝对路径复制并改写到当前 thumbs
+            {
+                let conn = database.write_lock();
+                db::normalize_thumbnail_paths(&conn, &thumbs_dir);
+            }
 
             // 图片根：设置优先；未设置但旧默认目录（%APPDATA%/pixyang/images）有照片时
             // 沿用旧位置（不搬用户照片，绝对路径仍可访问）

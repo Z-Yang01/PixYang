@@ -3674,3 +3674,14 @@ R103 宣言 → R116 六笔快包 → 本轮 R117-R119 终版快包，此后再�
      `<exe>\data`（优先，当前线上库）→ `%APPDATA%\pixyang` 复制 db(-wal/-shm)+thumbnails；
      只复制不删源，目标已有库跳过。已把 833 条线上库预置到 `%LOCALAPPDATA%\PixYang`。
   ④ 验证：cargo 260（+2：标准目录断言 / 迁移复制与跳过）；重打 NSIS 安装包成功（4.05 MiB）。
+
+- 2026-10-20 R158 补：缩略图路径归一（修「大图正常、胶片条小图破图」）：
+  ① 现象：切到标准数据目录后，胶片条大量破图。根因：DB 的 thumbnail_path/small/edit 存**绝对路径**，
+     仍指向旧目录（700 条 `%APPDATA%\pixyang\thumbnails`、51 条 `E:\Software\PixYang\data\thumbnails`），
+     新实例 asset 白名单只放行 `%LOCALAPPDATA%\PixYang` + `images_root` → 旧路径被拦。
+  ② 已修：`db::normalize_thumbnail_paths(conn, thumbs_dir)` 启动时把旧路径文件复制进当前 thumbs 并改写三列，
+     文件已不在的列清空；lib.rs 在 Db::open 后调用。新增单测（复制改写 / 缺失清空）。
+  ③ 数据修复：现场把 751 条路径改到新目录，清掉 1 条失效 edit 预览，并补生成 82 条**完全无缩略图**的记录
+     （08/27 75 + 08/29 7，复用 `thumbs::generate_tiers_parallel`，ok=82/failed=0）。
+  ④ 校验：空 thumbnail_path 0、路径不存在 0、全部位于 `%LOCALAPPDATA%\PixYang\thumbnails`。
+     cargo 261（+1）；重打 NSIS 安装包成功。
