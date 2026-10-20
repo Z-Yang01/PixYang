@@ -240,6 +240,10 @@ pub fn set_setting(db: State<'_, Db>, key: String, value: String) -> Result<Valu
     if key == "images_root" {
         return Ok(json!({ "error": "images_root 需通过迁移图片流程修改" }));
     }
+    // thumbs_root 同理：绑定缩略图文件搬迁，裸写只改设置不改文件与 DB 列 → 破图
+    if key == "thumbs_root" {
+        return Ok(json!({ "error": "thumbs_root 需通过迁移缩略图目录流程修改" }));
+    }
     db.set_setting(&key, &value)
         .map(|_| Value::Null)
         .map_err(|e| err_cn::text(&e))
@@ -467,6 +471,126 @@ pub fn get_database_path() -> Result<String, String> {
 }
 
 #[tauri::command]
+pub fn get_thumbs_root(paths: State<'_, AppPaths>) -> Result<String, String> {
+    Ok(paths.thumbs_dir().to_string_lossy().into_owned())
+}
+
+/// 切换缩略图根目录（设置页「缩略图目录」）。空路径 = 恢复默认（数据目录下 thumbnails）。
+/// 校验：新目录不能与图片根互相包含（否则孤儿文件扫描会把缩略图当未入库图片），
+/// 也不能等于数据目录。迁移成功即更新 settings.thumbs_root、运行时状态与 asset 白名单，
+/// 无需重启（同 set_images_root 的运行时语义）。
+#[tauri::command]
+pub async fn set_thumbs_root(
+    db: State<'_, Db>,
+    paths: State<'_, AppPaths>,
+    app: AppHandle,
+    dir_path: String,
+) -> Result<Value, String> {
+    let db = db.inner().clone();
+    let paths = paths.inner().clone();
+    let app = app.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let conn = db.write_lock();
+        let old_dir = paths.thumbs_dir();
+        let data_dir = db::default_db_path()
+            .parent()
+            .map(|p| p.to_path_buf())
+            .unwrap_or_else(|| old_dir.clone());
+        let default_dir = data_dir.join("thumbnails");
+        let resolved_new = if dir_path.trim().is_empty() {
+            default_dir.clone()
+        } else {
+            let p = PathBuf::from(dir_path.trim());
+            if p == old_dir {
+                return Ok(json!({ "success": true, "path": p.to_string_lossy(), "moved": 0 }));
+            }
+            p
+        };
+        if resolved_new == old_dir {
+            let _ = db.set_setting("thumbs_root", "");
+            paths.set_thumbs_dir(resolved_new.clone());
+            return Ok(
+                json!({ "success": true, "path": resolved_new.to_string_lossy(), "moved": 0 }),
+            );
+        }
+        // 目录形态与包含关系校验（越界组合会让孤儿扫描/导入误把缩略图当图片）
+        if let Err(msg) = validate_thumbs_dir(&conn, &resolved_new, &data_dir, &paths) {
+            return Ok(json!({ "error": msg }));
+        }
+        match db::migrate_thumbs_root(&conn, &old_dir, &resolved_new) {
+            Ok(moved) => {
+                if db
+                    .set_setting("thumbs_root", &resolved_new.to_string_lossy())
+                    .is_err()
+                {
+                    return Ok(json!({ "error": "设置保存失败" }));
+                }
+                paths.set_thumbs_dir(resolved_new.clone());
+                // 新目录要立刻能出图：asset scope 启动时只挂过一次（R23 同款运行时扩展）
+                let _ = app
+                    .asset_protocol_scope()
+                    .allow_directory(&resolved_new, true);
+                Ok(json!({
+                    "success": true,
+                    "path": resolved_new.to_string_lossy(),
+                    "moved": moved,
+                }))
+            }
+            Err(e) => {
+                eprintln!("[ipc] 迁移缩略图目录失败: {e}");
+                Ok(json!({ "error": format!("迁移失败：{}", err_cn::text(&e)) }))
+            }
+        }
+    })
+    .await
+    .map_err(|e| format!("后台任务失败：{}", err_cn::text(&e)))?
+}
+
+/// 缩略图目录合法性：不能是已存在文件、不能等于数据目录、不能与图片根互相包含。
+fn validate_thumbs_dir(
+    conn: &rusqlite::Connection,
+    new_dir: &Path,
+    data_dir: &Path,
+    paths: &AppPaths,
+) -> Result<(), String> {
+    if new_dir.is_file() {
+        return Err("目标路径已存在且不是文件夹".into());
+    }
+    if new_dir == data_dir {
+        return Err("缩略图目录不能与数据目录相同".into());
+    }
+    let images_root =
+        db::images_root(conn, &paths.default_images_dir).map_err(|e| err_cn::text(&e))?;
+    if new_dir == images_root || new_dir.starts_with(&images_root) {
+        return Err("缩略图目录不能放在图片目录内（会被误判为未入库文件）".into());
+    }
+    if images_root.starts_with(new_dir) {
+        return Err("图片目录不能放在缩略图目录内（清理缩略图时会波及图片）".into());
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub fn scan_orphan_thumbnails(
+    db: State<'_, Db>,
+    paths: State<'_, AppPaths>,
+) -> Result<Value, String> {
+    let conn = db.open_read().map_err(|e| err_cn::text(&e))?;
+    db::scan_orphan_thumbnails(&conn, &paths.thumbs_dir()).map_err(|e| err_cn::text(&e))
+}
+
+#[tauri::command]
+pub fn clean_orphan_thumbnails(
+    db: State<'_, Db>,
+    paths: State<'_, AppPaths>,
+    paths_list: Vec<String>,
+) -> Result<Value, String> {
+    let conn = db.open_read().map_err(|e| err_cn::text(&e))?;
+    db::clean_orphan_thumbnails(&conn, &paths_list, &paths.thumbs_dir())
+        .map_err(|e| err_cn::text(&e))
+}
+
+#[tauri::command]
 pub fn get_all_image_ids(
     db: State<'_, Db>,
     query: images_query::ImageQuery,
@@ -495,7 +619,7 @@ pub async fn import_images(
             &files,
             date_override.as_deref(),
             &file_ops::today_ymd(),
-            &paths.thumbs_dir,
+            &paths.thumbs_dir(),
             Some(&app),
             &paths.default_images_dir,
         )
@@ -708,7 +832,7 @@ pub async fn update_image(
             id,
             &updates,
             &paths.default_images_dir,
-            &paths.thumbs_dir,
+            &paths.thumbs_dir(),
         )
         .map_err(|e| err_cn::text(&e))
     })
@@ -742,7 +866,7 @@ pub async fn rebuild_thumbnails_with_events(
     let paths = paths.inner().clone();
     let app = app.clone();
     tauri::async_runtime::spawn_blocking(move || {
-        update_image::rebuild_thumbnails_unlocked(&db, &paths.thumbs_dir, all, Some(&app))
+        update_image::rebuild_thumbnails_unlocked(&db, &paths.thumbs_dir(), all, Some(&app))
             .map_err(|e| err_cn::text(&e))
     })
     .await
@@ -782,7 +906,7 @@ pub async fn delete_broken_records(
             &conn,
             &ids,
             &paths.default_images_dir,
-            &paths.thumbs_dir,
+            &paths.thumbs_dir(),
         )
         .map_err(|e| err_cn::text(&e))
     })
@@ -808,14 +932,18 @@ pub async fn find_duplicates(
 }
 
 #[tauri::command]
-pub async fn scan_orphan_files(db: State<'_, Db>, paths: State<'_, AppPaths>) -> Result<Value, String> {
+pub async fn scan_orphan_files(
+    db: State<'_, Db>,
+    paths: State<'_, AppPaths>,
+) -> Result<Value, String> {
     let db = db.inner().clone();
     let paths = paths.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
         let conn = db.open_read().map_err(|e| err_cn::text(&e))?;
         // 必须解析库根而非默认目录：用户把图片根改成 E:////PicX 后，default_images_dir
         // 仍指向 data/images，按默认目录扫会一无所获（与 scan_broken_records 同一坑，本处先规避）
-        let root = crate::db::images_root(&conn, &paths.default_images_dir).map_err(|e| err_cn::text(&e))?;
+        let root = crate::db::images_root(&conn, &paths.default_images_dir)
+            .map_err(|e| err_cn::text(&e))?;
         orphans::scan_orphan_files(&conn, &root).map_err(|e| err_cn::text(&e))
     })
     .await
@@ -833,13 +961,14 @@ pub async fn adopt_orphan_files(
     let paths = paths.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
         let conn = db.write_lock();
-        let root = crate::db::images_root(&conn, &paths.default_images_dir).map_err(|e| err_cn::text(&e))?;
+        let root = crate::db::images_root(&conn, &paths.default_images_dir)
+            .map_err(|e| err_cn::text(&e))?;
         orphans::adopt_orphan_files(
             &conn,
             &paths_list,
             rearchive,
             &root,
-            &paths.thumbs_dir,
+            &paths.thumbs_dir(),
             &file_ops::today_ymd(),
         )
         .map_err(|e| err_cn::text(&e))
@@ -849,7 +978,10 @@ pub async fn adopt_orphan_files(
 }
 
 #[tauri::command]
-pub async fn remove_orphan_files(paths_list: Vec<String>, target_dir: String) -> Result<Value, String> {
+pub async fn remove_orphan_files(
+    paths_list: Vec<String>,
+    target_dir: String,
+) -> Result<Value, String> {
     tauri::async_runtime::spawn_blocking(move || {
         orphans::remove_orphan_files(&paths_list, std::path::Path::new(&target_dir))
             .map_err(|e| err_cn::text(&e))
@@ -1070,9 +1202,11 @@ pub async fn edit_open(
 ) -> Result<Value, String> {
     let db = db.inner().clone();
     let paths = paths.inner().clone();
-    tauri::async_runtime::spawn_blocking(move || edit_session_snapshot(&db, &paths.thumbs_dir, id))
-        .await
-        .map_err(|e| format!("后台任务失败：{}", err_cn::text(&e)))?
+    tauri::async_runtime::spawn_blocking(move || {
+        edit_session_snapshot(&db, &paths.thumbs_dir(), id)
+    })
+    .await
+    .map_err(|e| format!("后台任务失败：{}", err_cn::text(&e)))?
 }
 
 // 编辑预览缩略图（镜像 Electron edit-preview-ready 链路）：spec 已由桥内按 400 长边构建代理，
@@ -1163,7 +1297,7 @@ pub async fn edit_render_preview(
     let app = app.clone();
     tauri::async_runtime::spawn_blocking(move || {
         let result =
-            render_edit_preview_kernel(&db, &paths.thumbs_dir, id, &spec, Path::new(&input_path));
+            render_edit_preview_kernel(&db, &paths.thumbs_dir(), id, &spec, Path::new(&input_path));
         if let Some(path) = result
             .as_ref()
             .ok()
@@ -1205,17 +1339,17 @@ pub async fn edit_bake(
         };
         let (base, _, _, _) = ensure_edit_base(
             raw_opt.as_deref(),
-            &paths.thumbs_dir,
+            &paths.thumbs_dir(),
             id,
             Path::new(&input_path),
         )?;
-        let result = edit_session::edit_bake_db(&db, id, &edits, &spec, &base, &paths.thumbs_dir)
+        let result = edit_session::edit_bake_db(&db, id, &edits, &spec, &base, &paths.thumbs_dir())
             .map_err(|e| err_cn::text(&e));
         // 镜像 Electron：烘焙后缩略图由 rebuild 重生成（仅缺失者，后台跑，完成发 thumbnails-ready）
         if let Ok(v) = &result {
             if v.get("error").is_none() {
                 let app = app.clone();
-                let thumbs_dir = paths.thumbs_dir.clone();
+                let thumbs_dir = paths.thumbs_dir();
                 std::thread::spawn(move || {
                     let db = app.state::<Db>();
                     let _ = update_image::rebuild_thumbnails_unlocked(
@@ -1258,7 +1392,7 @@ pub async fn edit_export(
         };
         let (base, _, _, _) = ensure_edit_base(
             raw_opt.as_deref(),
-            &paths.thumbs_dir,
+            &paths.thumbs_dir(),
             id,
             Path::new(&input_path),
         )?;
@@ -1376,7 +1510,7 @@ pub async fn delete_image(
     let paths = paths.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
         let conn = db.write_lock();
-        db::delete_image(&conn, id, &paths.thumbs_dir).map_err(|e| err_cn::text(&e))
+        db::delete_image(&conn, id, &paths.thumbs_dir()).map_err(|e| err_cn::text(&e))
     })
     .await
     .map_err(|e| format!("后台任务失败：{}", err_cn::text(&e)))?
@@ -1394,7 +1528,7 @@ pub async fn batch_delete_images(
         let conn = db.write_lock();
         ok_or_error_value(
             "批量删除失败",
-            db::batch_delete_images(&conn, &ids, &paths.thumbs_dir),
+            db::batch_delete_images(&conn, &ids, &paths.thumbs_dir()),
         )
     })
     .await
@@ -1413,7 +1547,7 @@ pub async fn delete_image_to_trash(
     let paths = paths.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
         let conn = db.write_lock();
-        trash::delete_image_to_trash_core(&conn, id, &paths.thumbs_dir, &paths.trash_dir)
+        trash::delete_image_to_trash_core(&conn, id, &paths.thumbs_dir(), &paths.trash_dir)
             .map_err(|e| err_cn::text(&e))
     })
     .await
@@ -1435,7 +1569,7 @@ pub async fn batch_delete_images_to_trash(
             trash::batch_delete_images_to_trash_core(
                 &conn,
                 &ids,
-                &paths.thumbs_dir,
+                &paths.thumbs_dir(),
                 &paths.trash_dir,
             ),
         )
@@ -1454,7 +1588,7 @@ pub async fn restore_image_from_trash(
     let paths = paths.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
         let conn = db.write_lock();
-        trash::restore_image_from_trash_core(&conn, id, &paths.thumbs_dir, &paths.trash_dir)
+        trash::restore_image_from_trash_core(&conn, id, &paths.thumbs_dir(), &paths.trash_dir)
             .map_err(|e| err_cn::text(&e))
     })
     .await
@@ -1506,9 +1640,13 @@ pub async fn batch_restore_from_trash(
     let paths = paths.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
         let conn = db.write_lock();
-        let (restored, failed) =
-            trash::batch_restore_from_trash_core(&conn, &ids, &paths.thumbs_dir, &paths.trash_dir)
-                .map_err(|e| err_cn::text(&e))?;
+        let (restored, failed) = trash::batch_restore_from_trash_core(
+            &conn,
+            &ids,
+            &paths.thumbs_dir(),
+            &paths.trash_dir,
+        )
+        .map_err(|e| err_cn::text(&e))?;
         Ok(json!({
             "restored": restored,
             "failed": failed
@@ -1522,10 +1660,7 @@ pub async fn batch_restore_from_trash(
 }
 
 #[tauri::command]
-pub async fn batch_purge_trash(
-    paths: State<'_, AppPaths>,
-    ids: Vec<i64>,
-) -> Result<Value, String> {
+pub async fn batch_purge_trash(paths: State<'_, AppPaths>, ids: Vec<i64>) -> Result<Value, String> {
     let paths = paths.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
         let (purged_files, failed) = trash::batch_purge_trash_entries(&paths.trash_dir, &ids);

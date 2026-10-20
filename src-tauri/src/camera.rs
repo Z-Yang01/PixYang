@@ -710,7 +710,7 @@ pub async fn sync_camera_folder(
             &conn,
             Path::new(&camera_dir),
             &paths.default_images_dir,
-            &paths.thumbs_dir,
+            &paths.thumbs_dir(),
             Some(&app),
         ) {
             Ok(v) => Ok(v),
@@ -739,7 +739,7 @@ pub async fn set_images_root(
             &conn,
             &dir_path,
             &paths.default_images_dir,
-            &paths.thumbs_dir,
+            &paths.thumbs_dir(),
         ) {
             Ok(v) => {
                 // 迁移成功即放行新根：asset scope 只在启动时挂一次，

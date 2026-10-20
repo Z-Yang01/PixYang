@@ -5,6 +5,7 @@
 
 pub use crate::error::PixError;
 use rusqlite::{Connection, OptionalExtension};
+use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
@@ -562,12 +563,241 @@ pub fn default_db_path() -> PathBuf {
     resolve_data_dir().join("pixyang.db")
 }
 
-/// 托管状态：连接 + 宿主派生路径（缩略图目录、删除暂存区、默认图片根）
+/// 托管状态：连接 + 宿主派生路径（缩略图目录、删除暂存区、默认图片根）。
+/// thumbs_dir 走 RwLock：set_thumbs_root 迁移后即时生效（新导入/重建/编辑器都读它），
+/// 与 images_root 的「DB 设置即真相」同款运行时语义，不必重启。
 #[derive(Clone)]
 pub struct AppPaths {
-    pub thumbs_dir: PathBuf,
+    thumbs_dir: std::sync::Arc<std::sync::RwLock<PathBuf>>,
     pub trash_dir: PathBuf,
     pub default_images_dir: PathBuf,
+}
+
+impl AppPaths {
+    pub fn new(thumbs_dir: PathBuf, trash_dir: PathBuf, default_images_dir: PathBuf) -> Self {
+        Self {
+            thumbs_dir: std::sync::Arc::new(std::sync::RwLock::new(thumbs_dir)),
+            trash_dir,
+            default_images_dir,
+        }
+    }
+
+    /// 当前生效的缩略图目录（克隆快照；持锁仅拷贝一个 PathBuf）
+    pub fn thumbs_dir(&self) -> PathBuf {
+        self.thumbs_dir
+            .read()
+            .unwrap_or_else(|p| p.into_inner())
+            .clone()
+    }
+
+    /// 迁移成功后由 set_thumbs_root 调用：后续写入立即落到新目录
+    pub fn set_thumbs_dir(&self, dir: PathBuf) {
+        *self.thumbs_dir.write().unwrap_or_else(|p| p.into_inner()) = dir;
+    }
+}
+
+/// 解析生效的缩略图目录：设置优先（thumbs_root，可为 E 盘），未设置/为空/不可用时
+/// 回退 `<data_dir>/thumbnails`。非法设置（如指向一个已存在且为文件）不静默失败，
+/// 回退默认并告警，保证启动不因坏设置破图。
+pub fn resolve_thumbs_dir(data_dir: &Path, setting: Option<&str>) -> PathBuf {
+    let fallback = data_dir.join("thumbnails");
+    let Some(raw) = setting.map(str::trim).filter(|s| !s.is_empty()) else {
+        return fallback;
+    };
+    let candidate = PathBuf::from(raw);
+    if candidate == fallback {
+        return fallback;
+    }
+    if candidate.is_file() {
+        eprintln!(
+            "[thumbs] thumbs_root 指向已存在的文件，回退默认: {}",
+            candidate.display()
+        );
+        return fallback;
+    }
+    if std::fs::create_dir_all(&candidate).is_err() {
+        eprintln!(
+            "[thumbs] thumbs_root 无法创建目录，回退默认: {}",
+            candidate.display()
+        );
+        return fallback;
+    }
+    candidate
+}
+
+/// 切换缩略图根目录：把旧目录里的缩略图文件整体搬到新目录（跨盘走 copy+delete），
+/// 并把 DB 三列里父目录等于旧目录的绝对路径改写到新目录。返回搬迁文件数。
+/// 目录按约定是平的（`{id}.jpg` / `{id}_s.jpg` / `edit-*`），子目录不搬（告警跳过）。
+pub fn migrate_thumbs_root(
+    conn: &Connection,
+    old_dir: &Path,
+    new_dir: &Path,
+) -> Result<usize, PixError> {
+    if old_dir == new_dir {
+        return Ok(0);
+    }
+    std::fs::create_dir_all(new_dir)
+        .map_err(|e| PixError::Io(format!("创建缩略图目录失败: {e}")))?;
+    let mut moved = 0usize;
+    if old_dir.is_dir() {
+        let entries = std::fs::read_dir(old_dir)
+            .map_err(|e| PixError::Io(format!("读取缩略图目录失败: {e}")))?;
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                eprintln!("[thumbs] 跳过子目录（不搬迁）: {}", path.display());
+                continue;
+            }
+            let Some(name) = path.file_name() else {
+                continue;
+            };
+            let dest = new_dir.join(name);
+            if dest.exists() {
+                // 目标已有同名文件：保留目标，源仅在不冲突时才有价值，直接跳过
+                continue;
+            }
+            crate::file_ops::move_file_safe(&path, &dest)?;
+            moved += 1;
+        }
+    }
+    // DB 三列改写：只动父目录恰为旧目录的行（越界引用不猜，交由启动归一处理）
+    let rows: Vec<(i64, String, String, String)> = {
+        let mut stmt = conn.prepare(
+            "SELECT id, COALESCE(thumbnail_path,''), COALESCE(thumbnail_small_path,''), COALESCE(thumbnail_edit_path,'') FROM images",
+        )?;
+        let collected = stmt
+            .query_map([], |r| {
+                Ok((
+                    r.get::<_, i64>(0)?,
+                    r.get::<_, String>(1)?,
+                    r.get::<_, String>(2)?,
+                    r.get::<_, String>(3)?,
+                ))
+            })?
+            .collect::<rusqlite::Result<_>>()?;
+        collected
+    };
+    let rewrite = |v: &str| -> Option<String> {
+        if v.is_empty() {
+            return None;
+        }
+        let p = Path::new(v);
+        if p.parent() == Some(old_dir) {
+            p.file_name()
+                .map(|n| new_dir.join(n).to_string_lossy().to_string())
+        } else {
+            None
+        }
+    };
+    for (id, t1, t2, t3) in rows {
+        let n1 = rewrite(&t1);
+        let n2 = rewrite(&t2);
+        let n3 = rewrite(&t3);
+        if n1.is_none() && n2.is_none() && n3.is_none() {
+            continue;
+        }
+        conn.execute(
+            "UPDATE images SET thumbnail_path=?, thumbnail_small_path=?, thumbnail_edit_path=? WHERE id=?",
+            rusqlite::params![
+                n1.unwrap_or(t1),
+                n2.unwrap_or(t2),
+                n3.unwrap_or(t3),
+                id
+            ],
+        )?;
+    }
+    Ok(moved)
+}
+
+/// 孤儿缩略图：目录里符合 `{id}.jpg` / `{id}_s.jpg` 命名、但 images 表已无对应 id 的文件。
+/// 只认数字命名（编辑会话的 `edit-*` 边车不碰），这些文件任何界面都引用不到，
+/// 删除后可由「重建缩略图」按需再生。返回 [{path,size,id}]。
+pub fn scan_orphan_thumbnails(conn: &Connection, thumbs_dir: &Path) -> Result<Value, PixError> {
+    let mut live_ids: std::collections::HashSet<i64> = std::collections::HashSet::new();
+    {
+        let mut stmt = conn.prepare("SELECT id FROM images")?;
+        let rows = stmt.query_map([], |r| r.get::<_, i64>(0))?;
+        for id in rows.flatten() {
+            live_ids.insert(id);
+        }
+    }
+    let mut orphans = Vec::new();
+    if thumbs_dir.is_dir() {
+        let entries = std::fs::read_dir(thumbs_dir)
+            .map_err(|e| PixError::Io(format!("读取缩略图目录失败: {e}")))?;
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if !path.is_file() {
+                continue;
+            }
+            let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+                continue;
+            };
+            let Some(id) = numeric_thumb_id(name) else {
+                continue; // edit-* / 其他命名：非候选
+            };
+            if live_ids.contains(&id) {
+                continue;
+            }
+            let size = entry.metadata().map(|m| m.len()).unwrap_or(0);
+            orphans.push(json!({
+                "path": path.to_string_lossy(),
+                "size": size,
+                "id": id,
+            }));
+        }
+    }
+    Ok(json!({ "orphans": orphans, "thumbsDir": thumbs_dir.to_string_lossy() }))
+}
+
+/// 从 `{id}.jpg` / `{id}_s.jpg` 文件名解析图片 id；其他命名（edit-*、meta）返回 None。
+pub fn numeric_thumb_id(name: &str) -> Option<i64> {
+    let stem = name.strip_suffix(".jpg")?;
+    let stem = stem.strip_suffix("_s").unwrap_or(stem);
+    if stem.is_empty() || !stem.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    stem.parse::<i64>().ok()
+}
+
+/// 清理孤儿缩略图：对传入路径逐一复核——必须位于 thumbs_dir 内、数字命名、
+/// 且 images 表已无对应 id（防前端传回活 id / 越界路径）。返回 {removed, freed}。
+pub fn clean_orphan_thumbnails(
+    conn: &Connection,
+    paths: &[String],
+    thumbs_dir: &Path,
+) -> Result<Value, PixError> {
+    let mut live_ids: std::collections::HashSet<i64> = std::collections::HashSet::new();
+    {
+        let mut stmt = conn.prepare("SELECT id FROM images")?;
+        let rows = stmt.query_map([], |r| r.get::<_, i64>(0))?;
+        for id in rows.flatten() {
+            live_ids.insert(id);
+        }
+    }
+    let mut removed = 0usize;
+    let mut freed = 0u64;
+    for p in paths {
+        let path = Path::new(p);
+        let id = path
+            .parent()
+            .filter(|parent| *parent == thumbs_dir)
+            .and(path.file_name())
+            .and_then(|n| n.to_str())
+            .and_then(numeric_thumb_id);
+        // 三重兜底：目录内 + 数字命名 + 确无对应图片记录
+        let Some(id) = id else { continue };
+        if live_ids.contains(&id) {
+            continue;
+        }
+        if let Ok(meta) = std::fs::metadata(path) {
+            freed += meta.len();
+        }
+        if std::fs::remove_file(path).is_ok() {
+            removed += 1;
+        }
+    }
+    Ok(json!({ "removed": removed, "freed": freed }))
 }
 
 pub fn get_setting_raw(conn: &Connection, key: &str) -> Result<Option<String>, PixError> {
@@ -772,6 +1002,187 @@ mod tests {
             })
             .unwrap();
         assert!(p2.is_empty(), "文件不存在应清空列: {p2}");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    fn thumb_rows_conn() -> Connection {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE images (id INTEGER PRIMARY KEY, thumbnail_path TEXT DEFAULT '',
+             thumbnail_small_path TEXT DEFAULT '', thumbnail_edit_path TEXT DEFAULT '');",
+        )
+        .unwrap();
+        conn
+    }
+
+    #[test]
+    fn resolve_thumbs_dir_设置优先_空值与坏目录回退默认() {
+        let root =
+            std::env::temp_dir().join(format!("pixyang_thumbsresolve_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let data = root.join("data");
+        std::fs::create_dir_all(&data).unwrap();
+        let custom = root.join("custom_thumbs");
+
+        assert_eq!(
+            resolve_thumbs_dir(&data, Some("  ")),
+            data.join("thumbnails"),
+            "空白设置回退默认"
+        );
+        assert_eq!(
+            resolve_thumbs_dir(&data, Some(custom.to_string_lossy().as_ref())),
+            custom,
+            "合法自定义目录生效（并创建）"
+        );
+        assert!(custom.is_dir(), "自定义目录应被创建");
+
+        // 已存在的文件路径：不可用作目录，回退默认
+        let file_path = root.join("not_a_dir");
+        std::fs::write(&file_path, b"x").unwrap();
+        assert_eq!(
+            resolve_thumbs_dir(&data, Some(file_path.to_string_lossy().as_ref())),
+            data.join("thumbnails"),
+            "指向文件的设置回退默认"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn 迁移缩略图目录_搬移文件并改写三列_目标已有同名则跳过() {
+        let root = std::env::temp_dir().join(format!("pixyang_thumbsmig_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let old = root.join("old");
+        let new = root.join("new");
+        std::fs::create_dir_all(&old).unwrap();
+        std::fs::write(old.join("1.jpg"), b"M").unwrap();
+        std::fs::write(old.join("1_s.jpg"), b"S").unwrap();
+        std::fs::write(old.join("edit-1.jpg"), b"E").unwrap();
+
+        let conn = thumb_rows_conn();
+        conn.execute(
+            "INSERT INTO images (id, thumbnail_path, thumbnail_small_path, thumbnail_edit_path) VALUES (1, ?1, ?2, ?3)",
+            rusqlite::params![
+                old.join("1.jpg").to_string_lossy().to_string(),
+                old.join("1_s.jpg").to_string_lossy().to_string(),
+                old.join("edit-1.jpg").to_string_lossy().to_string(),
+            ],
+        )
+        .unwrap();
+        // 第二条记录的缩略图在目录外：不应被改写
+        conn.execute(
+            "INSERT INTO images (id, thumbnail_path) VALUES (2, ?1)",
+            [root
+                .join("elsewhere")
+                .join("2.jpg")
+                .to_string_lossy()
+                .to_string()],
+        )
+        .unwrap();
+
+        let moved = migrate_thumbs_root(&conn, &old, &new).unwrap();
+        assert_eq!(moved, 3, "三个文件都应搬迁");
+        assert!(new.join("1.jpg").exists() && new.join("1_s.jpg").exists());
+        assert!(new.join("edit-1.jpg").exists());
+        assert!(!old.join("1.jpg").exists(), "旧目录应已搬空");
+
+        let (p1, p2, p3): (String, String, String) = conn
+            .query_row(
+                "SELECT thumbnail_path, thumbnail_small_path, thumbnail_edit_path FROM images WHERE id=1",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .unwrap();
+        assert_eq!(Path::new(&p1).parent().unwrap(), new.as_path());
+        assert_eq!(Path::new(&p2).parent().unwrap(), new.as_path());
+        assert_eq!(Path::new(&p3).parent().unwrap(), new.as_path());
+        let outside: String = conn
+            .query_row("SELECT thumbnail_path FROM images WHERE id=2", [], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        assert!(
+            Path::new(&outside).parent().unwrap() != new.as_path(),
+            "目录外引用不猜不改写"
+        );
+
+        // 幂等：同目录再迁返回 0
+        assert_eq!(migrate_thumbs_root(&conn, &new, &new).unwrap(), 0);
+
+        // 目标已有同名文件：保留目标、跳过源（不覆盖）
+        let old2 = root.join("old2");
+        let new2 = root.join("new2");
+        std::fs::create_dir_all(&old2).unwrap();
+        std::fs::create_dir_all(&new2).unwrap();
+        std::fs::write(old2.join("7.jpg"), b"OLD").unwrap();
+        std::fs::write(new2.join("7.jpg"), b"KEEP").unwrap();
+        assert_eq!(migrate_thumbs_root(&conn, &old2, &new2).unwrap(), 0);
+        assert_eq!(std::fs::read(new2.join("7.jpg")).unwrap(), b"KEEP");
+        assert!(old2.join("7.jpg").exists(), "跳过的源文件不删");
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn 孤儿缩略图_只认数字命名_活id不删_清理兜底校验() {
+        let root = std::env::temp_dir().join(format!("pixyang_thumbsorph_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let thumbs = root.join("thumbs");
+        std::fs::create_dir_all(&thumbs).unwrap();
+        // 活 id 1 的缩略图 + 已删 id 9 的残留 + 编辑会话边车 + 非法命名
+        std::fs::write(thumbs.join("1.jpg"), b"M").unwrap();
+        std::fs::write(thumbs.join("1_s.jpg"), b"S").unwrap();
+        std::fs::write(thumbs.join("9.jpg"), b"X").unwrap();
+        std::fs::write(thumbs.join("9_s.jpg"), b"X").unwrap();
+        std::fs::write(thumbs.join("edit-1.jpg"), b"E").unwrap();
+        std::fs::write(thumbs.join("abc.jpg"), b"A").unwrap();
+        std::fs::write(thumbs.join("2_s.jpg"), b"Y").unwrap(); // id 2 不在表里
+
+        let conn = thumb_rows_conn();
+        conn.execute("INSERT INTO images (id) VALUES (1)", [])
+            .unwrap();
+
+        let scan = scan_orphan_thumbnails(&conn, &thumbs).unwrap();
+        let orphans = scan["orphans"].as_array().unwrap();
+        let names: Vec<String> = orphans
+            .iter()
+            .map(|o| {
+                Path::new(o["path"].as_str().unwrap())
+                    .file_name()
+                    .unwrap()
+                    .to_string_lossy()
+                    .to_string()
+            })
+            .collect();
+        assert_eq!(names.len(), 3, "仅 9/9_s/2_s 是孤儿: {names:?}");
+        assert!(names.contains(&"9.jpg".to_string()));
+        assert!(names.contains(&"9_s.jpg".to_string()));
+        assert!(names.contains(&"2_s.jpg".to_string()));
+        assert!(!names.contains(&"edit-1.jpg".to_string()), "编辑边车不碰");
+        assert!(!names.contains(&"abc.jpg".to_string()), "非数字命名不碰");
+
+        // 清理：传入活 id 的文件与目录外路径都应被拒绝
+        let evil = root.join("outside.jpg");
+        std::fs::write(&evil, b"Z").unwrap();
+        let cleaned = clean_orphan_thumbnails(
+            &conn,
+            &[
+                thumbs.join("9.jpg").to_string_lossy().to_string(),
+                thumbs.join("1.jpg").to_string_lossy().to_string(), // 活 id：拒绝
+                evil.to_string_lossy().to_string(),                 // 目录外：拒绝
+            ],
+            &thumbs,
+        )
+        .unwrap();
+        assert_eq!(cleaned["removed"], 1, "只有 9.jpg 应被删");
+        assert!(!thumbs.join("9.jpg").exists());
+        assert!(thumbs.join("1.jpg").exists(), "活 id 缩略图必须保留");
+        assert!(evil.exists(), "目录外文件必须保留");
+        assert!(thumbs.join("9_s.jpg").exists(), "未传入的不动");
+
+        assert_eq!(numeric_thumb_id("12_s.jpg"), Some(12));
+        assert_eq!(numeric_thumb_id("12.jpg"), Some(12));
+        assert_eq!(numeric_thumb_id("edit-1.jpg"), None);
+        assert_eq!(numeric_thumb_id("1.jpg.bak"), None);
         let _ = std::fs::remove_dir_all(&root);
     }
 

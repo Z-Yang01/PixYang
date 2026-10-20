@@ -109,6 +109,12 @@ export const tauriApi = {
   getImagesRoot: () => tauriInvoke('get_images_root'),
   // 与 Rust set_images_root(dir_path) 对齐；sync_camera_folder 无用户参数（相机根取自 settings）
   setImagesRoot: (dirPath) => tauriInvoke('set_images_root', { dirPath }),
+  // 缩略图目录（大数据，可独立指到 E 盘）：空串 = 恢复默认（数据目录下 thumbnails）
+  getThumbsRoot: () => tauriInvoke('get_thumbs_root'),
+  setThumbsRoot: (dirPath) => tauriInvoke('set_thumbs_root', { dirPath }),
+  // 孤儿缩略图：数字命名且 images 表已无对应 id 的文件（可安全清理，重建可再生）
+  scanOrphanThumbnails: () => tauriInvoke('scan_orphan_thumbnails', {}),
+  cleanOrphanThumbnails: (paths) => tauriInvoke('clean_orphan_thumbnails', { pathsList: paths }),
   syncCameraFolder: () => tauriInvoke('sync_camera_folder', {}),
   getDatabasePath: () => tauriInvoke('get_database_path'),
   getAllImageIds: (options) => tauriInvoke('get_all_image_ids', { query: options ?? {} }),

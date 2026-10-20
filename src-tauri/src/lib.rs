@@ -83,15 +83,10 @@ pub fn run() {
             let database = db::Db::open(&db_path).map_err(|e| format!("数据库打开失败: {e}"))?;
             let default_images_dir = data_dir.join("images");
             // 缩略图属于大数据，允许单独指定根目录（settings.thumbs_root，可为 E 盘）；
-            // 未设置/为空时用 data/thumbnails。启动归一会把旧路径文件搬进该目录并改写。
+            // 未设置/为空/不可用时回退 data/thumbnails。启动归一会把旧路径文件搬进该目录并改写。
             let thumbs_root_setting: Option<String> =
                 database.get_setting("thumbs_root").unwrap_or(None);
-            let thumbs_dir = thumbs_root_setting
-                .as_deref()
-                .map(str::trim)
-                .filter(|s| !s.is_empty())
-                .map(std::path::PathBuf::from)
-                .unwrap_or_else(|| data_dir.join("thumbnails"));
+            let thumbs_dir = db::resolve_thumbs_dir(&data_dir, thumbs_root_setting.as_deref());
             let _ = std::fs::create_dir_all(&thumbs_dir);
             let trash_dir = data_dir.join("trash");
             let _ = std::fs::create_dir_all(&trash_dir);
@@ -132,11 +127,11 @@ pub fn run() {
                 let _ = scope.allow_directory(&data_dir, true);
             }
             app.manage(database);
-            app.manage(db::AppPaths {
+            app.manage(db::AppPaths::new(
                 thumbs_dir,
-                trash_dir: trash_dir.clone(),
+                trash_dir.clone(),
                 default_images_dir,
-            });
+            ));
             // 暂存区清扫：启动一轮 + 每 24h 一轮（超期 24h 的延迟物理删除，防误删次日可救）
             {
                 let sweep_dir = trash_dir;
@@ -195,6 +190,10 @@ pub fn run() {
             commands::delete_snapshot,
             commands::get_images_root,
             commands::get_database_path,
+            commands::get_thumbs_root,
+            commands::set_thumbs_root,
+            commands::scan_orphan_thumbnails,
+            commands::clean_orphan_thumbnails,
             commands::get_all_image_ids,
             commands::import_images,
             commands::check_duplicate_serials,

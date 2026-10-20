@@ -3691,3 +3691,18 @@ R103 宣言 → R116 六笔快包 → 本轮 R117-R119 终版快包，此后再�
   ② 新增 `settings.thumbs_root`：`AppPaths.thumbs_dir` 优先取该设置，否则 `<data_dir>\thumbnails`；
      asset 白名单随 `thumbs_dir` 放行；启动归一与重建都用它。
   ③ 现场：833 条记录的缩略图路径全部改写到 E 盘（1094 个引用、0 缺失、0 在 C 盘），C 盘旧缩略图已清空。
+
+- 2026-10-20 R159 缩略图目录可运行时切换 + 孤儿缩略图清理：
+  ① `AppPaths.thumbs_dir` 改 `Arc<RwLock<PathBuf>>`（`thumbs_dir()` / `set_thumbs_dir()`）：
+     set_thumbs_root 迁移后即时生效，不必重启（与 set_images_root 同款运行时语义）。
+  ② `db::resolve_thumbs_dir`：设置空白/指向文件/建不出目录 → 回退 `<data_dir>\thumbnails` 并告警。
+  ③ `db::migrate_thumbs_root`：整体搬迁缩略图文件（跨盘 copy+delete，目标已有同名跳过），
+     只把 DB 三列里父目录恰为旧目录的行改写到新目录（目录外引用不猜，交由启动归一）。
+  ④ 新命令：`get_thumbs_root` / `set_thumbs_root`（空串=恢复默认）/ `scan_orphan_thumbnails` /
+     `clean_orphan_thumbnails`；`set_setting` 裸写 thumbs_root 被拦截（同 images_root）。
+     校验：新目录不能等于数据目录、不能与图片根互相包含（否则孤儿文件扫描误把缩略图当未入库图片）。
+  ⑤ 孤儿缩略图：仅 `{id}.jpg`/`{id}_s.jpg` 命名且 images 表无对应 id 的残留（删图遗留）；
+     `edit-*` 边车不碰；清理前三重复核（目录内 + 数字命名 + 无对应记录），防传回活 id/越界路径。
+  ⑥ 前端：设置页「存储 → 缩略图目录」（回显/打开/选择/恢复默认位置，确认后整体迁移），
+     「维护 → 扫描孤儿缩略图」扫描 + 确认清理 + 释放空间播报；契约表补 4 条通道。
+  ⑦ 验证：cargo 264（+3）；npm 1152 全绿（Settings 交互 +11 例）；tsc/lint/prettier 全绿。

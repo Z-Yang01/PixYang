@@ -27,6 +27,8 @@ export default function SettingsPage({ onSettingsChanged, onImagesChanged }) {
   const savedRef = useRef(draft);
   const [storagePath, setStoragePath] = useState('');
   const [cameraFolder, setCameraFolder] = useState('');
+  const [thumbsPath, setThumbsPath] = useState('');
+  const [movingThumbs, setMovingThumbs] = useState(false);
   const [message, setMessage] = useState('');
   const [moving, setMoving] = useState(false);
   const [syncing, setSyncing] = useState(false);
@@ -41,6 +43,9 @@ export default function SettingsPage({ onSettingsChanged, onImagesChanged }) {
   const [dbPath, setDbPath] = useState('');
   const [scanningOrphans, setScanningOrphans] = useState(false);
   const [orphans, setOrphans] = useState(null);
+  const [scanningOrphanThumbs, setScanningOrphanThumbs] = useState(false);
+  const [orphanThumbs, setOrphanThumbs] = useState(null);
+  const [cleaningThumbs, setCleaningThumbs] = useState(false);
   const [aiDraft, setAiDraft] = useState({ baseUrl: '', apiKey: '', model: '' });
   const aiSavedRef = useRef({ baseUrl: '', apiKey: '', model: '' });
   const [aiSaving, setAiSaving] = useState(false);
@@ -91,6 +96,7 @@ export default function SettingsPage({ onSettingsChanged, onImagesChanged }) {
     try {
       settings = (await api.getSettings()) || {};
       setStoragePath(await api.getImagesRoot());
+      setThumbsPath((await api.getThumbsRoot()) || '');
     } catch (e) {
       console.error('[设置] 读取设置失败:', e.message);
       setMessage(errText('读取设置失败', e));
@@ -212,6 +218,121 @@ export default function SettingsPage({ onSettingsChanged, onImagesChanged }) {
     }
     setCameraFolder(dir);
     showSaved('已设置相机文件夹');
+  };
+
+  const handleOpenThumbsFolder = async () => {
+    if (!api.isBridgeAvailable() || !thumbsPath) return;
+    await api.openPath(thumbsPath);
+  };
+
+  const handleChooseThumbs = async () => {
+    if (!api.isBridgeAvailable() || movingThumbs) return;
+    const target = await api.selectDirectory();
+    if (!target || target === thumbsPath) return;
+
+    const ok = window.confirm(
+      '修改缩略图目录会把所有缩略图整体迁移到新路径（原目录不再保留），确定继续吗？'
+    );
+    if (!ok) return;
+
+    setMovingThumbs(true);
+    setMessage('正在迁移缩略图...');
+    // IPC reject 不能把 movingThumbs 卡死：统一转错误分支收尾（同 handleChooseStorage）
+    let result;
+    try {
+      result = await api.setThumbsRoot(target);
+    } catch (e) {
+      console.error('[设置] 迁移缩略图目录异常:', e.message);
+      result = { error: errText('迁移失败', e) };
+    }
+    setMovingThumbs(false);
+
+    if (result?.error) {
+      setMessage(friendlyError(result.error));
+      return;
+    }
+
+    setThumbsPath(result.path || target);
+    onImagesChanged?.();
+    showSaved(`已迁移 ${result.moved || 0} 个缩略图文件`);
+  };
+
+  // 恢复默认：传空串，后端解析为数据目录下的 thumbnails 并搬回
+  const handleResetThumbs = async () => {
+    if (!api.isBridgeAvailable() || movingThumbs) return;
+    const ok = window.confirm(
+      '将缩略图目录恢复为默认位置（数据目录下的 thumbnails），缩略图会随之搬回，确定继续吗？'
+    );
+    if (!ok) return;
+
+    setMovingThumbs(true);
+    setMessage('正在恢复默认缩略图目录...');
+    let result;
+    try {
+      result = await api.setThumbsRoot('');
+    } catch (e) {
+      console.error('[设置] 恢复默认缩略图目录异常:', e.message);
+      result = { error: errText('恢复失败', e) };
+    }
+    setMovingThumbs(false);
+
+    if (result?.error) {
+      setMessage(friendlyError(result.error));
+      return;
+    }
+
+    setThumbsPath(result.path || '');
+    onImagesChanged?.();
+    showSaved(`已恢复默认缩略图目录（迁移 ${result.moved || 0} 个文件）`);
+  };
+
+  const handleScanOrphanThumbs = async () => {
+    if (!api.isBridgeAvailable() || scanningOrphanThumbs) return;
+    setScanningOrphanThumbs(true);
+    let result;
+    try {
+      result = await api.scanOrphanThumbnails();
+    } catch (e) {
+      console.error('[设置] 扫描孤儿缩略图失败:', e.message);
+      setScanningOrphanThumbs(false);
+      setMessage(errText('扫描失败', e));
+      return;
+    }
+    setScanningOrphanThumbs(false);
+    if (result?.error) {
+      setMessage(friendlyError(result.error));
+      return;
+    }
+    const list = result?.orphans || [];
+    if (list.length === 0) {
+      showSaved('未发现孤儿缩略图');
+      return;
+    }
+    setOrphanThumbs(list);
+  };
+
+  const handleCleanOrphanThumbs = async () => {
+    if (!api.isBridgeAvailable() || !orphanThumbs) return;
+    const paths = orphanThumbs.map((o) => o.path);
+    setOrphanThumbs(null);
+    setCleaningThumbs(true);
+    let result;
+    try {
+      result = await api.cleanOrphanThumbnails(paths);
+    } catch (e) {
+      console.error('[设置] 清理孤儿缩略图失败:', e.message);
+      setOrphanThumbs(orphanThumbs);
+      setCleaningThumbs(false);
+      setMessage(errText('清理失败', e));
+      return;
+    }
+    setCleaningThumbs(false);
+    if (result?.error) {
+      setMessage(friendlyError(result.error));
+      return;
+    }
+    const freed = ((result.freed || 0) / 1048576).toFixed(1);
+    showSaved(`已清理 ${result.removed || 0} 个孤儿缩略图，释放 ${freed} MB`);
   };
 
   const handleSyncCamera = async () => {
@@ -624,6 +745,33 @@ export default function SettingsPage({ onSettingsChanged, onImagesChanged }) {
           <p className="settings-help">
             修改保存路径时，当前图库中的图片会整体移动到新路径，并同步更新数据库路径。
           </p>
+
+          <div className="info-row" style={{ marginTop: 12 }}>
+            <span className="info-label">缩略图目录</span>
+          </div>
+          <div className="storage-path" title={thumbsPath}>
+            {thumbsPath || '加载中...'}
+          </div>
+          <div className="button-row">
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={handleOpenThumbsFolder}
+              disabled={!thumbsPath}
+            >
+              打开缩略图目录
+            </Button>
+            <Button size="sm" onClick={handleChooseThumbs} disabled={movingThumbs}>
+              {movingThumbs ? '迁移中...' : '选择缩略图目录'}
+            </Button>
+            <Button variant="ghost" size="sm" onClick={handleResetThumbs} disabled={movingThumbs}>
+              恢复默认位置
+            </Button>
+          </div>
+          <p className="settings-help">
+            缩略图属于大数据，可单独放到容量充足的磁盘。修改时所有缩略图会整体迁移、数据库路径同步更新，无需重启；
+            「恢复默认」搬回数据目录下的 thumbnails。
+          </p>
         </section>
 
         <section className="settings-section">
@@ -761,6 +909,21 @@ export default function SettingsPage({ onSettingsChanged, onImagesChanged }) {
           </p>
 
           <div className="info-row" style={{ marginTop: 12 }}>
+            <span className="info-label">孤儿缩略图</span>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={handleScanOrphanThumbs}
+              disabled={scanningOrphanThumbs || cleaningThumbs}
+            >
+              {scanningOrphanThumbs ? '扫描中...' : '扫描孤儿缩略图'}
+            </Button>
+          </div>
+          <p className="settings-help">
+            扫描缩略图目录里对应图片已不在图库的残留文件（如删除图片后的遗留）。缩略图可随时由「重建缩略图」再生，清理不影响显示。
+          </p>
+
+          <div className="info-row" style={{ marginTop: 12 }}>
             <span className="info-label">数据库备份</span>
             <Button variant="secondary" size="sm" onClick={handleBackup}>
               备份数据库
@@ -806,6 +969,18 @@ export default function SettingsPage({ onSettingsChanged, onImagesChanged }) {
           confirmLabel={`清理 ${brokenRecords.length} 条`}
           onConfirm={handleCleanBroken}
           onCancel={() => setBrokenRecords(null)}
+        />
+      )}
+
+      {orphanThumbs && orphanThumbs.length > 0 && (
+        <ConfirmDialog
+          title="清理孤儿缩略图"
+          message={`发现 ${orphanThumbs.length} 个孤儿缩略图文件（共 ${formatMb(
+            orphanThumbs.reduce((s, o) => s + (o.size || 0), 0)
+          )}）。这些文件对应的图片已不在图库，清理后不影响显示，需要时可由「重建缩略图」重新生成。`}
+          confirmLabel={`清理 ${orphanThumbs.length} 个`}
+          onConfirm={handleCleanOrphanThumbs}
+          onCancel={() => setOrphanThumbs(null)}
         />
       )}
 

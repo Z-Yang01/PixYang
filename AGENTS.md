@@ -144,11 +144,19 @@ tests/            vitest（node 环境 + per-file happy-dom pragma）
   ① 便携 `<exe目录>\data`（优先，2026-10 前的线上库在这里）② 旧 Electron `%APPDATA%\pixyang`
   复制 `pixyang.db(-wal/-shm)` + `thumbnails`；**只复制、不删源、不动图片**，目标已有库则跳过。
 - **缩略图目录可独立指定**（`settings.thumbs_root`）：缩略图属于大数据，可指到 E 盘等容量大的盘，
-  如 `E:\Software\PixYang\data\thumbnails`；为空时用 `<data_dir>\thumbnails`。`AppPaths.thumbs_dir` 与
-  asset 白名单都跟随该设置。
+  如 `E:\Software\PixYang\data\thumbnails`；为空/不可用时用 `<data_dir>\thumbnails`
+  （`db::resolve_thumbs_dir` 校验：空白回退、指向文件或建不出的目录回退默认并告警）。
+- **缩略图目录可运行时切换**（R159）：设置页「存储 → 缩略图目录」选择新目录或「恢复默认位置」，
+  走 `set_thumbs_root`：整体搬迁缩略图文件（跨盘 copy+delete，目标已有同名则跳过）→ 改写 DB 三列
+  （只改父目录恰为旧目录的行）→ 持久化 settings → 更新 `AppPaths` 运行时状态（RwLock）→ 扩展
+  asset 白名单，**无需重启**。校验：不能等于数据目录、不能与图片根互相包含（否则孤儿文件扫描会把
+  缩略图当未入库图片）。`set_setting` 裸写 `thumbs_root` 被拦截（同 images_root）。
 - **缩略图路径归一**（`db::normalize_thumbnail_paths`，启动时执行）：DB 的三个缩略图列存的是绝对路径；
   迁移/换目录后会自动把旧路径指向的文件复制进当前 `thumbs_dir` 并改写列，文件已不在的列清空。
   不做这一步会出现「大图正常、胶片条/网格小图破图」——asset 白名单只放行当前数据目录。
+- **孤儿缩略图清理**（R159，设置页「维护 → 扫描孤儿缩略图」）：缩略图目录里符合 `{id}.jpg` /
+  `{id}_s.jpg` 命名、但 images 表已无对应 id 的残留（删图遗留）。`edit-*` 编辑边车与其他命名不碰；
+  清理前按目录内 + 数字命名 + 无对应记录三重复核。缩略图可重建，清理不影响显示。
 - 备份口径：DB（`%LOCALAPPDATA%\PixYang\pixyang.db`）+ 原图（`images_root`）必须成对备份；
   `thumbnails` 可重建，可不备。
 

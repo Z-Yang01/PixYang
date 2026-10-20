@@ -38,6 +38,12 @@ describe('SettingsPage（补充：存储/相机/维护/备份/重复图片等交
     window.pixyang = {
       getSettings: vi.fn().mockResolvedValue({ ...baseSettings }),
       getImagesRoot: vi.fn().mockResolvedValue('C:/PixData'),
+      getThumbsRoot: vi.fn().mockResolvedValue('E:/PixData/thumbs'),
+      setThumbsRoot: vi
+        .fn()
+        .mockResolvedValue({ success: true, path: 'E:/PixData/thumbs', moved: 0 }),
+      scanOrphanThumbnails: vi.fn().mockResolvedValue({ orphans: [] }),
+      cleanOrphanThumbnails: vi.fn().mockResolvedValue({ removed: 0, freed: 0 }),
       getDatabasePath: vi.fn().mockResolvedValue('C:/db/pixyang.db'),
       setSetting: vi.fn().mockResolvedValue(undefined),
       selectDirectory: vi.fn().mockResolvedValue(null),
@@ -552,7 +558,7 @@ describe('SettingsPage（补充：存储/相机/维护/备份/重复图片等交
   it('window.pixyang 缺失时保持加载态', () => {
     delete window.pixyang;
     renderPage();
-    expect(screen.getAllByText('加载中...').length).toBe(2); // 存储路径 + 数据库路径
+    expect(screen.getAllByText('加载中...').length).toBe(3); // 存储路径 + 缩略图目录 + 数据库路径
   });
 
   it('stats 缺失字段时统计显示 0', () => {
@@ -648,5 +654,117 @@ describe('SettingsPage（补充：存储/相机/维护/备份/重复图片等交
     fireEvent.click(screen.getByText('扫描未入库文件'));
     expect(await screen.findByText(/扫描失败/)).toBeInTheDocument();
     expect(screen.queryByText(/发现 .* 个未入库的图片文件/)).not.toBeInTheDocument();
+  });
+
+  it('缩略图目录：加载后回显当前目录', async () => {
+    renderPage();
+    expect(await screen.findByText('E:/PixData/thumbs')).toBeInTheDocument();
+    expect(screen.getByText('选择缩略图目录')).toBeInTheDocument();
+    expect(screen.getByText('恢复默认位置')).toBeInTheDocument();
+  });
+
+  it('缩略图目录：点「打开缩略图目录」调用 openPath', async () => {
+    renderPage();
+    await screen.findByText('E:/PixData/thumbs');
+    fireEvent.click(screen.getByText('打开缩略图目录'));
+    await vi.waitFor(() => {
+      expect(window.pixyang.openPath).toHaveBeenCalledWith('E:/PixData/thumbs');
+    });
+  });
+
+  it('缩略图目录：确认后整体迁移并提示文件数、刷新图库', async () => {
+    const onImagesChanged = vi.fn();
+    window.pixyang.selectDirectory.mockResolvedValue('D:/Thumbs');
+    window.pixyang.setThumbsRoot.mockResolvedValue({ success: true, path: 'D:/Thumbs', moved: 12 });
+    renderPage({ onImagesChanged });
+    await screen.findByText('E:/PixData/thumbs');
+    fireEvent.click(screen.getByText('选择缩略图目录'));
+    expect(await screen.findByText(/已迁移 12 个缩略图文件/)).toBeInTheDocument();
+    expect(screen.getByText('D:/Thumbs')).toBeInTheDocument();
+    expect(window.pixyang.setThumbsRoot).toHaveBeenCalledWith('D:/Thumbs');
+    expect(onImagesChanged).toHaveBeenCalled();
+  });
+
+  it('缩略图目录：确认框取消时不迁移', async () => {
+    window.confirm = vi.fn(() => false);
+    window.pixyang.selectDirectory.mockResolvedValue('D:/Thumbs');
+    renderPage();
+    await screen.findByText('E:/PixData/thumbs');
+    fireEvent.click(screen.getByText('选择缩略图目录'));
+    await vi.waitFor(() => {
+      expect(window.pixyang.selectDirectory).toHaveBeenCalled();
+    });
+    expect(window.pixyang.setThumbsRoot).not.toHaveBeenCalled();
+    expect(screen.getByText('E:/PixData/thumbs')).toBeInTheDocument();
+  });
+
+  it('缩略图目录：迁移失败（{error}）显示中文错误且不卡「迁移中」', async () => {
+    window.pixyang.selectDirectory.mockResolvedValue('D:/Thumbs');
+    window.pixyang.setThumbsRoot.mockResolvedValue({ error: '迁移失败：磁盘只读' });
+    renderPage();
+    await screen.findByText('E:/PixData/thumbs');
+    fireEvent.click(screen.getByText('选择缩略图目录'));
+    expect(await screen.findByText('迁移失败：磁盘只读')).toBeInTheDocument();
+    expect(screen.getByText('选择缩略图目录')).toBeInTheDocument();
+  });
+
+  it('缩略图目录：恢复默认传空串，成功后回显新路径', async () => {
+    window.pixyang.setThumbsRoot.mockResolvedValue({
+      success: true,
+      path: 'C:/Users/u/AppData/Local/PixYang/thumbnails',
+      moved: 3,
+    });
+    renderPage();
+    await screen.findByText('E:/PixData/thumbs');
+    fireEvent.click(screen.getByText('恢复默认位置'));
+    expect(await screen.findByText(/已恢复默认缩略图目录（迁移 3 个文件）/)).toBeInTheDocument();
+    expect(window.pixyang.setThumbsRoot).toHaveBeenCalledWith('');
+    expect(screen.getByText('C:/Users/u/AppData/Local/PixYang/thumbnails')).toBeInTheDocument();
+  });
+
+  it('孤儿缩略图：无残留时提示「未发现」', async () => {
+    renderPage();
+    fireEvent.click(screen.getByText('扫描孤儿缩略图'));
+    await vi.waitFor(() => {
+      expect(window.pixyang.scanOrphanThumbnails).toHaveBeenCalled();
+    });
+    expect(await screen.findByText('未发现孤儿缩略图')).toBeInTheDocument();
+  });
+
+  it('孤儿缩略图：有残留弹确认框，取消不清理', async () => {
+    window.pixyang.scanOrphanThumbnails.mockResolvedValue({
+      orphans: [
+        { path: 'E:/PixData/thumbs/9.jpg', size: 20480, id: 9 },
+        { path: 'E:/PixData/thumbs/9_s.jpg', size: 5120, id: 9 },
+      ],
+    });
+    renderPage();
+    fireEvent.click(screen.getByText('扫描孤儿缩略图'));
+    expect(await screen.findByText(/发现 2 个孤儿缩略图文件/)).toBeInTheDocument();
+    expect(window.pixyang.cleanOrphanThumbnails).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByText('取消'));
+    expect(window.pixyang.cleanOrphanThumbnails).not.toHaveBeenCalled();
+  });
+
+  it('孤儿缩略图：确认后清理并播报释放空间', async () => {
+    window.pixyang.scanOrphanThumbnails.mockResolvedValue({
+      orphans: [
+        { path: 'E:/PixData/thumbs/9.jpg', size: 20 * 1024 * 1024, id: 9 },
+        { path: 'E:/PixData/thumbs/9_s.jpg', size: 4 * 1024 * 1024, id: 9 },
+      ],
+    });
+    window.pixyang.cleanOrphanThumbnails.mockResolvedValue({
+      removed: 2,
+      freed: 24 * 1024 * 1024,
+    });
+    renderPage();
+    fireEvent.click(screen.getByText('扫描孤儿缩略图'));
+    await screen.findByText(/发现 2 个孤儿缩略图文件/);
+    fireEvent.click(screen.getByText('清理 2 个'));
+    expect(await screen.findByText(/已清理 2 个孤儿缩略图，释放 24.0 MB/)).toBeInTheDocument();
+    expect(window.pixyang.cleanOrphanThumbnails).toHaveBeenCalledWith([
+      'E:/PixData/thumbs/9.jpg',
+      'E:/PixData/thumbs/9_s.jpg',
+    ]);
   });
 });

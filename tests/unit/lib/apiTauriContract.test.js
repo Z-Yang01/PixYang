@@ -150,6 +150,20 @@ const ROUTES = [
   },
   { method: 'deleteSnapshot', args: [6], cmd: 'delete_snapshot', invokeArgs: { id: 6 } },
   { method: 'getImagesRoot', args: [], cmd: 'get_images_root', invokeArgs: {} },
+  { method: 'getThumbsRoot', args: [], cmd: 'get_thumbs_root', invokeArgs: {} },
+  {
+    method: 'setThumbsRoot',
+    args: ['E:/thumbs'],
+    cmd: 'set_thumbs_root',
+    invokeArgs: { dirPath: 'E:/thumbs' },
+  },
+  { method: 'scanOrphanThumbnails', args: [], cmd: 'scan_orphan_thumbnails', invokeArgs: {} },
+  {
+    method: 'cleanOrphanThumbnails',
+    args: [['E:/thumbs/9.jpg']],
+    cmd: 'clean_orphan_thumbnails',
+    invokeArgs: { pathsList: ['E:/thumbs/9.jpg'] },
+  },
   { method: 'getDatabasePath', args: [], cmd: 'get_database_path', invokeArgs: {} },
   {
     method: 'getAllImageIds',
