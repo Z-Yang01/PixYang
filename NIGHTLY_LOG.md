@@ -3755,3 +3755,33 @@ R103 宣言 → R116 六笔快包 → 本轮 R117-R119 终版快包，此后再�
      假定时器 3 文件全部 act(advanceTimersByTime) 确定性刷新。结论：R149 挂账清零。
   ⑥ 验证：vitest 88 文件/1152 例连续两轮全绿（修复前同条件 1 例 flake）；cargo 264 lib +
      1 golden_audit；tsc 0E；lint 0E/9W（既有）；prettier 净。零生产代码改动，安装包无需重打。
+
+- 2026-10-20 TypeScript 迁移起步（shared/editSchema.js → .ts，首刀）：
+  ① 目标选择：editSchema 是纯 zod 契约核心（EditParams v1 唯一事实源、前后端同构），
+     类型化收益最高、运行时行为面最窄，适合首刀验证整条迁移管线。
+  ② 迁移内容：editSchema.ts 保留全部注释与默认导出形状；新增 20 个导出类型（16 个
+     z.infer 推导 + Mask 联合 + EditParamsInput/LegacyImageRow/EditUpgrade 手工标注）
+     与函数签名。关键坑：masks 的 transform 运行时 filter(Boolean) 剔空但 TS 不窄化，
+     须显式标注 (a): Mask[] => a.filter(Boolean) as Mask[]，否则推断出 (Mask|null)[]
+     污染下游消费方。
+  ③ 导入说明符策略（本轮三方实证定案，口径落 AGENTS.md「TypeScript 迁移」节）：
+     已迁模块一律显式 .ts 扩展名。依据缺一不可：Vite 严格解析（.js 说明符映射 .ts 实文件
+     只有 tsc bundler 模式宽容，Vite/vitest 直接 Cannot find module）；无扩展名说明符
+     Vite/tsc/vitest 都行但 Node ESM 不解析（run.cjs 的 pathToFileURL 工具图会断）；
+     Node ≥22.18 默认类型剥离（--experimental-strip-types 默认化），显式 .ts 在 Node 侧
+     可直接加载（managed 22.22.2 / system 22.19.0 / PATH node 三二进制实证 OK）。
+     存量 .js 互导不变；Node 工具图内的 .js 模块（editParams.js/renderSpec.js）暂缓迁移，
+     只改其指向已迁模块的说明符。11 个导入方全部切换。
+  ④ 验证：tsc 0E（include 扩到 shared；tests 未纳入——21 个既有 .tsx 测试缺 jest-dom
+     类型与 window.pixyang 声明、从未受检，列为独立下一课题）；直接受影响 7 文件 178 例
+     先行绿灯；全量 vitest 88 文件/1152 例全绿；lint 0E/9W 既有；prettier 净。
+     Node 工具图冒烟：复刻 run.cjs 动态 import 形态与 genSpecs 调用链（fromEditParams →
+     sanitizeEditOps → toEditParams → editParamsToRenderSpec），三 node 全 OK（14 stages，
+     exposure/contrast round-trip 保值）。探针初版 exposure 12→0 系超 ±2EV 值域被
+     catch(0)，既有口径非回归（与 HEAD 原版 schema 定义逐字比对确认）。
+  ⑤ 顺带修复：prettier --check . 在 HEAD 存量红灯 1 处（SettingsPage.test.jsx，与本轮
+     无关，工作树版与 HEAD blob 双证），机械格式化修复；tsconfig.json 格式不合规一并
+     write；AGENTS.md shared 树勘正（原写「12 个 .cjs」早已过期：实为 15 .js + 1 .ts）。
+     清理临时探针目录后 eslint 回到 0E/9W（探针文件曾报 2 处 no-undef）。
+  ⑥ 提交范围：shared/editSchema.ts（新增）/ shared/editSchema.js（删除）/ 11 个导入方 /
+     tsconfig.json / AGENTS.md / README.md 两处引用 / NIGHTLY_LOG.md。

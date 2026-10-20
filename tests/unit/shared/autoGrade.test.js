@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 
 import sharedMod_autoGrade from '../../../shared/autoGrade.js';
 const { suggestGrade } = sharedMod_autoGrade;
-import editSchema from '../../../shared/editSchema.js';
+import editSchema from '../../../shared/editSchema.ts';
 
 // 欠曝均匀灰图（64/255 ≈ 0.25098）：中位/分位同一值、无裁切、无色偏
 const UNDEREXPOSED_GRAY = {

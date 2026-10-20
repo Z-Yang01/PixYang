@@ -3,7 +3,7 @@ import { describe, it, expect } from 'vitest';
 import sharedMod_builtinPresets from '../../../shared/builtinPresets.js';
 import curvesLib from '../../../shared/curves.js';
 const { BUILTIN_PRESETS, validateBuiltinPresets } = sharedMod_builtinPresets;
-import editSchema from '../../../shared/editSchema.js';
+import editSchema from '../../../shared/editSchema.ts';
 
 describe('内置风格预设', () => {
   it('至少 8 个，名称唯一，结构合法', () => {

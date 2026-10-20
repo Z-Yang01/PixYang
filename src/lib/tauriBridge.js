@@ -1,7 +1,7 @@
 // Tauri 后端探测与调用封装。window.__TAURI__ 不存在（纯浏览器/单测）时
 // isTauriAvailable() 为 false，api.js 回落 window.pixyang 注入面。
 // 依赖 tauri.conf.json 的 app.withGlobalTauri 注入的全局，不新增 npm 依赖。
-import editSchema from '../../shared/editSchema.js';
+import editSchema from '../../shared/editSchema.ts';
 import renderSpecModule from '../../shared/renderSpec.js';
 
 const { upgradeEdits } = editSchema;
@@ -67,7 +67,7 @@ export const tauriApi = {
   emptyTrash: () => tauriInvoke('empty_trash', {}),
   batchRestoreFromTrash: (ids) => tauriInvoke('batch_restore_from_trash', { ids }),
   batchPurgeTrash: (ids) => tauriInvoke('batch_purge_trash', { ids }),
-  // presets：upgradeEdits 规整在桥接层（前端与桥同用 shared/editSchema.js）
+  // presets：upgradeEdits 规整在桥接层（前端与桥同用 shared/editSchema）
   getPresets: async () => {
     const rows = await tauriInvoke('get_presets');
     return rows.map((r) => ({

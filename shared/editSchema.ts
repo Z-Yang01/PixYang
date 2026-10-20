@@ -1,6 +1,8 @@
 import { z } from 'zod';
 // EditParams v1：非破坏编辑参数的唯一事实源（zod schema + 默认值 + 版本迁移链）
-// 前端（vite cjs interop）与主进程/worker（require）共用，保证参数语义前后端一致。
+// 前端（vite）与主进程/worker共用，保证参数语义前后端一致。
+// TS 迁移（2026-10-20）：类型全部从 zod schema 推导（z.infer），运行时校验与静态类型同源；
+// 默认导出形状与 JS 版一致；导入方说明符须显式写 .ts（Vite 不解析 .js→.ts 映射，口径见 AGENTS.md「TypeScript 迁移」节）。
 
 const SCHEMA_VERSION = 1;
 const HISTORY_LIMIT = 50; // 每图历史保留步数
@@ -180,16 +182,48 @@ const EditParamsSchema = z.object({
   colorGrading: ColorGradingSchema,
   detail: DetailSchema,
   lens: LensSchema,
+  // transform 显式标注返回 Mask[]：filter(Boolean) 运行时剔空，但 TS 不会自动窄化，
+  // 不标注则推断出 (Mask|null)[]，消费方被迫到处判空
   masks: z
     .array(MaskSchema)
-    .transform((a) => a.filter(Boolean))
+    .transform((a): Mask[] => a.filter(Boolean) as Mask[])
     .catch([]),
   output: OutputSchema,
 });
 
+// ── 静态类型（与运行时校验同源推导）──
+
+export type Orientation = z.infer<typeof OrientationSchema>;
+export type Crop = z.infer<typeof CropSchema>;
+export type Basic = z.infer<typeof BasicSchema>;
+export type Curves = z.infer<typeof CurvesSchema>;
+export type Hsl = z.infer<typeof HslSchema>;
+export type ColorGrading = z.infer<typeof ColorGradingSchema>;
+export type Detail = z.infer<typeof DetailSchema>;
+export type Lens = z.infer<typeof LensSchema>;
+export type MaskAdjustments = z.infer<typeof MaskAdjustmentsSchema>;
+export type RadialMask = z.infer<typeof RadialMaskSchema>;
+export type LinearMask = z.infer<typeof LinearMaskSchema>;
+export type RangeMask = z.infer<typeof RangeMaskSchema>;
+export type BrushStroke = z.infer<typeof BrushStrokeSchema>;
+export type BrushMask = z.infer<typeof BrushMaskSchema>;
+export type Mask = RadialMask | LinearMask | RangeMask | BrushMask;
+export type Output = z.infer<typeof OutputSchema>;
+export type EditParams = z.infer<typeof EditParamsSchema>;
+/** 归一化前的任意输入（持久化 JSON / 用户粘贴 / 旧库行） */
+export type EditParamsInput = unknown;
+/** images 行上参与初始参数生成的列（fromLegacyImage 消费） */
+export type LegacyImageRow = {
+  rotation?: number | string | null;
+  flip_h?: number | null;
+  flip_v?: number | null;
+};
+/** 版本迁移步：把 schemaVersion=n 的params 升到 n+1 */
+export type EditUpgrade = (params: Record<string, unknown>) => Record<string, unknown>;
+
 // ── 默认值 ──
 
-function DEFAULT_EDITS() {
+function DEFAULT_EDITS(): EditParams {
   return {
     schemaVersion: SCHEMA_VERSION,
     orientation: { rotate: 0, flipH: false, flipV: false },
@@ -220,11 +254,11 @@ function DEFAULT_EDITS() {
 
 // ── 版本迁移链 ──
 // upgrades[n] 把 schemaVersion=n 的数据升到 n+1；新版本在此追加
-const upgrades = {};
+const upgrades: Record<number, EditUpgrade> = {};
 
 // 旧版（本改造前）没有持久化参数；查看态的 rotation/flip 在 images 列上。
 // fromLegacyImage 负责从 images 行生成初始 EditParams（main/database 侧调用）。
-function fromLegacyImage(img) {
+function fromLegacyImage(img: LegacyImageRow | null | undefined): EditParams {
   return normalizeEdits({
     ...DEFAULT_EDITS(),
     orientation: {
@@ -235,10 +269,10 @@ function fromLegacyImage(img) {
   });
 }
 
-function upgradeEdits(raw) {
+function upgradeEdits(raw: EditParamsInput): EditParams {
   if (!raw || typeof raw !== 'object') return DEFAULT_EDITS();
-  let params = raw;
-  let version = Number(raw.schemaVersion) || 0;
+  let params = raw as Record<string, unknown>;
+  let version = Number(params.schemaVersion) || 0;
   while (version < SCHEMA_VERSION) {
     const up = upgrades[version];
     params = up ? up(params) : { ...params, schemaVersion: version + 1 };
@@ -248,7 +282,7 @@ function upgradeEdits(raw) {
 }
 
 // 深合并：input 优先，缺失子对象/字段回退默认（zod4 的 catch 不处理缺失字段，结构完整性在此保证）
-function deepMerge(defaults, input) {
+function deepMerge(defaults: unknown, input: unknown): unknown {
   if (input === null || input === undefined) return defaults;
   if (
     !defaults ||
@@ -259,23 +293,28 @@ function deepMerge(defaults, input) {
   ) {
     return input;
   }
-  const out = { ...defaults };
-  for (const k of Object.keys(input)) {
-    out[k] = deepMerge(defaults[k], input[k]);
+  const def = defaults as Record<string, unknown>;
+  const out: Record<string, unknown> = { ...def };
+  const inp = input as Record<string, unknown>;
+  for (const k of Object.keys(inp)) {
+    out[k] = deepMerge(def[k], inp[k]);
   }
   return out;
 }
 
 // 宽容归一化：先深合并默认结构，再由 zod 校验值域；非法值经 catch 回退，永不抛错
-function normalizeEdits(input) {
+function normalizeEdits(input: EditParamsInput): EditParams {
   const base =
     input && typeof input === 'object' ? deepMerge(DEFAULT_EDITS(), input) : DEFAULT_EDITS();
-  const parsed = EditParamsSchema.safeParse({ ...base, schemaVersion: SCHEMA_VERSION });
+  const parsed = EditParamsSchema.safeParse({
+    ...(base as Record<string, unknown>),
+    schemaVersion: SCHEMA_VERSION,
+  });
   return parsed.success ? parsed.data : DEFAULT_EDITS();
 }
 
 // 剔除输出设置后的"编辑语义"参数（预设/复制粘贴/同步用：output 不跟随）
-function stripOutput(params) {
+function stripOutput(params: EditParamsInput): Omit<EditParams, 'output'> {
   const { output, ...rest } = normalizeEdits(params);
   return rest;
 }

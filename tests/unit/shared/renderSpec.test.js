@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import editSchema from '../../../shared/editSchema.js';
+import editSchema from '../../../shared/editSchema.ts';
 import renderSpecMod from '../../../shared/renderSpec.js';
 
 const renderSpec = renderSpecMod;

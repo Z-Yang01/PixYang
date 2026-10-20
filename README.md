@@ -81,7 +81,7 @@ PixYang 是一款基于 **Tauri 2（Rust）+ React + SQLite** 的本地桌面图
 - 智能辅助：白平衡吸管（点中性灰自动校正色温/色调）、直方图点选黑白场、自动调色（本地算法）与 AI 调色（视觉模型）
 - 内置 28 款风格预设：含 18 款胶片模拟致敬——富士（PROVIA/ASTIA/ETERNA/经典负片/经典铬/维尔维亚/ACROS/PRO NEG Hi）、理光（正片/负片/高对比黑白/柔和黑白）、柯达（金200/EKTAR/波特拉/TRI-X）、伊尔福 HP5、电影 800T；应用后可调预设强度（0-150%），编辑器与网格批量应用同源
 - 镜头校正（畸变/色散）、裁剪拉直（±45° 自动去黑角）、细节锐化/降噪、跨会话撤销上一次编辑保存（查看器工具栏）
-- 参数以 EditParams v1 存储（`shared/editSchema.js` 为唯一事实源），原图不被改写，可随时还原
+- 参数以 EditParams v1 存储（`shared/editSchema.ts` 为唯一事实源），原图不被改写，可随时还原
 - WebGL2 预览与 Rust 执行器同公式（基线 31 例 + 编辑审计 48 例实机对拍 PASS），导出/烘焙走 Rust 渲染管线；支持烘焙进文件、单独导出、编辑历史与预设
 
 ### 🗂️ 批量操作
@@ -251,7 +251,7 @@ cd src-tauri && cargo test   # Rust 单测 + 像素 golden 门禁
   单测通过 `window.pixyang` 注入替身。
 - 渲染内核分层：纯算法（曲线/分级/HSL/蒙版/镜头）在 `src-tauri/src/`，由 JS 对拍向量和
   像素 golden 双重锁定；tauri 命令层只做薄封装（磁盘 I/O、DTO 编排）。
-- 编辑参数 `EditParams v1` 的唯一事实源是 `shared/editSchema.js`，前后端同构消费。
+- 编辑参数 `EditParams v1` 的唯一事实源是 `shared/editSchema.ts`，前后端同构消费。
 - 数据库列/表的变更走 Rust 侧 `ensure_business_schema` 自举 + 逐列回迁，不做手工迁移脚本。
 - 像素级改动须重跑 `cargo test --test golden_audit`（重锁基线用 `GOLDEN_RELOCK=1`）。
 

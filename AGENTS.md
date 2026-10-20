@@ -52,8 +52,9 @@ src-tauri/        Rust/Tauri 后端（唯一运行时桌面端）
   src/error.rs    统一错误类型 PixError（命令错误契约；Display 刻意保留「中文前缀: 引擎英文原文」供日志取证）
   src/progress.rs 进度事件（rebuild-progress 等，Tauri Emitter）
   tauri.conf.json withGlobalTauri=true、frontendDist=../dist、assetProtocol（$CONFIG/pixyang scope）、CSP connect-src 含 https:（AI 调色端点外呼）
-shared/           12 个 .cjs；被前端以默认导入消费（20+ 处），仅由 vite build 的 rollup interop 提供 default
-  editSchema.js  EditParams v1 zod schema（非破坏编辑参数唯一事实源，前后端同构）
+shared/           15 个 .js + editSchema.ts（TS 迁移首模块，口径见「TypeScript 迁移」节）；ESM 默认导出，
+                  前端（vite/rollup）与 Node 对拍工具图（run.cjs 经 pathToFileURL 动态 import）同构消费
+  editSchema.ts  EditParams v1 zod schema（非破坏编辑参数唯一事实源，前后端同构）
   renderSpec.js  EditParams → RenderSpec 纯函数（渲染指令序列，预览/导出唯一消费格式）
   pipelineOrder.js  渲染阶段固定顺序 + 能力矩阵（14 阶段全部支持，仅测试直接消费）
   builtinPresets.js  内置风格预设参数集（28 款：胶片模拟 18 款——富士 PROVIA/ASTIA/ETERNA/经典负片/经典铬/维尔维亚/ACROS/PRO NEG Hi、理光正片/负片/高对比黑白/柔和黑白、柯达金200/EKTAR/波特拉/TRI-X、伊尔福 HP5、电影 800T 致敬系列，消费 vibrance/clarity/grain 字段；颗粒梯度按真实胶片特性：理光 HC 45 > ACROS 35 > TRI-X 30 > HP5 25）
@@ -188,6 +189,27 @@ tests/            vitest（node 环境 + per-file happy-dom pragma）
   （双端唯一事实源：Rust `include_str!` 与 vitest `readFileSync` 逐条对拍，规则顺序也须一致）。
   组件层不得把 `result.error` / `tag.error` 这类裸错误值直接送进 `toast.error` / `setError` / `setMessage` / `showToast`，
   须经 `friendlyError()`（`tests/unit/lib/errorText.test.js` 会全仓扫描）。
+
+## TypeScript 迁移（2026-10-20 起）
+
+- **新文件一律 `.ts`/`.tsx`**；`tsconfig.json` 的 `include` 覆盖 `src` + `shared`，`npx tsc --noEmit` 为门禁。
+- 存量 `.js` 按目录渐进迁移，不搞一刀切；每迁一个模块须同口径改全部导入方并跑门禁
+  （tsc + 直接受影响测试 + 全量 vitest + lint/prettier + Node 工具图冒烟）。
+- **已迁模块的导入说明符一律显式带 `.ts` 扩展名**（如 `import editSchema from '../../shared/editSchema.ts'`）。
+  三方依据缺一不可：
+  ① Vite 严格解析：`.js` 说明符映射 `.ts` 实文件只有 tsc bundler 模式宽容，Vite/vitest 直接
+     `Cannot find module`；
+  ② 无扩展名说明符：Vite/tsc/vitest 都能解析，但 **Node ESM 不解析**——`tests/webgl-parity/run.cjs`
+     的工具图（`pathToFileURL` 动态 import）会断；
+  ③ Node ≥22.18 默认开启类型剥离（`--experimental-strip-types` 默认化），显式 `.ts` 在 Node 侧可直接
+     加载（本机 managed 22.22.2 / system 22.19.0 / PATH node 三二进制实证）。
+- **存量 `.js` 之间的互导不变**（仍省略扩展名）；只有指向已迁模块的说明符才升级为显式 `.ts`。
+- Node 工具图直接 import 的 `.js` 模块（`src/lib/editParams.js`、`shared/renderSpec.js` 等）**暂缓迁移**：
+  迁它们须连带验证整条 Node 链，收益低于风险；只把其内部指向已迁模块的说明符改掉。
+- 测试文件类型化（`tests/**/*.tsx`）是独立的下一课题：21 个既有 `.tsx` 测试从未受检（缺
+  `@testing-library/jest-dom` 类型与 `window.pixyang` 声明），须先补类型基座再纳入 `include`。
+- 已迁模块的静态类型用 `z.infer` 从 zod schema 推导（运行时校验与编译期检查单一事实源）；
+  zod `.transform` 链若运行时剔空（如 masks 的 `.filter(Boolean)`），须显式标注返回类型防 `(T|null)[]` 推断。
 
 ## UI 与样式（shadcn/ui + Tailwind v4）
 

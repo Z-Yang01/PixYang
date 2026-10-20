@@ -2,7 +2,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { isTauriAvailable, tauriInvoke } from '@/lib/tauriBridge';
 import api from '@/lib/api';
-import editSchema from '../../../shared/editSchema.js';
+import editSchema from '../../../shared/editSchema.ts';
 
 const { upgradeEdits } = editSchema;
 

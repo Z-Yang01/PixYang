@@ -1,8 +1,8 @@
 // 编辑参数语义中心：前端预览（CSS）与 Rust 渲染执行器共用同一换算，
-// 保证"所见即所得"。持久化结构 EditParams 见 shared/editSchema.js（唯一事实源），
+// 保证"所见即所得"。持久化结构 EditParams 见 shared/editSchema（唯一事实源），
 // 本文件的平铺结构仅作 UI 内部模型，经 toEditParams/fromEditParams 在边界转换。
 
-import editSchema from '../../shared/editSchema.js';
+import editSchema from '../../shared/editSchema.ts';
 import curvesLib from '../../shared/curves.js';
 import gradingLib from '../../shared/colorGrading.js';
 import masksLib from '../../shared/masks.js';
@@ -371,7 +371,7 @@ export function needsMatrix(ops) {
 
 // 预设强度混合钳（用户裁决 2026-10-13「读数=生效值」）：外推（如 150%）越过 schema 值域时
 // 就地钳回——内存态/历史/撤销链不再出现幽灵值（显示层 sanitize 本就钳，差异在中间层）。
-// 值域表与 shared/editSchema.js BasicSchema/DetailSchema 对齐；detail 域键用 'detail.xxx' 或裸
+// 值域表与 shared/editSchema BasicSchema/DetailSchema 对齐；detail 域键用 'detail.xxx' 或裸
 // 'texture' 形态。未知键按 ±100。
 export const STRENGTH_RANGES = {
   exposure: [-2, 2],

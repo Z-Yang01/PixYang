@@ -11,7 +11,7 @@ import curves from '../../../shared/curves.js';
 import grading from '../../../shared/colorGrading.js';
 import lens from '../../../shared/lens.js';
 import hsl from '../../../shared/hsl.js';
-import editSchema from '../../../shared/editSchema.js';
+import editSchema from '../../../shared/editSchema.ts';
 import sat from '../../../shared/saturation.js';
 
 const buildUniforms = (params, imageSize) =>

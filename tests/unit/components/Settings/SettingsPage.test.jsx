@@ -27,7 +27,9 @@ describe('SettingsPage', () => {
       }),
       getImagesRoot: vi.fn().mockResolvedValue('C:/PixData'),
       getThumbsRoot: vi.fn().mockResolvedValue('E:/PixData/thumbs'),
-      setThumbsRoot: vi.fn().mockResolvedValue({ success: true, path: 'E:/PixData/thumbs', moved: 0 }),
+      setThumbsRoot: vi
+        .fn()
+        .mockResolvedValue({ success: true, path: 'E:/PixData/thumbs', moved: 0 }),
       scanOrphanThumbnails: vi.fn().mockResolvedValue({ orphans: [] }),
       cleanOrphanThumbnails: vi.fn().mockResolvedValue({ removed: 0, freed: 0 }),
       getDatabasePath: vi.fn().mockResolvedValue('C:/db/pixyang.db'),
