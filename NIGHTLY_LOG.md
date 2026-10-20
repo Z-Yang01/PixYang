@@ -3824,3 +3824,38 @@ R103 宣言 → R116 六笔快包 → 本轮 R117-R119 终版快包，此后再�
     tests/vitest-env.d.ts（新增）/ tsconfig.json / AGENTS.md / NIGHTLY_LOG.md /
     11 个生产导入方 + 17 个测试文件的说明符切换 / src-tauri/src/render.rs + executor.rs
     注释指针。零运行时行为改动。
+
+- 2026-10-20 TypeScript 迁移第三批（shared/renderSpec.ts，shared/ 全量收官）：
+  ① 目标：首刀曾把「Node 工具图直接 import 的 .js 模块」列为暂缓（理由：迁它须连带验证
+    整条 Node 链）。本批把该顾虑实测证伪——shared/renderSpec.ts 与 src/lib/editParams.js
+    同时在链上时，Node ≥22.18 类型剥离可直接加载 .ts 入口（三二进制实证 OK）。结论：
+    「工具图入口」不再构成暂缓理由，shared/ 由「15 .ts + 1 .js」推进到 **全量 16 个 .ts**。
+  ② 类型化要点：
+    - Stage.params 定为 `Record<string, unknown> | null` 透传字典——各 stage 的精确形状由
+      各自算子模块（curves.ts / hsl.ts / masks.ts）定义，本文件只组装不解释。
+    - stageDeclared 的 `unsupported` 是运行时按能力矩阵**动态补标**的属性，必须显式标注
+      返回类型（const stage: Stage = {kind, params}），否则对象字面量无该字段、赋值报错。
+    - buildProxySpec 的蒙版缩放：Mask 判别联合里 brush 分支本没有 x0/y0/x1/y1 字段，但原版
+      fallback 分支会对它补这四个（值 0）。保持既有行为，用交叉类型 Mask & {几何字段?} 收住，
+      未在 discriminated switch 里「改对」——改对会改变 brush 代理帧的 params。
+  ③ 唯一发现的非平凡点（埋在系统里的旧读法，NOT 本轮引入）：
+    renderSpec 的 meta.fromEditParamsVersion 读的是 `p.__version`，而 normalizeEdits 产物
+    并不含该字段（版本写在 schemaVersion 上）→ 恒 undefined → 0。golden 快照把它锁死了
+    （tests/golden/cases/*/spec.json 的 meta 逐字段比对，只排除 generatedAt）。迁移时若顺手
+    「修正」成 p.schemaVersion，会让全部 golden spec 用例报红。处理：`as { __version?: number }`
+    保留原读法 + 注释标注「勿改」。同类：stage.params 取值一律沿用原版 `||` 短路（不用 ??），
+    因 0/''/NaN 的回落行为不同，而 spec 产出进快照。
+  ④ 顺带：specToPreviewTweaks 原本用 `by.X?.params.key || 0` 直取，迁移时收成 pickNum 助手；
+    差异只在「params 为 null 且该 stage 非 crop」这一不可达分支（原版会 TypeError，新版回落 0），
+    buildStages 从不产生这种 stage，behavior 等价已由全量测试 + golden 快照双证。
+  ⑤ 验证：tsc 0E；全量 vitest 88 文件/1152 例全绿（含 golden spec 快照逐字段比对——本模块最强
+    的回归证据）；eslint 0E/9W（既有）；prettier 净；Node 工具图三二进制冒烟：14 stages、
+    顺序与 PIPELINE_ORDER 一致、meta.fromEditParamsVersion=0（golden 兼容关键值）、
+    exposure 0.3/contrast 15 round-trip 保值、buildProxySpec scale=400/6000=0.0667、
+    specToPreviewTweaks 12 项与 listUnsupported 均通。
+    门禁跑测小坑：vitest 与 eslint/prettier 并发时，vitest 生成的 vitest.config.js.timestamp-*.mjs
+    临时文件会被扫入（误报 11 errors + prettier ENOENT），须串行复跑。
+  ⑥ 提交范围：shared/renderSpec.ts（git mv 自 .js）/ src/components/Viewer/ImageViewer.jsx /
+    src/lib/tauriBridge.js / tests/unit/golden/golden.test.js /
+    tests/unit/lib/previewUniforms.test.jsx / tests/unit/shared/renderSpec.test.js /
+    tests/webgl-parity/run.cjs（工具图入口 + 头注）/ AGENTS.md / NIGHTLY_LOG.md。

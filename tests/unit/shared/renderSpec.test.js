@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import editSchema from '../../../shared/editSchema.ts';
-import renderSpecMod from '../../../shared/renderSpec.js';
+import renderSpecMod from '../../../shared/renderSpec.ts';
 
 const renderSpec = renderSpecMod;
 import pipelineOrderMod from '../../../shared/pipelineOrder.ts';

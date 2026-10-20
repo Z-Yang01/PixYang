@@ -5,7 +5,7 @@ import { describe, it, expect } from 'vitest';
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
-import sharedMod_renderSpec from '../../../shared/renderSpec.js';
+import sharedMod_renderSpec from '../../../shared/renderSpec.ts';
 const { editParamsToRenderSpec, listUnsupported } = sharedMod_renderSpec;
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));

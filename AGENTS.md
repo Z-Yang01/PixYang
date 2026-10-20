@@ -52,11 +52,13 @@ src-tauri/        Rust/Tauri 后端（唯一运行时桌面端）
   src/error.rs    统一错误类型 PixError（命令错误契约；Display 刻意保留「中文前缀: 引擎英文原文」供日志取证）
   src/progress.rs 进度事件（rebuild-progress 等，Tauri Emitter）
   tauri.conf.json withGlobalTauri=true、frontendDist=../dist、assetProtocol（$CONFIG/pixyang scope）、CSP connect-src 含 https:（AI 调色端点外呼）
-shared/           15 个 .ts + renderSpec.js（TS 迁移两批落地，口径见「TypeScript 迁移」节）；ESM 默认导出，
-                  前端（vite/rollup）与 Node 对拍工具图（run.cjs 经 pathToFileURL 动态 import）同构消费
+shared/           16 个 .ts（TS 迁移三批落地，口径见「TypeScript 迁移」节）；ESM 默认导出，
+                  前端（vite/rollup）与 Node 对拍工具图（run.cjs 经 pathToFileURL 动态 import
+                  shared/renderSpec.ts，节点类型剥离需 ≥22.18）同构消费
   editSchema.ts  EditParams v1 zod schema（非破坏编辑参数唯一事实源，前后端同构）
-  renderSpec.js  EditParams → RenderSpec 纯函数（渲染指令序列，预览/导出唯一消费格式；shared/ 唯一未迁模块，
-                 因它是 run.cjs 工具图入口，迁它须连带验证整条 Node 链，收益低于风险）
+  renderSpec.ts  EditParams → RenderSpec 纯函数（渲染指令序列，预览/导出唯一消费格式；
+                 run.cjs 工具图入口之一，产出被 golden spec 快照逐字段锁定——改取值口径会让
+                 tests/golden/cases/*/spec.json 红）
   pipelineOrder.ts  渲染阶段固定顺序 + 能力矩阵（14 阶段全部支持，仅测试直接消费）
   builtinPresets.ts  内置风格预设参数集（28 款：胶片模拟 18 款——富士 PROVIA/ASTIA/ETERNA/经典负片/经典铬/维尔维亚/ACROS/PRO NEG Hi、理光正片/负片/高对比黑白/柔和黑白、柯达金200/EKTAR/波特拉/TRI-X、伊尔福 HP5、电影 800T 致敬系列，消费 vibrance/clarity/grain 字段；颗粒梯度按真实胶片特性：理光 HC 45 > ACROS 35 > TRI-X 30 > HP5 25）
   maskGeometry.ts  蒙版手柄/命中几何映射（MaskOverlay 与查看器共用）
@@ -205,9 +207,9 @@ tests/            vitest（node 环境 + per-file happy-dom pragma）
   ③ Node ≥22.18 默认开启类型剥离（`--experimental-strip-types` 默认化），显式 `.ts` 在 Node 侧可直接
      加载（本机 managed 22.22.2 / system 22.19.0 / PATH node 三二进制实证）。
 - **存量 `.js` 之间的互导不变**（仍省略扩展名）；只有指向已迁模块的说明符才升级为显式 `.ts`。
-- Node 工具图直接 import 的 `.js` 模块（`src/lib/editParams.js`、`shared/renderSpec.js`）**暂缓迁移**：
-  迁它们须连带验证整条 Node 链，收益低于风险；只把其内部指向已迁模块的说明符改掉
-  （shared/ 两批迁完后仅剩 renderSpec.js 一个未迁）。
+- Node 工具图直接 import 的模块曾因「迁它须连带验证整条 Node 链」暂缓；第三批起该顾虑已消除：
+  `shared/renderSpec.ts` 与 `src/lib/editParams.js` 同时在链上时，Node ≥22.18 类型剥离可直载 .ts
+  （三二进制实证 OK），故 **工具图入口不再构成暂缓理由**。现仅剩 src/lib/ 侧的 .js 待迁。
 - **测试已纳入 tsc 门禁（第二批同步完成）**：`tsconfig.json` 的 `include` 加 `tests`，并加
   `allowJs: true` + `checkJs: false`（读 .js 做推断但不检核它们，否则导入 .js 模块报 TS7016）。
   类型基座集中在 `tests/vitest-env.d.ts`：`import '@testing-library/jest-dom/vitest'` 拉入匹配器类型
@@ -221,12 +223,19 @@ tests/            vitest（node 环境 + per-file happy-dom pragma）
   再做 typeof 守卫，不能因为可选链就改成静默跳过。持久化 JSON 未过 schema 的输入用
   `unknown` + `Array.isArray` 收窄，**`any` 上的属性收窄不生效**（其 `.map()` 结果仍是 any，
   后续 filter 回调丢上下文），须先落 `unknown` 本地变量再逐层断言。
+- 产出被 golden spec 快照锁定的模块（`shared/renderSpec.ts`）：**禁止借迁移「顺手修正」看似 bug 的
+  旧读法**。实例——`meta.fromEditParamsVersion` 读的是 `p.__version`，而 normalizeEdits 产物并不含该
+  字段（版本写在 schemaVersion 上），故恒为 `undefined → 0`；改成 schemaVersion 会让
+  tests/golden/cases/*/spec.json 全体报红。同理 stage.params 是透传字典，取值须沿用原版 `||`
+  短路语义，勿换成 `??` 或 typeof 判定（0/''/NaN 回落行为不同）。
 - 进展：第一批 `editSchema`（首刀，2026-10-20，含 11 个导入方说明符升级）；
   第二批 14 个纯函数模块同日落地（autoGrade / brushMask / builtinPresets / clarity / colorGrading /
   curves / dehaze / grain / hsl / lens / maskGeometry / masks / pipelineOrder / saturation），
   shared/ 由「15 .js + 1 .ts」翻转为「15 .ts + 1 .js」；tsc 0E、全量 88/1152 绿、eslint 0E/9W、
   prettier 净，Node 工具图三二进制（managed 22.22.2 / system 22.19.0 / PATH）冒烟均 14 stages 且
-  exposure/contrast round-trip 保值。
+  exposure/contrast round-trip 保值。第三批 `renderSpec`（2026-10-20）：**shared/ 全量 16 个 .ts 收官**，
+  Node 工具图首次直载 .ts 入口成功。下一站：src/lib/ 16 个 .js 模块（3078 行），按「叶子纯函数 →
+  中层逻辑 → editParams → 桥接/着色器」分批推进。
 
 ## UI 与样式（shadcn/ui + Tailwind v4）
 
@@ -291,7 +300,7 @@ tests/            vitest（node 环境 + per-file happy-dom pragma）
   WAL 多进程并发，写锁被运行实例占用时 5s 超时中文报错）。子命令：analyze / get-edits /
   save-edits / undo / get-snapshots / apply-snapshot；结果 JSON 写 --out 文件（release 无控制台，
   文件为唯一可靠回传）+ stdout。apply-snapshot 与 GUI 恢复同链（save_edit_params 带 before/after，可撤销）。
-  Rust 侧无 params→spec 构建器，export 子命令未提供（需要时先移植 shared/renderSpec.js）。
+  Rust 侧无 params→spec 构建器，export 子命令未提供（需要时先移植 shared/renderSpec.ts）。
 - **命名快照（P4）**：`snapshots` 表（`UNIQUE(image_id, name)`，删图随六表清理）→ 编辑面板历史区上方
   「快照」小节（`EditorSnapshotSection`：命名保存/点击恢复/删除，空态文案）。保存走 `toEditParams(composeOps())`
   保形；恢复走 `fromEditParams` 整域替换 + `pushHistory`（label「快照「x」」，可撤销）并清空 `lastPresetRef`
@@ -360,7 +369,7 @@ tests/            vitest（node 环境 + per-file happy-dom pragma）
   无头 Edge/Chrome（CDP，Node 22 原生 WebSocket，无新依赖）驱动 dist 产物：假桥注入 → 真实 App 编辑
   模式（savedEdits 载入 tests/webgl-parity/cases.json 的 8 组参数）→ 真实 WebGL2 canvas 出帧，与
   `cargo run --example webgl_parity -- gen|render|diff`（确定性底图 + render_spec_to_file + 独立复核）
-  对拍；spec 由前端同一套模块（src/lib/editParams.js + shared/renderSpec.js）计算，两端同源，且
+  对拍；spec 由前端同一套模块（src/lib/editParams.js + shared/renderSpec.ts）计算，两端同源，且
   encode 段强制 format:'png'（默认 jpeg q92 会把 Rust 参考帧变有损——R58 全部「超容差」的量级来源，
   R59 已定案为工具链缺陷）。examples 不被 cargo test 运行，门禁数字不受影响。
   R59 定案（R58「色彩管理」假设被排除：--headed/--force-color-profile=srgb/gl.readPixels 三条对照

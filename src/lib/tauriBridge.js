@@ -2,7 +2,7 @@
 // isTauriAvailable() 为 false，api.js 回落 window.pixyang 注入面。
 // 依赖 tauri.conf.json 的 app.withGlobalTauri 注入的全局，不新增 npm 依赖。
 import editSchema from '../../shared/editSchema.ts';
-import renderSpecModule from '../../shared/renderSpec.js';
+import renderSpecModule from '../../shared/renderSpec.ts';
 
 const { upgradeEdits } = editSchema;
 const { editParamsToRenderSpec, buildProxySpec } = renderSpecModule;

@@ -77,7 +77,7 @@ import gradingLib from '../../../shared/colorGrading.ts';
 const { hasColorGradingData } = gradingLib;
 import lensLib from '../../../shared/lens.ts';
 const { vignettePreviewStyle } = lensLib;
-import renderSpecModule from '../../../shared/renderSpec.js';
+import renderSpecModule from '../../../shared/renderSpec.ts';
 const { editParamsToRenderSpec } = renderSpecModule;
 import {
   isWebGL2Available,

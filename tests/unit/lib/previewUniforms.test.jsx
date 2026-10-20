@@ -5,7 +5,7 @@ import { specToShaderUniforms, simulateShaderPixel } from '@/lib/previewUniforms
 import { previewFilterChain, fromEditParams } from '@/lib/editParams';
 
 const require_ = createRequire(import.meta.url);
-import renderSpec from '../../../shared/renderSpec.js';
+import renderSpec from '../../../shared/renderSpec.ts';
 import masksLib from '../../../shared/masks.ts';
 import curves from '../../../shared/curves.ts';
 import grading from '../../../shared/colorGrading.ts';
