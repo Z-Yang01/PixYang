@@ -87,10 +87,11 @@ pub fn get_edits(conn: &Connection, id: i64) -> Result<Value, PixError> {
 }
 
 /// 镜像 enforceEditPreviewLimit：预览文件数超上限时按 edits.updated_at 清最旧
-/// （文件+缓存元数据删除、路径列清空；edits 行保留，下次保存自愈）。返回清理数。
+/// （预览+元数据+该 id 的编辑底图 sidecar 缓存删除、路径列清空；edits 行保留，
+/// 下次保存/打开自愈）。返回清理数。
 pub fn enforce_edit_preview_limit(
     conn: &Connection,
-    _thumbs_dir: &Path,
+    thumbs_dir: &Path,
     limit: i64,
 ) -> Result<i64, PixError> {
     let rows: Vec<(i64, String)> = {
@@ -111,6 +112,14 @@ pub fn enforce_edit_preview_limit(
     for (id, path) in rows.iter().skip(limit as usize) {
         let _ = std::fs::remove_file(Path::new(path));
         let _ = std::fs::remove_file(Path::new(&format!("{}.meta.json", path)));
+        // 底图是按 id 复用的 sidecar 缓存（整图 JPEG/PNG，单个数 MB）：预览既已逐出，
+        // 缓存随之失效，一并清掉；下次 edit_open/ensure_edit_base 按需重建（自愈）
+        for ext in ["jpg", "png"] {
+            let base = thumbs_dir.join(format!("edit-{id}-base.{ext}"));
+            let _ = std::fs::remove_file(&base);
+            let _ =
+                std::fs::remove_file(Path::new(&format!("{}.meta.json", base.to_string_lossy())));
+        }
         conn.execute(
             "UPDATE images SET thumbnail_edit_path = '' WHERE id = ?1",
             rusqlite::params![id],

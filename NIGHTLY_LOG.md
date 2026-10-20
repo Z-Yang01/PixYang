@@ -3706,3 +3706,12 @@ R103 宣言 → R116 六笔快包 → 本轮 R117-R119 终版快包，此后再�
   ⑥ 前端：设置页「存储 → 缩略图目录」（回显/打开/选择/恢复默认位置，确认后整体迁移），
      「维护 → 扫描孤儿缩略图」扫描 + 确认清理 + 释放空间播报；契约表补 4 条通道。
   ⑦ 验证：cargo 264（+3）；npm 1152 全绿（Settings 交互 +11 例）；tsc/lint/prettier 全绿。
+
+- 2026-10-20 R159 补：编辑预览逐出时一并清理底图 sidecar 缓存：
+  ① 线上体检发现 `edit-1149-base.jpg.meta.json` 残留（底图已被清、meta 没清）——
+     `enforce_edit_preview_limit` 原先只删 `edit-{id}.jpg` + meta，留下 `edit-{id}-base.{jpg,png}`
+     （整图缓存，单个数 MB）与 meta，预览逐出后成为无声累积的磁盘垃圾。
+  ② 修：逐出时连该 id 的 base.jpg/base.png 及两者 meta 一并删；底图有 sidecar 校验
+     （source+mtime+size），下次 edit_open/ensure_edit_base 按需重建，自愈。
+  ③ 验证：cargo 264（LRU 用例扩展断言 base 三件套清除/保留）；线上库当前 0 孤儿缩略图
+     （1101 文件 = 1094 被引用 + 7 个 edit 边车，白名单设计因此得到验证）。

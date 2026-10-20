@@ -2087,6 +2087,10 @@ mod edit_cmd_tests {
             ids.push(id);
             let p = thumbs.join(format!("edit-{id}.jpg"));
             std::fs::write(&p, b"p").unwrap();
+            // 每个 id 各带一份编辑底图 sidecar 缓存（jpg + png 变体与 meta）
+            std::fs::write(thumbs.join(format!("edit-{id}-base.jpg")), b"B").unwrap();
+            std::fs::write(thumbs.join(format!("edit-{id}-base.png")), b"B").unwrap();
+            std::fs::write(thumbs.join(format!("edit-{id}-base.jpg.meta.json")), b"{}").unwrap();
             conn.execute(
                 "INSERT INTO edits (image_id, version, params_json, updated_at)
                  VALUES (?1, 1, '{}', ?2)",
@@ -2101,8 +2105,13 @@ mod edit_cmd_tests {
         }
         let removed = edit_session::enforce_edit_preview_limit(&conn, &thumbs, 2).unwrap();
         assert_eq!(removed, 1);
-        // 最旧（updated_at 2026-09-20）被清：文件删除、列清空；其余保留
+        // 最旧（updated_at 2026-09-20）被清：预览+底图缓存删除、列清空；其余保留
         assert!(!thumbs.join(format!("edit-{}.jpg", ids[0])).exists());
+        assert!(!thumbs.join(format!("edit-{}-base.jpg", ids[0])).exists());
+        assert!(!thumbs.join(format!("edit-{}-base.png", ids[0])).exists());
+        assert!(!thumbs
+            .join(format!("edit-{}-base.jpg.meta.json", ids[0]))
+            .exists());
         let cleared: String = conn
             .query_row(
                 "SELECT thumbnail_edit_path FROM images WHERE id = ?1",
@@ -2113,6 +2122,7 @@ mod edit_cmd_tests {
         assert_eq!(cleared, "");
         for id in ids.iter().skip(1) {
             assert!(thumbs.join(format!("edit-{id}.jpg")).exists());
+            assert!(thumbs.join(format!("edit-{id}-base.jpg")).exists());
         }
         let _ = std::fs::remove_dir_all(&dir);
     }
