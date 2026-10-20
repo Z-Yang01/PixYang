@@ -3715,3 +3715,24 @@ R103 宣言 → R116 六笔快包 → 本轮 R117-R119 终版快包，此后再�
      （source+mtime+size），下次 edit_open/ensure_edit_base 按需重建，自愈。
   ③ 验证：cargo 264（LRU 用例扩展断言 base 三件套清除/保留）；线上库当前 0 孤儿缩略图
      （1101 文件 = 1094 被引用 + 7 个 edit 边车，白名单设计因此得到验证）。
+
+- 2026-10-20 仓库治理（用户请求「合并到main分支，删除其他分支，更新文档，删除多余文档」）：
+  ① optimize/architecture 领先 main 356 个提交、落后 0 → 快进合并进 main 并推送新建远端 main；
+     删除 auto/nightly/pixyang-rust-tauri-20260920-0114 与 test/vitest-setup（独有提交均为 0，
+     删除前逐一核实）及已合并的 optimize/architecture（本地 + 远端）。
+  ② 删除 docs/TAURI_PARITY.md：Electron→Tauri 通道对齐清单的职能已被
+     apiTauriContract.test.js 三方对拍（api.js 通道 ↔ tauriBridge.js invoke 字面量 ↔ Rust
+     generate_handler! 注册表）全自动接管，手写清单只会过期（已缺 R156/R158/R159 的 4+ 通道）。
+     唯一活跃引用 UNATTENDED.md §3 已改为指向契约测试；NIGHTLY_LOG 里的历史引用按时点事实不改写。
+  ③ README 勘正：「文件存储说明」重写为标准用户目录口径（R158 已废除便携模式；DB 在
+     %LOCALAPPDATA%\PixYang，原图在 settings.images_root，缩略图在 settings.thumbs_root
+     或 <数据目录>\thumbnails——原写的 thumbs/ 目录名也是旧的）；「日期管理」默认口径改为
+     EXIF 拍摄日期（R156 起 dateOverride > importDate > EXIF > mtime > 今天，原文「导入当天」过期）；
+     功能一览补导入哈希去重与维护工具节（失效记录/重复图片/未入库文件/孤儿缩略图/重生成缩略图/
+     缩略图目录迁移）；数据模型表 import_date 注释同步。
+  ④ UNATTENDED.md 勘正：§4 门禁基线 vitest 61 文件/850 例 → 88 文件/1152 例、cargo 162 → 264、
+     lint 10 → 9 warning；§1 去掉已不存在的 release/ 表述（改为通用的用户资产保护口径）；
+     §3 文档勘正项去掉 PROGRESS/NIGHTLY_PROGRESS/TAURI_PARITY 引用。AGENTS.md 基线数字同步
+     （83/1091 → 88/1152、Rust 242 → 264 并补 R159 增量段）。
+  ⑤ 验证：vitest 全量 88 文件/1152 例（1 例已知 flake：editor undo 按钮断言，复跑绿）；
+     cargo test 264 lib + 1 golden_audit；tsc/lint/prettier 全绿。纯文档 + 文件删除，零代码改动。

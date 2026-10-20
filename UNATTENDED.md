@@ -13,7 +13,7 @@
 | --- | --- | --- |
 | 共享状态 | `git push`、改远端、建/评论 PR | 推送只在用户明示「push」时执行；历史上仅 R34 授权过一次 |
 | 仓库配置 | 改 `git config`、`.git/hooks/*`、`--no-verify`、`--amend` 已发布提交 | 绕过校验=把后果转嫁给用户 |
-| 用户资产 | 删除 `release/`（466MB 旧 Electron 产物）、用户主题 WIP、任何非本轮自己创建的文件 | 用户裁决 6B：留盘不删；且它同时是 Tailwind 扫描污染源，`.gitignore` 里那行勿删 |
+| 用户资产 | 删除用户主题 WIP、任何非本轮自己创建的文件、仓库外的用户数据（图库根、缩略图盘等） | 用户裁决 6B：留盘不删；`.gitignore` 里既有忽略行勿删 |
 | 用户进程 | 杀 `E:\Software\PixYang\pixyang.exe`（安装版）以腾出 single-instance 锁 | 冒烟被挡时改走真机 Chromium 通道，不要动用户的 App |
 | 真实数据 | 图库根是用户真实库 `E:\PicX`。实机/实后端只允许**只读**交互 | **禁止** delete / batch-delete / rename / 改日期 / import / sync-camera / 烘焙 / 导出；设置页**永不点「保存」** |
 | 源码改写 | 用脚本/heredoc 批量重写源文件（`sed`、`awk`、生成器覆盖） | 一律 Edit/Write 逐文件改；`npx prettier --write <本轮改过的文件>` 例外（本仓自带格式化器） |
@@ -39,7 +39,7 @@
 2. **口径/契约漂移**：双事实源对拍（例：`themes.ts` ↔ `index.css` 块、`err_cn.rs` ↔ `errorText.js` 经 `shared/errorCorpus.json`、api.js 通道 ↔ 桥包装 ↔ Rust 命令）。缺锁就补锁。
 3. **性能挂账**：批 8 遗留的 R-* 项。
 4. **冗余清理**：死导出/死规则/死 token/无生产者事件链——按「生产引用计数」判，**仅测试触达不算冗余**。
-5. **文档勘正**：README / PROGRESS / NIGHTLY_PROGRESS / docs/TAURI_PARITY 与事实对拍。
+5. **文档勘正**：README / UNATTENDED / AGENTS.md 与事实对拍（IPC 通道契约由 `apiTauriContract.test.js` 三方对拍自动锁定，不再维护手写清单）。
 6. **UI 美化 / 口味**：无人值守时**只做有客观判据的**（对比度门槛、遮挡、溢出、动效缺失），配色/命名类口味留给用户裁决。
 
 用户已明示排队的下一轮：① shader 输出 vs Rust golden 的实机像素对拍（裁决「补」）；② 主题命名配色 + chips 18%/45% 权重口味（裁决「优化」，需先出具体方案）。
@@ -47,11 +47,11 @@
 ## 4. 门禁清单与当前基线
 
 ```
-npm test                # vitest：61 文件 / 850 例（R75 起）
-npm run lint            # 0 error 为准；10 warning 为既有基线（有意设计，勿为消警告而掩盖）
+npm test                # vitest：88 文件 / 1152 例
+npm run lint            # 0 error 为准；9 warning 为既有基线（有意设计，勿为消警告而掩盖）
 npm run typecheck       # tsc --noEmit 干净
 npm run format:check    # Prettier 真门禁（R40 起）
-cd src-tauri && CARGO_BUILD_JOBS=1 cargo test --jobs 1   # 162 lib + 1 golden_audit（R73 起基线）
+cd src-tauri && CARGO_BUILD_JOBS=1 cargo test --jobs 1   # 264 lib + 1 golden_audit
 npx vite build          # 产物哈希须与本轮源码一致（见 §5）
 ```
 - 覆盖率（可选复验）：`npm run test:coverage`，门槛 statements/lines 75、branches 70、functions 50。
