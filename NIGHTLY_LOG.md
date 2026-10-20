@@ -3736,3 +3736,22 @@ R103 宣言 → R116 六笔快包 → 本轮 R117-R119 终版快包，此后再�
      （83/1091 → 88/1152、Rust 242 → 264 并补 R159 增量段）。
   ⑤ 验证：vitest 全量 88 文件/1152 例（1 例已知 flake：editor undo 按钮断言，复跑绿）；
      cargo test 264 lib + 1 golden_audit；tsc/lint/prettier 全绿。纯文档 + 文件删除，零代码改动。
+
+- 2026-10-20 测试竞态审计与 flake 修复（R149 挂账闭环：await 后同步断言 47 处待复核）：
+  ① 来源：R149 留下的派生启发式挂账（await 后同步断言桥 spy 47 处待复核）+ 本会话全量 vitest
+     实跑 1 例 flake（ImageViewer HSL 用例 editor undo 按钮断言，1152 例中 1 例）。
+  ② 根因（flake）：700ms 键盘收敛窗的落栈由定时器驱动；750ms 硬睡之后**同步查询** DOM，
+     全量并发下事件循环拥塞会推迟落栈/渲染 → 读到撤销按钮未启用态，expect(undo).toBeTruthy() 红。
+     applyHistory 本身同步，故其后的滑杆值断言无竞态，问题只在查询一刻。
+  ③ 修法：查询包进 vi.waitFor（timeout 2000ms，750ms 睡眠保留作收敛窗提前量）。语义不变——
+     撤销最终必须可用，否则 waitFor 超时红，锁未放宽。
+  ④ 变异验证：把睡眠临时改 300ms（查询早于收敛窗，复现竞态）→ 新代码靠轮询撑住绿；
+     把断言目标改「永不存在的按钮」→ 2000ms 超时红。两向实证后恢复正解（750ms + 撤销按钮）。
+  ⑤ 全仓审计（自写扫描器：waitFor 括号跨度跟踪 + it 边界重置 + 安全源过滤 + 中缀 await 捕获
+     + act 源单列）：扫出 170 处候选，逐一读源码分级——168 处有真门禁（waitFor/findBy 自身
+     保证 / 被完整 await 的异步链 / act 内同步 setState），2 处负向断言可接受（同步接线的
+     handler 暴露窗口 + findByText 预门禁），1 处真竞态即本处。旁证：sleep 门禁全仓仅 4 处
+     （另 3 处为 CDP 真机脚本、900ms 负向断言睡得比窗更久、50ms 同步接线窗口，方向均安全）；
+     假定时器 3 文件全部 act(advanceTimersByTime) 确定性刷新。结论：R149 挂账清零。
+  ⑥ 验证：vitest 88 文件/1152 例连续两轮全绿（修复前同条件 1 例 flake）；cargo 264 lib +
+     1 golden_audit；tsc 0E；lint 0E/9W（既有）；prettier 净。零生产代码改动，安装包无需重打。

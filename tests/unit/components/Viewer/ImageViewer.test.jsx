@@ -870,12 +870,20 @@ describe('ImageViewer', () => {
       expect(params.hsl.hue[0]).toBe(40);
       expect(params.hsl.sat.every((v) => v === 0)).toBe(true);
     });
-    // 键盘调整走 700ms 收敛窗：等它落一条历史后撤销才可用
+    // 键盘调整走 700ms 收敛窗：等它落一条历史后撤销才可用。
+    // 750ms 只是给收敛窗提前量；全量并发下事件循环拥塞会推迟落栈/渲染，
+    // 查询本身必须轮询等待（语义不变：撤销最终必须可用，否则 waitFor 超时红）。
     await new Promise((r) => setTimeout(r, 750));
-    const undo = [...document.querySelectorAll('.editor-panel-footer button')].find(
-      (b) => b.textContent.trim() === '撤销' && !b.disabled
+    let undo;
+    await vi.waitFor(
+      () => {
+        undo = [...document.querySelectorAll('.editor-panel-footer button')].find(
+          (b) => b.textContent.trim() === '撤销' && !b.disabled
+        );
+        expect(undo).toBeTruthy();
+      },
+      { timeout: 2000 }
     );
-    expect(undo).toBeTruthy();
     fireEvent.click(undo);
     expect(section.querySelector('.editor-slider-row input').value).toBe('0');
   });
