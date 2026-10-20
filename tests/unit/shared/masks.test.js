@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 
-import masks from '../../../shared/masks.js';
+import masks from '../../../shared/masks.ts';
 
 describe('normalizeMasks / hasMaskData', () => {
   it('未知类型丢弃，radial/linear 保留且几何/调整量钳制', () => {

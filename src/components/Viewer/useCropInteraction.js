@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef } from 'react';
-import maskGeometry from '../../../shared/maskGeometry.js';
+import maskGeometry from '../../../shared/maskGeometry.ts';
 
 const { displayToImage } = maskGeometry;
 import { CROP_RATIOS } from '@/lib/editParams';

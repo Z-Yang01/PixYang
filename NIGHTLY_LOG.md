@@ -3785,3 +3785,42 @@ R103 宣言 → R116 六笔快包 → 本轮 R117-R119 终版快包，此后再�
      清理临时探针目录后 eslint 回到 0E/9W（探针文件曾报 2 处 no-undef）。
   ⑥ 提交范围：shared/editSchema.ts（新增）/ shared/editSchema.js（删除）/ 11 个导入方 /
      tsconfig.json / AGENTS.md / README.md 两处引用 / NIGHTLY_LOG.md。
+
+- 2026-10-20 TypeScript 迁移第二批（shared/ 14 个纯函数模块）+ 测试纳入 tsc 门禁：
+  ① 测试类型化（首刀挂账课题闭环）：tsconfig.json 的 include 加 tests，并加
+    allowJs: true + checkJs: false——读 .js 做类型推断但不检核它们，否则导入 .js 模块
+    一处报 TS7016（@/hooks/useDragImport）。类型基座集中在新增的 tests/vitest-env.d.ts：
+    import '@testing-library/jest-dom/vitest' 拉入匹配器类型（运行时扩展仍在 tests/setup.js，
+    两侧分离）+ window.pixyang 桥面声明。桥面按命令名透传，故用「命令名 → 函数」索引
+    签名而非具名接口；字段须 optional，测试会注入任意子集或 delete 通道。
+    该基座一次性消掉纳入后 151 个错误中的 150 个（其余 1 个即上述 TS7016，由 allowJs 解决）。
+  ② shared/ 第二批 14 模块（git mv 保重命名历史）：autoGrade / brushMask / builtinPresets /
+    clarity / colorGrading / curves / dehaze / grain / hsl / lens / maskGeometry / masks /
+    pipelineOrder / saturation。shared/ 由「15 .js + 1 .ts」翻转为「15 .ts + 1 .js」，
+    仅剩 renderSpec.js（run.cjs 工具图入口，迁它须连带验整条 Node 链，收益低于风险）。
+    全部导入方与注释引用同步切 .ts（含 Rust 侧跨语言指针 render.rs 21 处 + executor.rs 3 处——
+    这些注释是「三端同式」契约指针，改名后不同步会造成跨语言漂移）。
+  ③ 类型化要点：z.infer 跨模块复用（masks.ts 的 normalizeMasks 产物与 editSchema 的 Mask
+    判别联合逐字段同构，直接 import type 复用；builtinPresets 用 Partial<Basic/Detail/...>；
+    autoGrade 的 SuggestedGrade.basic 是 9 字段子集——不是完整 Basic，13 字段中缺
+    vibrance/clarity/dehaze/texture）；as const 字面量联合（PIPELINE_ORDER → StageKind）；
+    apply*InPlace 的 Uint8Array|Uint8ClampedArray 联合入参（经 grep 实证五个算子均无生产
+    调用方——JS 模拟参考实现，供测试与 Rust 对拍）。
+  ④ 两个真坑（均非逻辑改动，纯类型层）：
+    - builtinPresets 的 vignette 校验：可选链下 p.lens.vignette 报 possibly undefined。修法
+      「先落 const vig = p.lens?.vignette 再做 typeof 守卫」而非跳过校验——原语义是
+      「缺失即抛」，静默跳过会放宽锁。行为保持已对拍确认。
+    - masks.ts 的 any 污染：m.strokes 在 any 上取属性不窄化，其 .map() 结果仍是 any，
+      后续 filter 回调丢上下文（4 处 implicit any）。修法「先落 unknown 本地变量 +
+      Array.isArray 收窄 + 显式元素类型断言」，逐层断言到底。教训：any 上的收窄是传染的，
+      必须在源头截断，不能指望下游补断言。
+  ⑤ 验证：tsc 0E（include 含 src + shared + tests）；全量 vitest 88 文件/1152 例全绿；
+    lint 0E/9W（既有）；prettier 净（新迁 7 文件初版不合规，经 --write 后全净）；
+    Node 工具图冒烟三二进制（managed 22.22.2 / system 22.19.0 / PATH）均 14 stages 且
+    exposure/contrast round-trip 保值——本轮链上新增 curves/colorGrading/masks/hsl/
+    pipelineOrder 五个 .ts，是本批唯一未经 vitest 覆盖的运行时路径，故必须复跑；
+    Rust 侧虽只改注释仍实证：cargo check --all-targets 通过 + cargo test --lib 264 passed。
+  ⑥ 提交范围：shared/ 14 个 .ts（git mv 自 .js）+ shared/editSchema.ts + shared/renderSpec.js /
+    tests/vitest-env.d.ts（新增）/ tsconfig.json / AGENTS.md / NIGHTLY_LOG.md /
+    11 个生产导入方 + 17 个测试文件的说明符切换 / src-tauri/src/render.rs + executor.rs
+    注释指针。零运行时行为改动。

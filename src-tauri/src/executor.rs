@@ -657,7 +657,7 @@ pub fn render_spec_to_file(
                 } else {
                     None
                 };
-                // 清晰度在掩蔽之后施加（shared/clarity.js 管线位）：clarity 单独激活也要物化
+                // 清晰度在掩蔽之后施加（shared/clarity.ts 管线位）：clarity 单独激活也要物化
                 let clarity_k = 1.0 + clarity / 100.0;
                 if shadow_op.is_none() && highlight_slope == 1.0 && clarity_k == 1.0 && dehaze == 0.0
                 {
@@ -716,7 +716,7 @@ pub fn render_spec_to_file(
                 flush_affine(&mut pixels, &mut affine, input)?;
                 ensure_decoded(&mut pixels, input)?;
                 let p = pixels.as_mut().unwrap();
-                // 鲜艳度先于均匀饱和度（shared/saturation.js 家族内定序，三端一致）
+                // 鲜艳度先于均匀饱和度（shared/saturation.ts 家族内定序，三端一致）
                 if vibrance != 0.0 {
                     crate::render::apply_vibrance_in_place(&mut p.data, vibrance, p.channels);
                 }
@@ -786,7 +786,7 @@ pub fn render_spec_to_file(
                         p.channels,
                     )?;
                 }
-                // 胶片颗粒（shared/grain.js 同式，段内末位）：u32 wrapping hash 逐位对拍
+                // 胶片颗粒（shared/grain.ts 同式，段内末位）：u32 wrapping hash 逐位对拍
                 let grain = params.get("grain").and_then(|v| v.as_f64()).unwrap_or(0.0);
                 if grain > 0.0 {
                     flush_affine(&mut pixels, &mut affine, input)?;

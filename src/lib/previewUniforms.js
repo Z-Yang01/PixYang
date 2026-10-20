@@ -7,13 +7,13 @@
 // 作为 uniform 传入（GLSL 只消费 uniform），高光方向为 LR 惯例（+提亮/−压暗）。
 // 几何/裁剪不进 shader（CSS transform 与裁剪框承担）；detail.sharpness 预览不呈现（与 SVG 路径一致）。
 
-import curvesLib from '../../shared/curves.js';
-import gradingLib from '../../shared/colorGrading.js';
-import hslLib from '../../shared/hsl.js';
-import masksLib from '../../shared/masks.js';
-import saturationLib from '../../shared/saturation.js';
-import clarityLib from '../../shared/clarity.js';
-import grainLib from '../../shared/grain.js';
+import curvesLib from '../../shared/curves.ts';
+import gradingLib from '../../shared/colorGrading.ts';
+import hslLib from '../../shared/hsl.ts';
+import masksLib from '../../shared/masks.ts';
+import saturationLib from '../../shared/saturation.ts';
+import clarityLib from '../../shared/clarity.ts';
+import grainLib from '../../shared/grain.ts';
 
 const { buildCurveLuts } = curvesLib;
 const { buildGradeLuts } = gradingLib;
@@ -60,7 +60,7 @@ export function specToShaderUniforms(spec, imageSize = [0, 0]) {
         ? { exponent: 1 / clamp(1 + -shadowsVal / 220, 1, 1.45), invert: 1 }
         : null;
   const highlightsSlope = tone.highlights !== 0 ? clamp(1 + tone.highlights / 400, 0.75, 1.15) : 1;
-  // 清晰度（中间调对比）：传算好的 k（shared/clarity.js clarityK），shader 内算三角窗
+  // 清晰度（中间调对比）：传算好的 k（shared/clarity.ts clarityK），shader 内算三角窗
   const clarityK = clarityLib.clarityK(tone.clarity || 0);
   // 去朦胧：传原值归一（shader 内三步同式）
   const dehaze = clamp(Number(tone.dehaze) || 0, -100, 100) / 100;
@@ -80,7 +80,7 @@ export function specToShaderUniforms(spec, imageSize = [0, 0]) {
     }
   }
 
-  // HSL：8 带数组（shader 内做带权重，公式与 shared/hsl.js 一致）
+  // HSL：8 带数组（shader 内做带权重，公式与 shared/hsl.ts 一致）
   const hsl = normalizeHsl(by.hsl?.params || {});
   const hslOn = by.hsl?.params
     ? hsl.hue.some((v) => v !== 0) || hsl.sat.some((v) => v !== 0) || hsl.lum.some((v) => v !== 0)
@@ -97,7 +97,7 @@ export function specToShaderUniforms(spec, imageSize = [0, 0]) {
   // 颗粒：传归一化强度（shader 内乘 0.15 满档）；模拟器同式
   const detailGrain = Math.min(100, Math.max(0, Number(by.detail?.params?.grain) || 0)) / 100;
 
-  // 分级：预计算 tint 偏移与标度（shader 端做真亮度权重，公式与 shared/colorGrading.js 一致）
+  // 分级：预计算 tint 偏移与标度（shader 端做真亮度权重，公式与 shared/colorGrading.ts 一致）
   const gradeLuts = buildGradeLuts(by.colorGrading?.params || {});
   const gradingScale = [0, 0, 0];
   const gradingDelta = [
@@ -121,15 +121,15 @@ export function specToShaderUniforms(spec, imageSize = [0, 0]) {
   // 鲜艳度（智能饱和度）：传原值，增益随像素 chroma 在 shader 内自适应
   const vibrance = clamp(Number(by.saturation?.params?.vibrance) || 0, -100, 100);
 
-  // 暗角（pre-crop 椭圆，shader 内线性衰减，公式与 shared/lens.js 一致）
+  // 暗角（pre-crop 椭圆，shader 内线性衰减，公式与 shared/lens.ts 一致）
   const vignette = clamp(Number(by.lens?.params?.vignette) || 0, -100, 100);
 
-  // 镜头几何校正：畸变/色散系数（shared/lens.js lensGeomParams 同式；重采样段，模拟器不含）
+  // 镜头几何校正：畸变/色散系数（shared/lens.ts lensGeomParams 同式；重采样段，模拟器不含）
   const lensDistortion = (clamp(Number(by.lens?.params?.distortion) || 0, -100, 100) / 100) * 0.25;
   const lensChromatic = (clamp(Number(by.lens?.params?.chromatic) || 0, -100, 100) / 100) * 0.01;
   const lensGeomOn = lensDistortion !== 0 || lensChromatic !== 0 ? 1 : 0;
 
-  // 蒙版（pre-crop 像素坐标，shader 内权重 × 调整，公式与 shared/masks.js 一致；上限 8 个）
+  // 蒙版（pre-crop 像素坐标，shader 内权重 × 调整，公式与 shared/masks.ts 一致；上限 8 个）
   const maskList = masksLib.normalizeMasks(by.masks?.params?.list || []).slice(0, 8);
   const MASK_COUNT = 8;
   const maskType = new Array(MASK_COUNT).fill(0);
@@ -263,7 +263,7 @@ export function simulateShaderPixel(rgb255, uniforms, uv = [0.5, 0.5]) {
     });
   }
   if (uniforms.clarity !== 1) {
-    // 清晰度（shared/clarity.js 同式；uniforms.clarity 已是算好的 k，手写 k 版避免反解）：
+    // 清晰度（shared/clarity.ts 同式；uniforms.clarity 已是算好的 k，手写 k 版避免反解）：
     // w = 1−|2L−1| 三角窗，f = (x−0.5)k+0.5，mix 后整体钳（与执行器段末写回 clamp 同口径）
     const L = 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
     const w = 1 - Math.abs(2 * L - 1);
@@ -273,7 +273,7 @@ export function simulateShaderPixel(rgb255, uniforms, uv = [0.5, 0.5]) {
     });
   }
   if (uniforms.dehaze) {
-    // 去朦胧（shared/dehaze.js 同式）：黑场回压窗 x(1−x) → 三角窗中调对比 → 饱和回拉
+    // 去朦胧（shared/dehaze.ts 同式）：黑场回压窗 x(1−x) → 三角窗中调对比 → 饱和回拉
     const d = uniforms.dehaze;
     const L = 0.213 * c[0] + 0.715 * c[1] + 0.072 * c[2];
     const w = 1 - Math.abs(2 * L - 1);
@@ -322,7 +322,7 @@ export function simulateShaderPixel(rgb255, uniforms, uv = [0.5, 0.5]) {
     c = c.map((x) => clamp(x, 0, 1));
   }
   if (uniforms.vibrance) {
-    // 鲜艳度（shared/saturation.js vibrance01）：mix 后整体钳（同 GLSL D1 口径）
+    // 鲜艳度（shared/saturation.ts vibrance01）：mix 后整体钳（同 GLSL D1 口径）
     c = vibrance01(c, uniforms.vibrance).map((x) => clamp(x, 0, 1));
   }
   if (uniforms.mono || uniforms.saturation !== 1) {
@@ -396,7 +396,7 @@ export function simulateShaderPixel(rgb255, uniforms, uv = [0.5, 0.5]) {
     }
   }
   if (uniforms.detailGrain) {
-    // 颗粒（shared/grain.js 同式）：uv → 像素 → cell 网格 → u32 hash；单色三通道同加
+    // 颗粒（shared/grain.ts 同式）：uv → 像素 → cell 网格 → u32 hash；单色三通道同加
     const cell = Math.max(uniforms.imageSize[0], uniforms.imageSize[1]) / 256;
     const gx = Math.floor((uv[0] * uniforms.imageSize[0]) / cell);
     const gy = Math.floor((uv[1] * uniforms.imageSize[1]) / cell);

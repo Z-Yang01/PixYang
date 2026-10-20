@@ -35,13 +35,13 @@ const BasicSchema = z.object({
   saturation: z.number().min(-100).max(100).catch(0), // -100 黑白
   vibrance: z.number().min(-100).max(100).catch(0), // 鲜艳度：智能饱和度（低饱和多提/高饱和少提），亮度保持
   clarity: z.number().min(-100).max(100).catch(0), // 清晰度：中间调对比（三角亮度窗掩蔽）
-  dehaze: z.number().min(-100).max(100).catch(0), // 去朦胧：黑场回压+中调对比+饱和回拉（shared/dehaze.js）
+  dehaze: z.number().min(-100).max(100).catch(0), // 去朦胧：黑场回压+中调对比+饱和回拉（shared/dehaze.ts）
   temperature: z.number().min(-100).max(100).catch(0), // 暖+ 冷-
   tint: z.number().min(-100).max(100).catch(0), // 绿- 品红+
 });
 
 // 曲线：每通道为点对平铺数组 [x0,y0, x1,y1, ...]，取值 0..1，x 升序，≥2 点有效；
-// 分段线性插值，端点外横向延伸。语义实现唯一在 shared/curves.js（渲染 LUT 与预览 tableValues 共用）。
+// 分段线性插值，端点外横向延伸。语义实现唯一在 shared/curves.ts（渲染 LUT 与预览 tableValues 共用）。
 const CurvesSchema = z.object({
   rgb: z.array(z.number()).catch([]),
   r: z.array(z.number()).catch([]),
@@ -56,7 +56,7 @@ const HslSchema = z.object({
 });
 
 // 颜色分级：每亮度区间（shadows/midtones/highlights）为 [hue 0..360, sat 0..100]，
-// sat=0/空数组即该区间无偏移。语义实现唯一在 shared/colorGrading.js。
+// sat=0/空数组即该区间无偏移。语义实现唯一在 shared/colorGrading.ts。
 const ColorGradingSchema = z.object({
   shadows: z.array(z.number()).catch([]),
   midtones: z.array(z.number()).catch([]),
@@ -67,10 +67,10 @@ const DetailSchema = z.object({
   sharpness: z.number().min(0).max(100).catch(0),
   texture: z.number().min(-100).max(100).catch(0), // 纹理（中频 USM，负=柔化）
   noise: z.number().min(0).max(100).catch(0),
-  grain: z.number().min(0).max(100).catch(0), // 胶片颗粒（shared/grain.js，单色 u32 hash 网格）
+  grain: z.number().min(0).max(100).catch(0), // 胶片颗粒（shared/grain.ts，单色 u32 hash 网格）
 });
 
-// 镜头校正：vignette -100..100（负压暗/正提亮）已实现（shared/lens.js，pre-crop 语义）；
+// 镜头校正：vignette -100..100（负压暗/正提亮）已实现（shared/lens.ts，pre-crop 语义）；
 // profile/distortion/chromatic 预留（渲染端警告跳过）
 const LensSchema = z.object({
   profile: z.string().catch(''),
@@ -79,7 +79,7 @@ const LensSchema = z.object({
   chromatic: z.number().catch(0),
 });
 
-// 蒙版 v2（shared/masks.js 唯一实现）：radial（椭圆+羽化+反相+旋转）、linear（渐变线，
+// 蒙版 v2（shared/masks.ts 唯一实现）：radial（椭圆+羽化+反相+旋转）、linear（渐变线，
 // p0→p1 线性 0→1，feather 字段保留不适用）与 range（亮度范围带：center 0..1 / range 半宽
 // 0..1 / feather 带外衰减 0..1）。坐标系为 decode 后未旋转未裁剪图像。
 // brush/ai 类型暂不支持——非法/未知类型元素在归一化层丢弃。
@@ -139,7 +139,7 @@ const RangeMaskSchema = z.object({
 });
 
 // 画笔蒙版：strokes 为笔画数组（points 折线顶点平铺 pre-crop 像素/radius 半径 1..300/
-// softness 软边 0..1），多笔 max 合成；权重语义唯一实现在 shared/brushMask.js
+// softness 软边 0..1），多笔 max 合成；权重语义唯一实现在 shared/brushMask.ts
 const BrushStrokeSchema = z.object({
   points: z.array(z.number()).catch([]),
   radius: z.number().min(1).max(300).catch(30),

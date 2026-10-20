@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 
-import hsl from '../../../shared/hsl.js';
+import hsl from '../../../shared/hsl.ts';
 
 describe('normalizeHsl / hasHslData', () => {
   it('补齐 8 值、钳制 -100..100、非有限置 0', () => {

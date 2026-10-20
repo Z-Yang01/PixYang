@@ -10,20 +10,27 @@
 // 网格同 cell 内同值（颗粒有面积感而非单像素噪点）；amount=0 恒等；alpha 不动。
 // 管线位：detail 段内末位（降噪 → 锐化 → 颗粒）。预设消费：ACROS/经典负片等黑白胶片系。
 
-export function grainCellSize(width, height) {
+export function grainCellSize(width: number, height: number): number {
   const long = Math.max(1, width, height);
   return long / 256;
 }
 
 // u32 wrapping hash → [−0.5, 0.5)（三端整数语义一致；JS 用 Math.imul/>>>0 对齐 u32）
-export function grainNoiseAt(gx, gy) {
+export function grainNoiseAt(gx: number, gy: number): number {
   let h = (Math.imul(gx, 1973) + Math.imul(gy, 9277) + 26699) >>> 0;
   h = Math.imul(h ^ (h >>> 13), 1274126177) >>> 0;
   return (h & 0xffff) / 65535 - 0.5;
 }
 
-// raw 检查点原位应用（uint8 域；round + clamp 与饱和度家族写回同口径）
-export function applyGrainInPlace(data, width, height, amount, channels) {
+// raw 检查点原位应用（uint8 域；round + clamp 与饱和度家族写回同口径）。
+// 无生产调用方——JS 模拟参考实现，供 grain.test.js 与 Rust 对拍取证（shader 侧同式内联在 previewUniforms）。
+export function applyGrainInPlace(
+  data: Uint8Array | Uint8ClampedArray,
+  width: number,
+  height: number,
+  amount: number,
+  channels: number
+): void {
   const v = Math.min(100, Math.max(0, Number(amount) || 0));
   if (v === 0) return;
   const k = (v / 100) * 0.15 * 255; // ±38/255 满档

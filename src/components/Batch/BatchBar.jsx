@@ -22,7 +22,7 @@ import {
 import useGalleryStore from '@/store/galleryStore';
 import api from '@/lib/api';
 import { presetSwatch } from '@/lib/presetSwatch';
-import builtinPresetsModule from '../../../shared/builtinPresets.js';
+import builtinPresetsModule from '../../../shared/builtinPresets.ts';
 
 const { BUILTIN_PRESETS } = builtinPresetsModule;
 

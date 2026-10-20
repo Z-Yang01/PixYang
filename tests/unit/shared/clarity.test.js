@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import clarity from '../../../shared/clarity.js';
+import clarity from '../../../shared/clarity.ts';
 
 const { clarityK, clarity01, applyClarityInPlace } = clarity;
 

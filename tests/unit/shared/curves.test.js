@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 
-import curves from '../../../shared/curves.js';
+import curves from '../../../shared/curves.ts';
 
 describe('normalizePoints（点归一化）', () => {
   it('成对取数、排序、钳制到 0..1', () => {

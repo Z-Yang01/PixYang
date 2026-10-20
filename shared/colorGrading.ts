@@ -4,10 +4,32 @@
 // 预览端为逐通道 LUT 表近似（以通道值代替亮度做权重，SVG feComponentTransfer 可表达）；
 // 两端共享同一 tint/权重数学。作用于显示参照（gamma）空间，与曲线同层（之后、饱和度之前）。
 
-const clamp = (v, min, max) => Math.min(max, Math.max(min, v));
+const clamp = (v: number, min: number, max: number): number => Math.min(max, Math.max(min, v));
+
+/** 亮度区间键 */
+type RangeKey = 'shadows' | 'midtones' | 'highlights';
+
+/** 分级原始输入（持久化 JSON 未过 schema 前，逐字段防御） */
+interface GradingInput {
+  shadows?: unknown;
+  midtones?: unknown;
+  highlights?: unknown;
+}
+
+/** 归一化后的分级参数（每区间 [hue, sat] 或空数组） */
+interface NormalizedGrading {
+  shadows: number[];
+  midtones: number[];
+  highlights: number[];
+}
+
+/** 预计算分级结构（buildGradeLuts 产物） */
+interface GradeLuts {
+  ranges: { key: RangeKey; scale: number; delta: number[]; lumDelta: number }[];
+}
 
 // [hue, sat] 归一化：成对取数、hue 折叠、sat 钳制；无效/不足一对 → []（无偏移）
-function normalizeRange(arr) {
+function normalizeRange(arr: unknown): number[] {
   if (!Array.isArray(arr) || arr.length < 2) return [];
   const hue = Number(arr[0]);
   const sat = Number(arr[1]);
@@ -16,7 +38,7 @@ function normalizeRange(arr) {
   return [h, clamp(sat, 0, 100)];
 }
 
-function normalizeGrading(grading = {}) {
+function normalizeGrading(grading: GradingInput | null = {}): NormalizedGrading {
   return {
     shadows: normalizeRange(grading?.shadows),
     midtones: normalizeRange(grading?.midtones),
@@ -24,13 +46,13 @@ function normalizeGrading(grading = {}) {
   };
 }
 
-function hasColorGradingData(grading = {}) {
+function hasColorGradingData(grading: GradingInput | null = {}): boolean {
   const g = normalizeGrading(grading);
   return (g.shadows[1] || 0) > 0 || (g.midtones[1] || 0) > 0 || (g.highlights[1] || 0) > 0;
 }
 
 // HSV(hue,1,1) → [r,g,b] 0..1
-function tintRgb(hue) {
+function tintRgb(hue: number): number[] {
   const h = (((hue % 360) + 360) % 360) / 60;
   const i = Math.floor(h);
   const f = h - i;
@@ -47,7 +69,7 @@ function tintRgb(hue) {
 
 // 亮度区间权重（L 0..1，平方衰减让过渡更柔）：
 // 阴影在 L=0 全量、0.5 归零；高光镜像；中间调以 0.5 为中心 ±0.35 带通
-function weightFor(range, L) {
+function weightFor(range: RangeKey, L: number): number {
   let w;
   if (range === 'shadows') w = clamp(1 - L / 0.5, 0, 1);
   else if (range === 'highlights') w = clamp((L - 0.5) / 0.5, 0, 1);
@@ -57,7 +79,7 @@ function weightFor(range, L) {
 
 // 单像素分级：in/out 均 RGB 0..255（uint8 取整，与原位应用一致）。
 // luts 预计算结构 { ranges: [{key, scale, delta, lumDelta}] }
-function gradePixel(rgb, luts) {
+function gradePixel(rgb: number[], luts: GradeLuts): number[] {
   const L = (0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2]) / 255;
   const out = [rgb[0], rgb[1], rgb[2]];
   for (const r of luts.ranges) {
@@ -76,10 +98,10 @@ function gradePixel(rgb, luts) {
 
 // 预计算各区间 tint 偏移：delta 为 0..1 单位（tint-0.5），scale 为 8-bit 最大偏移
 // （sat=100 时单通道最大 ±30），lumDelta 为 tint 亮度偏移（灰度图只改明度）。
-function buildGradeLuts(grading = {}) {
+function buildGradeLuts(grading: GradingInput | null = {}): GradeLuts {
   const g = normalizeGrading(grading);
-  const ranges = [];
-  for (const key of ['shadows', 'midtones', 'highlights']) {
+  const ranges: GradeLuts['ranges'] = [];
+  for (const key of ['shadows', 'midtones', 'highlights'] as const) {
     const [hue, sat] = g[key];
     if (!(sat > 0)) continue;
     const rgb = tintRgb(hue);
@@ -96,7 +118,12 @@ function buildGradeLuts(grading = {}) {
 }
 
 // raw 检查点原位应用（真亮度加权）。channels=1 时按 tint 亮度偏移改明度。
-function applyColorGradingInPlace(data, grading, channels) {
+// 无生产调用方——JS 模拟参考实现，供测试与 Rust 对拍取证（shader 侧同式内联在 previewUniforms）。
+function applyColorGradingInPlace(
+  data: Uint8Array | Uint8ClampedArray,
+  grading: GradingInput | null,
+  channels: number
+): void {
   const luts = buildGradeLuts(grading);
   if (!luts.ranges.length) return;
   if (channels < 3) {
@@ -130,10 +157,13 @@ function applyColorGradingInPlace(data, grading, channels) {
 
 // 预览端：逐通道 33 点 tableValues——以通道值 v/255 代替亮度做权重（近似）。
 // 输出 null 表示无分级（不需要原语）。
-function buildGradingTables(grading = {}, samples = 33) {
+function buildGradingTables(
+  grading: GradingInput | null = {},
+  samples = 33
+): { r: number[]; g: number[]; b: number[] } | null {
   const luts = buildGradeLuts(grading);
   if (!luts.ranges.length) return null;
-  const tables = { r: [], g: [], b: [] };
+  const tables: { r: number[]; g: number[]; b: number[] } = { r: [], g: [], b: [] };
   for (let s = 0; s < samples; s++) {
     const v = (s / (samples - 1)) * 255;
     const [r, g2, b] = gradePixel([v, v, v], luts);

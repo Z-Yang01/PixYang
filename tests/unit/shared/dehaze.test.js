@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import dehaze from '../../../shared/dehaze.js';
+import dehaze from '../../../shared/dehaze.ts';
 
 const { dehaze01 } = dehaze;
 

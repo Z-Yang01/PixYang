@@ -4,13 +4,24 @@
 // 少于 2 个有效点视为恒等（空数组即无曲线）。
 // 曲线作用于 gamma（显示参照）空间：执行器在 curves 阶段前物化像素，uint8 即显示值。
 
-const clamp01 = (v) => Math.min(1, Math.max(0, v));
+const clamp01 = (v: number): number => Math.min(1, Math.max(0, v));
+
+/** 归一化后的点（x 升序、同 x 去重、保留后值） */
+type Pt = [number, number];
+
+/** 曲线输入：允许部分字段/任意形态（持久化 JSON 未过 schema 前），内部逐字段防御 */
+interface CurveInput {
+  rgb?: unknown;
+  r?: unknown;
+  g?: unknown;
+  b?: unknown;
+}
 
 // 归一化：成对取数、钳到 [0,1]、按 x 升序、同 x 去重（保留后值）。
 // 少于 2 个有效点返回空数组（恒等）——单点曲线无段可插值，按无曲线处理。
-function normalizePoints(arr) {
+function normalizePoints(arr: unknown): Pt[] {
   if (!Array.isArray(arr)) return [];
-  const pts = [];
+  const pts: Pt[] = [];
   for (let i = 0; i + 1 < arr.length; i += 2) {
     const x = Number(arr[i]);
     const y = Number(arr[i + 1]);
@@ -18,7 +29,7 @@ function normalizePoints(arr) {
     pts.push([clamp01(x), clamp01(y)]);
   }
   pts.sort((a, b) => a[0] - b[0]);
-  const out = [];
+  const out: Pt[] = [];
   for (const p of pts) {
     const last = out[out.length - 1];
     if (last && last[0] === p[0]) last[1] = p[1];
@@ -27,7 +38,7 @@ function normalizePoints(arr) {
   return out.length >= 2 ? out : [];
 }
 
-function evalAt(pts, x) {
+function evalAt(pts: Pt[], x: number): number {
   if (!pts.length) return x;
   if (x <= pts[0][0]) return pts[0][1];
   const last = pts[pts.length - 1];
@@ -44,13 +55,13 @@ function evalAt(pts, x) {
 }
 
 // 恒等曲线：所有点在对角线上且两端封闭（否则端外延伸会改值）
-function isIdentityPoints(pts) {
+function isIdentityPoints(pts: Pt[]): boolean {
   if (!pts.length) return true;
   if (pts[0][0] !== 0 || pts[pts.length - 1][0] !== 1) return false;
   return pts.every((p) => p[0] === p[1]);
 }
 
-function buildLut(pts) {
+function buildLut(pts: Pt[]): Uint8Array {
   const lut = new Uint8Array(256);
   for (let i = 0; i < 256; i++) {
     lut[i] = Math.round(255 * clamp01(evalAt(pts, i / 255)));
@@ -58,7 +69,7 @@ function buildLut(pts) {
   return lut;
 }
 
-function composeLut(a, b) {
+function composeLut(a: Uint8Array | null, b: Uint8Array | null): Uint8Array | null {
   if (!a) return b;
   if (!b) return a;
   const out = new Uint8Array(256);
@@ -66,16 +77,24 @@ function composeLut(a, b) {
   return out;
 }
 
+/** 四通道查找表组（null = 该通道恒等/无需渲染） */
+interface CurveLuts {
+  rgb: Uint8Array | null;
+  r: Uint8Array | null;
+  g: Uint8Array | null;
+  b: Uint8Array | null;
+}
+
 // rgb 曲线先作用于所有通道，通道曲线再叠加（复合进同一张 256 级表）。
 // 返回 null 表示整组恒等（无需渲染）；rgb 字段为未复合的 rgb 表（灰度图专用），
 // r/g/b 为 rgb+通道复合后的最终表（通道恒等时复合结果即 rgb 表本身）。
-function buildCurveLuts(curves = {}) {
+function buildCurveLuts(curves: CurveInput = {}): CurveLuts | null {
   const rgb = normalizePoints(curves.rgb);
   const rgbIdentity = isIdentityPoints(rgb);
   const rgbLut = rgbIdentity ? null : buildLut(rgb);
-  const luts = { rgb: rgbLut, r: null, g: null, b: null };
+  const luts: CurveLuts = { rgb: rgbLut, r: null, g: null, b: null };
   let any = !!rgbLut;
-  for (const c of ['r', 'g', 'b']) {
+  for (const c of ['r', 'g', 'b'] as const) {
     const pts = normalizePoints(curves[c]);
     if (isIdentityPoints(pts)) {
       luts[c] = rgbLut;
@@ -89,7 +108,10 @@ function buildCurveLuts(curves = {}) {
 
 // 预览端：复合曲线在均匀采样点的值（0..1），供 feComponentTransfer type="table"
 // 的 tableValues 使用（SVG 按均匀间隔分段线性插值，与本表同语义）。
-function buildCurveTables(curves = {}, samples = 33) {
+function buildCurveTables(
+  curves: CurveInput = {},
+  samples = 33
+): Record<'r' | 'g' | 'b', number[]> | null {
   const rgb = normalizePoints(curves.rgb);
   const rgbIdentity = isIdentityPoints(rgb);
   const chanIdentity = {
@@ -98,11 +120,11 @@ function buildCurveTables(curves = {}, samples = 33) {
     b: isIdentityPoints(normalizePoints(curves.b)),
   };
   if (rgbIdentity && chanIdentity.r && chanIdentity.g && chanIdentity.b) return null;
-  const tables = {};
-  for (const c of ['r', 'g', 'b']) {
+  const tables: Record<'r' | 'g' | 'b', number[]> = { r: [], g: [], b: [] };
+  for (const c of ['r', 'g', 'b'] as const) {
     if (rgbIdentity && chanIdentity[c]) continue;
     const pts = normalizePoints(curves[c]);
-    const arr = [];
+    const arr: number[] = [];
     for (let i = 0; i < samples; i++) {
       const x = i / (samples - 1);
       const v = rgbIdentity ? x : evalAt(rgb, x);
@@ -114,7 +136,7 @@ function buildCurveTables(curves = {}, samples = 33) {
   return tables;
 }
 
-function hasCurveData(curves = {}) {
+function hasCurveData(curves: CurveInput = {}): boolean {
   return buildCurveLuts(curves) !== null;
 }
 

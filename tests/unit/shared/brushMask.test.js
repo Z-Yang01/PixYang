@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import brushMask from '../../../shared/brushMask.js';
+import brushMask from '../../../shared/brushMask.ts';
 
 const { strokeBounds, brushStrokeWeight, brushWeight } = brushMask;
 

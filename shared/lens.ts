@@ -5,17 +5,17 @@
 // d>1（矩形角落）钳到 1。作用于 lens 阶段（geometry/crop 之前，pre-crop 语义，
 // 坐标系为 decode 后未旋转未裁剪的原图尺寸）。
 
-const clamp = (v, min, max) => Math.min(max, Math.max(min, v));
+const clamp = (v: number, min: number, max: number): number => Math.min(max, Math.max(min, v));
 
 // 椭圆归一距离下的线性衰减：d∈[0,1]（1 = 内切椭圆，即半轴处）
-function vignetteFalloff(d) {
+function vignetteFalloff(d: number): number {
   return clamp((d - 0.5) / 0.5, 0, 1);
 }
 
 // 单像素输出：vignette -100..100；与 CSS multiply/screen 数学严格等价
 //   负值（压暗） out = in * (1 + s/100 * falloff)        == multiply 黑 alpha=|s|/100*falloff
 //   正值（提亮） out = in + s/100 * falloff * (255-in)    == screen 白 alpha=s/100*falloff
-function vignettePixel(value, vignette, falloff) {
+function vignettePixel(value: number, vignette: number, falloff: number): number {
   const v = clamp(vignette, -100, 100);
   if (v === 0 || falloff <= 0) return value;
   const out =
@@ -24,7 +24,14 @@ function vignettePixel(value, vignette, falloff) {
 }
 
 // raw 检查点原位应用。width/height 为当前（decode 后、未几何）图像尺寸。
-function applyVignetteInPlace(data, width, height, vignette, channels) {
+// 无生产调用方——JS 模拟参考实现，供测试与 Rust 对拍取证（shader 侧同式内联在 previewUniforms）。
+function applyVignetteInPlace(
+  data: Uint8Array | Uint8ClampedArray,
+  width: number,
+  height: number,
+  vignette: number,
+  channels: number
+): void {
   const v = clamp(Number(vignette) || 0, -100, 100);
   if (!v || !(width > 0) || !(height > 0)) return;
   const halfW = width / 2;
@@ -55,7 +62,7 @@ function applyVignetteInPlace(data, width, height, vignette, channels) {
 
 // 预览端 CSS 参数：与渲染同数学。返回 null 表示无暗角。
 // gradient：radial-gradient(ellipse farthest-side at center, transparent 50%, rgba(...,alpha) 100%)
-function vignettePreviewStyle(vignette) {
+function vignettePreviewStyle(vignette: number): { blendMode: string; background: string } | null {
   const v = clamp(Number(vignette) || 0, -100, 100);
   if (!v) return null;
   const a = Math.abs(v) / 100;
@@ -74,14 +81,17 @@ function vignettePreviewStyle(vignette) {
 //   中心无色散，通道项为 1 ± ca·r²）。
 // 两者全零时恒等跳过。重采样依赖邻域（非逐点函数），预览走 GLSL 邻域采样、导出双线性；
 // 两者同为视觉近似，不做像素对拍（同拉直口径）。
-function lensGeomParams(distortion, chromatic) {
+function lensGeomParams(
+  distortion: number,
+  chromatic: number
+): { k: number; ca: number; on: boolean } {
   const d = clamp(Number(distortion) || 0, -100, 100);
   const ca = clamp(Number(chromatic) || 0, -100, 100);
   return { k: (d / 100) * 0.25, ca: (ca / 100) * 0.01, on: d !== 0 || ca !== 0 };
 }
 
 // 椭圆归一半径下的通道缩放因子（c: 0=R, 1=G, 2=B；r² 已平方，色散随半径增长、中心恒 1）
-function lensGeomScale(k, ca, r2, channel) {
+function lensGeomScale(k: number, ca: number, r2: number, channel: number): number {
   const radial = 1 + k * r2;
   if (channel === 0) return radial * (1 + ca * r2);
   if (channel === 2) return radial * (1 - ca * r2);

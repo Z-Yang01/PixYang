@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 
-import lens from '../../../shared/lens.js';
+import lens from '../../../shared/lens.ts';
 
 const { lensGeomParams, lensGeomScale } = lens;
 

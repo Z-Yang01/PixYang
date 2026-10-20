@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 
-import geo from '../../../shared/maskGeometry.js';
+import geo from '../../../shared/maskGeometry.ts';
 
 const VIEW = { width: 800, height: 400 };
 

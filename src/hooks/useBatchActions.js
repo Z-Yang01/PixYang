@@ -4,7 +4,7 @@ import api from '../lib/api';
 import useGalleryStore from '../store/galleryStore';
 import { toEditParams } from '../lib/editParams';
 import { applyPresetToOps } from '../lib/presetApply';
-import autoGradeModule from '../../shared/autoGrade.js';
+import autoGradeModule from '../../shared/autoGrade.ts';
 const { suggestGrade } = autoGradeModule;
 import { matchesListFilters, pageAfterDelete, removeIdsFromSet } from '../lib/gallery';
 import { errText, friendlyError } from '../lib/errorText';

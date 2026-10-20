@@ -3,7 +3,7 @@ import editSchema from '../../../shared/editSchema.ts';
 import renderSpecMod from '../../../shared/renderSpec.js';
 
 const renderSpec = renderSpecMod;
-import pipelineOrderMod from '../../../shared/pipelineOrder.js';
+import pipelineOrderMod from '../../../shared/pipelineOrder.ts';
 
 const { PIPELINE_ORDER, UNSUPPORTED_STAGES } = pipelineOrderMod;
 

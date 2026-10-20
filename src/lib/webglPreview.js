@@ -24,7 +24,7 @@ uniform float uHighlightsSlope;
 uniform vec2 uShadowBand;       // 阴影亮度掩蔽带端点（w = 1−smoothstep(e0,e1,L)）
 uniform vec2 uHighlightBand;    // 高光亮度掩蔽带端点（w = smoothstep(e0,e1,L)）
 uniform float uClarity;         // 清晰度：中间调对比系数 k（1=off；w = 1−|2L−1| 三角窗）
-uniform float uDehaze;           // 去朦胧：-1..1（黑场回压+中调对比+饱和回拉，shared/dehaze.js 同式）
+uniform float uDehaze;           // 去朦胧：-1..1（黑场回压+中调对比+饱和回拉，shared/dehaze.ts 同式）
 uniform float uVibrance;        // 鲜艳度：智能饱和度原值（增益随像素 chroma 自适应）
 uniform float uHslOn;
 uniform float uHslHue[8];
@@ -41,7 +41,7 @@ uniform vec3 uGradingDelta1;
 uniform vec3 uGradingDelta2;
 uniform float uSaturation;
 uniform float uMono;
-uniform float uLensDistortion;  // 畸变校正系数 k（±0.25，与 shared/lens.js lensGeomScale 同式）
+uniform float uLensDistortion;  // 畸变校正系数 k（±0.25，与 shared/lens.ts lensGeomScale 同式）
 uniform float uLensChromatic;   // 色散校正系数 ca（±0.01，随 r² 增长）
 uniform float uLensGeomOn;      // 0/1：重采样段开关
 uniform float uVignette;
@@ -98,7 +98,7 @@ void applyMaskedAdjust(int i, float w, inout vec3 c) {
   float gk = uMaskAdjTint[i] / 100.0 * w;
   if (tk != 0.0 || gk != 0.0) c = vec3(c.r * (1.0 + tk * 0.1), c.g * (1.0 - gk * 0.06), c.b * (1.0 - tk * 0.1));
   if (uMaskAdjContrast[i] != 0.0) c = (c - 0.5) * (1.0 + (uMaskAdjContrast[i] / 50.0) * w) + 0.5;
-  // 清晰度（shared/masks.js 同式：三角窗 Rec.709，蒙版权重并入 k）
+  // 清晰度（shared/masks.ts 同式：三角窗 Rec.709，蒙版权重并入 k）
   if (uMaskAdjClarity[i] != 0.0) {
     float kc = 1.0 + (uMaskAdjClarity[i] / 100.0) * w;
     float Lc = dot(c, vec3(0.2126, 0.7152, 0.0722));
@@ -109,7 +109,7 @@ void applyMaskedAdjust(int i, float w, inout vec3 c) {
     float y = dot(c, vec3(0.2126, 0.7152, 0.0722));
     c = y + (c - y) * (1.0 + (uMaskAdjSat[i] / 100.0) * w);
   }
-  // 鲜艳度（shared/masks.js 同式：chroma 自适应增益，蒙版权重并入 amt）
+  // 鲜艳度（shared/masks.ts 同式：chroma 自适应增益，蒙版权重并入 amt）
   if (uMaskAdjVibrance[i] != 0.0) {
     float amt = (uMaskAdjVibrance[i] / 100.0) * w;
     float chroma = max(c.r, max(c.g, c.b)) - min(c.r, min(c.g, c.b));
@@ -117,7 +117,7 @@ void applyMaskedAdjust(int i, float w, inout vec3 c) {
     float yv = dot(c, vec3(0.2126, 0.7152, 0.0722));
     c = yv + (c - yv) * k;
   }
-  // 与 shared/masks.js applyMaskedAdjustment 一致：每个蒙版独立钳制，避免越界值串入下一蒙版
+  // 与 shared/masks.ts applyMaskedAdjustment 一致：每个蒙版独立钳制，避免越界值串入下一蒙版
   c = clamp(c, 0.0, 1.0);
 }
 
@@ -232,7 +232,7 @@ void main() {
     vec3 f = clamp(c * uHighlightsSlope, 0.0, 1.0);
     c = mix(c, f, wh);
   }
-  // 清晰度（shared/clarity.js 同式）：w = 1−|2L−1| 三角窗只动中间调，f 不预钳——
+  // 清晰度（shared/clarity.ts 同式）：w = 1−|2L−1| 三角窗只动中间调，f 不预钳——
   // mix 后整体钳与执行器段末写回 clamp 同口径（预钳会在 f 越界×w<1 处分叉）
   if (uClarity != 1.0) {
     float Lc = dot(c, vec3(0.2126, 0.7152, 0.0722));
@@ -240,7 +240,7 @@ void main() {
     vec3 fc = (c - 0.5) * uClarity + 0.5;
     c = clamp(mix(c, fc, wc), 0.0, 1.0);
   }
-  // 去朦胧（shared/dehaze.js 同式三步）：黑场回压窗 x(1−x)、三角窗中调对比、饱和回拉
+  // 去朦胧（shared/dehaze.ts 同式三步）：黑场回压窗 x(1−x)、三角窗中调对比、饱和回拉
   if (uDehaze != 0.0) {
     float Ld = dot(c, vec3(0.213, 0.715, 0.072));
     float wd = 1.0 - abs(2.0 * Ld - 1.0);
@@ -279,7 +279,7 @@ void main() {
     }
     c = clamp(c, 0.0, 1.0);
   }
-  // 鲜艳度（shared/saturation.js vibrance01 同式）：增益随 chroma 自适应，
+  // 鲜艳度（shared/saturation.ts vibrance01 同式）：增益随 chroma 自适应，
   // 围绕 luma 缩放；mix 后整体钳（D1 口径），luma 用其后再算
   if (uVibrance != 0.0) {
     float amt = uVibrance / 100.0;
@@ -336,7 +336,7 @@ void main() {
     }
     c = clamp(c, 0.0, 1.0);
   }
-  // 胶片颗粒（shared/grain.js 同式）：cell = max(w,h)/256 网格，u32 wrapping hash 单色抖动。
+  // 胶片颗粒（shared/grain.ts 同式）：cell = max(w,h)/256 网格，u32 wrapping hash 单色抖动。
   // 与邻域近似不同，本算子逐点精确——三端逐位对拍（f32 仅在最终量化处参与）
   if (uGrain > 0.0) {
     float cell = max(uImageSize.x, uImageSize.y) / 256.0;

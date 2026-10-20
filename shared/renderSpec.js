@@ -1,4 +1,4 @@
-import pipelineOrderLib from './pipelineOrder.js';
+import pipelineOrderLib from './pipelineOrder.ts';
 import editSchemaLib from './editSchema.ts';
 // EditParams → RenderSpec 归一化：纯函数、无 IO、无副作用。
 // RenderSpec 是确定、有序、平台无关的渲染指令——预览（前端）与导出（sharp）唯一消费格式。

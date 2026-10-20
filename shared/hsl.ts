@@ -17,15 +17,32 @@ const HSL_BANDS = [
   { name: 'blue', center: 240 },
   { name: 'purple', center: 280 },
   { name: 'magenta', center: 320 },
-];
+] as const;
 const BAND_RADIUS = 60; // 度，权重衰减半径
 const HUE_MAX_DEG = 30; // hue ±100 → ±30°
 const LUM_MAX = 0.3; // lum ±100 → ±0.3
 
-const clamp01 = (v) => Math.min(1, Math.max(0, v));
-const wrapDeg = (v) => ((v % 360) + 360) % 360;
+const clamp01 = (v: number): number => Math.min(1, Math.max(0, v));
+const wrapDeg = (v: number): number => ((v % 360) + 360) % 360;
 
-function normalizeChannel(arr) {
+/** HSL 原始输入（持久化 JSON 未过 schema 前，逐字段防御） */
+interface HslInput {
+  hue?: unknown;
+  sat?: unknown;
+  lum?: unknown;
+}
+
+/** 归一化后的 HSL 参数（三通道各 8 值，-100..100） */
+interface NormalizedHsl {
+  hue: number[];
+  sat: number[];
+  lum: number[];
+}
+
+/** [h 0..360, s 0..1, l 0..1] */
+type HslTriple = [number, number, number];
+
+function normalizeChannel(arr: unknown): number[] {
   const out = new Array(8).fill(0);
   if (!Array.isArray(arr)) return out;
   for (let i = 0; i < Math.min(8, arr.length); i++) {
@@ -35,7 +52,7 @@ function normalizeChannel(arr) {
   return out;
 }
 
-function normalizeHsl(hsl = {}) {
+function normalizeHsl(hsl: HslInput | null = {}): NormalizedHsl {
   return {
     hue: normalizeChannel(hsl?.hue),
     sat: normalizeChannel(hsl?.sat),
@@ -43,13 +60,13 @@ function normalizeHsl(hsl = {}) {
   };
 }
 
-function hasHslData(hsl = {}) {
+function hasHslData(hsl: HslInput | null = {}): boolean {
   const n = normalizeHsl(hsl);
   return n.hue.some((v) => v !== 0) || n.sat.some((v) => v !== 0) || n.lum.some((v) => v !== 0);
 }
 
 // 色相角（度）对第 i 带的线性权重；wrap 251°→距 0° 带 109° 等
-function bandWeight(centerDeg, hueDeg) {
+function bandWeight(centerDeg: number, hueDeg: number): number {
   let d = Math.abs(wrapDeg(hueDeg - centerDeg));
   if (d > 180) d = 360 - d;
   return Math.max(0, 1 - d / BAND_RADIUS);
@@ -57,7 +74,7 @@ function bandWeight(centerDeg, hueDeg) {
 
 // 带内归一加权调整量（-100..100）：分母计入所有有权重的带（零调整带稀释，
 // 使调整量随角距线性衰减到 0，避免 60° 边界硬边）
-function weightedAdjust(adj, hueDeg) {
+function weightedAdjust(adj: number[], hueDeg: number): number {
   let sum = 0;
   let wsum = 0;
   for (let i = 0; i < 8; i++) {
@@ -70,7 +87,7 @@ function weightedAdjust(adj, hueDeg) {
 }
 
 // RGB 0..1 → [h 0..360, s 0..1, l 0..1]
-function rgbToHsl(r, g, b) {
+function rgbToHsl(r: number, g: number, b: number): HslTriple {
   const max = Math.max(r, g, b);
   const min = Math.min(r, g, b);
   const l = (max + min) / 2;
@@ -84,7 +101,7 @@ function rgbToHsl(r, g, b) {
   return [wrapDeg(h), s, l];
 }
 
-function hueToRgb(p, q, t) {
+function hueToRgb(p: number, q: number, t: number): number {
   let tt = t;
   if (tt < 0) tt += 1;
   if (tt > 1) tt -= 1;
@@ -95,7 +112,7 @@ function hueToRgb(p, q, t) {
 }
 
 // [h 0..360, s 0..1, l 0..1] → RGB 0..1
-function hslToRgb(h, s, l) {
+function hslToRgb(h: number, s: number, l: number): HslTriple {
   if (s === 0) return [l, l, l];
   const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
   const p = 2 * l - q;
@@ -107,7 +124,7 @@ function hslToRgb(h, s, l) {
 }
 
 // 单像素 HSL 带调整：in/out RGB 0..255（uint8 取整，与原位应用一致）
-function hslPixel(rgb, hsl) {
+function hslPixel(rgb: number[], hsl: NormalizedHsl): [number, number, number] {
   const [r, g, b] = [rgb[0] / 255, rgb[1] / 255, rgb[2] / 255];
   const [h, s, l] = rgbToHsl(r, g, b);
   const hueAdj = (weightedAdjust(hsl.hue, h) / 100) * HUE_MAX_DEG;
@@ -124,8 +141,13 @@ function hslPixel(rgb, hsl) {
   ];
 }
 
-// raw 检查点原位应用（灰度 <3 通道跳过；alpha 步长跳过）
-function applyHslInPlace(data, hslParams, channels) {
+// raw 检查点原位应用（灰度 <3 通道跳过；alpha 步长跳过）。
+// 无生产调用方——JS 模拟参考实现，供测试与 Rust 对拍取证（shader 侧同式内联在 previewUniforms）。
+function applyHslInPlace(
+  data: Uint8Array | Uint8ClampedArray,
+  hslParams: HslInput | null,
+  channels: number
+): void {
   if (channels < 3) return;
   const hsl = normalizeHsl(hslParams || {});
   if (!hasHslData(hsl)) return;

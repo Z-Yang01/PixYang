@@ -62,7 +62,7 @@ import useSlideshowTimer, {
   SLIDESHOW_DEFAULT_INTERVAL,
   nextSlideshowInterval,
 } from '@/hooks/useSlideshowTimer';
-import autoGradeModule from '../../../shared/autoGrade.js';
+import autoGradeModule from '../../../shared/autoGrade.ts';
 import {
   HSL_BAND_LABELS,
   whiteBalanceFromSample,
@@ -71,11 +71,11 @@ import {
 } from '@/lib/editParams';
 import { AI_DEFAULT_BASE_URL, pickExifSummary, suggestByVision } from '@/lib/aiGrade';
 const { suggestGrade } = autoGradeModule;
-import curvesLib from '../../../shared/curves.js';
+import curvesLib from '../../../shared/curves.ts';
 const { hasCurveData } = curvesLib;
-import gradingLib from '../../../shared/colorGrading.js';
+import gradingLib from '../../../shared/colorGrading.ts';
 const { hasColorGradingData } = gradingLib;
-import lensLib from '../../../shared/lens.js';
+import lensLib from '../../../shared/lens.ts';
 const { vignettePreviewStyle } = lensLib;
 import renderSpecModule from '../../../shared/renderSpec.js';
 const { editParamsToRenderSpec } = renderSpecModule;
@@ -2604,7 +2604,7 @@ export default function ImageViewer({
             />
           ))}
 
-          {/* 色调曲线：渲染端 LUT 与预览端 tableValues 同语义（shared/curves.js） */}
+          {/* 色调曲线：渲染端 LUT 与预览端 tableValues 同语义（shared/curves.ts） */}
           <div className="editor-crop-section" data-sec="curves">
             <div className="editor-crop-header">
               <span>曲线</span>
@@ -2634,7 +2634,7 @@ export default function ImageViewer({
             </p>
           </div>
 
-          {/* 颜色分级：分离色调（渲染端真亮度加权，预览逐通道近似，见 shared/colorGrading.js） */}
+          {/* 颜色分级：分离色调（渲染端真亮度加权，预览逐通道近似，见 shared/colorGrading.ts） */}
           <div className="editor-crop-section" data-sec="grading">
             <div className="editor-crop-header">
               <span>颜色分级</span>
@@ -2769,7 +2769,7 @@ export default function ImageViewer({
             <p className="editor-crop-hint">按亮度区间着色：先拖色相选色调，再调强度</p>
           </div>
 
-          {/* HSL 八带分色：三端同式（shared/hsl.js = shader = 执行器），仅 SVG 回退不渲染 */}
+          {/* HSL 八带分色：三端同式（shared/hsl.ts = shader = 执行器），仅 SVG 回退不渲染 */}
           <div className="editor-crop-section" data-sec="hsl">
             <div className="editor-crop-header">
               <span>HSL 分色</span>
@@ -2911,7 +2911,7 @@ export default function ImageViewer({
             </p>
           </div>
 
-          {/* 镜头校正：畸变/色散（shared/lens.js lensGeomScale 同式；重采样段，SVG 回退不渲染） */}
+          {/* 镜头校正：畸变/色散（shared/lens.ts lensGeomScale 同式；重采样段，SVG 回退不渲染） */}
           <div className="editor-crop-section" data-sec="lens">
             <div className="editor-crop-header">
               <span>镜头</span>
@@ -2957,7 +2957,7 @@ export default function ImageViewer({
             </p>
           </div>
 
-          {/* 局部蒙版：radial/linear，渲染与 WebGL 预览同公式（shared/masks.js） */}
+          {/* 局部蒙版：radial/linear，渲染与 WebGL 预览同公式（shared/masks.ts） */}
           <EditorMaskSection
             masks={editOps.masks || []}
             editOpsRef={editOpsRef}

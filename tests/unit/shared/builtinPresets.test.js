@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 
-import sharedMod_builtinPresets from '../../../shared/builtinPresets.js';
-import curvesLib from '../../../shared/curves.js';
+import sharedMod_builtinPresets from '../../../shared/builtinPresets.ts';
+import curvesLib from '../../../shared/curves.ts';
 const { BUILTIN_PRESETS, validateBuiltinPresets } = sharedMod_builtinPresets;
 import editSchema from '../../../shared/editSchema.ts';
 

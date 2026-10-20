@@ -1,8 +1,23 @@
 // 内置风格预设（随应用分发的出厂预设，不存数据库、不可删除）。
-// 参数为 EditParams.basic 子集 + 可选 curves（点对平铺数组，约定见 shared/curves.js），
+// 参数为 EditParams.basic 子集 + 可选 curves（点对平铺数组，约定见 shared/curves.ts），
 // 经 applyPreset 覆盖影调（几何/锐化不动）。
-// 值域与 shared/editSchema.js 的 BasicSchema 对齐（超出会被归一化裁剪）。
-const BUILTIN_PRESETS = [
+// 值域与 shared/editSchema.ts 的 BasicSchema 对齐（超出会被归一化裁剪）。
+import type { Basic, ColorGrading, Curves, Detail, Hsl, Lens } from './editSchema.ts';
+
+/** 出厂预设：basic 必填（可缺字段），其余域可选（语义归一化在 sanitize/normalize 层） */
+interface BuiltinPreset {
+  name: string;
+  group: '风格' | '胶片模拟';
+  desc: string;
+  basic: Partial<Basic>;
+  detail?: Partial<Detail>;
+  curves?: Partial<Curves>;
+  colorGrading?: Partial<ColorGrading>;
+  hsl?: Partial<Hsl>;
+  lens?: Partial<Lens>;
+}
+
+const BUILTIN_PRESETS: BuiltinPreset[] = [
   {
     name: '经典黑白',
     group: '风格',
@@ -329,8 +344,8 @@ const BUILTIN_PRESETS = [
 ];
 
 // 名称唯一（UI key 与测试依赖）；curves/colorGrading 只验形状，语义归一化在 sanitize/normalize 层
-function validateBuiltinPresets() {
-  const names = new Set();
+function validateBuiltinPresets(): boolean {
+  const names = new Set<string>();
   for (const p of BUILTIN_PRESETS) {
     if (names.has(p.name)) throw new Error(`内置预设名称重复: ${p.name}`);
     names.add(p.name);
@@ -338,7 +353,7 @@ function validateBuiltinPresets() {
     if (p.group !== '风格' && p.group !== '胶片模拟')
       throw new Error(`内置预设 ${p.name} group 非法：需 风格|胶片模拟`);
     if (p.curves) {
-      for (const c of ['rgb', 'r', 'g', 'b']) {
+      for (const c of ['rgb', 'r', 'g', 'b'] as const) {
         const arr = p.curves[c];
         if (arr === undefined) continue;
         if (!Array.isArray(arr) || arr.length % 2 !== 0 || arr.some((v) => !Number.isFinite(v))) {
@@ -347,7 +362,7 @@ function validateBuiltinPresets() {
       }
     }
     if (p.colorGrading) {
-      for (const c of ['shadows', 'midtones', 'highlights']) {
+      for (const c of ['shadows', 'midtones', 'highlights'] as const) {
         const arr = p.colorGrading[c];
         if (arr === undefined) continue;
         if (
@@ -360,17 +375,15 @@ function validateBuiltinPresets() {
       }
     }
     if (p.hsl) {
-      for (const c of ['hue', 'sat', 'lum']) {
+      for (const c of ['hue', 'sat', 'lum'] as const) {
         const arr = p.hsl[c];
         if (arr === undefined) continue;
         if (!Array.isArray(arr) || arr.length !== 8 || arr.some((v) => !Number.isFinite(v)))
           throw new Error(`内置预设 ${p.name} hsl.${c} 非法：需 8 带有限数值`);
       }
     }
-    if (
-      p.lens &&
-      (!Number.isFinite(p.lens.vignette) || p.lens.vignette < -100 || p.lens.vignette > 100)
-    ) {
+    const vig = p.lens?.vignette;
+    if (p.lens && (typeof vig !== 'number' || !Number.isFinite(vig) || vig < -100 || vig > 100)) {
       throw new Error(`内置预设 ${p.name} vignette 非法：需 -100..100 数值`);
     }
   }

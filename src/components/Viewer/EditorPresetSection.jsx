@@ -3,7 +3,7 @@ import { Input } from '@/components/ui/input';
 import { X } from 'lucide-react';
 import { isEnterSubmit } from '@/lib/shortcuts';
 import { presetSwatch } from '@/lib/presetSwatch';
-import builtinPresetsModule from '../../../shared/builtinPresets.js';
+import builtinPresetsModule from '../../../shared/builtinPresets.ts';
 
 const { BUILTIN_PRESETS } = builtinPresetsModule;
 

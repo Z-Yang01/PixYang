@@ -12,13 +12,13 @@
 const CLARITY_LUMA = [0.2126, 0.7152, 0.0722];
 
 // 参数 → 对比系数：±100 → k∈[0,2]
-export function clarityK(clarity) {
+export function clarityK(clarity: number): number {
   const v = Math.min(100, Math.max(-100, Number(clarity) || 0));
   return 1 + v / 100;
 }
 
 // 0..1 单像素（shader 模拟与 JS 侧共用；不做钳制，由调用方的阶段边界负责）
-export function clarity01(rgb, clarity) {
+export function clarity01(rgb: number[], clarity: number): number[] {
   const k = clarityK(clarity);
   if (k === 1) return rgb;
   const L = CLARITY_LUMA[0] * rgb[0] + CLARITY_LUMA[1] * rgb[1] + CLARITY_LUMA[2] * rgb[2];
@@ -26,8 +26,13 @@ export function clarity01(rgb, clarity) {
   return rgb.map((x) => x + ((x - 0.5) * k + 0.5 - x) * w);
 }
 
-// raw 检查点原位应用（uint8 域，段末单次 trunc 与 apply_tone_masked 同口径；灰度源同权处理）
-export function applyClarityInPlace(data, clarity, channels) {
+// raw 检查点原位应用（uint8 域，段末单次 trunc 与 apply_tone_masked 同口径；灰度源同权处理）。
+// 无生产调用方——JS 模拟参考实现，供测试与 Rust 对拍取证（shader 侧同式内联在 previewUniforms）。
+export function applyClarityInPlace(
+  data: Uint8Array | Uint8ClampedArray,
+  clarity: number,
+  channels: number
+): void {
   const k = clarityK(clarity);
   if (k === 1) return;
   const cCount = channels >= 3 ? 3 : 1;

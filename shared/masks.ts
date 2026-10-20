@@ -1,4 +1,12 @@
-import brushMaskLib from './brushMask.js';
+import brushMaskLib from './brushMask.ts';
+import type {
+  BrushMask,
+  LinearMask,
+  Mask,
+  MaskAdjustments,
+  RadialMask,
+  RangeMask,
+} from './editSchema.ts';
 
 // 蒙版（局部调整）唯一实现：radial（椭圆+羽化+反相+旋转）、linear（渐变线 p0→p1 线性 0→1）
 // 与 range（亮度范围带 + 带外羽化，权重取决于像素亮度而非位置）。
@@ -8,10 +16,21 @@ import brushMaskLib from './brushMask.js';
 // 灰度图（<3 通道）色彩类调整无意义，跳过。
 
 const HSL_LUMA = [0.2126, 0.7152, 0.0722];
-const clamp01 = (v) => Math.min(1, Math.max(0, v));
+const clamp01 = (v: number): number => Math.min(1, Math.max(0, v));
 
-function normalizeAdjustments(adj = {}) {
-  const num = (v, min, max) => {
+/** 调整量原始输入（持久化 JSON 未过 schema 前，逐字段防御） */
+interface AdjustmentsInput {
+  exposure?: unknown;
+  contrast?: unknown;
+  saturation?: unknown;
+  vibrance?: unknown;
+  clarity?: unknown;
+  temperature?: unknown;
+  tint?: unknown;
+}
+
+function normalizeAdjustments(adj: AdjustmentsInput | null = {}): MaskAdjustments {
+  const num = (v: unknown, min: number, max: number): number => {
     const n = Number(v);
     return Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : 0;
   };
@@ -26,12 +45,13 @@ function normalizeAdjustments(adj = {}) {
   };
 }
 
-// 归一化蒙版列表：非法/未知类型丢弃、几何钳制、调整量钳制
+// 归一化蒙版列表：非法/未知类型丢弃、几何钳制、调整量钳制。
+// 输出即 editSchema 的 Mask 判别联合（四类形状与 zod schema 逐字段同构）。
 const MAX_MASKS = 8; // 与 WebGL 预览 uniform 上限一致（第 9 个起预览/导出均不生效）
 
-function normalizeMasks(masks) {
+function normalizeMasks(masks: unknown): Mask[] {
   if (!Array.isArray(masks)) return [];
-  const out = [];
+  const out: Mask[] = [];
   for (const m of masks) {
     if (
       !m ||
@@ -40,20 +60,24 @@ function normalizeMasks(masks) {
       continue;
     const adjustments = normalizeAdjustments(m.adjustments);
     if (m.type === 'brush') {
-      const strokes = Array.isArray(m.strokes)
-        ? m.strokes
-            .map((st) => ({
-              points: Array.isArray(st?.points)
-                ? st.points
-                    .map((v) => (Number.isFinite(Number(v)) ? Number(v) : null))
-                    .filter((v) => v !== null)
-                : [],
-              radius: Math.min(300, Math.max(1, Number(st?.radius) || 30)),
-              softness: Math.min(
-                1,
-                Math.max(0, Number.isFinite(Number(st?.softness)) ? Number(st.softness) : 0.5)
-              ),
-            }))
+      // m.strokes 来自 any 面（持久化 JSON），先落 unknown 本地再收窄，保住逐字段防御
+      const rawStrokes: unknown = m.strokes;
+      const strokes: BrushMask['strokes'] = Array.isArray(rawStrokes)
+        ? (rawStrokes as { points?: unknown; radius?: unknown; softness?: unknown }[])
+            .map((st) => {
+              const rawPts = st?.points;
+              const pts: unknown[] = Array.isArray(rawPts) ? rawPts : [];
+              return {
+                points: pts
+                  .map((v: unknown) => (Number.isFinite(Number(v)) ? Number(v) : null))
+                  .filter((v): v is number => v !== null),
+                radius: Math.min(300, Math.max(1, Number(st?.radius) || 30)),
+                softness: Math.min(
+                  1,
+                  Math.max(0, Number.isFinite(Number(st?.softness)) ? Number(st?.softness) : 0.5)
+                ),
+              };
+            })
             .filter((st) => st.points.length >= 2)
         : [];
       if (strokes.length === 0) continue;
@@ -107,18 +131,18 @@ function normalizeMasks(masks) {
   return out.slice(0, MAX_MASKS);
 }
 
-function numOr(v, fallback) {
+function numOr(v: unknown, fallback: number): number {
   const n = Number(v);
   return Number.isFinite(n) ? n : fallback;
 }
 
-function hasMaskData(masks) {
+function hasMaskData(masks: unknown): boolean {
   return normalizeMasks(masks).some((m) => Object.values(m.adjustments).some((v) => v !== 0));
 }
 
 // 径向椭圆权重：坐标旋转到椭圆系，d=0 中心 → d=1 边缘；
 // feather=0 硬边（d<1 全量），feather>0 从 (1−feather) 开始线性衰减到边缘
-function radialWeight(mask, x, y) {
+function radialWeight(mask: RadialMask, x: number, y: number): number {
   const dx = x - mask.cx;
   const dy = y - mask.cy;
   const a = (mask.rotation * Math.PI) / 180;
@@ -131,7 +155,7 @@ function radialWeight(mask, x, y) {
 }
 
 // 线性渐变权重：p0→p1 投影 t（0→1 线性），feather 字段不适用（渐变即过渡）
-function linearWeight(mask, x, y) {
+function linearWeight(mask: LinearMask, x: number, y: number): number {
   const dx = mask.x1 - mask.x0;
   const dy = mask.y1 - mask.y0;
   const len2 = dx * dx + dy * dy;
@@ -144,7 +168,7 @@ function linearWeight(mask, x, y) {
 
 // 亮度范围权重：|L−center| ≤ range 带内全量，带外经 feather 线性衰减到 0；
 // feather=0 硬边。L 为当前像素亮度（0..1，逐 mask 序贯应用时取已调整值）
-function rangeWeight(mask, L) {
+function rangeWeight(mask: RangeMask, L: number): number {
   const dd = Math.abs(L - mask.center);
   const half = mask.range;
   let w =
@@ -153,7 +177,7 @@ function rangeWeight(mask, L) {
   return w;
 }
 
-function maskWeight(mask, x, y, L = 0) {
+function maskWeight(mask: Mask, x: number, y: number, L = 0): number {
   if (mask.type === 'radial') return radialWeight(mask, x, y);
   if (mask.type === 'range') return rangeWeight(mask, L);
   if (mask.type === 'brush') return brushMaskLib.brushWeight(mask, x, y);
@@ -161,7 +185,7 @@ function maskWeight(mask, x, y, L = 0) {
 }
 
 // 单像素 × 单蒙版调整（w 缩放；0..1 显示参照空间；与执行器 raw pass / 未来 shader 同公式）
-function applyMaskedAdjustment(rgb01, adjustments, w) {
+function applyMaskedAdjustment(rgb01: number[], adjustments: MaskAdjustments, w: number): number[] {
   let [r, g, b] = rgb01;
   // 曝光
   const gain = Math.pow(2, adjustments.exposure * w);
@@ -187,7 +211,7 @@ function applyMaskedAdjustment(rgb01, adjustments, w) {
     b = (b - 0.5) * cf + 0.5;
   }
   // 清晰度（与全局 basic.clarity 同式，蒙版权重并入力度：k = 1+(clarity/100)·w；
-  // 三角窗 w_tri = 1−|2L−1|，L = Rec.709——与 shared/clarity.js 语义唯一实现保持同系数）
+  // 三角窗 w_tri = 1−|2L−1|，L = Rec.709——与 shared/clarity.ts 语义唯一实现保持同系数）
   if (adjustments.clarity) {
     const k = 1 + (adjustments.clarity / 100) * w;
     const L = 0.2126 * r + 0.7152 * g + 0.0722 * b;
@@ -219,8 +243,15 @@ function applyMaskedAdjustment(rgb01, adjustments, w) {
   return [clamp01(r), clamp01(g), clamp01(b)];
 }
 
-// raw 检查点原位应用（灰度 <3 通道跳过；alpha 步长跳过）
-function applyMasksInPlace(data, width, height, masks, channels) {
+// raw 检查点原位应用（灰度 <3 通道跳过；alpha 步长跳过）。
+// 无生产调用方——JS 模拟参考实现，供测试与 Rust 对拍取证（shader 侧同式内联在 previewUniforms）。
+function applyMasksInPlace(
+  data: Uint8Array | Uint8ClampedArray,
+  width: number,
+  height: number,
+  masks: unknown,
+  channels: number
+): void {
   const list = normalizeMasks(masks);
   if (!list.length || channels < 3 || !(width > 0) || !(height > 0)) return;
   for (let y = 0; y < height; y++) {

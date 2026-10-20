@@ -4,7 +4,7 @@
 // （改为无条件覆写）→ 本文件「非显式保留」组红；去掉 basic 展开 → 「显式覆盖」组红。
 import { describe, it, expect } from 'vitest';
 
-import sharedMod_builtinPresets from '../../../shared/builtinPresets.js';
+import sharedMod_builtinPresets from '../../../shared/builtinPresets.ts';
 const { BUILTIN_PRESETS } = sharedMod_builtinPresets;
 import { applyPresetToOps } from '@/lib/presetApply';
 

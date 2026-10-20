@@ -52,18 +52,19 @@ src-tauri/        Rust/Tauri 后端（唯一运行时桌面端）
   src/error.rs    统一错误类型 PixError（命令错误契约；Display 刻意保留「中文前缀: 引擎英文原文」供日志取证）
   src/progress.rs 进度事件（rebuild-progress 等，Tauri Emitter）
   tauri.conf.json withGlobalTauri=true、frontendDist=../dist、assetProtocol（$CONFIG/pixyang scope）、CSP connect-src 含 https:（AI 调色端点外呼）
-shared/           15 个 .js + editSchema.ts（TS 迁移首模块，口径见「TypeScript 迁移」节）；ESM 默认导出，
+shared/           15 个 .ts + renderSpec.js（TS 迁移两批落地，口径见「TypeScript 迁移」节）；ESM 默认导出，
                   前端（vite/rollup）与 Node 对拍工具图（run.cjs 经 pathToFileURL 动态 import）同构消费
   editSchema.ts  EditParams v1 zod schema（非破坏编辑参数唯一事实源，前后端同构）
-  renderSpec.js  EditParams → RenderSpec 纯函数（渲染指令序列，预览/导出唯一消费格式）
-  pipelineOrder.js  渲染阶段固定顺序 + 能力矩阵（14 阶段全部支持，仅测试直接消费）
-  builtinPresets.js  内置风格预设参数集（28 款：胶片模拟 18 款——富士 PROVIA/ASTIA/ETERNA/经典负片/经典铬/维尔维亚/ACROS/PRO NEG Hi、理光正片/负片/高对比黑白/柔和黑白、柯达金200/EKTAR/波特拉/TRI-X、伊尔福 HP5、电影 800T 致敬系列，消费 vibrance/clarity/grain 字段；颗粒梯度按真实胶片特性：理光 HC 45 > ACROS 35 > TRI-X 30 > HP5 25）
-  maskGeometry.js  蒙版手柄/命中几何映射（MaskOverlay 与查看器共用）
-  curves.js / colorGrading.js / hsl.js / lens.js / masks.js / saturation.js / clarity.js  各渲染阶段语义唯一实现
+  renderSpec.js  EditParams → RenderSpec 纯函数（渲染指令序列，预览/导出唯一消费格式；shared/ 唯一未迁模块，
+                 因它是 run.cjs 工具图入口，迁它须连带验证整条 Node 链，收益低于风险）
+  pipelineOrder.ts  渲染阶段固定顺序 + 能力矩阵（14 阶段全部支持，仅测试直接消费）
+  builtinPresets.ts  内置风格预设参数集（28 款：胶片模拟 18 款——富士 PROVIA/ASTIA/ETERNA/经典负片/经典铬/维尔维亚/ACROS/PRO NEG Hi、理光正片/负片/高对比黑白/柔和黑白、柯达金200/EKTAR/波特拉/TRI-X、伊尔福 HP5、电影 800T 致敬系列，消费 vibrance/clarity/grain 字段；颗粒梯度按真实胶片特性：理光 HC 45 > ACROS 35 > TRI-X 30 > HP5 25）
+  maskGeometry.ts  蒙版手柄/命中几何映射（MaskOverlay 与查看器共用）
+  curves.ts / colorGrading.ts / hsl.ts / lens.ts / masks.ts / saturation.ts / clarity.ts  各渲染阶段语义唯一实现
                   （clarity.js 2026-10-12 新增：中间调对比，w=1−|2L−1| 三角窗 Rec.709 掩蔽，tone 段末施加；
                   saturation.js 同批增 vibrance01 智能饱和度——增益随 chroma 自适应、亮度恒定，saturation 段首
                   施加先于均匀饱和度；两算子三端同式：GLSL 逐像素/JS 模拟/Rust render.rs 直译，手算锁双侧）（执行器 raw pass 与 WebGL2 shader 同公式；负阴影指数分支曾两端反向——预览施加 e、导出施加 1/e，R65 已对齐为预览侧 1/e 变暗，与执行器 libvips 语义一致；见 NIGHTLY_LOG R59/R65）
-  autoGrade.js  本地自动调色建议（analyze_image 统计 → basic 域参数；符号对齐执行器 whiteBalance/tone，输出全量九字段整域替换、幂等）
+  autoGrade.ts  本地自动调色建议（analyze_image 统计 → basic 域参数；符号对齐执行器 whiteBalance/tone，输出全量九字段整域替换、幂等）
 error/
   README.md       历史归档说明：旧层（Electron/sharp/sql.js）引用 → 现行 Rust 落点对照表
   *.md            严重 bug 建档（Symptom/Root Cause/Fix/Prevention 格式，时点事实不改写）
@@ -204,12 +205,28 @@ tests/            vitest（node 环境 + per-file happy-dom pragma）
   ③ Node ≥22.18 默认开启类型剥离（`--experimental-strip-types` 默认化），显式 `.ts` 在 Node 侧可直接
      加载（本机 managed 22.22.2 / system 22.19.0 / PATH node 三二进制实证）。
 - **存量 `.js` 之间的互导不变**（仍省略扩展名）；只有指向已迁模块的说明符才升级为显式 `.ts`。
-- Node 工具图直接 import 的 `.js` 模块（`src/lib/editParams.js`、`shared/renderSpec.js` 等）**暂缓迁移**：
-  迁它们须连带验证整条 Node 链，收益低于风险；只把其内部指向已迁模块的说明符改掉。
-- 测试文件类型化（`tests/**/*.tsx`）是独立的下一课题：21 个既有 `.tsx` 测试从未受检（缺
-  `@testing-library/jest-dom` 类型与 `window.pixyang` 声明），须先补类型基座再纳入 `include`。
+- Node 工具图直接 import 的 `.js` 模块（`src/lib/editParams.js`、`shared/renderSpec.js`）**暂缓迁移**：
+  迁它们须连带验证整条 Node 链，收益低于风险；只把其内部指向已迁模块的说明符改掉
+  （shared/ 两批迁完后仅剩 renderSpec.js 一个未迁）。
+- **测试已纳入 tsc 门禁（第二批同步完成）**：`tsconfig.json` 的 `include` 加 `tests`，并加
+  `allowJs: true` + `checkJs: false`（读 .js 做推断但不检核它们，否则导入 .js 模块报 TS7016）。
+  类型基座集中在 `tests/vitest-env.d.ts`：`import '@testing-library/jest-dom/vitest'` 拉入匹配器类型
+  （运行时扩展在 tests/setup.js）+ `window.pixyang` 桥面声明。桥面按命令名透传，故用
+  「命令名 → 函数」索引签名；字段须 optional，测试会注入任意子集或 `delete` 通道。
+  该基座一次性消掉 151 个错误中的 150 个（其余 1 个由 allowJs 解决）。
 - 已迁模块的静态类型用 `z.infer` 从 zod schema 推导（运行时校验与编译期检查单一事实源）；
   zod `.transform` 链若运行时剔空（如 masks 的 `.filter(Boolean)`），须显式标注返回类型防 `(T|null)[]` 推断。
+- 迁移纪律：**运行时零改动**（`git mv` 保重命名历史，只加类型不换逻辑）。可断言的边界收紧
+  须保持原语义——如 builtinPresets 的 vignette 校验「缺失即抛」：先落 `const vig = p.lens?.vignette`
+  再做 typeof 守卫，不能因为可选链就改成静默跳过。持久化 JSON 未过 schema 的输入用
+  `unknown` + `Array.isArray` 收窄，**`any` 上的属性收窄不生效**（其 `.map()` 结果仍是 any，
+  后续 filter 回调丢上下文），须先落 `unknown` 本地变量再逐层断言。
+- 进展：第一批 `editSchema`（首刀，2026-10-20，含 11 个导入方说明符升级）；
+  第二批 14 个纯函数模块同日落地（autoGrade / brushMask / builtinPresets / clarity / colorGrading /
+  curves / dehaze / grain / hsl / lens / maskGeometry / masks / pipelineOrder / saturation），
+  shared/ 由「15 .js + 1 .ts」翻转为「15 .ts + 1 .js」；tsc 0E、全量 88/1152 绿、eslint 0E/9W、
+  prettier 净，Node 工具图三二进制（managed 22.22.2 / system 22.19.0 / PATH）冒烟均 14 stages 且
+  exposure/contrast round-trip 保值。
 
 ## UI 与样式（shadcn/ui + Tailwind v4）
 
@@ -264,7 +281,7 @@ tests/            vitest（node 环境 + per-file happy-dom pragma）
 ## agent 调色与编辑扩展（2026-09-28）
 
 - **agent 调色三通道**：①本地算法——`analyze_image`（id → 64 桶直方图/均值/亮度分位/裁切占比，
-  内核在 image_stats.rs，统计对象为磁盘原图）→ `shared/autoGrade.js suggestGrade`（全量 basic 九字段
+  内核在 image_stats.rs，统计对象为磁盘原图）→ `shared/autoGrade.ts suggestGrade`（全量 basic 九字段
   整域替换、幂等）→ 编辑器「自动调色」走 applyPreset 进历史栈 / 批量走 saveEdits(preserveGeometry)；
   ②视觉模型——`src/lib/aiGrade.js suggestByVision`（OpenAI 兼容 chat/completions，设置页 ai_base_url/
   ai_api_key/ai_model 配置，CSP connect-src 已放行 https:），模型 JSON 经白名单+值域钳制+normalizeEdits
@@ -294,7 +311,7 @@ tests/            vitest（node 环境 + per-file happy-dom pragma）
   历史快照合同：saveEdits 的 command.before/after 必须是 EditParams v1 形状（含 basic 键），
   平铺 ops 会被 get_last_edit_undo 的 has_basic 判无效 → 撤销直接回默认清空全部编辑（审查 P0）。
 - **镜头校正**：lens.distortion（径向畸变 k=±0.25）与 chromatic（横向色散 ca=±0.01，随 r² 增长）
-  三端实现（shared/lens.js lensGeomScale = GLSL 邻域采样 = 执行器双线性）；出界填黑（与拉直同
+  三端实现（shared/lens.ts lensGeomScale = GLSL 邻域采样 = 执行器双线性）；出界填黑（与拉直同
   口径 [0,0,0,255]，RGBA 出界 alpha 补 255；出界判据=采样中心落在首/末纹素中心之外
   pos∉[0.5, size−0.5]，R96 起 GLSL 与执行器逐式对齐，且畸变为零时 G 通道回退 vUv 恒等防
   f32 噪声假黑行——像素对拍 s26-s30 落缺省档，源串锁在 webglPreview.test.js）。
@@ -304,12 +321,12 @@ tests/            vitest（node 环境 + per-file happy-dom pragma）
 - **夜间批 R121-R127（2026-10-13）**：蒙版 adjustments 域扩展 vibrance/clarity（7 字段，蒙版权重并入力度，
   **注意 normalizeAdjustments 是全链漏斗——新字段必须在此补**，R124 审计 P0 教训：schema/算子/滑杆齐备但漏斗
   漏键则 UI/预览/保存三路全死）；detail 域第四字段 texture（±100，σ=1.5 中频 USM k=t/100，预览同锐化 3×3
-  近似口径）；basic 第 12 字段 dehaze（黑场窗 x(1−x)+三角窗中调对比+饱和回拉，shared/dehaze.js）；
+  近似口径）；basic 第 12 字段 dehaze（黑场窗 x(1−x)+三角窗中调对比+饱和回拉，shared/dehaze.ts）；
   run.cjs 已修 ESM（动态 import）；编辑审计取证集 48 例（新算子 11 例全绿；R140 grain 格坐标两级 floor 逐位闭合
   max 16→1 落缺省档、{18,2} 分档撤销；蒙版新算子实测逐点精度落缺省档）；ImageViewer 拆分两刀（EditorHistoryPanel/
   EditorPresetSection 出舱，SliderRow 通用化待立项）；预设强度混合域补 texture/distortion/chromatic；
   预设 detail 逐字段合并（预设未含字段保留当前值，R63 契约）；三款 HSL 精调（800T/波特拉/经典铬）。
-- **胶片颗粒 Grain + 预设强度（2026-10-12）**：detail 域第三字段 grain（0..100，shared/grain.js——
+- **胶片颗粒 Grain + 预设强度（2026-10-12）**：detail 域第三字段 grain（0..100，shared/grain.ts——
   u32 wrapping hash 三端逐位同式：cell=max(w,h)/256 网格、单色三通道同加、满档 ±38/255；GLSL 源坐标用
   重映射 uvG（R85 合同），JS/Rust 手算锁同表三基准点）；胶片预设消费（ACROS 35/黑白胶片 25/复古 22/经典负片 18）。
   预设强度（0..150%）：applyPreset 记录 lastPreset 快照（before+presetOps），强度滑杆实时混合——basic 数值
@@ -379,7 +396,7 @@ tests/            vitest（node 环境 + per-file happy-dom pragma）
 
 ## 验证
 
-- 测试：`npm test`（vitest，88 个文件 / 1152 例；含批次：agent 调色契约、拉直/镜头几何、undo 快照合同、CLI 通道、含 R37 桥接全通道契约、R51/R52 主题↔CSS 对拍、R53 右栏让位契约、R54/R55 错误文案中文化、R56 Rust 注册表↔桥命令对拍 + 全仓 `${e.message}` 直插与裸 `x.error` 上屏扫描、R57 主题双事实源对拍（`:root`↔块↔`@theme inline`↔色卡）、R64 曲线 LUT 恒等通道兜底回归锁、R65 负阴影指数对齐回归锁（uniform 1/e 值锁 + SVG 链指数锁；像素锁已随 R71 掩蔽化重导）、R66 预设/粘贴字段域一致性回归锁（预设只覆盖显式字段 + 粘贴与复制/批量同步同口径）、R67 键盘调参历史收敛回归锁（连调 5 次→1 条 / sat=0 调 hue→0 条 / blur 即结算）与新会话保存态回归锁（未保存→已保存 / 回读→已保存）、R68 滑杆标签列宽与对比视图让位契约、R69 高光乘后 clamp 契约模型对齐回归锁（slope>1 饱和区先回 [0,1] 再进暗角/饱和度，代表点手算写死；R71 起该锁经掩蔽 mix 重导）、R70 viewerInfoRail EOL 归一回归锁（CRLF 文本输入也命中让位规则，防 autocrlf 工作树多行正则失配）、R71 高光/阴影亮度掩蔽回归锁（掩蔽带端点 uniform 锁 + 暗区动/亮区不动双向分区锁 + 高光 LR 方向锁 + 像素代表点手算写死 + GLSL mix 源串锁 + 掩蔽 uniform 上传锁；Rust 侧手算表与分区/方向锁）、R74 搜索命中原始路径回归锁（matchesListFilters haystack 含 original_path，与 SQL 同口径防轻量写回误剪枝）、R73 删除暂存区回归锁（trashUndo Toast 6s「撤销」语义与逐行还原调用链 + 单图/批量删除走 trash 通道不走直删 + 设置页 R-8 即时生效文案锁）、R75 缩略图自适应选档回归锁（≤4 列取高清档 medium、>4 列取 small、编辑代理任何列数恒优先，双向变异实证）、R146 画笔蒙版内核回归锁（shared/brushMask.js 手算 5 例：软边三段/折线投影/硬边/bbox 剔除/多笔 max+invert；Rust 同表 3 例；GLSL brush 分支源串锁）、R147 画笔手绘入参回归锁（拖拽 → params.masks brush 类型/radius/softness/points 落库）、R148 胶片条回归锁（viewerQueryParams 口径映射 + filmstripWindow 窗口边界 + 页内零请求/跨页单查 offset-limit 与筛选透传/查询失败留档/无地址空白格/点击跳转不关查看器/键盘翻页高亮跟随 + 详情面板左移让位契约）、R149 小优化批（列表投影剔除 legacy base64 thumbnail 载荷锁 + 旧库缺列显式报错边界锁；启动清扫派发后台线程非阻塞与真清理双锁；ImageCard memo 命中锁——勾选/异步落地/键盘高亮/无关设置四场景渲染计数）；像素 golden 门禁在 cargo 侧 `golden_audit`（基线 2026-09-25 R71 随掩蔽语义重锁，Δ 审计归档 tests/golden/r71-tone-mask-relock-audit.md：恰 5 例 tone 用例变化、余 18 例 Δ=0），Rust 单测 264 例（R73 起 +7 trash 锁；R146 起 +3 画笔权重（核内/带沿/多笔 max 合成）；R149 起 +4（列表投影载荷/旧库缺列边界、启动清扫派发后台线程的非阻塞与真清理各 1）；回收站管理 +4 列表/清除/清空 + 保留名守卫/缺文件拒绝 +3、批量恢复/清除 +2；2026-09-28~10-01 起 +analyze_image 统计 5 例、edit_bake_db 短锁 1 例、降噪内核 2 例、拉直旋转 4 例、镜头几何 2 例、undo 三态 1 例、CLI 3 例、EXIF 接线 1 例、空 root 导入回归 1 例；R82 审查起 +trash 歧义名撤销 3 例（原图名 raw__/thumb__ 开头精确匹配回位）+ 导入无 size 输入落盘副本兜底 1 例；R85 审查起镜头几何用例补出界 alpha=255 口径断言；R88 起 +6 批量导出选项解析边界与转换落盘（None/非法回退或报错、质量夹取、长边过滤、fit-inside、重名避让、NEF 仍配对）；R99 起 +2 相册导出统一锁（finish_album_export_with options 接线：convert 转格式且配对 NEF 原样复制、None 历史原样复制；共享出口 finish_export_with 同语义 + 非法选项错误 JSON 不落盘）；R85 前端 +3（镜头重采样管线序 GLSL 源串顺序锁、相册创建 reject 解锁 AlbumsView/ImageGrid 双锁）；R88 起 +批量导出选项与预设 18 例（exportPresets 合法化 7、BatchExportDialog 7、批量导出两段式 +2、桥接缝 options 透传 +1、契约表第二行 +1）；R89 审计起 +2 批量导出对话框回归锁（预设下拉占位项只清选中不误套第一条、预设落盘失败必 toast 不静默）；R91 起 +编辑面板交互精查回归锁（拖废<8px 裁剪等同清除裁剪并入历史、蒙版滑杆键盘走 onKeyCommit 700ms 收敛窗、sat=0 拖分级色相不入历史、blur/pointercancel 结算与 dragRef 清空后键盘恢复等）；R92 起 +滑杆快捷键 matchSliderNavKey 回归锁（shortcuts 单元锁：Shift 粗调 step×10 钳域 / Ctrl+Home·Del·Backspace 映射 reset；主滑杆/蒙版/HSL/分级/拉直粗调与回默认接线锁、拉直带符号显示、曲线 16 点锚点上限、含几何预设 title 提示）；R99 起 +相册右键导出统一走 BatchExportDialog 4 例（AlbumsView 两段式：对话框默认原样复制/取消不导出/确认 null 传参/转换 options 归一透传；对话框 title 覆盖锁、桥 exportAlbumImages options 透传 + null 省略键、契约表 convert 行）；R104 审计起 +3 UI 组件域回归锁（ImageGrid createAndAdd 的 addToAlbum reject 接住转 toast 不逸出 unhandled rejection、ImportDialog 空目录重扫勾选集清零不残留假数字、InfoPanel getExif reject 落定「无 EXIF 信息」不永挂加载中）；R105 审计起 +2 Rust 导入编排对抗锁（move_file_safe EXDEV 回退失败摘除目标的跨卷锁：源句柄不共享删除注入、缩略图列回写失败不致命锁：VIRTUAL 生成列注入 UPDATE 必败）；R159 起 +3（resolve_thumbs_dir 设置优先/空值与坏目录回退默认、迁移缩略图目录搬移文件并改写三列且目标已有同名跳过、孤儿缩略图只认数字命名/活 id 不删/清理三重复核）；覆盖率：`npm run test:coverage`，门槛配置在 `vitest.config.js`（statements/lines 75、branches 70、functions 50）。
+- 测试：`npm test`（vitest，88 个文件 / 1152 例；含批次：agent 调色契约、拉直/镜头几何、undo 快照合同、CLI 通道、含 R37 桥接全通道契约、R51/R52 主题↔CSS 对拍、R53 右栏让位契约、R54/R55 错误文案中文化、R56 Rust 注册表↔桥命令对拍 + 全仓 `${e.message}` 直插与裸 `x.error` 上屏扫描、R57 主题双事实源对拍（`:root`↔块↔`@theme inline`↔色卡）、R64 曲线 LUT 恒等通道兜底回归锁、R65 负阴影指数对齐回归锁（uniform 1/e 值锁 + SVG 链指数锁；像素锁已随 R71 掩蔽化重导）、R66 预设/粘贴字段域一致性回归锁（预设只覆盖显式字段 + 粘贴与复制/批量同步同口径）、R67 键盘调参历史收敛回归锁（连调 5 次→1 条 / sat=0 调 hue→0 条 / blur 即结算）与新会话保存态回归锁（未保存→已保存 / 回读→已保存）、R68 滑杆标签列宽与对比视图让位契约、R69 高光乘后 clamp 契约模型对齐回归锁（slope>1 饱和区先回 [0,1] 再进暗角/饱和度，代表点手算写死；R71 起该锁经掩蔽 mix 重导）、R70 viewerInfoRail EOL 归一回归锁（CRLF 文本输入也命中让位规则，防 autocrlf 工作树多行正则失配）、R71 高光/阴影亮度掩蔽回归锁（掩蔽带端点 uniform 锁 + 暗区动/亮区不动双向分区锁 + 高光 LR 方向锁 + 像素代表点手算写死 + GLSL mix 源串锁 + 掩蔽 uniform 上传锁；Rust 侧手算表与分区/方向锁）、R74 搜索命中原始路径回归锁（matchesListFilters haystack 含 original_path，与 SQL 同口径防轻量写回误剪枝）、R73 删除暂存区回归锁（trashUndo Toast 6s「撤销」语义与逐行还原调用链 + 单图/批量删除走 trash 通道不走直删 + 设置页 R-8 即时生效文案锁）、R75 缩略图自适应选档回归锁（≤4 列取高清档 medium、>4 列取 small、编辑代理任何列数恒优先，双向变异实证）、R146 画笔蒙版内核回归锁（shared/brushMask.ts 手算 5 例：软边三段/折线投影/硬边/bbox 剔除/多笔 max+invert；Rust 同表 3 例；GLSL brush 分支源串锁）、R147 画笔手绘入参回归锁（拖拽 → params.masks brush 类型/radius/softness/points 落库）、R148 胶片条回归锁（viewerQueryParams 口径映射 + filmstripWindow 窗口边界 + 页内零请求/跨页单查 offset-limit 与筛选透传/查询失败留档/无地址空白格/点击跳转不关查看器/键盘翻页高亮跟随 + 详情面板左移让位契约）、R149 小优化批（列表投影剔除 legacy base64 thumbnail 载荷锁 + 旧库缺列显式报错边界锁；启动清扫派发后台线程非阻塞与真清理双锁；ImageCard memo 命中锁——勾选/异步落地/键盘高亮/无关设置四场景渲染计数）；像素 golden 门禁在 cargo 侧 `golden_audit`（基线 2026-09-25 R71 随掩蔽语义重锁，Δ 审计归档 tests/golden/r71-tone-mask-relock-audit.md：恰 5 例 tone 用例变化、余 18 例 Δ=0），Rust 单测 264 例（R73 起 +7 trash 锁；R146 起 +3 画笔权重（核内/带沿/多笔 max 合成）；R149 起 +4（列表投影载荷/旧库缺列边界、启动清扫派发后台线程的非阻塞与真清理各 1）；回收站管理 +4 列表/清除/清空 + 保留名守卫/缺文件拒绝 +3、批量恢复/清除 +2；2026-09-28~10-01 起 +analyze_image 统计 5 例、edit_bake_db 短锁 1 例、降噪内核 2 例、拉直旋转 4 例、镜头几何 2 例、undo 三态 1 例、CLI 3 例、EXIF 接线 1 例、空 root 导入回归 1 例；R82 审查起 +trash 歧义名撤销 3 例（原图名 raw__/thumb__ 开头精确匹配回位）+ 导入无 size 输入落盘副本兜底 1 例；R85 审查起镜头几何用例补出界 alpha=255 口径断言；R88 起 +6 批量导出选项解析边界与转换落盘（None/非法回退或报错、质量夹取、长边过滤、fit-inside、重名避让、NEF 仍配对）；R99 起 +2 相册导出统一锁（finish_album_export_with options 接线：convert 转格式且配对 NEF 原样复制、None 历史原样复制；共享出口 finish_export_with 同语义 + 非法选项错误 JSON 不落盘）；R85 前端 +3（镜头重采样管线序 GLSL 源串顺序锁、相册创建 reject 解锁 AlbumsView/ImageGrid 双锁）；R88 起 +批量导出选项与预设 18 例（exportPresets 合法化 7、BatchExportDialog 7、批量导出两段式 +2、桥接缝 options 透传 +1、契约表第二行 +1）；R89 审计起 +2 批量导出对话框回归锁（预设下拉占位项只清选中不误套第一条、预设落盘失败必 toast 不静默）；R91 起 +编辑面板交互精查回归锁（拖废<8px 裁剪等同清除裁剪并入历史、蒙版滑杆键盘走 onKeyCommit 700ms 收敛窗、sat=0 拖分级色相不入历史、blur/pointercancel 结算与 dragRef 清空后键盘恢复等）；R92 起 +滑杆快捷键 matchSliderNavKey 回归锁（shortcuts 单元锁：Shift 粗调 step×10 钳域 / Ctrl+Home·Del·Backspace 映射 reset；主滑杆/蒙版/HSL/分级/拉直粗调与回默认接线锁、拉直带符号显示、曲线 16 点锚点上限、含几何预设 title 提示）；R99 起 +相册右键导出统一走 BatchExportDialog 4 例（AlbumsView 两段式：对话框默认原样复制/取消不导出/确认 null 传参/转换 options 归一透传；对话框 title 覆盖锁、桥 exportAlbumImages options 透传 + null 省略键、契约表 convert 行）；R104 审计起 +3 UI 组件域回归锁（ImageGrid createAndAdd 的 addToAlbum reject 接住转 toast 不逸出 unhandled rejection、ImportDialog 空目录重扫勾选集清零不残留假数字、InfoPanel getExif reject 落定「无 EXIF 信息」不永挂加载中）；R105 审计起 +2 Rust 导入编排对抗锁（move_file_safe EXDEV 回退失败摘除目标的跨卷锁：源句柄不共享删除注入、缩略图列回写失败不致命锁：VIRTUAL 生成列注入 UPDATE 必败）；R159 起 +3（resolve_thumbs_dir 设置优先/空值与坏目录回退默认、迁移缩略图目录搬移文件并改写三列且目标已有同名跳过、孤儿缩略图只认数字命名/活 id 不删/清理三重复核）；覆盖率：`npm run test:coverage`，门槛配置在 `vitest.config.js`（statements/lines 75、branches 70、functions 50）。
 - Lint：`npm run lint`（ESLint flat config，`eslint.config.mjs`）；0 error 为准，warning 不阻塞。
 - 类型检查：`npm run typecheck`（tsc --noEmit，覆盖 src 下 TS/TSX）。
 - 格式检查：`npm run format:check`（Prettier 基线已于 R40 全仓落库，改动后的文件须保持 prettier 合规；历史 `*.md` 与 `src-tauri/gen/` 在 `.prettierignore` 豁免）。

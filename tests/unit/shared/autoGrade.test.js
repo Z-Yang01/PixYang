@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 
-import sharedMod_autoGrade from '../../../shared/autoGrade.js';
+import sharedMod_autoGrade from '../../../shared/autoGrade.ts';
 const { suggestGrade } = sharedMod_autoGrade;
 import editSchema from '../../../shared/editSchema.ts';
 

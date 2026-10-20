@@ -1,6 +1,6 @@
 // 自动调色建议算法（agent 调色的"大脑"）：analyze_image 的统计 → EditParams.basic 建议参数。
 // 纯函数、确定性、无依赖；输出全量 basic 九字段（含显式 0 值，语义为整域替换，
-// 与批量预设「基线取中性 ops」同口径，重复应用幂等）。值域与 shared/editSchema.js
+// 与批量预设「基线取中性 ops」同口径，重复应用幂等）。值域与 shared/editSchema.ts
 // BasicSchema 对齐：exposure ±2，其余 ±100。
 // 符号约定对齐执行器 whiteBalance/tone：+temperature 变暖（R↑B↓）、+tint 压绿偏品红、
 // +shadows 提亮暗部、−highlights 拉回过曝亮部（R71 LR 惯例）。
@@ -9,15 +9,44 @@ const TARGET_MID = 0.45;
 const TARGET_SPREAD = 0.8;
 const MAX_CLIP_COMPENSATION = 60;
 
-const clamp = (v, min, max) => Math.min(max, Math.max(min, v));
-const round2 = (v) => Math.round(v * 100) / 100;
+const clamp = (v: number, min: number, max: number): number => Math.min(max, Math.max(min, v));
+const round2 = (v: number): number => Math.round(v * 100) / 100;
+
+/** analyze_image 的统计返回（mean/percentiles/clip，均 0..1；字段可缺，内部防御） */
+interface AnalysisInput {
+  p05?: unknown;
+  p50?: unknown;
+  p95?: unknown;
+  shadowClipPct?: unknown;
+  highlightClipPct?: unknown;
+  mean?: { r?: unknown; g?: unknown; b?: unknown } | null;
+}
+
+/** 建议产物：预设形态（可直入 applyPresetToOps）；basic 为九字段子集（其余四字段不动） */
+interface SuggestedGrade {
+  name: string;
+  basic: {
+    exposure: number;
+    contrast: number;
+    highlights: number;
+    shadows: number;
+    whites: number;
+    blacks: number;
+    saturation: number;
+    temperature: number;
+    tint: number;
+  };
+}
 
 /**
- * @param {object} analysis analyze_image 的返回（mean/percentiles/clip，均 0..1）
- * @param {{strength?: number}} opts 强度 0..1，默认 0.8；0 时全部归零
- * @returns {{name: string, basic: object}} 预设形态（可直入 applyPresetToOps）
+ * @param analysis analyze_image 的返回（mean/percentiles/clip，均 0..1）
+ * @param opts 强度 0..1，默认 0.8；0 时全部归零
+ * @returns 预设形态（可直入 applyPresetToOps）
  */
-function suggestGrade(analysis, opts = {}) {
+function suggestGrade(
+  analysis: AnalysisInput | null,
+  opts: { strength?: number } = {}
+): SuggestedGrade {
   const strength = clamp(Number(opts.strength ?? 0.8) || 0, 0, 1);
   const a = analysis || {};
   const l05 = Number(a.p05) || 0;
@@ -54,7 +83,7 @@ function suggestGrade(analysis, opts = {}) {
   // 绿偏 = G 均值 − RGB 均值（偏绿为正 → +tint 压绿）。|| 0 归一 -0。
   // 通道均值 0 是合法测量（全黑通道），仅缺失/非数值才回 0.5 中性——
   // 混用 || 会把深蓝夜景的 B=0 抬成 0.5，白平衡方向被翻转
-  const ch = (v) => {
+  const ch = (v: unknown): number => {
     const n = Number(v);
     return Number.isFinite(n) ? n : 0.5;
   };

@@ -6,13 +6,13 @@ import { previewFilterChain, fromEditParams } from '@/lib/editParams';
 
 const require_ = createRequire(import.meta.url);
 import renderSpec from '../../../shared/renderSpec.js';
-import masksLib from '../../../shared/masks.js';
-import curves from '../../../shared/curves.js';
-import grading from '../../../shared/colorGrading.js';
-import lens from '../../../shared/lens.js';
-import hsl from '../../../shared/hsl.js';
+import masksLib from '../../../shared/masks.ts';
+import curves from '../../../shared/curves.ts';
+import grading from '../../../shared/colorGrading.ts';
+import lens from '../../../shared/lens.ts';
+import hsl from '../../../shared/hsl.ts';
 import editSchema from '../../../shared/editSchema.ts';
-import sat from '../../../shared/saturation.js';
+import sat from '../../../shared/saturation.ts';
 
 const buildUniforms = (params, imageSize) =>
   specToShaderUniforms(
@@ -435,7 +435,7 @@ describe('masks uniforms（蒙版打包 + shader 模拟）', () => {
     );
   });
 
-  it('饱和度：simulateShaderPixel 与 shared/saturation.js（执行器 raw pass）同语义（审查批 4 契约）', () => {
+  it('饱和度：simulateShaderPixel 与 shared/saturation.ts（执行器 raw pass）同语义（审查批 4 契约）', () => {
     const uMono = buildUniforms({ basic: { saturation: -100 } });
     expect(uMono.mono).toBe(1);
     expect(simulateShaderPixel([255, 40, 10], uMono)).toEqual([84, 84, 84]);

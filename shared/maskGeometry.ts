@@ -1,27 +1,58 @@
 // 蒙版 overlay 几何辅助：display↔image 双向坐标映射（纯函数，无副作用、无渲染权重）。
 // 语义约定：
-// - image 空间：decode 后未旋转/未翻转/未裁剪的底图像素坐标（与 shared/masks.js 的 pre-crop 语义一致）。
+// - image 空间：decode 后未旋转/未翻转/未裁剪的底图像素坐标（与 shared/masks.ts 的 pre-crop 语义一致）。
 // - display 空间：0..1 归一化坐标，原点在「用户可见区域」左上角。可见区域 = 底图按
 //   rotation（90 的倍数）+ flipH/flipV 变换后，被 crop（底图空间矩形）裁出的部分；crop 为空即整幅。
 // - 变换次序与编辑器一致：CSS `rotate() scale(flip)` 先翻转后旋转，故 image→display 先翻转再旋转，
 //   display→image 逆序为先退旋转再退翻转（与 ImageViewer.toImageCoords 的手写映射同式，
 //   此处为共享单一实现并扩展 crop；编辑态 overlay 整图显示，crop 仅用于导出/结果语义的映射）。
 
-const clamp01 = (v) => Math.min(1, Math.max(0, v));
+const clamp01 = (v: number): number => Math.min(1, Math.max(0, v));
+
+/** 视口输入（UI 态直传，字段可缺可非法，normalizeView 防御） */
+interface ViewInput {
+  width?: unknown;
+  height?: unknown;
+  rotation?: unknown;
+  flipH?: unknown;
+  flipV?: unknown;
+  crop?: {
+    left?: unknown;
+    top?: unknown;
+    width?: unknown;
+    height?: unknown;
+  } | null;
+}
+
+/** 归一化视口（normalizeView 产物；crop 为显示帧无关的底图空间归一矩形） */
+interface NormalizedView {
+  width: number;
+  height: number;
+  rotation: number;
+  flipH: boolean;
+  flipV: boolean;
+  crop: { x0: number; y0: number; x1: number; y1: number } | null;
+}
+
+/** 归一化点 */
+interface Point {
+  x: number;
+  y: number;
+}
 
 // 旋转归一到 {0,90,180,270}（四舍五入到最近直角；非法输入按 0 处理）
-function normalizeRotation(rotation) {
+function normalizeRotation(rotation: unknown): number {
   const n = Math.round((Number(rotation) || 0) / 90) * 90;
   return ((n % 360) + 360) % 360;
 }
 
 // 校验并归一化视口；无效返回 null（width/height 必须为正有限）
-function normalizeView(view) {
+function normalizeView(view: ViewInput | null | undefined): NormalizedView | null {
   const width = Number(view?.width);
   const height = Number(view?.height);
   if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) return null;
   const cropIn = view?.crop;
-  let crop = null;
+  let crop: NormalizedView['crop'] = null;
   if (
     cropIn &&
     [cropIn.left, cropIn.top, cropIn.width, cropIn.height].every((n) =>
@@ -48,7 +79,13 @@ function normalizeView(view) {
 }
 
 // 底图归一化坐标 → 显示帧归一化坐标（先翻转后旋转，与 CSS transform: rotate() scale() 同序）
-function imageFrameToDisplayFrame(nx, ny, rotation, flipH, flipV) {
+function imageFrameToDisplayFrame(
+  nx: number,
+  ny: number,
+  rotation: number,
+  flipH: boolean,
+  flipV: boolean
+): Point {
   const fx = flipH ? 1 - nx : nx;
   const fy = flipV ? 1 - ny : ny;
   if (rotation === 90) return { x: 1 - fy, y: fx };
@@ -58,7 +95,13 @@ function imageFrameToDisplayFrame(nx, ny, rotation, flipH, flipV) {
 }
 
 // 显示帧归一化 → 底图归一化（先退旋转再退翻转）
-function displayFrameToImageFrame(dx, dy, rotation, flipH, flipV) {
+function displayFrameToImageFrame(
+  dx: number,
+  dy: number,
+  rotation: number,
+  flipH: boolean,
+  flipV: boolean
+): Point {
   let x = dx;
   let y = dy;
   if (rotation === 90) {
@@ -78,7 +121,7 @@ function displayFrameToImageFrame(dx, dy, rotation, flipH, flipV) {
 
 // crop 矩形（底图空间）在显示帧中的归一化包围盒 { x0, y0, x1, y1 }；无 crop 返回 null。
 // 旋转/翻转只交换/镜像轴，矩形仍保持轴对齐，两对角变换后取包围盒即可。
-function cropRectInDisplayFrame(view) {
+function cropRectInDisplayFrame(view: NormalizedView): NormalizedView['crop'] {
   if (!view.crop) return null;
   const a = imageFrameToDisplayFrame(
     view.crop.x0,
@@ -104,7 +147,7 @@ function cropRectInDisplayFrame(view) {
 
 // 底图像素坐标 → 显示区归一化 0..1（crop 生效时相对可见区域；可见区域外按比例外推）。
 // 视口或坐标非法时返回 null。
-function imageToDisplay(x, y, view) {
+function imageToDisplay(x: number, y: number, view: ViewInput | null | undefined): Point | null {
   const v = normalizeView(view);
   if (!v || !Number.isFinite(x) || !Number.isFinite(y)) return null;
   const f = imageFrameToDisplayFrame(x / v.width, y / v.height, v.rotation, v.flipH, v.flipV);
@@ -117,13 +160,13 @@ function imageToDisplay(x, y, view) {
 }
 
 // 显示区归一化 0..1（越界钳制）→ 底图像素坐标。视口非法时返回 null。
-function displayToImage(nx, ny, view) {
+function displayToImage(nx: number, ny: number, view: ViewInput | null | undefined): Point | null {
   const v = normalizeView(view);
   if (!v || !Number.isFinite(nx) || !Number.isFinite(ny)) return null;
   const fx = clamp01(nx);
   const fy = clamp01(ny);
   const c = cropRectInDisplayFrame(v);
-  let f;
+  let f: Point;
   if (!c) {
     f = { x: fx, y: fy };
   } else {

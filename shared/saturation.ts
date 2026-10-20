@@ -7,8 +7,14 @@
 
 const SATURATION_LUMA = [0.213, 0.715, 0.072];
 
+/** 饱和度参数面：mono 与 value=−100 同义（k=0 只剩 luma） */
+export interface SatParams {
+  value?: number;
+  mono?: boolean;
+}
+
 // 参数 → 混合因子：mono 与 value=-100 同义（k=0 只剩 luma）；value ±100 → k∈[0,2]
-function satFactor({ value = 0, mono = false } = {}) {
+function satFactor({ value = 0, mono = false }: SatParams = {}): number {
   if (mono) return 0;
   const v = Number(value);
   if (!Number.isFinite(v)) return 1;
@@ -16,13 +22,18 @@ function satFactor({ value = 0, mono = false } = {}) {
 }
 
 // 0..1 单像素（shader 模拟等 JS 侧共用；不做钳制，由调用方的阶段边界负责）
-function saturate01(rgb, k) {
+function saturate01(rgb: number[], k: number): number[] {
   const y = SATURATION_LUMA[0] * rgb[0] + SATURATION_LUMA[1] * rgb[1] + SATURATION_LUMA[2] * rgb[2];
   return [y + (rgb[0] - y) * k, y + (rgb[1] - y) * k, y + (rgb[2] - y) * k];
 }
 
-// raw 检查点原位应用（uint8 域，逐像素 luma-mix，8bit 量化钳 0..255；alpha 步长跳过）
-function applySaturationInPlace(data, params, channels) {
+// raw 检查点原位应用（uint8 域，逐像素 luma-mix，8bit 量化钳 0..255；alpha 步长跳过）。
+// 无生产调用方——JS 模拟参考实现，供测试与 Rust 对拍取证（shader 侧同式内联在 previewUniforms）。
+function applySaturationInPlace(
+  data: Uint8Array | Uint8ClampedArray,
+  params: SatParams,
+  channels: number
+): void {
   const k = satFactor(params);
   if (k === 1 || channels < 3) return;
   for (let i = 0; i + 2 < data.length; i += channels) {
@@ -40,7 +51,7 @@ function applySaturationInPlace(data, params, channels) {
 // 正向低饱和多提、高饱和少提（防过饱和截断）；负向高饱和多降、近灰少动（去鲜艳不啃灰）。
 // 围绕 luma 缩放，亮度恒定——与 satFactor 的全局均匀 k 是两个本质不同的算子。
 // chroma 域 0..1（rgb 归一输入）；三端同公式（GLSL 逐像素/JS 模拟/Rust 直译）。
-function vibrance01(rgb, v) {
+function vibrance01(rgb: number[], v: number): number[] {
   const amt = Math.min(100, Math.max(-100, Number(v) || 0)) / 100;
   if (amt === 0) return rgb;
   const max = Math.max(rgb[0], rgb[1], rgb[2]);
@@ -51,8 +62,13 @@ function vibrance01(rgb, v) {
 }
 
 // raw 检查点原位应用（uint8 域；灰度源跳过——chroma=0 时正向增益虽非 1，
-// 但 r=g=b ⇒ mix(luma,c,k)=c 恒等，与 saturation 同口径）
-function applyVibranceInPlace(data, vibrance, channels) {
+// 但 r=g=b ⇒ mix(luma,c,k)=c 恒等，与 saturation 同口径）。
+// 无生产调用方——JS 模拟参考实现，供测试与 Rust 对拍取证。
+function applyVibranceInPlace(
+  data: Uint8Array | Uint8ClampedArray,
+  vibrance: number,
+  channels: number
+): void {
   const v = Math.min(100, Math.max(-100, Number(vibrance) || 0));
   if (v === 0 || channels < 3) return;
   const amt = v / 100;

@@ -73,7 +73,7 @@ const TYPE_TITLE = {
 // onKeyCommit(label, next) 承接键盘调整——交由父组件 700ms 手势收敛窗合并连续按键
 // （与主滑杆同口径：每个步进灌一条会撑爆历史栈，R91），next 为本次变更后的最新列表
 //（键盘路径 setEditOps 尚未渲染，父组件的 ops ref 是陈旧的，必须用这里传出的 next）。
-// 蒙版语义与渲染端共用 shared/masks.js。
+// 蒙版语义与渲染端共用 shared/masks.ts。
 export default function MaskPanel({
   masks,
   session,

@@ -6,13 +6,13 @@
 //      不动黑白端）：x2 = x1 + ((x1−0.5)·(1+0.4d) + 0.5 − x1)·w
 //   3) 饱和回拉：雾霭稀释色彩，围绕 x2 的 Rec.709 luma mix，k = 1 + 0.25d
 //   每步后不预钳，段末统一 clamp [0,1]（与 clarity「f 不预钳」同口径）。
-// dehaze=0 全恒等。与 LR 的「大半径传输图估计」不同：零空间核不做 airlight 估计，
-// 对轻中度雾有效的全局近似——「全局去雾」是准确语义而非深度恢复。
+// dehaze=0 全恒等（原数组引用直返）。与 LR 的「大半径传输图估计」不同：零空间核不做
+// airlight 估计，对轻中度雾有效的全局近似——「全局去雾」是准确语义而非深度恢复。
 // 管线位：tone 段末（clarity 之后、curves 之前）。
 
 const DEHAZE_LUMA = [0.213, 0.715, 0.072];
 
-export function dehaze01(rgb, dehaze) {
+export function dehaze01(rgb: number[], dehaze: number): number[] {
   const d = Math.min(100, Math.max(-100, Number(dehaze) || 0)) / 100;
   if (d === 0) return rgb;
   const L0 = DEHAZE_LUMA[0] * rgb[0] + DEHAZE_LUMA[1] * rgb[1] + DEHAZE_LUMA[2] * rgb[2];

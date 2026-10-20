@@ -14,33 +14,46 @@ const PIPELINE_ORDER = [
   'whiteBalance', // 色温/色调（M3：RGB 通道增益近似；M8 RAW 接真实白平衡）
   'exposure', // 曝光 EV
   'tone', // 对比度/高光/阴影/白场/黑场
-  'curves', // 曲线（rgb/r/g/b 分段线性，shared/curves.js LUT）
-  'hsl', // HSL（8 色相带色相/饱和度/亮度，shared/hsl.js）
-  'colorGrading', // 颜色分级（分离色调，亮度加权，shared/colorGrading.js）
+  'curves', // 曲线（rgb/r/g/b 分段线性，shared/curves.ts LUT）
+  'hsl', // HSL（8 色相带色相/饱和度/亮度，shared/hsl.ts）
+  'colorGrading', // 颜色分级（分离色调，亮度加权，shared/colorGrading.ts）
   'saturation', // 饱和度（-100 = 黑白，mono 显式）
-  'masks', // 局部蒙版（radial/linear + 曝光/色温/对比/饱和，shared/masks.js）
+  'masks', // 局部蒙版（radial/linear + 曝光/色温/对比/饱和，shared/masks.ts）
   'detail', // 锐化/降噪（锐化已实现，降噪未实现时按参数内警告）
-  'lens', // 镜头校正（vignette/distortion/chromatic 已实现，shared/lens.js；profile 预留）
+  'lens', // 镜头校正（vignette/distortion/chromatic 已实现，shared/lens.ts；profile 预留）
   'geometry', // 旋转/翻转（90° 倍数）
   'crop', // 裁剪（底图坐标系，执行器映射到变换后空间）
   'encode', // 编码输出
-];
+] as const;
+
+/** 渲染阶段标识（PIPELINE_ORDER 的字面量联合） */
+export type StageKind = (typeof PIPELINE_ORDER)[number];
 
 // 整个 stage 尚未实现的 kind（渲染时跳过并记录警告，而非静默丢弃）
-const UNSUPPORTED_STAGES = new Set([]);
+const UNSUPPORTED_STAGES = new Set<StageKind>([]);
 
-function isSupportedStage(kind) {
-  if (!PIPELINE_ORDER.includes(kind)) {
+function isSupportedStage(kind: string): boolean {
+  if (!(PIPELINE_ORDER as readonly string[]).includes(kind)) {
     throw new Error(`[pipeline] 未知渲染阶段: ${kind}`);
   }
-  return !UNSUPPORTED_STAGES.has(kind);
+  return !UNSUPPORTED_STAGES.has(kind as StageKind);
 }
 
 // ── 渲染能力矩阵 ──
 // 每个功能在 预览(preview)/导出(export)/烘焙(bake) 三条路径上的真实可用状态。
 // UI 必须据此展示能力（禁止 UI 显示可调但导出被静默忽略）。
 // 状态：supported | partial | preview-only | unsupported | planned
-const CAPABILITY_MATRIX = {
+export type CapabilityLevel = 'supported' | 'partial' | 'preview-only' | 'unsupported' | 'planned';
+export type RenderTarget = 'preview' | 'export' | 'bake';
+
+export interface StageCapability {
+  preview: CapabilityLevel;
+  export: CapabilityLevel;
+  bake: CapabilityLevel;
+  note?: string;
+}
+
+const CAPABILITY_MATRIX: Record<StageKind, StageCapability> = {
   decode: {
     preview: 'supported',
     export: 'supported',
@@ -106,8 +119,8 @@ const CAPABILITY_MATRIX = {
   },
 };
 
-function stageCapability(kind, target) {
-  const cap = CAPABILITY_MATRIX[kind];
+function stageCapability(kind: string, target?: RenderTarget): StageCapability | CapabilityLevel {
+  const cap = CAPABILITY_MATRIX[kind as StageKind];
   if (!cap) return 'unsupported';
   return target ? cap[target] || 'unsupported' : cap;
 }

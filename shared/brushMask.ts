@@ -1,4 +1,4 @@
-// 画笔蒙版权重（shared/masks.js 家族新成员）：笔画距离场软边权重，max 合成。
+// 画笔蒙版权重（shared/masks.ts 家族新成员）：笔画距离场软边权重，max 合成。
 // 语义唯一实现，三端同式（JS 模拟 / Rust 执行器直译 / MaskOverlay 光栅化预览）：
 //   单笔：w(px) = smoothstep 软边——d = 点到折线段最近距离，r = radius·(1−softness) 硬核半径，
 //         w = clamp01((r + radius·softness − d) / max(radius·softness, ε))（核内 1，边缘线性衰减到 0）
@@ -7,11 +7,12 @@
 // 坐标系 pre-crop 像素（与 radial/linear 同）；points 为折线顶点平铺 [x0,y0,x1,y1,...]。
 // 性能：逐像素现算 + 每笔 bounding box 快速剔除（bbox 外距离 > radius 直接 0）。
 // bounds 计算供剔除用（含 radius 膨胀量），三端共用。
+import type { BrushMask, BrushStroke } from './editSchema.ts';
 
-const clamp01 = (v) => Math.min(1, Math.max(0, v));
+const clamp01 = (v: number): number => Math.min(1, Math.max(0, v));
 
 // 点到线段 (a,b) 的最近距离平方（f64 全程，三端同式）
-function segDistSq(px, py, ax, ay, bx, by) {
+function segDistSq(px: number, py: number, ax: number, ay: number, bx: number, by: number): number {
   const dx = bx - ax;
   const dy = by - ay;
   const lenSq = dx * dx + dy * dy;
@@ -23,7 +24,12 @@ function segDistSq(px, py, ax, ay, bx, by) {
 }
 
 // 笔画边界盒（含 radius 膨胀）：返回 {minX, minY, maxX, maxY}，供逐像素剔除
-export function strokeBounds(stroke) {
+export function strokeBounds(stroke: BrushStroke): {
+  minX: number;
+  minY: number;
+  maxX: number;
+  maxY: number;
+} {
   const r = stroke.radius || 1;
   let minX = Infinity;
   let minY = Infinity;
@@ -40,7 +46,7 @@ export function strokeBounds(stroke) {
 }
 
 // 单笔软边权重（0..1）：核内 1、边缘线性衰减
-export function brushStrokeWeight(stroke, x, y) {
+export function brushStrokeWeight(stroke: BrushStroke, x: number, y: number): number {
   const radius = Math.max(1, stroke.radius || 1);
   const soft = Math.min(1, Math.max(0, stroke.softness ?? 0.5));
   const core = radius * (1 - soft);
@@ -61,7 +67,7 @@ export function brushStrokeWeight(stroke, x, y) {
 }
 
 // 画笔蒙版总权重（多笔 max 合成 + bbox 剔除 + invert）
-export function brushWeight(mask, x, y) {
+export function brushWeight(mask: BrushMask, x: number, y: number): number {
   let w = 0;
   for (const stroke of mask.strokes || []) {
     const b = strokeBounds(stroke);

@@ -17,7 +17,7 @@ fn num_or(v: Option<&Value>, fallback: f64) -> f64 {
     v.and_then(|x| x.as_f64()).unwrap_or(fallback)
 }
 
-// ── 饱和度/黑白（shared/saturation.js） ──
+// ── 饱和度/黑白（shared/saturation.ts） ──
 
 const SATURATION_LUMA: [f64; 3] = [0.213, 0.715, 0.072];
 const HSL_LUMA: [f64; 3] = [0.2126, 0.7152, 0.0722];
@@ -61,7 +61,7 @@ impl Round255 for f64 {
     }
 }
 
-// ── 鲜艳度（shared/saturation.js vibrance01） ──
+// ── 鲜艳度（shared/saturation.ts vibrance01） ──
 // 智能饱和度：增益随像素 chroma（max−min/255）自适应——正向低饱和多提/高饱和少提，
 // 负向高饱和多降/近灰少动；围绕 luma 缩放保持亮度。与上方均匀 k 的饱和度是两个算子。
 pub fn apply_vibrance_in_place(data: &mut [u8], vibrance: f64, channels: usize) {
@@ -85,7 +85,7 @@ pub fn apply_vibrance_in_place(data: &mut [u8], vibrance: f64, channels: usize) 
     }
 }
 
-// ── 清晰度（shared/clarity.js） ──
+// ── 清晰度（shared/clarity.ts） ──
 // 中间调对比：w = 1−|2L−1| 三角窗（Rec.709 L，与 apply_tone_masked 同系数），
 // f = (x−0.5)k+0.5 不预钳，out = x+(f−x)w 段末写回 clamp——与 shader「mix 后整体钳」同口径。
 // ±100 → k∈[0,2]；k=1 恒等跳过。
@@ -114,7 +114,7 @@ pub fn apply_clarity_in_place(data: &mut [u8], clarity: f64, channels: usize) {
     }
 }
 
-// ── 胶片颗粒（shared/grain.js） ──
+// ── 胶片颗粒（shared/grain.ts） ──
 // cell = max(w,h)/256 网格，u32 wrapping hash 单色抖动：h = (gx·1973 + gy·9277 + 26699)
 // → h = (h ^ h>>13) · 1274126177（全 wrapping）→ n = (h & 0xFFFF)/65535 − 0.5。
 // 与 GLSL/JS 用 u32 整数运算逐位一致（勿改浮点 hash——f64/f32 必分叉）；amount=0 恒等。
@@ -156,7 +156,7 @@ pub fn apply_grain_in_place(
     }
 }
 
-// ── 去朦胧（shared/dehaze.js） ──
+// ── 去朦胧（shared/dehaze.ts） ──
 // 三步同式：黑场回压窗 x(1−x)（暗部多动白端不动）→ 三角窗中调对比 → 饱和回拉。
 // luma 用 0.213 族（饱和度家族系数，与 shared 实现一致——非 clarity 的 0.2126 族）；
 // 每步不预钳段末统一 clamp；d=0 恒等。
@@ -184,14 +184,14 @@ pub fn apply_dehaze_in_place(data: &mut [u8], dehaze: f64, channels: usize) {
     }
 }
 
-// ── 暗角（shared/lens.js） ──
+// ── 暗角（shared/lens.ts） ──
 
 fn vignette_falloff(d: f64) -> f64 {
     ((d - 0.5) / 0.5).clamp(0.0, 1.0)
 }
 
 /// 镜头几何校正：径向畸变（k）+ 横向色散（ca）逆映射，双线性采样。
-/// 语义与 shared/lens.js lensGeomScale 同式（半宽/半高椭圆归一；色散随 r² 增长）。
+/// 语义与 shared/lens.ts lensGeomScale 同式（半宽/半高椭圆归一；色散随 r² 增长）。
 /// 逐像素逐通道独立采样（R/G/B 各自半径），src 出界钳到边界。全零参数恒等。
 pub fn apply_lens_geometry_in_place(
     data: &mut [u8],
@@ -295,7 +295,7 @@ pub fn apply_vignette_in_place(
     }
 }
 
-// ── 颜色分级（shared/colorGrading.js） ──
+// ── 颜色分级（shared/colorGrading.ts） ──
 
 fn normalize_range(v: Option<&Value>) -> Option<(f64, f64)> {
     let arr = v?.as_array()?;
@@ -413,7 +413,7 @@ pub fn apply_color_grading_in_place(data: &mut [u8], grading: &Value, channels: 
     }
 }
 
-// ── HSL 8 色相带（shared/hsl.js） ──
+// ── HSL 8 色相带（shared/hsl.ts） ──
 
 const HSL_BANDS: [f64; 8] = [0.0, 30.0, 60.0, 120.0, 180.0, 240.0, 280.0, 320.0];
 const BAND_RADIUS: f64 = 60.0;
@@ -558,7 +558,7 @@ pub fn apply_hsl_in_place(data: &mut [u8], hsl: &Value, channels: usize) {
     }
 }
 
-// ── 色调曲线（shared/curves.js） ──
+// ── 色调曲线（shared/curves.ts） ──
 
 pub fn normalize_points(arr: &[f64]) -> Vec<(f64, f64)> {
     let mut pts: Vec<(f64, f64)> = arr
@@ -676,7 +676,7 @@ pub fn build_curve_luts(curves: &Value) -> Option<CurveLuts> {
     }
 }
 
-// ── 蒙版（shared/masks.js） ──
+// ── 蒙版（shared/masks.ts） ──
 
 #[derive(Default, Clone, Copy)]
 pub struct MaskAdjustments {
@@ -843,7 +843,7 @@ pub fn normalize_masks(v: &Value) -> Vec<Mask> {
     out
 }
 
-/// 画笔蒙版权重（shared/brushMask.js 同式直译）：点到折线段最近距离的软边权重，
+/// 画笔蒙版权重（shared/brushMask.ts 同式直译）：点到折线段最近距离的软边权重，
 /// 多笔 max 合成（重叠不加深）+ bbox 快速剔除；invert 作用于合成后。
 fn brush_weight(m: &Mask, x: f64, y: f64) -> f64 {
     let MaskShape::Brush { strokes, invert } = &m.shape else {
@@ -1021,7 +1021,7 @@ fn apply_masked_adjustment(
         g = (g - 0.5) * cf + 0.5;
         b = (b - 0.5) * cf + 0.5;
     }
-    // 清晰度（shared/masks.js 同式：三角窗 Rec.709，蒙版权重并入 k）
+    // 清晰度（shared/masks.ts 同式：三角窗 Rec.709，蒙版权重并入 k）
     if adj.clarity != 0.0 {
         let k = 1.0 + (adj.clarity / 100.0) * w;
         let l = 0.2126 * r + 0.7152 * g + 0.0722 * b;
@@ -1037,7 +1037,7 @@ fn apply_masked_adjustment(
         g = y + (g - y) * s;
         b = y + (b - y) * s;
     }
-    // 鲜艳度（shared/masks.js 同式：chroma 自适应增益，蒙版权重并入 amt）
+    // 鲜艳度（shared/masks.ts 同式：chroma 自适应增益，蒙版权重并入 amt）
     if adj.vibrance != 0.0 {
         let amt = (adj.vibrance / 100.0) * w;
         let mx = r.max(g).max(b);
@@ -1126,7 +1126,7 @@ mod tests {
         assert_eq!(data, expected, "case {name_case} 对拍不一致");
     }
 
-    // ── 鲜艳度/清晰度手算锁（shared/saturation.js vibrance01、shared/clarity.js 同式）──
+    // ── 鲜艳度/清晰度手算锁（shared/saturation.ts vibrance01、shared/clarity.ts 同式）──
 
     #[test]
     fn 鲜艳度_灰像素恒等_低饱和增益高于高饱和_亮度保持() {
@@ -1221,7 +1221,7 @@ mod tests {
         assert_eq!(v, before);
     }
 
-    // ── 胶片颗粒手算锁（shared/grain.js 同式）──
+    // ── 胶片颗粒手算锁（shared/grain.ts 同式）──
 
     #[test]
     fn 颗粒_hash_与_js_逐位一致_手算三点() {

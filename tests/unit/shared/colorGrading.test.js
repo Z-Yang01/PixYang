@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 
-import cg from '../../../shared/colorGrading.js';
+import cg from '../../../shared/colorGrading.ts';
 
 describe('normalizeRange / normalizeGrading', () => {
   it('hue 折叠到 [0,360)，sat 钳制', () => {

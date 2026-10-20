@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import grain from '../../../shared/grain.js';
+import grain from '../../../shared/grain.ts';
 
 const { grainNoiseAt, grainCellSize, applyGrainInPlace } = grain;
 

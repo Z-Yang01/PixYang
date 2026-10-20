@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import saturation from '../../../shared/saturation.js';
+import saturation from '../../../shared/saturation.ts';
 const { vibrance01 } = saturation;
 
 const { SATURATION_LUMA, satFactor, saturate01, applySaturationInPlace } = saturation;
