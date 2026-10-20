@@ -3,7 +3,7 @@ import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { ImageOff } from 'lucide-react';
 import { friendlyError, errText } from '@/lib/errorText';
-import { offerDeleteUndo } from '@/lib/trashUndo';
+import { offerDeleteUndo } from '@/lib/trashUndo.ts';
 import {
   groupImagesByDate,
   pageSizeOf,
@@ -12,7 +12,7 @@ import {
   removeIdsFromSet,
   createLoadSequencer,
   hasActiveFilters as computeHasActiveFilters,
-} from '@/lib/gallery';
+} from '@/lib/gallery.ts';
 import useGalleryStore, { anyModalOpen } from '@/store/galleryStore';
 import { matchGridShortcut, GRID_ACTIONS } from '@/lib/shortcuts';
 import api from '@/lib/api';

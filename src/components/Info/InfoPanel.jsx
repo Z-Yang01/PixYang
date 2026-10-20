@@ -6,12 +6,12 @@ import { FolderOpen, Trash2, X, Heart, HeartOff } from 'lucide-react';
 import ConfirmDialog from '../Layout/ConfirmDialog';
 import StarRating from '@/components/common/StarRating';
 import { formatSizeDisplay as formatSize } from '@/lib/format.ts';
-import { removeIdsFromSet } from '@/lib/gallery';
+import { removeIdsFromSet } from '@/lib/gallery.ts';
 import useGalleryStore from '@/store/galleryStore';
 import { isEnterSubmit } from '@/lib/shortcuts';
 import api from '@/lib/api';
 import { errText, friendlyError } from '@/lib/errorText';
-import { offerDeleteUndo } from '@/lib/trashUndo';
+import { offerDeleteUndo } from '@/lib/trashUndo.ts';
 
 function dirname(p) {
   if (!p) return '';

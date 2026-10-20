@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronDown, ChevronUp } from 'lucide-react';
 import api from '@/lib/api';
 import useGalleryStore from '@/store/galleryStore';
-import { filmstripWindow, viewerQueryParams, globalIndexOfPage } from '@/lib/gallery';
+import { filmstripWindow, viewerQueryParams, globalIndexOfPage } from '@/lib/gallery.ts';
 
 // 首选缩略图路径（与网格同口径）：编辑预览 > 小图 > 大图
 const thumbOf = (img) => img.thumbnail_edit_path || img.thumbnail_small_path || img.thumbnail_path;

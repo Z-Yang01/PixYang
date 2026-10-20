@@ -10,7 +10,7 @@ const { toastSuccess, restoreMock } = vi.hoisted(() => ({
 vi.mock('sonner', () => ({ toast: { success: toastSuccess } }));
 vi.mock('@/lib/api', () => ({ default: { restoreImageFromTrash: restoreMock } }));
 
-const { offerDeleteUndo, UNDO_WINDOW_MS, undoTrashed } = await import('@/lib/trashUndo');
+const { offerDeleteUndo, UNDO_WINDOW_MS, undoTrashed } = await import('@/lib/trashUndo.ts');
 
 describe('trashUndo：删除撤销窗口', () => {
   beforeEach(() => {

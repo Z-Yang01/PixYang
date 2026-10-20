@@ -56,7 +56,7 @@ import {
   fromEditParams,
   opsChanged,
 } from '@/lib/editParams';
-import { applyPresetToOps } from '@/lib/presetApply';
+import { applyPresetToOps } from '@/lib/presetApply.ts';
 import useGalleryStore from '@/store/galleryStore';
 import useSlideshowTimer, {
   SLIDESHOW_DEFAULT_INTERVAL,

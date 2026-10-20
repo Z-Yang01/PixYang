@@ -3886,3 +3886,31 @@ R103 宣言 → R116 六笔快包 → 本轮 R117-R119 终版快包，此后再�
     vitest.config.js.timestamp-*.mjs 会被扫入误报）。
   ⑤ 提交范围：src/lib/{format,histogram,presetSwatch,exportPresets}.ts（git mv 自 .js）/
     29 个导入方（含 utils/themes 口径统一）/ AGENTS.md / NIGHTLY_LOG.md。
+
+- 2026-10-20 TypeScript 迁移第五批（src/lib/ 中层纯逻辑：presetApply / trashUndo / gallery）：
+  ① 类型设计要点：
+    - presetApply：预设入参声明 PresetParamsLike（各域 Partial + 可缺省），detail 逐字段合并
+      的 4 个键抽成 `DETAIL_KEYS as const`（顺带让 `detail?.[k]` 在这个并集上合法）；
+      `presetParams.lens.X` 三处在 spec 分支里少了 ?.（原版靠 Number.isFinite 短路保证安全），
+      补 ?. 后行为逐字节不变。
+    - gallery：新增 GalleryRow / GridSettings / GalleryItem / ImageQueryParams / DateRange /
+      GalleryFilterState / FilmstripWindow / LoadSequencer / ListFilters 九个导出类型。
+      GalleryRow 只声明本模块**实际读取**的列（id/taken_at/import_date/favorite/filename/
+      notes/original_path），其余列原样透传不解释——不是全量行类型，因为 GalleryRow 同时承担
+      「列表行」与「轻量写回后的行」两种来源。
+      viewerQueryParams 的返回值可为 undefined（state 缺的筛选维度原样透传），故不能用
+      ImageQueryParams 的非可选字段裁剪，单列 ViewerQueryParams 且全字段可选。
+    - trashUndo：catch 变量在 strict 下是 unknown，按 Error 形取 message 后**仍用 `||` 回落**
+      （不用 ??——原版 `e?.message || e` 在 message 为空串时回退到整个 e，日志口径要一致）。
+  ② 本批最值钱的发现（影响后续全部批次）：**`@/lib/api` 的 default 导出是运行时按命令名
+    循环装配的**（api.js 尾部遍历命令名数组逐个赋值），TS 只能推断出静态声明的那部分
+    （实测仅 isBridgeAvailable），具名通道在类型上完全不可见。
+    → 应对：消费侧声明用到的最小接口面 + 导入边界一次断言（trashUndo.ts 为先例）。
+    → 战略建议：**把 api.js 提前迁 .ts 并为全部 ~100 个通道补单一真源声明**，能一次解锁 17 个
+      消费方；该命令表本身已有契约测试（R56 Rust 注册表↔桥命令对拍）把关，前置风险可控。
+  ③ 验证：tsc 0E；全量 vitest 88 文件/1152 例全绿；eslint 0E/9W（既有）；prettier 净。
+    跑测波折：全量首轮报「3 failed / 1130 passed」——同批沙箱拦截了 node_modules 若干读
+    （zod/core、radix package.json、aria-query），**非回归**；干净复跑 88/1152 全绿确认。
+    口径：出现这类瞬时失败必须复跑证实后再归因，不能直接改代码去「修」不存在的回归。
+  ④ 提交范围：src/lib/{presetApply,trashUndo,gallery}.ts（git mv 自 .js）/ 8 个导入方 /
+    AGENTS.md（含 api.js 动态装配口径）/ NIGHTLY_LOG.md。

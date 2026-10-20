@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
-import { totalPagesOf } from '@/lib/gallery';
+import { totalPagesOf } from '@/lib/gallery.ts';
 import { isEnterSubmit } from '@/lib/shortcuts';
 import useGalleryStore from '@/store/galleryStore';
 

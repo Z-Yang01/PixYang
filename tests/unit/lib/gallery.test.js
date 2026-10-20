@@ -20,7 +20,7 @@ import {
   viewerQueryParams,
   filmstripWindow,
   FILMSTRIP_SPAN,
-} from '@/lib/gallery';
+} from '@/lib/gallery.ts';
 
 const grid = { rows: 3, columns: 5, gap: 12, padding: 16 };
 

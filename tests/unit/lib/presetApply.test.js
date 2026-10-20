@@ -6,7 +6,7 @@ import { describe, it, expect } from 'vitest';
 
 import sharedMod_builtinPresets from '../../../shared/builtinPresets.ts';
 const { BUILTIN_PRESETS } = sharedMod_builtinPresets;
-import { applyPresetToOps } from '@/lib/presetApply';
+import { applyPresetToOps } from '@/lib/presetApply.ts';
 
 describe('applyPresetToOps（预设字段裁剪唯一实现）', () => {
   const DIRTY_OPS = {

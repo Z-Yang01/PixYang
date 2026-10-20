@@ -238,9 +238,16 @@ tests/            vitest（node 环境 + per-file happy-dom pragma）
   「叶子纯函数 → 中层逻辑 → editParams → 桥接/着色器」分批推进：第一批已落
   format / histogram / presetSwatch / exportPresets 四个叶子模块，并顺带把既有两个 .ts
   （utils / themes）的 15 处 alias 引用统一到显式 `.ts`——此前它们是全仓唯一一批省略扩展名的
-  .ts 引用（shadcn 脚手架遗留），留着会让两种惯例并存。
+  .ts 引用（shadcn 脚手架遗留），留着会让两种惯例并存。第二批落
+  presetApply / trashUndo / gallery 三个中层纯逻辑模块（gallery 的胶片条窗口与轻量写回
+  复验是 R148 / R74 回归锁热点，类型化收益最直接）。
   ⚠ `components.json` 的 `"utils": "@/lib/utils"` 是 **shadcn CLI 配置，不是应用层导入**，
   刻意保持无扩展名（CLI 按无扩展名 alias 生成组件），勿随迁移一起改。
+- **`@/lib/api` 的 default 导出是运行时按命令名循环装配的**（api.js 尾部遍历命令名数组逐个赋值），
+  TS 只能推断出静态声明的那部分（实测仅 `isBridgeAvailable`），具名通道在类型上**不可见**。
+  迁移依赖 api 的模块时，要么在消费侧声明用到的最小接口面 + 导入边界断言（trashUndo.ts 为先例），
+  要么先把 `api.js` 迁 `.ts` 并为全部通道补单一真源声明——后者能一次解锁 17 个消费方，
+  且该命令表本身已有契约测试把关（R56 Rust 注册表↔桥命令对拍），值得前置。
 - **`@/` alias 下的 .ts 说明符同样显式带 `.ts`**（`@/lib/format.ts`）：理由与 shared/ 一致，
   且 Vite/vitest/tsc 三方对 alias + 显式扩展名的解析已实证（全量 88/1152 绿）。
 
