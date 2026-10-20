@@ -143,6 +143,9 @@ tests/            vitest（node 环境 + per-file happy-dom pragma）
 - **首次迁移**（`db::migrate_to_standard_dir`）：新目录无库时，按顺序从
   ① 便携 `<exe目录>\data`（优先，2026-10 前的线上库在这里）② 旧 Electron `%APPDATA%\pixyang`
   复制 `pixyang.db(-wal/-shm)` + `thumbnails`；**只复制、不删源、不动图片**，目标已有库则跳过。
+- **缩略图目录可独立指定**（`settings.thumbs_root`）：缩略图属于大数据，可指到 E 盘等容量大的盘，
+  如 `E:\Software\PixYang\data\thumbnails`；为空时用 `<data_dir>\thumbnails`。`AppPaths.thumbs_dir` 与
+  asset 白名单都跟随该设置。
 - **缩略图路径归一**（`db::normalize_thumbnail_paths`，启动时执行）：DB 的三个缩略图列存的是绝对路径；
   迁移/换目录后会自动把旧路径指向的文件复制进当前 `thumbs_dir` 并改写列，文件已不在的列清空。
   不做这一步会出现「大图正常、胶片条/网格小图破图」——asset 白名单只放行当前数据目录。

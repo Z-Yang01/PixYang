@@ -3685,3 +3685,9 @@ R103 宣言 → R116 六笔快包 → 本轮 R117-R119 终版快包，此后再�
      （08/27 75 + 08/29 7，复用 `thumbs::generate_tiers_parallel`，ok=82/failed=0）。
   ④ 校验：空 thumbnail_path 0、路径不存在 0、全部位于 `%LOCALAPPDATA%\PixYang\thumbnails`。
      cargo 261（+1）；重打 NSIS 安装包成功。
+
+- 2026-10-20 R158 补2：缩略图独立目录（大数据放 E 盘）：
+  ① 用户要求缩略图统一到 `E:\Software\PixYang\data\thumbnails`（缩略图属大数据，放容量大的盘）。
+  ② 新增 `settings.thumbs_root`：`AppPaths.thumbs_dir` 优先取该设置，否则 `<data_dir>\thumbnails`；
+     asset 白名单随 `thumbs_dir` 放行；启动归一与重建都用它。
+  ③ 现场：833 条记录的缩略图路径全部改写到 E 盘（1094 个引用、0 缺失、0 在 C 盘），C 盘旧缩略图已清空。

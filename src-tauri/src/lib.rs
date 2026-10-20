@@ -82,7 +82,16 @@ pub fn run() {
             let db_path = data_dir.join("pixyang.db");
             let database = db::Db::open(&db_path).map_err(|e| format!("数据库打开失败: {e}"))?;
             let default_images_dir = data_dir.join("images");
-            let thumbs_dir = data_dir.join("thumbnails");
+            // 缩略图属于大数据，允许单独指定根目录（settings.thumbs_root，可为 E 盘）；
+            // 未设置/为空时用 data/thumbnails。启动归一会把旧路径文件搬进该目录并改写。
+            let thumbs_root_setting: Option<String> =
+                database.get_setting("thumbs_root").unwrap_or(None);
+            let thumbs_dir = thumbs_root_setting
+                .as_deref()
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(std::path::PathBuf::from)
+                .unwrap_or_else(|| data_dir.join("thumbnails"));
             let _ = std::fs::create_dir_all(&thumbs_dir);
             let trash_dir = data_dir.join("trash");
             let _ = std::fs::create_dir_all(&trash_dir);
