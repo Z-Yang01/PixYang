@@ -18,7 +18,7 @@ import {
   normalizeMaxEdge,
   parseExportPresets,
   stringifyExportPresets,
-} from '@/lib/exportPresets';
+} from '@/lib/exportPresets.ts';
 
 // 批量导出对话框（功能 13a）：原样复制（默认）/ 转格式与尺寸 + 导出预设存取。
 // 预设存 settings 表（EXPORT_PRESETS_KEY），转换负载经 buildConvertOptions 归一，

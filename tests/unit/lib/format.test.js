@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { formatFileSize, formatSizeDisplay, todayStr } from '@/lib/format';
+import { formatFileSize, formatSizeDisplay, todayStr } from '@/lib/format.ts';
 
 describe('format 工具', () => {
   it('formatSizeDisplay 详细格式与空值回退', () => {

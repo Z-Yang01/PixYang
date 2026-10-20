@@ -21,7 +21,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import useGalleryStore from '@/store/galleryStore';
 import api from '@/lib/api';
-import { presetSwatch } from '@/lib/presetSwatch';
+import { presetSwatch } from '@/lib/presetSwatch.ts';
 import builtinPresetsModule from '../../../shared/builtinPresets.ts';
 
 const { BUILTIN_PRESETS } = builtinPresetsModule;

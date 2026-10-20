@@ -2,8 +2,16 @@
 // 仅在编辑面板挂载时运行；rAF 节流由调用方控制（uniforms 变化后一帧一次）。
 const BINS = 64;
 
+/** RGB + 亮度四通道各 64 桶的直方图（l = RGB 三通道桶序号均值，见 extractHistogram） */
+export interface Histogram {
+  r: number[];
+  g: number[];
+  b: number[];
+  l: number[];
+}
+
 // 回读整个画布（上限 2048 长边 ≈ 16MB 像素，spawn 级代价可接受且只在参数变化后触发）
-export function extractHistogram(glCanvas) {
+export function extractHistogram(glCanvas: HTMLCanvasElement | null | undefined): Histogram | null {
   if (!glCanvas) return null;
   const w = glCanvas.width;
   const h = glCanvas.height;

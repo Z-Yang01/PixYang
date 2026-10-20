@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { describe, it, expect, vi } from 'vitest';
-import { extractHistogram } from '@/lib/histogram';
+import { extractHistogram } from '@/lib/histogram.ts';
 
 function fakeCanvas(pixels, w, h) {
   const calls = {};

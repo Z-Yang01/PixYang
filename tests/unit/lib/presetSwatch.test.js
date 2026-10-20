@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { presetSwatch } from '@/lib/presetSwatch';
+import { presetSwatch } from '@/lib/presetSwatch.ts';
 
 // hex → [r,g,b]（灰阶 rgb() 形态与 #hex 形态都解析）
 function stops(css) {

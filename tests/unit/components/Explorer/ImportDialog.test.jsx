@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, cleanup } from '@testing-library/react';
 import ImportDialog from '@/components/Explorer/ImportDialog';
 import { useImportStore } from '@/store/importStore';
-import { todayStr } from '@/lib/format';
+import { todayStr } from '@/lib/format.ts';
 
 const filesFixture = [
   { filepath: 'C:/import/a.jpg', filename: 'a.jpg', size: 1024 * 300, format: '.jpg' },

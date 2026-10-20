@@ -3859,3 +3859,30 @@ R103 宣言 → R116 六笔快包 → 本轮 R117-R119 终版快包，此后再�
     src/lib/tauriBridge.js / tests/unit/golden/golden.test.js /
     tests/unit/lib/previewUniforms.test.jsx / tests/unit/shared/renderSpec.test.js /
     tests/webgl-parity/run.cjs（工具图入口 + 头注）/ AGENTS.md / NIGHTLY_LOG.md。
+
+- 2026-10-20 TypeScript 迁移第四批（首进 src/lib/ 生产侧：4 个叶子纯函数模块）：
+  ① 选面依据：src/lib/ 16 个 .js（3078 行），先挑依赖面最窄、无 DOM/React 生命周期耦合的
+    叶子模块打样——format / histogram / presetSwatch / exportPresets（合计 180 行），
+    用来把「@/ alias + 显式 .ts 说明符」这条口径在生产侧跑通验证。
+  ② alias 口径实证（本批关键）：不同于 shared/ 的相对路径，`src/lib/*` 一律走 `@/lib/X`。
+    这与 renderSpec 情况不同**（src/lib 不在 Node 工具图内）**，故无扩展名本来也能跑，
+    但为避免两种惯例并存，仍按既定口径显式写 `@/lib/X.ts`——Vite/vitest/tsc 三方实测通过。
+    顺带把既有的两个 .ts（utils / themes）共 15 处省略扩展名的 alias 一并统一；
+    **例外保留**：`components.json` 的 `"utils": "@/lib/utils"` 是 shadcn CLI 配置而非应用层
+    导入（CLI 按无扩展名 alias 生成组件），改它会破坏后续 `shadcn add`，刻意不动。
+  ③ 类型化要点：
+    - format：入参容忍 null/undefined（size 类 DB 列可能缺值，三个函数原本都有 !bytes 分支），
+      签名如实写成 `number | null | undefined`，没有假装调用方一定传数字。
+    - histogram：DOM 类型直接吃下来（HTMLCanvasElement + getContext('webgl2') 返回
+      WebGL2RenderingContext | null，TS lib.dom 的重载足够，无需断言）；导出 Histogram 接口。
+    - presetSwatch：`Partial<Basic>` 直接复用 editSchema 的 z.infer 类型（省得把 basic 的字段重抄一遍）。
+    - exportPresets：`.filter(Boolean)` 换成谓词 filter `(p): p is ExportPreset => p !== null`——
+      显式收窄类型；行为等价（合法预设对象恒为真值），比 editSchema 里用的 `as` 写法更诚实。
+  ④ 验证：tsc 0E（含 src/lib 新 .ts 与 29 个改名后 verify 的导入方）；
+    全量 vitest 88 文件/1152 例全绿；eslint 0E/9W（既有）；prettier 净（format/histogram
+    初版签名换行不合规，--write 后全净）。
+    跑测小坑：vitest 放后台跑会被沙箱拦 node_modules/src 文件读取（误报 failed），
+    改前台跑即通；且 vitest 与 eslint/prettier **必须串行**（并发时 vitest 生成的
+    vitest.config.js.timestamp-*.mjs 会被扫入误报）。
+  ⑤ 提交范围：src/lib/{format,histogram,presetSwatch,exportPresets}.ts（git mv 自 .js）/
+    29 个导入方（含 utils/themes 口径统一）/ AGENTS.md / NIGHTLY_LOG.md。

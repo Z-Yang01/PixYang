@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { toast } from 'sonner';
 import api from '@/lib/api';
-import { formatSizeDisplay } from '@/lib/format';
+import { formatSizeDisplay } from '@/lib/format.ts';
 import { errText } from '@/lib/errorText';
 import ConfirmDialog from '../Layout/ConfirmDialog';
 import { Button } from '@/components/ui/button';

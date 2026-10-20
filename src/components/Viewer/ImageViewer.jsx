@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { formatSizeDisplay as formatSize } from '@/lib/format';
+import { formatSizeDisplay as formatSize } from '@/lib/format.ts';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -85,7 +85,7 @@ import {
   releaseWebGLPreview,
   onWebGLPreviewRestored,
 } from '@/lib/webglPreview';
-import { extractHistogram } from '@/lib/histogram';
+import { extractHistogram } from '@/lib/histogram.ts';
 import HistogramView from './HistogramView';
 import EditorHistoryPanel from './EditorHistoryPanel';
 import EditorMaskSection from './EditorMaskSection';

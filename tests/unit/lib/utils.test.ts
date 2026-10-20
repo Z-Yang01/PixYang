@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { cn } from '@/lib/utils';
+import { cn } from '@/lib/utils.ts';
 
 describe('cn (src/lib/utils)', () => {
   it('合并多个 class 名', () => {

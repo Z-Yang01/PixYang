@@ -4,13 +4,14 @@
 //   饱和/鲜艳 → 色条端点饱和度；对比/清晰度 → 中段与端点的明暗差；
 //   saturation=-100（黑白系）→ 无彩色灰阶条；暗角 → 两端再压暗。
 // 未知字段一律回中性，任何预设都能得到稳定色卡（不抛错）。
+import type { Basic } from '../../shared/editSchema.ts';
 
-const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 
 // hue（0..360）+ sat/light（0..1）→ hex，无第三方依赖
-function hslHex(h, s, l) {
+function hslHex(h: number, s: number, l: number) {
   const a = s * Math.min(l, 1 - l);
-  const f = (n) => {
+  const f = (n: number) => {
     const k = (n + h / 30) % 12;
     const c = l - a * Math.max(-1, Math.min(k - 3, Math.min(9 - k, 1)));
     return Math.round(clamp(c, 0, 1) * 255)
@@ -21,7 +22,7 @@ function hslHex(h, s, l) {
 }
 
 // 返回 CSS background 值（linear-gradient 字符串）；黑白系给灰阶渐变
-export function presetSwatch(basic = {}) {
+export function presetSwatch(basic: Partial<Basic> | null | undefined = {}) {
   const b = basic || {};
   const mono = (b.saturation ?? 0) <= -100;
   const temp = clamp(Number(b.temperature) || 0, -100, 100);

@@ -8,7 +8,7 @@ import {
   normalizeExportPreset,
   parseExportPresets,
   stringifyExportPresets,
-} from '@/lib/exportPresets';
+} from '@/lib/exportPresets.ts';
 
 describe('exportPresets 导出预设（13a）', () => {
   it('键名固定（settings 表 key，Rust/前端两侧事实源）', () => {

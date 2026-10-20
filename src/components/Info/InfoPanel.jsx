@@ -5,7 +5,7 @@ import { Input } from '@/components/ui/input';
 import { FolderOpen, Trash2, X, Heart, HeartOff } from 'lucide-react';
 import ConfirmDialog from '../Layout/ConfirmDialog';
 import StarRating from '@/components/common/StarRating';
-import { formatSizeDisplay as formatSize } from '@/lib/format';
+import { formatSizeDisplay as formatSize } from '@/lib/format.ts';
 import { removeIdsFromSet } from '@/lib/gallery';
 import useGalleryStore from '@/store/galleryStore';
 import { isEnterSubmit } from '@/lib/shortcuts';

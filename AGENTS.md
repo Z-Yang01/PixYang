@@ -234,8 +234,15 @@ tests/            vitest（node 环境 + per-file happy-dom pragma）
   shared/ 由「15 .js + 1 .ts」翻转为「15 .ts + 1 .js」；tsc 0E、全量 88/1152 绿、eslint 0E/9W、
   prettier 净，Node 工具图三二进制（managed 22.22.2 / system 22.19.0 / PATH）冒烟均 14 stages 且
   exposure/contrast round-trip 保值。第三批 `renderSpec`（2026-10-20）：**shared/ 全量 16 个 .ts 收官**，
-  Node 工具图首次直载 .ts 入口成功。下一站：src/lib/ 16 个 .js 模块（3078 行），按「叶子纯函数 →
-  中层逻辑 → editParams → 桥接/着色器」分批推进。
+  Node 工具图首次直载 .ts 入口成功。第四批起进入 src/lib/ 生产侧（16 个 .js，3078 行），按
+  「叶子纯函数 → 中层逻辑 → editParams → 桥接/着色器」分批推进：第一批已落
+  format / histogram / presetSwatch / exportPresets 四个叶子模块，并顺带把既有两个 .ts
+  （utils / themes）的 15 处 alias 引用统一到显式 `.ts`——此前它们是全仓唯一一批省略扩展名的
+  .ts 引用（shadcn 脚手架遗留），留着会让两种惯例并存。
+  ⚠ `components.json` 的 `"utils": "@/lib/utils"` 是 **shadcn CLI 配置，不是应用层导入**，
+  刻意保持无扩展名（CLI 按无扩展名 alias 生成组件），勿随迁移一起改。
+- **`@/` alias 下的 .ts 说明符同样显式带 `.ts`**（`@/lib/format.ts`）：理由与 shared/ 一致，
+  且 Vite/vitest/tsc 三方对 alias + 显式扩展名的解析已实证（全量 88/1152 绿）。
 
 ## UI 与样式（shadcn/ui + Tailwind v4）
 
@@ -343,7 +350,7 @@ tests/            vitest（node 环境 + per-file happy-dom pragma）
 - **编辑面板 UX（2026-10-12）**：预设区上移至面板顶（原在底部需滚 ~2.6 屏）并按 group 分组
   （胶片模拟/风格，group 字段进 builtinPresets validate）；面板顶 sticky 锚点跳转条（editor-section-nav，
   data-sec 十段一键 scrollIntoView，basic 回顶）；预设色卡 presetSwatch（basic→CSS 渐变纯装饰可视化，
-  src/lib/presetSwatch.js，黑白→灰阶/暖调→橙黄/冷调→蓝方向锁）；查看态原图加载小 spinner（底部信息栏）。
+  src/lib/presetSwatch.ts，黑白→灰阶/暖调→橙黄/冷调→蓝方向锁）；查看态原图加载小 spinner（底部信息栏）。
 - **编辑面板扩展**：HSL 八带分色（editParams 平铺模型 hsl{hue,sat,lum} 恒 8 项，域接入四处=
   presetApply/copySettings/pasteSettings/handleSyncEdits）；detail 锐化+降噪（锐化为执行器近似 USM，
   降噪为亮度域 3×3 高斯混合 `apply_noise_reduction_in_place`，预览为画布分辨率邻域近似——不做像素

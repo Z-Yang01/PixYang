@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { THEMES, THEME_IDS, normalizeTheme, isLightTheme } from '@/lib/themes';
+import { THEMES, THEME_IDS, normalizeTheme, isLightTheme } from '@/lib/themes.ts';
 
 const css = readFileSync(new URL('../../../src/styles/index.css', import.meta.url), 'utf8');
 

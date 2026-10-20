@@ -7,7 +7,7 @@ import {
   TriangleAlertIcon,
 } from 'lucide-react';
 import { Toaster as Sonner, type ToasterProps } from 'sonner';
-import { isLightTheme } from '@/lib/themes';
+import { isLightTheme } from '@/lib/themes.ts';
 
 const Toaster = ({ ...props }: ToasterProps) => {
   const [theme, setTheme] = React.useState<'dark' | 'light'>('dark');
