@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { matchSliderNavKey } from '@/lib/shortcuts';
+import { matchSliderNavKey } from '@/lib/shortcuts.ts';
 
 const MASK_ADJ_SLIDERS = [
   {

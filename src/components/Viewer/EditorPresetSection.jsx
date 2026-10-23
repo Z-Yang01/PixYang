@@ -1,7 +1,7 @@
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { X } from 'lucide-react';
-import { isEnterSubmit } from '@/lib/shortcuts';
+import { isEnterSubmit } from '@/lib/shortcuts.ts';
 import { presetSwatch } from '@/lib/presetSwatch.ts';
 import builtinPresetsModule from '../../../shared/builtinPresets.ts';
 

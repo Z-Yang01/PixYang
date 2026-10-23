@@ -1,7 +1,7 @@
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { X } from 'lucide-react';
-import { isEnterSubmit } from '@/lib/shortcuts';
+import { isEnterSubmit } from '@/lib/shortcuts.ts';
 
 // 编辑面板快照区（P4）：当前图的命名参数存档——列表点击恢复（进历史可撤销）/删除/命名创建。
 // 纯受控展示段，状态与回调全部由 ImageViewer 注入（与 EditorPresetSection 同款分工）。

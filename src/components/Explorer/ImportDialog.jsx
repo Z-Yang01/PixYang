@@ -10,7 +10,7 @@ import {
 } from '@/components/ui/dialog';
 import { Loader2, FileImage, Check, FolderOpen } from 'lucide-react';
 import { formatFileSize, todayStr } from '@/lib/format.ts';
-import { errText } from '@/lib/errorText';
+import { errText } from '@/lib/errorText.ts';
 import api from '@/lib/api';
 import { useImportStore } from '@/store/importStore';
 

@@ -5,7 +5,7 @@ import useGalleryStore from '@/store/galleryStore';
 import api from '@/lib/api';
 import OrphanFilesPanel from './OrphanFilesPanel';
 import { THEMES, normalizeTheme } from '@/lib/themes.ts';
-import { errText, friendlyError } from '@/lib/errorText';
+import { errText, friendlyError } from '@/lib/errorText.ts';
 
 const DEFAULT_SETTINGS = { theme: 'dark', rows: 3, columns: 5, gap: 12, padding: 16 };
 

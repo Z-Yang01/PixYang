@@ -43,9 +43,9 @@ import {
   VIEWER_ACTIONS,
   ratingFromViewerAction,
   matchSliderNavKey,
-} from '@/lib/shortcuts';
+} from '@/lib/shortcuts.ts';
 import api from '@/lib/api';
-import { errRaw, errText, friendlyError, rawErrorText } from '@/lib/errorText';
+import { errRaw, errText, friendlyError, rawErrorText } from '@/lib/errorText.ts';
 import {
   EDIT_DEFAULTS,
   CROP_RATIOS,
@@ -69,7 +69,7 @@ import {
   straightenGeometry,
   clampStrengthValue,
 } from '@/lib/editParams';
-import { AI_DEFAULT_BASE_URL, pickExifSummary, suggestByVision } from '@/lib/aiGrade';
+import { AI_DEFAULT_BASE_URL, pickExifSummary, suggestByVision } from '@/lib/aiGrade.ts';
 const { suggestGrade } = autoGradeModule;
 import curvesLib from '../../../shared/curves.ts';
 const { hasCurveData } = curvesLib;

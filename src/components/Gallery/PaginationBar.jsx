@@ -3,7 +3,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { totalPagesOf } from '@/lib/gallery.ts';
-import { isEnterSubmit } from '@/lib/shortcuts';
+import { isEnterSubmit } from '@/lib/shortcuts.ts';
 import useGalleryStore from '@/store/galleryStore';
 
 export default function PaginationBar() {

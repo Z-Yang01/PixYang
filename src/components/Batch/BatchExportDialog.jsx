@@ -10,7 +10,7 @@ import {
 } from '@/components/ui/dialog';
 import useGalleryStore from '@/store/galleryStore';
 import api from '@/lib/api';
-import { errText } from '@/lib/errorText';
+import { errText } from '@/lib/errorText.ts';
 import {
   EXPORT_FORMATS,
   EXPORT_PRESETS_KEY,

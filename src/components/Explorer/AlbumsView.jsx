@@ -1,8 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
 import { toast } from 'sonner';
 import api from '@/lib/api';
-import { isEnterSubmit } from '@/lib/shortcuts';
-import { errText, friendlyError } from '@/lib/errorText';
+import { isEnterSubmit } from '@/lib/shortcuts.ts';
+import { errText, friendlyError } from '@/lib/errorText.ts';
 import ConfirmDialog from '../Layout/ConfirmDialog';
 import BatchExportDialog from '../Batch/BatchExportDialog';
 import { Button } from '@/components/ui/button';

@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { errRaw, errText, errorLine, friendlyError, rawErrorText } from '@/lib/errorText';
+import { errRaw, errText, errorLine, friendlyError, rawErrorText } from '@/lib/errorText.ts';
 
 // 语料与 Rust 侧共用：src-tauri/src/err_cn.rs 的 共享语料逐条对拍 用例读同一份 JSON，
 // 任一侧改规则而另一侧未同步即红。左列=引擎原文，右列=应上屏中文。

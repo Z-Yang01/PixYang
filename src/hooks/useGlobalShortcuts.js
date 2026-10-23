@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { matchGlobalShortcut, GLOBAL_ACTIONS, isTypingTarget } from '../lib/shortcuts';
+import { matchGlobalShortcut, GLOBAL_ACTIONS, isTypingTarget } from '../lib/shortcuts.ts';
 
 // 全局快捷键：实时依赖收进 ref，避免每次勾选/弹层变化重绑监听
 export default function useGlobalShortcuts(handlers) {

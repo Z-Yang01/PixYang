@@ -7,10 +7,11 @@
 import editSchemaModule from '../../shared/editSchema.ts';
 
 const { normalizeEdits } = editSchemaModule;
+type EditParams = ReturnType<typeof normalizeEdits>;
 
 export const AI_DEFAULT_BASE_URL = 'https://api.openai.com/v1';
 
-// 与 shared/editSchema BasicSchema 同域：九个影调字段
+// 与 shared/editSchema BasicSchema 同域：十二个影调字段
 const BASIC_KEYS = [
   'exposure',
   'contrast',
@@ -24,19 +25,47 @@ const BASIC_KEYS = [
   'dehaze',
   'temperature',
   'tint',
-];
+] as const;
+
+type ExifSummary = Record<string, string | number>;
 
 // EXIF 只挑对调色有上下文价值的字段，控制 payload
-export function pickExifSummary(exif) {
+export function pickExifSummary(exif: unknown): ExifSummary | null {
   if (!exif || typeof exif !== 'object') return null;
-  const out = {};
+  const out: ExifSummary = {};
+  const rec = exif as Record<string, unknown>;
   for (const key of ['camera', 'lens', 'iso', 'exposure', 'focalLength']) {
-    if (exif[key]) out[key] = exif[key];
+    if (rec[key]) out[key] = rec[key] as string | number;
   }
   return Object.keys(out).length > 0 ? out : null;
 }
 
-export function buildMessages({ imageDataUrl, analysis, exif } = {}) {
+// analyze_image 统计摘要（Rust analyze_image 的 JSON 投影子集）
+export type ImageAnalysis = {
+  mean?: { l?: number; r?: number; g?: number; b?: number };
+  p05?: number;
+  p50?: number;
+  p95?: number;
+  shadowClipPct?: number;
+  highlightClipPct?: number;
+};
+
+type VisionPart =
+  { type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } };
+
+type VisionMessage = { role: 'system' | 'user'; content: string | VisionPart[] };
+
+export function buildMessages({
+  imageDataUrl,
+  analysis,
+  exif,
+}:
+  | {
+      imageDataUrl?: string | null;
+      analysis?: ImageAnalysis | null;
+      exif?: ExifSummary | null;
+    }
+  | undefined = {}): VisionMessage[] {
   const system = [
     '你是专业照片调色师。根据给出的画面统计与缩略图，输出照片影调参数建议。',
     '参数域与语义（严格遵守符号约定）：',
@@ -65,7 +94,7 @@ export function buildMessages({ imageDataUrl, analysis, exif } = {}) {
   const exifText = exif ? `\n拍摄信息：${JSON.stringify(exif)}` : '';
 
   const textPart = `${stats}${exifText}\n请给出这张照片的影调建议。`;
-  const parts = [{ type: 'text', text: textPart }];
+  const parts: VisionPart[] = [{ type: 'text', text: textPart }];
   if (imageDataUrl) {
     parts.push({ type: 'image_url', image_url: { url: imageDataUrl } });
   }
@@ -77,7 +106,7 @@ export function buildMessages({ imageDataUrl, analysis, exif } = {}) {
 
 // 各字段值域（与 shared/editSchema BasicSchema 同域）：先钳到边界再交给
 // normalizeEdits，轻微越界（如 exposure 2.5）保留为边界值而非被 .catch 归零
-const BASIC_RANGES = {
+const BASIC_RANGES: Record<(typeof BASIC_KEYS)[number], [number, number]> = {
   exposure: [-2, 2],
   contrast: [-50, 50],
   highlights: [-100, 100],
@@ -94,7 +123,7 @@ const BASIC_RANGES = {
 
 // 从模型回复提取建议：剥代码围栏 → 截取首个 {...} → JSON.parse →
 // 只保留 basic 十二字段白名单并钳制值域 → normalizeEdits 结构兜底（永不抛错）
-export function parseSuggestion(text) {
+export function parseSuggestion(text: string): { name: string; basic: EditParams['basic'] } {
   if (typeof text !== 'string' || !text.trim()) {
     throw new Error('模型回复为空');
   }
@@ -106,14 +135,16 @@ export function parseSuggestion(text) {
   if (start < 0 || end <= start) {
     throw new Error('模型回复中未找到 JSON');
   }
-  let parsed;
+  let parsed: unknown;
   try {
     parsed = JSON.parse(cleaned.slice(start, end + 1));
   } catch {
     throw new Error('模型回复的 JSON 无法解析');
   }
-  const rawBasic = parsed?.basic && typeof parsed.basic === 'object' ? parsed.basic : parsed;
-  const basic = {};
+  const rec = (parsed && typeof parsed === 'object' ? parsed : {}) as Record<string, unknown>;
+  const rawBasic =
+    rec.basic && typeof rec.basic === 'object' ? (rec.basic as Record<string, unknown>) : rec;
+  const basic: Record<string, number> = {};
   for (const key of BASIC_KEYS) {
     const v = Number(rawBasic?.[key]);
     if (!Number.isFinite(v)) {
@@ -127,14 +158,27 @@ export function parseSuggestion(text) {
   return { name: 'AI 调色', basic: normalized.basic };
 }
 
-/**
- * @param {{baseUrl: string, apiKey: string, model: string}} config 设置页配置
- * @param {{imageDataUrl?: string|null, analysis?: object, exif?: object|null}} input
- * @param {typeof fetch} fetchImpl 注入点（单测替换）
- * @param {{timeoutMs?: number}} opts 超时可注入（单测用）
- * @returns {Promise<{name: string, basic: object}>}
- */
-export async function suggestByVision(config, input, fetchImpl = globalThis.fetch, opts = {}) {
+export type VisionConfig = { baseUrl?: string; apiKey?: string; model?: string };
+
+export type VisionInput = {
+  imageDataUrl?: string | null;
+  analysis?: ImageAnalysis | null;
+  exif?: ExifSummary | null;
+};
+
+export type VisionSuggestion = { name: string; basic: EditParams['basic'] };
+
+/** 发起视觉模型建议请求。
+ *  @param config 设置页配置
+ *  @param input 图/统计/EXIF 输入
+ *  @param fetchImpl 注入点（单测替换）
+ *  @param opts 超时可注入（单测用） */
+export async function suggestByVision(
+  config: VisionConfig | null | undefined,
+  input: VisionInput | undefined,
+  fetchImpl: typeof fetch | undefined | null = globalThis.fetch,
+  opts: { timeoutMs?: number } = {}
+): Promise<VisionSuggestion> {
   if (!config?.apiKey || !config?.model) {
     throw new Error('缺少 API 密钥或模型名');
   }
@@ -150,13 +194,13 @@ export async function suggestByVision(config, input, fetchImpl = globalThis.fetc
       controller.abort();
     }, timeoutMs);
   let timer = arm();
-  const asUserError = (e) => {
-    if (timedOut || e?.name === 'AbortError') {
+  const asUserError = (e: unknown): Error => {
+    if (timedOut || (e instanceof Error && e.name === 'AbortError')) {
       return new Error(`AI 请求超时（${Math.round(timeoutMs / 1000)} 秒无响应）`);
     }
-    return e;
+    return e instanceof Error ? e : new Error(String(e));
   };
-  let response;
+  let response: Response;
   try {
     response = await (fetchImpl || globalThis.fetch)(`${base}/chat/completions`, {
       method: 'POST',
@@ -180,7 +224,7 @@ export async function suggestByVision(config, input, fetchImpl = globalThis.fetc
     // 错误响应体同样受读体超时覆盖：服务端挂着不发错误 body 时也能以中文超时收场
     clearTimeout(timer);
     timer = arm();
-    let body;
+    let body: string;
     try {
       body = await response.text();
     } catch (e) {
@@ -192,9 +236,9 @@ export async function suggestByVision(config, input, fetchImpl = globalThis.fetc
   }
   clearTimeout(timer);
   timer = arm();
-  let data;
+  let data: { choices?: { message?: { content?: unknown } }[] } | null;
   try {
-    data = await response.json();
+    data = (await response.json()) as { choices?: { message?: { content?: unknown } }[] } | null;
   } catch (e) {
     throw asUserError(e);
   } finally {

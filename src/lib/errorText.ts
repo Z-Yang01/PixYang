@@ -4,12 +4,16 @@
 
 const CJK = /[\u4e00-\u9fff]/;
 
-function has(low, needles) {
+function has(low: string, needles: string[]): boolean {
   return needles.some((n) => low.includes(n));
 }
 
 // 顺序与 err_cn.rs 的匹配链一致，改动须同步（对拍语料会咬）
-const RULES = [
+const RULES: {
+  cn: string;
+  code?: boolean;
+  hit: (low: string, code: number | null) => boolean;
+}[] = [
   { cn: '文件已存在', hit: (low) => has(low, ['already exists', 'file exists']) },
   { cn: '目录非空', hit: (low) => low.includes('directory not empty') },
   { cn: '路径类型不符', hit: (low) => has(low, ['is a directory', 'not a directory']) },
@@ -105,7 +109,7 @@ const RULES = [
 
 const CODE_KEYS = ['os error ', 'code:', 'code ', 'error 0x'];
 
-function osCode(low) {
+function osCode(low: string): number | null {
   for (const key of CODE_KEYS) {
     let at = 0;
     for (;;) {
@@ -119,21 +123,22 @@ function osCode(low) {
   return null;
 }
 
-export function rawErrorText(e) {
+export function rawErrorText(e: unknown): string {
   if (!e) return '';
   if (typeof e === 'string') return e;
-  return e.message || String(e);
+  const anyErr = e as { message?: unknown };
+  return (typeof anyErr.message === 'string' && anyErr.message) || String(e);
 }
 
 // 「中文前缀: 引擎原文」→ 前缀链 + 最深正文；盘符（E:\）等不含中文的左侧不算前缀
-function splitPrefix(raw) {
+function splitPrefix(raw: string): [string, string] | null {
   const i = raw.search(/[:：]/);
   if (i <= 0) return null;
   const head = raw.slice(0, i).trim();
   return CJK.test(head) ? [head, raw.slice(i + 1).trim()] : null;
 }
 
-function translate(body) {
+function translate(body: string): string {
   if (!body) return '';
   if (CJK.test(body)) return body;
   const low = body.toLowerCase();
@@ -146,8 +151,8 @@ function translate(body) {
   return '操作未成功';
 }
 
-export function errorLine(raw) {
-  const chain = [];
+export function errorLine(raw?: string | null): string {
+  const chain: string[] = [];
   let rest = (raw || '').trim();
   for (;;) {
     const parts = rest ? splitPrefix(rest) : null;
@@ -161,7 +166,7 @@ export function errorLine(raw) {
 
 /** 用于直接上屏 API 返回的错误串（自带中文前缀时保留）；改写过的原文降级到 console.warn 供取证。
  *  空输入返回空串，好让调用方的 `|| 兜底文案` 仍然生效 */
-export function friendlyError(e) {
+export function friendlyError(e: unknown): string {
   const raw = rawErrorText(e);
   if (!raw) return '';
   const shown = errorLine(raw);
@@ -170,13 +175,13 @@ export function friendlyError(e) {
 }
 
 /** 前端前缀取代引擎前缀（不产生双重前缀），正文仍走中文化 */
-export function errText(prefix, e) {
+export function errText(prefix: string, e: unknown): string {
   const body = stripPrefixes(rawErrorText(e));
   return `${prefix}：${translate(body) || '操作未成功'}`;
 }
 
 // 剥掉引擎侧的中文前缀链，留最深正文
-function stripPrefixes(raw) {
+function stripPrefixes(raw: string): string {
   let rest = (raw || '').trim();
   for (;;) {
     const parts = rest ? splitPrefix(rest) : null;
@@ -187,6 +192,6 @@ function stripPrefixes(raw) {
 }
 
 /** 原始错误全文（供 title 悬浮与控制台取证） */
-export function errRaw(prefix, e) {
+export function errRaw(prefix: string, e: unknown): string {
   return `${prefix}：${rawErrorText(e)}`;
 }

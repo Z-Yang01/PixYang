@@ -1,4 +1,4 @@
-import { matchSliderNavKey } from '@/lib/shortcuts';
+import { matchSliderNavKey } from '@/lib/shortcuts.ts';
 
 // 编辑面板通用滑杆行（用户裁决 2026-10-13 立项）：封装手势五件套共性——
 // onDragStart（pointerdown 设父级 dragRef 键名）/ onCommit（pointerup 入史）/

@@ -1,24 +1,46 @@
-export function isTypingTarget(el) {
+// 键盘快捷键匹配：意图识别层（只判定不执行），供 App / 网格 / 查看器各自消费。
+
+type TypingTarget = { isContentEditable?: boolean; tagName?: string };
+
+type KeyEvent = {
+  key: string;
+  ctrlKey?: boolean;
+  metaKey?: boolean;
+  altKey?: boolean;
+  shiftKey?: boolean;
+  target?: EventTarget | null;
+  isComposing?: boolean;
+  keyCode?: number;
+  nativeEvent?: { isComposing?: boolean } | null;
+};
+
+export function isTypingTarget(el?: TypingTarget | EventTarget | null): boolean {
   if (!el) return false;
-  if (el.isContentEditable) return true;
-  const tag = el.tagName;
+  const t = el as TypingTarget;
+  if (t.isContentEditable) return true;
+  const tag = t.tagName;
   return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
 }
 
-export function isEditableEvent(e) {
+export function isEditableEvent(e?: KeyEvent | null): boolean {
   return !!(e?.ctrlKey || e?.metaKey || e?.altKey);
 }
 
 // 输入法合成态的 Enter 是「上屏候选词」，不是「提交」：只放行真正的提交 Enter
 // keyCode 229 为部分浏览器合成期的兜底信号
-export function isEnterSubmit(e) {
+export function isEnterSubmit(e?: KeyEvent | null): boolean {
   return e?.key === 'Enter' && !(e.isComposing || e.nativeEvent?.isComposing || e.keyCode === 229);
 }
+
+export type SliderNavAction = { type: 'coarse'; value: number } | { type: 'reset' };
 
 // 编辑滑杆键盘导航的唯一判定（R70 主滑杆口径，R92 起主滑杆/蒙版/HSL/颜色分级/拉直共用）：
 // Shift+←/→ 粗调（step×10，钳到 [min,max]）；Ctrl+Home/Delete/Backspace 回默认。
 // 只识别意图不提交：调用方按各自通道落地（键盘进 700ms 收敛窗 / 回默认立即入历史）。
-export function matchSliderNavKey(e, { value, min, max, step }) {
+export function matchSliderNavKey(
+  e: KeyEvent,
+  { value, min, max, step }: { value: number; min: number; max: number; step: number }
+): SliderNavAction | null {
   if (e.shiftKey && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
     const dir = e.key === 'ArrowRight' ? 1 : -1;
     return { type: 'coarse', value: Math.min(max, Math.max(min, value + dir * step * 10)) };
@@ -40,7 +62,7 @@ export const GLOBAL_ACTIONS = {
   DeleteSelected: 'deleteSelected',
   SelectAll: 'selectAll',
   ExportSelected: 'exportSelected',
-};
+} as const;
 
 /** 网格动作 */
 export const GRID_ACTIONS = {
@@ -50,7 +72,7 @@ export const GRID_ACTIONS = {
   MoveDown: 'moveDown',
   Open: 'open',
   ToggleSelect: 'toggleSelect',
-};
+} as const;
 
 /** 查看器动作 */
 export const VIEWER_ACTIONS = {
@@ -73,9 +95,15 @@ export const VIEWER_ACTIONS = {
   ToggleInfo: 'toggleInfo',
   SaveEdits: 'saveEdits',
   Delete: 'delete',
-};
+} as const;
 
-export const SHORTCUT_GROUPS = [
+export type ViewerAction = (typeof VIEWER_ACTIONS)[keyof typeof VIEWER_ACTIONS];
+export type GridAction = (typeof GRID_ACTIONS)[keyof typeof GRID_ACTIONS];
+export type GlobalAction = (typeof GLOBAL_ACTIONS)[keyof typeof GLOBAL_ACTIONS];
+
+export type ShortcutGroup = { title: string; items: { keys: string[]; desc: string }[] };
+
+export const SHORTCUT_GROUPS: ShortcutGroup[] = [
   {
     title: '图库',
     items: [
@@ -117,7 +145,7 @@ export const SHORTCUT_GROUPS = [
   },
 ];
 
-export function matchGlobalShortcut(e) {
+export function matchGlobalShortcut(e: KeyEvent): GlobalAction | null {
   if (isTypingTarget(e.target)) return null;
   const key = e.key;
   // Shift 修饰必须排除：Ctrl+Shift+A 等系统/浏览器组合键不应触发全选/导出
@@ -134,7 +162,7 @@ export function matchGlobalShortcut(e) {
   return null;
 }
 
-export function matchGridShortcut(e) {
+export function matchGridShortcut(e: KeyEvent): GridAction | null {
   if (isTypingTarget(e.target)) return null;
   if (isEditableEvent(e)) return null;
   switch (e.key) {
@@ -156,7 +184,7 @@ export function matchGridShortcut(e) {
   }
 }
 
-export function matchViewerShortcut(e) {
+export function matchViewerShortcut(e: KeyEvent): ViewerAction | null {
   const key = e.key;
   // Ctrl+S（编辑态保存参数）须在通用 Ctrl 拦截前判定
   if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && key === 's')
@@ -175,13 +203,15 @@ export function matchViewerShortcut(e) {
   if (key === 'h' || key === 'H') return VIEWER_ACTIONS.FlipH;
   if (key === 'f' || key === 'F') return VIEWER_ACTIONS.Favorite;
   if (key === 'i' || key === 'I') return VIEWER_ACTIONS.ToggleInfo;
-  if (key >= '1' && key <= '5') return /** @type {any} */ (`rate${key}`);
+  if (key >= '1' && key <= '5') return `rate${key}` as ViewerAction;
   // Delete 删除当前图（进回收站）：仅查看态消费，编辑态由调用方守卫
   if (key === 'Delete') return VIEWER_ACTIONS.Delete;
   return null;
 }
 
-export function ratingFromViewerAction(action) {
+export function ratingFromViewerAction(
+  action: ViewerAction | string | null | undefined
+): number | null {
   if (action === VIEWER_ACTIONS.ClearRating) return 0;
   if (typeof action === 'string' && action.startsWith('rate') && action.length === 5) {
     const n = Number(action.slice(4));

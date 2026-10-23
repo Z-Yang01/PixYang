@@ -12,7 +12,7 @@ import {
   GRID_ACTIONS,
   VIEWER_ACTIONS,
   SHORTCUT_GROUPS,
-} from '@/lib/shortcuts';
+} from '@/lib/shortcuts.ts';
 
 function keyEvent(key, opts = {}) {
   return {

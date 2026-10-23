@@ -7,7 +7,7 @@ import { applyPresetToOps } from '../lib/presetApply';
 import autoGradeModule from '../../shared/autoGrade.ts';
 const { suggestGrade } = autoGradeModule;
 import { matchesListFilters, pageAfterDelete, removeIdsFromSet } from '../lib/gallery';
-import { errText, friendlyError } from '../lib/errorText';
+import { errText, friendlyError } from '../lib/errorText.ts';
 import { offerDeleteUndo } from '../lib/trashUndo';
 
 // 批量操作（勾选集驱动）：全选/导出/打标/评分收藏/删除确认 + 批量同步编辑参数。

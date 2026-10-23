@@ -5,7 +5,7 @@ import {
   pickExifSummary,
   suggestByVision,
   AI_DEFAULT_BASE_URL,
-} from '@/lib/aiGrade';
+} from '@/lib/aiGrade.ts';
 
 const VALID = {
   exposure: 0.35,

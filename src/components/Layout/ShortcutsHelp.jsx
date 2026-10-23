@@ -1,6 +1,6 @@
 import { Button } from '@/components/ui/button';
 import { X, Keyboard, BookOpen } from 'lucide-react';
-import { SHORTCUT_GROUPS } from '@/lib/shortcuts';
+import { SHORTCUT_GROUPS } from '@/lib/shortcuts.ts';
 
 // 统一帮助弹窗：快捷键（? 键）+ 使用说明两章——原双弹窗（HelpGuide）合并，侧栏只留 ? 键入口
 const GUIDE_SECTIONS = [

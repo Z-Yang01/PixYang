@@ -8,7 +8,7 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { isEnterSubmit } from '@/lib/shortcuts';
+import { isEnterSubmit } from '@/lib/shortcuts.ts';
 
 export function AddToAlbumDialog({ image, albums, onAdd, onCreateAndAdd, onClose }) {
   const [newAlbumName, setNewAlbumName] = useState('');

@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 import api from '../lib/api';
-import { friendlyError } from '../lib/errorText';
+import { friendlyError } from '../lib/errorText.ts';
 import { useImportStore } from '../store/importStore';
 import useGalleryStore from '../store/galleryStore';
 

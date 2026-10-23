@@ -3,7 +3,7 @@
 // 窗口内不物理删除任何文件；超期（24h）由 Rust 侧启动/每日清扫兜底。
 import { toast } from 'sonner';
 import apiMod from './api';
-import { friendlyError } from './errorText';
+import { friendlyError } from './errorText.ts';
 
 // api 的 default 导出是**运行时按命令名循环装配**的（api.js 尾部遍历命令名数组逐个赋值），
 // TS 只能推断出静态声明的那部分（实测仅 isBridgeAvailable），具名通道在类型上不可见。

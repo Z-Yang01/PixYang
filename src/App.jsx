@@ -22,7 +22,7 @@ import useGlobalShortcuts from './hooks/useGlobalShortcuts';
 import useDragImport from './hooks/useDragImport';
 import useBatchActions from './hooks/useBatchActions';
 import { offerDeleteUndo } from './lib/trashUndo';
-import { errText, friendlyError } from './lib/errorText';
+import { errText, friendlyError } from './lib/errorText.ts';
 import Sidebar from './components/Layout/Sidebar';
 import TopBar from './components/Layout/TopBar';
 import ImageGrid from './components/Gallery/ImageGrid';

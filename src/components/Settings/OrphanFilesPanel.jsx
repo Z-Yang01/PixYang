@@ -3,7 +3,7 @@ import { Button } from '@/components/ui/button';
 import ConfirmDialog from '../Layout/ConfirmDialog';
 import api from '@/lib/api';
 import { formatFileSize } from '@/lib/format.ts';
-import { errText, friendlyError } from '@/lib/errorText';
+import { errText, friendlyError } from '@/lib/errorText.ts';
 
 const PREVIEWABLE = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp'];
 
