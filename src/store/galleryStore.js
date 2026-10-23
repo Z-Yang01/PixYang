@@ -72,6 +72,18 @@ const useGalleryStore = create((set, get) => ({
   loading: false,
   thumbVersion: 0,
 
+  // 编辑预览缩略图的按路径版本号（edit-{id}.jpg 同路径覆写，需版本参数破缓存）。
+  // 按路径而非全局 bump：全局 thumbVersion 会让整页缩略图 URL 全部失效重载
+  // （保存一次参数闪一页），实际只有正在编辑的那张需要新 URL
+  editThumbVersions: {},
+  bumpEditThumbVersion: (path) =>
+    set((state) => ({
+      editThumbVersions: {
+        ...state.editThumbVersions,
+        [path]: (state.editThumbVersions[path] || 0) + 1,
+      },
+    })),
+
   // 参数剪贴板（编辑器「复制参数」写入；BatchBar「同步到所选」消费；geometry 同步需显式选择）
   copiedEdits: null,
 

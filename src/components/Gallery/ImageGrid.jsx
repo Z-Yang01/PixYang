@@ -48,6 +48,7 @@ export default function ImageGrid({
   const selectedIds = useGalleryStore((s) => s.selectedIds);
   const gridSettings = useGalleryStore((s) => s.gridSettings);
   const thumbVersion = useGalleryStore((s) => s.thumbVersion);
+  const editThumbVersions = useGalleryStore((s) => s.editThumbVersions);
   const albums = useGalleryStore((s) => s.albums);
   const setSelectedIds = useGalleryStore((s) => s.setSelectedIds);
   const search = useGalleryStore((s) => s.search);
@@ -693,6 +694,10 @@ export default function ImageGrid({
           const preferred =
             gridSettings.columns <= 4 ? hiResThumbOf(image) : preferredThumbOf(image);
           const thumbUrl = preferred ? thumbUrls[preferred] : undefined;
+          // 编辑预览按路径追加版本（edit-{id}.jpg 同路径覆写破缓存）；全局 thumbVersion
+          // 仅在缩略图重建（无差量事件）时变化。按路径版本让一次保存只失效该图 URL，
+          // 其余卡片 src 不变不重载（memo 命中）
+          const editV = editThumbVersions[preferred] || 0;
           return (
             <ImageCard
               key={image.id}
@@ -702,7 +707,9 @@ export default function ImageGrid({
               highlighted={index === activeIndex}
               tags={imageTags[image.id] || EMPTY_TAGS}
               allTags={allTags}
-              thumbSrc={thumbUrl ? `${thumbUrl}?v=${thumbVersion}` : undefined}
+              thumbSrc={
+                thumbUrl ? `${thumbUrl}?v=${thumbVersion}${editV ? `-${editV}` : ''}` : undefined
+              }
               originalSrc={fileUrls[image.id]}
               thumbBroken={brokenThumbnails.has(image.id)}
               onClick={handleCardClick}

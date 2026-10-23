@@ -72,9 +72,11 @@ export default function useGalleryData({ onThumbnailsReady } = {}) {
     };
   }, [loadImages, onThumbnailsReady]);
 
-  // 编辑预览缩略图生成完成（参数保存后异步渲染）：bump 版本刷新该图 URL，
-  // 并把新路径就地写回当前页记录（不写回则网格按 id 命中旧缓存，改完参数缩略图不变）。
-  // 仅页内成员才 bump：批量同步会对不可见图片连发 N 个事件，逐个整页重载缩略图（审查批 8 R-6）
+  // 编辑预览缩略图生成完成（参数保存后异步渲染）：把新路径就地写回当前页记录
+  // （不写回则网格按 id 命中旧缓存，改完参数缩略图不变），并按路径 bump 版本号
+  // （edit-{id}.jpg 同路径覆写需版本参数破缓存）。仅页内成员才处理：批量同步会对
+  // 不可见图片连发 N 个事件（审查批 8 R-6）；不再全局 bump thumbVersion——那会让
+  // 整页缩略图 URL 全部失效重载（保存一次闪一页），只有该图的 URL 需要变化
   useEffect(() => {
     if (!api.isBridgeAvailable()) return;
     const off = api.onEditPreviewReady((payload) => {
@@ -83,7 +85,10 @@ export default function useGalleryData({ onThumbnailsReady } = {}) {
       const st = useGalleryStore.getState();
       if (!st.images.some((img) => img.id === id)) return;
       useGalleryStore.setState((s) => ({
-        thumbVersion: s.thumbVersion + 1,
+        editThumbVersions: {
+          ...s.editThumbVersions,
+          [path]: (s.editThumbVersions[path] || 0) + 1,
+        },
         images: applyLightLocalUpdate(s.images, id, { thumbnail_edit_path: path }),
       }));
     });

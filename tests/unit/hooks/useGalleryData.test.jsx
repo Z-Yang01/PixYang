@@ -92,7 +92,7 @@ describe('useGalleryData wiring', () => {
     }
   });
 
-  it('onEditPreviewReady 携带 {id,path} 时把新缩略图路径就地写回当前页记录', async () => {
+  it('onEditPreviewReady 携带 {id,path} 时写回路径并按路径 bump 版本（不全局失效整页 URL）', async () => {
     let previewCb;
     window.pixyang.getImages = vi.fn().mockResolvedValue({
       images: [{ id: 1, filename: 'a.jpg', thumbnail_path: 'C:/t/a_old.jpg' }],
@@ -108,17 +108,27 @@ describe('useGalleryData wiring', () => {
     await act(async () => {
       previewCb({ id: 1, path: 'C:/edit/a.png' });
     });
-    const st = useGalleryStore.getState();
-    expect(st.thumbVersion).toBe(before + 1);
+    let st = useGalleryStore.getState();
+    // 全局 thumbVersion 不再 bump：全局会让整页缩略图 URL 失效重载（保存一次闪一页）
+    expect(st.thumbVersion).toBe(before);
     expect(st.images[0].thumbnail_edit_path).toBe('C:/edit/a.png');
-    // 无载荷（批 8 R-6 起）既不 bump 也不动列表：无法判定页内归属的事件一律忽略
+    expect(st.editThumbVersions['C:/edit/a.png']).toBe(1);
+    // 同路径再次保存版本递增；其他路径不受影响
+    await act(async () => {
+      previewCb({ id: 1, path: 'C:/edit/a.png' });
+      previewCb({ id: 1, path: 'C:/edit/other.png' });
+    });
+    st = useGalleryStore.getState();
+    expect(st.editThumbVersions['C:/edit/a.png']).toBe(2);
+    expect(st.editThumbVersions['C:/edit/other.png']).toBe(1);
+    // 无载荷（批 8 R-6 起）既不写回也不动版本：无法判定页内归属的事件一律忽略
     await act(async () => {
       previewCb(undefined);
     });
-    expect(useGalleryStore.getState().images[0].thumbnail_edit_path).toBe('C:/edit/a.png');
+    expect(useGalleryStore.getState().images[0].thumbnail_edit_path).toBe('C:/edit/other.png');
   });
 
-  it('onEditPreviewReady 非页内图片事件不 bump thumbVersion（批 8 R-6）', async () => {
+  it('onEditPreviewReady 非页内图片事件不写回不 bump 版本（批 8 R-6）', async () => {
     let previewCb;
     window.pixyang.getImages = vi.fn().mockResolvedValue({
       images: [{ id: 1, filename: 'a.jpg' }],
@@ -138,10 +148,13 @@ describe('useGalleryData wiring', () => {
       previewCb({ id: 1 });
     });
     expect(useGalleryStore.getState().thumbVersion).toBe(before);
+    expect(useGalleryStore.getState().editThumbVersions).toEqual({});
     await act(async () => {
       previewCb({ id: 1, path: 'C:/edit/a.png' });
     });
-    expect(useGalleryStore.getState().thumbVersion).toBe(before + 1);
+    // 页内成员带路径：按路径 bump（全局 thumbVersion 保持不变）
+    expect(useGalleryStore.getState().thumbVersion).toBe(before);
+    expect(useGalleryStore.getState().editThumbVersions['C:/edit/a.png']).toBe(1);
   });
 
   it('无关字段变化不触发 wiring 宿主重渲染（审查批 8 R-7 选择器化）', async () => {
