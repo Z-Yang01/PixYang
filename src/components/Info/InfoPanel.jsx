@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -32,10 +32,29 @@ export default function InfoPanel({ image, onClose, onImageUpdated, onCountsChan
   const [thumbUrl, setThumbUrl] = useState(null);
   const [exif, setExif] = useState(null);
   const liveImageIdRef = useRef(null);
+  const imageRef = useRef(image); // loadTags 经此取最新 image.id，回调引用稳定
+  imageRef.current = image;
+
+  // 定义必须先于下方 deps 数组对 loadTags 的求值处，否则渲染期 TDZ ReferenceError
+  const loadTags = useCallback(async () => {
+    const img = imageRef.current;
+    if (!api.isBridgeAvailable() || !img) return;
+    const id = img.id;
+    let imgT, allT;
+    try {
+      [imgT, allT] = await Promise.all([api.getImageTags(id), api.getTags()]);
+    } catch (e) {
+      console.error('[InfoPanel] 加载标签失败:', e.message);
+      return;
+    }
+    if (liveImageIdRef.current !== id) return;
+    setImgTags(imgT);
+    setAllTags(allT);
+  }, []);
 
   useEffect(() => {
     liveImageIdRef.current = image?.id ?? null;
-    if (!image) return;
+    if (imageRef.current == null) return;
     loadTags();
     setNotes(image.notes || '');
     setImportDate(image.import_date || '');
@@ -48,6 +67,7 @@ export default function InfoPanel({ image, onClose, onImageUpdated, onCountsChan
     image?.filepath,
     image?.import_date,
     image?.notes,
+    loadTags,
   ]);
 
   useEffect(() => {
@@ -87,21 +107,6 @@ export default function InfoPanel({ image, onClose, onImageUpdated, onCountsChan
       alive = false;
     };
   }, [image?.id, image?.filepath]);
-
-  const loadTags = async () => {
-    if (!api.isBridgeAvailable() || !image) return;
-    const id = image.id;
-    let imgT, allT;
-    try {
-      [imgT, allT] = await Promise.all([api.getImageTags(id), api.getTags()]);
-    } catch (e) {
-      console.error('[InfoPanel] 加载标签失败:', e.message);
-      return;
-    }
-    if (liveImageIdRef.current !== id) return;
-    setImgTags(imgT);
-    setAllTags(allT);
-  };
 
   const handleAddTag = async (tagId) => {
     if (!api.isBridgeAvailable()) return;

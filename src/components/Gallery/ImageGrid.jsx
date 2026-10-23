@@ -106,29 +106,107 @@ export default function ImageGrid({
   // 页内图片 id 列表不变时不重复拉取标签
   const pageIdsKey = useMemo(() => images.map((img) => img.id).join(','), [images]);
 
+  const tagSeqRef = useRef(null);
+  if (!tagSeqRef.current) tagSeqRef.current = createLoadSequencer();
+
+  const loadImageTags = useCallback(async (imgs) => {
+    if (!api.isBridgeAvailable()) return;
+    const token = tagSeqRef.current.next();
+    let tagMap;
+    try {
+      tagMap = await api.getBatchImageTags(imgs.map((img) => img.id));
+    } catch (e) {
+      console.error('[grid] 标签加载失败:', e.message);
+      return;
+    }
+    if (!tagSeqRef.current.isCurrent(token)) return;
+    setImageTags(tagMap || {});
+  }, []);
+
+  // 仅当页内 id 集变化才执行（images 引用随评分/收藏等写回刷新，但 id 集不变时跳过）
+  const tagPageKeyRef = useRef('');
   useEffect(() => {
     if (images.length === 0) {
+      tagPageKeyRef.current = pageIdsKey;
       setImageTags({});
       return;
     }
+    if (tagPageKeyRef.current === pageIdsKey) return;
+    tagPageKeyRef.current = pageIdsKey;
     loadImageTags(images);
-  }, [pageIdsKey]);
+  }, [pageIdsKey, images, loadImageTags]);
 
   // 选档开关必须独立进依赖：设置页等积变化（rows*columns 不变，如 3x5→5x3）不触发重查，
   // images 引用不变；若只靠 [images]，跨 4/5 列选档边界时新档位永不请求——渲染侧已切档
-  // 而缓存无新档 URL，缩略图卡死到下次数据刷新（新鲜眼审计实锤修复）
+  // 而缓存无新档 URL，缩略图卡死到下次数据刷新（新鲜眼审计实锤修复）。
+  // 实现：loadUrls 随 useHiResThumbs 重建（useCallback），effect 依赖 loadUrls 即继承该开关
   const useHiResThumbs = gridSettings.columns <= 4;
+
+  // 批量解析本页 URL：列表优先小缩略图，无则中图/原图兜底
+  const urlSeqRef = useRef(null);
+  if (!urlSeqRef.current) urlSeqRef.current = createLoadSequencer();
+  const thumbUrlsRef = useRef(thumbUrls);
+  thumbUrlsRef.current = thumbUrls;
+  const fileUrlsRef = useRef(fileUrls);
+  fileUrlsRef.current = fileUrls;
+
+  // 原图 URL 按需补解析（缺缩略图回退用）：仅在卡片实际需要展示原图（无可用缩略图路径）
+  // 时才把 filepath 加入解析清单——正常库全部有缩略图，预解析每页 N 条原图 URL 是纯浪费
+  const loadUrls = useCallback(
+    async (imgs) => {
+      if (!api.isBridgeAvailable()) return;
+      const token = urlSeqRef.current.next();
+      const needThumbPaths = [];
+      const needOrigPaths = [];
+      const pickThumb = useHiResThumbs ? hiResThumbOf : preferredThumbOf;
+      for (const img of imgs) {
+        const preferredThumb = pickThumb(img);
+        if (preferredThumb && thumbUrlsRef.current[preferredThumb] === undefined) {
+          needThumbPaths.push(preferredThumb);
+        }
+        if (!preferredThumb && fileUrlsRef.current[img.id] === undefined) {
+          needOrigPaths.push(img.filepath);
+        }
+      }
+      const thumbSet = new Set(needThumbPaths);
+      const origSet = new Set(needOrigPaths);
+      const paths = [...new Set([...needThumbPaths, ...needOrigPaths])];
+      if (paths.length === 0) return;
+      const urlMap = (await api.toFileUrls(paths)) || {};
+      if (!urlSeqRef.current.isCurrent(token)) return;
+      const thumbByPath = {};
+      const origById = {};
+      for (const img of imgs) {
+        const preferredThumb = pickThumb(img);
+        if (preferredThumb && thumbSet.has(preferredThumb) && urlMap[preferredThumb]) {
+          thumbByPath[preferredThumb] = urlMap[preferredThumb];
+        }
+        if (origSet.has(img.filepath) && urlMap[img.filepath]) {
+          origById[img.id] = urlMap[img.filepath];
+        }
+      }
+      if (Object.keys(thumbByPath).length > 0)
+        setThumbUrls((prev) => ({ ...prev, ...thumbByPath }));
+      if (Object.keys(origById).length > 0) setFileUrls((prev) => ({ ...prev, ...origById }));
+    },
+    [useHiResThumbs]
+  );
+
   useEffect(() => {
     loadUrls(images);
-  }, [images, useHiResThumbs]);
+  }, [images, loadUrls]);
 
   // 缩略图版本变化（重新生成/后台补生成）后清除损坏标记，让新图重新尝试
   useEffect(() => {
     setBrokenThumbnails(new Set());
   }, [thumbVersion]);
 
-  // 翻页/路径变更后把 URL/状态缓存裁剪到当前页，避免长期浏览内存增长
+  // 翻页/路径变更后把 URL/状态缓存裁剪到当前页，避免长期浏览内存增长。
+  // 仅当页内 id 集变化才执行：键盘高亮 activeIndex 的复位不能随 images 引用刷新误触发
+  const prunePageKeyRef = useRef('');
   useEffect(() => {
+    if (prunePageKeyRef.current === pageIdsKey) return;
+    prunePageKeyRef.current = pageIdsKey;
     const ids = new Set(images.map((img) => img.id));
     const preferredPaths = new Set(images.map(preferredThumbOf).filter(Boolean));
     setThumbUrls((prev) => {
@@ -152,7 +230,7 @@ export default function ImageGrid({
       return next.size === prev.size ? prev : next;
     });
     setActiveIndex(-1);
-  }, [pageIdsKey]);
+  }, [pageIdsKey, images]);
 
   // 图片路径变更（重命名/改导入日期）后清除该图的原图 URL 缓存，避免指向旧文件；
   // 首选缩略图路径变更（编辑预览生成写回 thumbnail_edit_path）同理清缓存并复位损坏标记
@@ -296,52 +374,6 @@ export default function ImageGrid({
     if (el) el.scrollIntoView({ block: 'nearest' });
   }, [activeIndex]);
 
-  // 批量解析本页 URL：列表优先小缩略图，无则中图/原图兜底
-  const urlSeqRef = useRef(null);
-  if (!urlSeqRef.current) urlSeqRef.current = createLoadSequencer();
-  const thumbUrlsRef = useRef(thumbUrls);
-  thumbUrlsRef.current = thumbUrls;
-  const fileUrlsRef = useRef(fileUrls);
-  fileUrlsRef.current = fileUrls;
-
-  // 原图 URL 按需补解析（缺缩略图回退用）：仅在卡片实际需要展示原图（无可用缩略图路径）
-  // 时才把 filepath 加入解析清单——正常库全部有缩略图，预解析每页 N 条原图 URL 是纯浪费
-  const loadUrls = async (imgs) => {
-    if (!api.isBridgeAvailable()) return;
-    const token = urlSeqRef.current.next();
-    const needThumbPaths = [];
-    const needOrigPaths = [];
-    const pickThumb = useHiResThumbs ? hiResThumbOf : preferredThumbOf;
-    for (const img of imgs) {
-      const preferredThumb = pickThumb(img);
-      if (preferredThumb && thumbUrlsRef.current[preferredThumb] === undefined) {
-        needThumbPaths.push(preferredThumb);
-      }
-      if (!preferredThumb && fileUrlsRef.current[img.id] === undefined) {
-        needOrigPaths.push(img.filepath);
-      }
-    }
-    const thumbSet = new Set(needThumbPaths);
-    const origSet = new Set(needOrigPaths);
-    const paths = [...new Set([...needThumbPaths, ...needOrigPaths])];
-    if (paths.length === 0) return;
-    const urlMap = (await api.toFileUrls(paths)) || {};
-    if (!urlSeqRef.current.isCurrent(token)) return;
-    const thumbByPath = {};
-    const origById = {};
-    for (const img of imgs) {
-      const preferredThumb = pickThumb(img);
-      if (preferredThumb && thumbSet.has(preferredThumb) && urlMap[preferredThumb]) {
-        thumbByPath[preferredThumb] = urlMap[preferredThumb];
-      }
-      if (origSet.has(img.filepath) && urlMap[img.filepath]) {
-        origById[img.id] = urlMap[img.filepath];
-      }
-    }
-    if (Object.keys(thumbByPath).length > 0) setThumbUrls((prev) => ({ ...prev, ...thumbByPath }));
-    if (Object.keys(origById).length > 0) setFileUrls((prev) => ({ ...prev, ...origById }));
-  };
-
   // 缩略图加载失败 → 补解析原图 URL 作回退（删库内 thumbnail 路径坏行仍有图可看）
   const requestOriginalUrl = useCallback(async (img) => {
     if (!api.isBridgeAvailable() || fileUrlsRef.current[img.id] !== undefined) return;
@@ -349,23 +381,6 @@ export default function ImageGrid({
     const url = urlMap[img.filepath];
     if (url) setFileUrls((prev) => ({ ...prev, [img.id]: url }));
   }, []);
-
-  const tagSeqRef = useRef(null);
-  if (!tagSeqRef.current) tagSeqRef.current = createLoadSequencer();
-
-  const loadImageTags = async (imgs) => {
-    if (!api.isBridgeAvailable()) return;
-    const token = tagSeqRef.current.next();
-    let tagMap;
-    try {
-      tagMap = await api.getBatchImageTags(imgs.map((img) => img.id));
-    } catch (e) {
-      console.error('[grid] 标签加载失败:', e.message);
-      return;
-    }
-    if (!tagSeqRef.current.isCurrent(token)) return;
-    setImageTags(tagMap || {});
-  };
 
   const handleCardClick = useCallback(
     (image, index, e) => {

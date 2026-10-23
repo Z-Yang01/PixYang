@@ -212,6 +212,10 @@ export default function ImageViewer({
   const editSessionRef = useRef(null);
   const imageIdRef = useRef(null);
   imageIdRef.current = image?.id;
+  // 最新 image 对象：主 effect 只按 id 触发，触发时经此读最新字段（避免把 rotation/rating
+  // 等字段链加进依赖导致换字段就重置缩放/重拉标签）
+  const imageRef = useRef(null);
+  imageRef.current = image;
   const bustRef = useRef(0); // 烘焙后像素已变，URL 加版本参数强制重载
   const [bust, setBust] = useState(0);
   // 编辑状态模型：clean → dirty → saving/saved…（Export 不改 dirty；Bake 成功后回 clean）
@@ -226,13 +230,35 @@ export default function ImageViewer({
   const copiedBasicRef = useRef(null); // 复制/粘贴的参数快照（应用内会话级剪贴板）
   const compareActive = editing && showBefore && compareMode !== 'toggle';
 
+  // 加载当前图（缩略图先行 + 原图随后）：经 imageRef 读最新 image，引用稳定，
+  // 供主 effect（换图）与 bust effect（烘焙后重载）作依赖——定义必须先于使用它的
+  // deps 数组求值处，否则渲染期 TDZ ReferenceError（本文件既有教训）
+  const loadImage = useCallback(async () => {
+    const img = imageRef.current;
+    if (!img || !api.isBridgeAvailable()) return;
+    const loadId = img.id;
+    const v = bustRef.current;
+    setThumbSrc(null);
+    setFullSrc(null);
+    setFullLoaded(false);
+    if (img.thumbnail_path) {
+      const thumb = await api.toFileUrl(img.thumbnail_path);
+      if (imageIdRef.current === loadId && thumb)
+        setThumbSrc(`${thumb}${thumb.includes('?') ? '&' : '?'}v=${v}`);
+    }
+    const url = await api.toFileUrl(img.filepath);
+    if (imageIdRef.current === loadId)
+      setFullSrc(url ? `${url}${url.includes('?') ? '&' : '?'}v=${v}` : null);
+  }, []);
+
   // 同步图片切换
   useEffect(() => {
     loadImage();
     const loadId = image?.id;
-    if (!image || !api.isBridgeAvailable()) return;
+    const img = imageRef.current;
+    if (!img || !api.isBridgeAvailable()) return;
     api
-      .getImageTags(image.id)
+      .getImageTags(img.id)
       .then((tags) => {
         // 快速翻页时丢弃过期标签响应（loadId 在闭包内恒等于 image.id，须比对 ref）
         if (imageIdRef.current === loadId) setImgTags(tags || []);
@@ -240,12 +266,12 @@ export default function ImageViewer({
       .catch((e) => console.error('[viewer] 标签加载失败:', e.message));
     setZoom(1);
     setPos({ x: 0, y: 0 });
-    setRotation(image?.rotation || 0);
-    setFlipH(!!image?.flip_h);
-    setFlipV(!!image?.flip_v);
-    setLocalRating(image?.rating || 0);
-    setLocalFavorite(image?.favorite || 0);
-  }, [image?.id]);
+    setRotation(img?.rotation || 0);
+    setFlipH(!!img?.flip_h);
+    setFlipV(!!img?.flip_v);
+    setLocalRating(img?.rating || 0);
+    setLocalFavorite(img?.favorite || 0);
+  }, [image?.id, loadImage]);
 
   // 同图的外部元数据写回（批量同步「含几何」会直写 images.rotation/flip_h/flip_v、
   // 撤销持久化编辑也会改这些列）：上面那个 effect 只依赖 image?.id，同 id 的字段变化不重跑，
@@ -258,10 +284,8 @@ export default function ImageViewer({
 
   // 同步外部 image prop 的更新（如收藏/评分被外部刷新）
   useEffect(() => {
-    if (image) {
-      setLocalRating(image.rating || 0);
-      setLocalFavorite(image.favorite || 0);
-    }
+    setLocalRating(image?.rating || 0);
+    setLocalFavorite(image?.favorite || 0);
   }, [image?.rating, image?.favorite]);
 
   const toggleFavorite = useCallback(async () => {
@@ -473,6 +497,9 @@ export default function ImageViewer({
       setEditOps(h.stack[index].ops);
       syncHistInfo();
     },
+    // cropDragRef 是其后 useCropInteraction 解构出的 ref（钩子次序不可上移进 deps，
+    // 否则渲染期 TDZ）；ref 恒稳定，省略无行为差异
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [settleKeyGesture, syncHistInfo]
   );
 
@@ -1480,23 +1507,6 @@ export default function ImageViewer({
 
   // 加载策略：中图占位，原图异步替换；列表小图不用于查看器
   // bust 版本号：烘焙替代后文件内容已变而路径不变，加版本参数绕过浏览器缓存
-  const loadImage = async () => {
-    if (!image || !api.isBridgeAvailable()) return;
-    const loadId = image.id;
-    const v = bustRef.current;
-    setThumbSrc(null);
-    setFullSrc(null);
-    setFullLoaded(false);
-    if (image.thumbnail_path) {
-      const thumb = await api.toFileUrl(image.thumbnail_path);
-      if (imageIdRef.current === loadId && thumb)
-        setThumbSrc(`${thumb}${thumb.includes('?') ? '&' : '?'}v=${v}`);
-    }
-    const url = await api.toFileUrl(image.filepath);
-    if (imageIdRef.current === loadId)
-      setFullSrc(url ? `${url}${url.includes('?') ? '&' : '?'}v=${v}` : null);
-  };
-
   // 原图离屏预解码：解码完成才切换（避免半下载闪烁）；失败也切换，防止卡在缩略图
   useEffect(() => {
     if (!fullSrc) return undefined;
@@ -1580,7 +1590,7 @@ export default function ImageViewer({
       setZoom(1);
       setPos({ x: 0, y: 0 });
     }
-  }, [bust]);
+  }, [bust, loadImage]);
 
   // 鼠标拖拽平移（裁剪模式时转为框选/移动裁剪框；对比模式平移只作用于 After 层，禁用）
   const handleMouseDown = (e) => {
@@ -1779,7 +1789,9 @@ export default function ImageViewer({
     return () => clearTimeout(settleTimer);
     // showBefore/compareMode：画布随 Before/对比视图切换而卸载重挂，新画布必须重绘，
     // 否则 After 侧是一块空白画布盖住原图（预览 ≡ Before）；
-    // webglEpoch：webglcontextrestored 后强制重绘（GL 对象已全量重建）
+    // webglEpoch：webglcontextrestored 后强制重绘（GL 对象已全量重建）；
+    // displaySrc：无编辑底图回退到查看态 src 时（编辑会话建立窗口），src 异步就绪
+    // （thumb→full）也要触发重绘，否则画布停在旧源
   }, [
     webglActive,
     shaderUniforms,
@@ -1789,6 +1801,7 @@ export default function ImageViewer({
     showBefore,
     compareMode,
     webglEpoch,
+    displaySrc,
   ]);
 
   if (!image) return null;
