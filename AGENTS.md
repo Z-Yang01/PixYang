@@ -11,7 +11,7 @@ PixYang 是一个本地桌面图片管理应用，技术栈：
 - 构建：Vite 5（`vite.config.js`）
 - 数据库：rusqlite（WAL 模式，写操作即时持久化），连接/schema/迁移在 `src-tauri/src/db.rs` 与 `tags_albums.rs`，库文件与旧版共用 pixyang.db
 - 图片处理：Rust 侧完成——缩略图 `src-tauri/src/thumbs.rs`、渲染执行器 `executor.rs`、EXIF `exif_read.rs`（image-rs + kamadak-exif）
-- 桥接：WebView 不能直接访问文件系统；前端统一经 `src/lib/api.js` → `src/lib/tauriBridge.js`（invoke）；`window.pixyang` 透传面仅保留给单测注入与无桥降级
+- 桥接：WebView 不能直接访问文件系统；前端统一经 `src/lib/api.ts` → `src/lib/tauriBridge.ts`（invoke）；`window.pixyang` 透传面仅保留给单测注入与无桥降级
 
 ## 目录结构
 
@@ -74,7 +74,7 @@ src/
   App.jsx         组合根：路由、弹层状态、快捷键接线（批量操作在 useBatchActions）
   store/          zustand store（galleryStore：筛选/勾选/网格设置/图片页数据/共享数据）
   hooks/          useGalleryData（加载 wiring）/ useGlobalShortcuts / useDragImport / useBatchActions（批量操作）/ useMarqueeSelection（网格框选）
-  lib/            api.js（通道封装与守卫）/ tauriBridge.js、tauriBridgeMedia.js（invoke/事件/URL）/ errorText.js（错误文案中文映射唯一事实源）/ gallery.js / shortcuts.js / format.js / utils.ts
+  lib/            全量 .ts（2026-10-24 收官）：api.ts（通道封装与守卫）/ tauriBridge.ts、tauriBridgeMedia.ts（invoke/事件/URL）/ errorText.ts（错误文案中文映射唯一事实源）/ gallery.ts / shortcuts.ts / format.ts / utils.ts
   components/
     Gallery/     图片网格域（ImageGrid/ImageCard/PaginationBar/GridDialogs）
     Viewer/      查看与编辑域（ImageViewer 全屏查看器含非破坏编辑面板、ViewerFilmstrip 底部胶片条（当前全局索引 ±6 邻近缩略图/点击跳转/折叠）、CompareView 对比、CurveEditor/HistogramView/MaskPanel/MaskOverlay、EditorMaskSection/EditorPresetSection/EditorHistoryPanel/SliderRow/useCropInteraction 出舱件）
@@ -173,15 +173,15 @@ tests/            vitest（node 环境 + per-file happy-dom pragma）
 - **模块内禁用 `this` 做缓存/状态**：生产包是 ESM 严格模式，普通函数调用时 `this` 为 undefined
   （vitest 经 SSR 转译成非严格，`this` 退化成 globalThis，测试抓不住）。曾因此让 WebGL 预览静默失败
   整整两个版本（R153）。缓存一律挂显式对象（画布状态、模块级变量/Map）。
-- 前端组件/store **不得直调 `window.__TAURI__` 或 `window.pixyang`**，一律经 `src/lib/api.js`（守卫集中在该层，无桥时方法返回 undefined）。
+- 前端组件/store **不得直调 `window.__TAURI__` 或 `window.pixyang`**，一律经 `src/lib/api.ts`（守卫集中在该层，无桥时方法返回 undefined）。
 - 错误处理保持现有风格：`try/catch` + `console.error('[xxx] ...', e.message)`。
 - **上屏错误文案不得直插引擎原文**：Rust `PixError` 与 JS/WebView 错误正文是英文（`Os { code: 5, kind: PermissionDenied }`、
-  `no such column: ...`），一律经 `src/lib/errorText.js` 映射为中文后再进 Toast/行内错误条——用 `friendlyError(e)`（单参上屏，
+  `no such column: ...`），一律经 `src/lib/errorText.ts` 映射为中文后再进 Toast/行内错误条——用 `friendlyError(e)`（单参上屏，
   空输入返回 `''` 以保住调用方 `|| 兜底文案`）、`errText(prefix, e)`（拼中文前缀）、`errRaw(prefix, e)`（留档，只进 title/日志）。
   禁止在模板串里写 `${e.message}` / `${e?.message || e}`（`tests/unit/lib/errorText.test.js` 全仓扫描把该口径锁死）；
   新增英文错误类型时在 `RULES` 表补一条，未命中会显示「操作未成功」而原文仍在 title/`console.warn` 里。
-- 通道命名遵循现有约定：`src/lib/api.js` 方法名 ↔ Rust 命令 snake_case，映射集中在 `tauriBridge.js`。
-- 新功能需在 `src-tauri/src/` 实现并注册 tauri 命令，再在 `tauriBridge.js`（或 `tauriBridgeMedia.js`，事件/URL 类）加同名包装，`api.js` 即按包装存在性自动接缝；无包装的方法只透传 `window.pixyang`。
+- 通道命名遵循现有约定：`src/lib/api.ts` 方法名 ↔ Rust 命令 snake_case，映射集中在 `tauriBridge.ts`。
+- 新功能需在 `src-tauri/src/` 实现并注册 tauri 命令，再在 `tauriBridge.ts`（或 `tauriBridgeMedia.ts`，事件/URL 类）加同名包装，`api.ts` 即按包装存在性自动接缝；无包装的方法只透传 `window.pixyang`。
 - 数据库列/表的修改放在 Rust 侧兼容迁移中完成（生产唯一自举在 `db.rs` 的 `ensure_business_schema`：建表/逐列回迁/索引，参考其内注释的 legacy 语义）。
 - 中文 UI 文案，保持现有术语（图库、导入、相册、标签、收藏等）。
 - **错误文案在 Rust 侧直出中文**：命令层不得把 `e.to_string()` / 引擎原文直接拼进上屏句子，一律经
@@ -243,11 +243,14 @@ tests/            vitest（node 环境 + per-file happy-dom pragma）
   复验是 R148 / R74 回归锁热点，类型化收益最直接）。
   ⚠ `components.json` 的 `"utils": "@/lib/utils"` 是 **shadcn CLI 配置，不是应用层导入**，
   刻意保持无扩展名（CLI 按无扩展名 alias 生成组件），勿随迁移一起改。
-- **`@/lib/api` 的 default 导出是运行时按命令名循环装配的**（api.js 尾部遍历命令名数组逐个赋值），
-  TS 只能推断出静态声明的那部分（实测仅 `isBridgeAvailable`），具名通道在类型上**不可见**。
-  迁移依赖 api 的模块时，要么在消费侧声明用到的最小接口面 + 导入边界断言（trashUndo.ts 为先例），
-  要么先把 `api.js` 迁 `.ts` 并为全部通道补单一真源声明——后者能一次解锁 17 个消费方，
-  且该命令表本身已有契约测试把关（R56 Rust 注册表↔桥命令对拍），值得前置。
+- **`@/lib/api.ts` 已收官（2026-10-24）**：default 导出仍按命令名循环装配，类型面经
+  `ApiBridge = Record<string, (...args: never[]) => unknown>` 索引签名覆盖动态注册的全量命令
+  （具名通道运行时存在、类型层宽容），media/bridge 查找经 Record 索引。此前「消费侧最小接口面
+  + 导入边界断言」（trashUndo.ts 先例）的过桥写法可逐步回归直调。
+- 第六批 errorText / shortcuts / aiGrade、第七批 editParams / previewUniforms / webglPreview /
+  tauriBridge / tauriBridgeMedia / api 已落（2026-10-24）：**src/lib 18/18 全量 .ts 收官**。
+  要点：webglPreview 保持 `st` 变量名（源扫描锁断言 `st.brushTex` 字面量）；tauriBridge 的
+  edit_open 空会话显式抛错（与原 TypeError 拒绝语义等价）；契约对拍测试读盘路径已同步 .ts。
 - **`@/` alias 下的 .ts 说明符同样显式带 `.ts`**（`@/lib/format.ts`）：理由与 shared/ 一致，
   且 Vite/vitest/tsc 三方对 alias + 显式扩展名的解析已实证（全量 88/1152 绿）。
 
@@ -375,7 +378,7 @@ tests/            vitest（node 环境 + per-file happy-dom pragma）
 - Rust 测试：`cd src-tauri && CARGO_BUILD_JOBS=1 cargo test --jobs 1`。编译期 `generate_context!`
   读取 `../dist`，fresh 环境先 `npx vite build`；Windows 资源图标在 `src-tauri/icons/icon.ico`。
 - 前端经 `src/lib/tauriBridge.js` 探测 `window.__TAURI__`（withGlobalTauri 注入）调用命令；
-  非 Tauri 环境（浏览器/单测）由 `api.js` 回落 `window.pixyang` 注入面。不引入 `@tauri-apps/api` npm 依赖。
+  非 Tauri 环境（浏览器/单测）由 `api.ts` 回落 `window.pixyang` 注入面。不引入 `@tauri-apps/api` npm 依赖。
 - CI：`.github/workflows/ci.yml` 的 `rust` job（windows）先 `vite build` 再 `cargo test`。
 - 像素 golden 门禁：`cargo test --test golden_audit`（基线 2026-09-20 重锁为 Rust 执行器产物，
   Δ 审计归档 tests/golden/rust-relock-audit.md；重锁用 GOLDEN_RELOCK=1）。
@@ -419,7 +422,7 @@ tests/            vitest（node 环境 + per-file happy-dom pragma）
 
 ## 验证
 
-- 测试：`npm test`（vitest，88 个文件 / 1152 例；含批次：agent 调色契约、拉直/镜头几何、undo 快照合同、CLI 通道、含 R37 桥接全通道契约、R51/R52 主题↔CSS 对拍、R53 右栏让位契约、R54/R55 错误文案中文化、R56 Rust 注册表↔桥命令对拍 + 全仓 `${e.message}` 直插与裸 `x.error` 上屏扫描、R57 主题双事实源对拍（`:root`↔块↔`@theme inline`↔色卡）、R64 曲线 LUT 恒等通道兜底回归锁、R65 负阴影指数对齐回归锁（uniform 1/e 值锁 + SVG 链指数锁；像素锁已随 R71 掩蔽化重导）、R66 预设/粘贴字段域一致性回归锁（预设只覆盖显式字段 + 粘贴与复制/批量同步同口径）、R67 键盘调参历史收敛回归锁（连调 5 次→1 条 / sat=0 调 hue→0 条 / blur 即结算）与新会话保存态回归锁（未保存→已保存 / 回读→已保存）、R68 滑杆标签列宽与对比视图让位契约、R69 高光乘后 clamp 契约模型对齐回归锁（slope>1 饱和区先回 [0,1] 再进暗角/饱和度，代表点手算写死；R71 起该锁经掩蔽 mix 重导）、R70 viewerInfoRail EOL 归一回归锁（CRLF 文本输入也命中让位规则，防 autocrlf 工作树多行正则失配）、R71 高光/阴影亮度掩蔽回归锁（掩蔽带端点 uniform 锁 + 暗区动/亮区不动双向分区锁 + 高光 LR 方向锁 + 像素代表点手算写死 + GLSL mix 源串锁 + 掩蔽 uniform 上传锁；Rust 侧手算表与分区/方向锁）、R74 搜索命中原始路径回归锁（matchesListFilters haystack 含 original_path，与 SQL 同口径防轻量写回误剪枝）、R73 删除暂存区回归锁（trashUndo Toast 6s「撤销」语义与逐行还原调用链 + 单图/批量删除走 trash 通道不走直删 + 设置页 R-8 即时生效文案锁）、R75 缩略图自适应选档回归锁（≤4 列取高清档 medium、>4 列取 small、编辑代理任何列数恒优先，双向变异实证）、R146 画笔蒙版内核回归锁（shared/brushMask.ts 手算 5 例：软边三段/折线投影/硬边/bbox 剔除/多笔 max+invert；Rust 同表 3 例；GLSL brush 分支源串锁）、R147 画笔手绘入参回归锁（拖拽 → params.masks brush 类型/radius/softness/points 落库）、R148 胶片条回归锁（viewerQueryParams 口径映射 + filmstripWindow 窗口边界 + 页内零请求/跨页单查 offset-limit 与筛选透传/查询失败留档/无地址空白格/点击跳转不关查看器/键盘翻页高亮跟随 + 详情面板左移让位契约）、R149 小优化批（列表投影剔除 legacy base64 thumbnail 载荷锁 + 旧库缺列显式报错边界锁；启动清扫派发后台线程非阻塞与真清理双锁；ImageCard memo 命中锁——勾选/异步落地/键盘高亮/无关设置四场景渲染计数）；像素 golden 门禁在 cargo 侧 `golden_audit`（基线 2026-09-25 R71 随掩蔽语义重锁，Δ 审计归档 tests/golden/r71-tone-mask-relock-audit.md：恰 5 例 tone 用例变化、余 18 例 Δ=0），Rust 单测 264 例（R73 起 +7 trash 锁；R146 起 +3 画笔权重（核内/带沿/多笔 max 合成）；R149 起 +4（列表投影载荷/旧库缺列边界、启动清扫派发后台线程的非阻塞与真清理各 1）；回收站管理 +4 列表/清除/清空 + 保留名守卫/缺文件拒绝 +3、批量恢复/清除 +2；2026-09-28~10-01 起 +analyze_image 统计 5 例、edit_bake_db 短锁 1 例、降噪内核 2 例、拉直旋转 4 例、镜头几何 2 例、undo 三态 1 例、CLI 3 例、EXIF 接线 1 例、空 root 导入回归 1 例；R82 审查起 +trash 歧义名撤销 3 例（原图名 raw__/thumb__ 开头精确匹配回位）+ 导入无 size 输入落盘副本兜底 1 例；R85 审查起镜头几何用例补出界 alpha=255 口径断言；R88 起 +6 批量导出选项解析边界与转换落盘（None/非法回退或报错、质量夹取、长边过滤、fit-inside、重名避让、NEF 仍配对）；R99 起 +2 相册导出统一锁（finish_album_export_with options 接线：convert 转格式且配对 NEF 原样复制、None 历史原样复制；共享出口 finish_export_with 同语义 + 非法选项错误 JSON 不落盘）；R85 前端 +3（镜头重采样管线序 GLSL 源串顺序锁、相册创建 reject 解锁 AlbumsView/ImageGrid 双锁）；R88 起 +批量导出选项与预设 18 例（exportPresets 合法化 7、BatchExportDialog 7、批量导出两段式 +2、桥接缝 options 透传 +1、契约表第二行 +1）；R89 审计起 +2 批量导出对话框回归锁（预设下拉占位项只清选中不误套第一条、预设落盘失败必 toast 不静默）；R91 起 +编辑面板交互精查回归锁（拖废<8px 裁剪等同清除裁剪并入历史、蒙版滑杆键盘走 onKeyCommit 700ms 收敛窗、sat=0 拖分级色相不入历史、blur/pointercancel 结算与 dragRef 清空后键盘恢复等）；R92 起 +滑杆快捷键 matchSliderNavKey 回归锁（shortcuts 单元锁：Shift 粗调 step×10 钳域 / Ctrl+Home·Del·Backspace 映射 reset；主滑杆/蒙版/HSL/分级/拉直粗调与回默认接线锁、拉直带符号显示、曲线 16 点锚点上限、含几何预设 title 提示）；R99 起 +相册右键导出统一走 BatchExportDialog 4 例（AlbumsView 两段式：对话框默认原样复制/取消不导出/确认 null 传参/转换 options 归一透传；对话框 title 覆盖锁、桥 exportAlbumImages options 透传 + null 省略键、契约表 convert 行）；R104 审计起 +3 UI 组件域回归锁（ImageGrid createAndAdd 的 addToAlbum reject 接住转 toast 不逸出 unhandled rejection、ImportDialog 空目录重扫勾选集清零不残留假数字、InfoPanel getExif reject 落定「无 EXIF 信息」不永挂加载中）；R105 审计起 +2 Rust 导入编排对抗锁（move_file_safe EXDEV 回退失败摘除目标的跨卷锁：源句柄不共享删除注入、缩略图列回写失败不致命锁：VIRTUAL 生成列注入 UPDATE 必败）；R159 起 +3（resolve_thumbs_dir 设置优先/空值与坏目录回退默认、迁移缩略图目录搬移文件并改写三列且目标已有同名跳过、孤儿缩略图只认数字命名/活 id 不删/清理三重复核）；覆盖率：`npm run test:coverage`，门槛配置在 `vitest.config.js`（statements/lines 75、branches 70、functions 50）。
+- 测试：`npm test`（vitest，88 个文件 / 1153 例；含批次：agent 调色契约、拉直/镜头几何、undo 快照合同、CLI 通道、含 R37 桥接全通道契约、R51/R52 主题↔CSS 对拍、R53 右栏让位契约、R54/R55 错误文案中文化、R56 Rust 注册表↔桥命令对拍 + 全仓 `${e.message}` 直插与裸 `x.error` 上屏扫描、R57 主题双事实源对拍（`:root`↔块↔`@theme inline`↔色卡）、R64 曲线 LUT 恒等通道兜底回归锁、R65 负阴影指数对齐回归锁（uniform 1/e 值锁 + SVG 链指数锁；像素锁已随 R71 掩蔽化重导）、R66 预设/粘贴字段域一致性回归锁（预设只覆盖显式字段 + 粘贴与复制/批量同步同口径）、R67 键盘调参历史收敛回归锁（连调 5 次→1 条 / sat=0 调 hue→0 条 / blur 即结算）与新会话保存态回归锁（未保存→已保存 / 回读→已保存）、R68 滑杆标签列宽与对比视图让位契约、R69 高光乘后 clamp 契约模型对齐回归锁（slope>1 饱和区先回 [0,1] 再进暗角/饱和度，代表点手算写死；R71 起该锁经掩蔽 mix 重导）、R70 viewerInfoRail EOL 归一回归锁（CRLF 文本输入也命中让位规则，防 autocrlf 工作树多行正则失配）、R71 高光/阴影亮度掩蔽回归锁（掩蔽带端点 uniform 锁 + 暗区动/亮区不动双向分区锁 + 高光 LR 方向锁 + 像素代表点手算写死 + GLSL mix 源串锁 + 掩蔽 uniform 上传锁；Rust 侧手算表与分区/方向锁）、R74 搜索命中原始路径回归锁（matchesListFilters haystack 含 original_path，与 SQL 同口径防轻量写回误剪枝）、R73 删除暂存区回归锁（trashUndo Toast 6s「撤销」语义与逐行还原调用链 + 单图/批量删除走 trash 通道不走直删 + 设置页 R-8 即时生效文案锁）、R75 缩略图自适应选档回归锁（≤4 列取高清档 medium、>4 列取 small、编辑代理任何列数恒优先，双向变异实证）、R146 画笔蒙版内核回归锁（shared/brushMask.ts 手算 5 例：软边三段/折线投影/硬边/bbox 剔除/多笔 max+invert；Rust 同表 3 例；GLSL brush 分支源串锁）、R147 画笔手绘入参回归锁（拖拽 → params.masks brush 类型/radius/softness/points 落库）、R148 胶片条回归锁（viewerQueryParams 口径映射 + filmstripWindow 窗口边界 + 页内零请求/跨页单查 offset-limit 与筛选透传/查询失败留档/无地址空白格/点击跳转不关查看器/键盘翻页高亮跟随 + 详情面板左移让位契约）、R149 小优化批（列表投影剔除 legacy base64 thumbnail 载荷锁 + 旧库缺列显式报错边界锁；启动清扫派发后台线程非阻塞与真清理双锁；ImageCard memo 命中锁——勾选/异步落地/键盘高亮/无关设置四场景渲染计数）；像素 golden 门禁在 cargo 侧 `golden_audit`（基线 2026-09-25 R71 随掩蔽语义重锁，Δ 审计归档 tests/golden/r71-tone-mask-relock-audit.md：恰 5 例 tone 用例变化、余 18 例 Δ=0），Rust 单测 265 例（+1 trash 关联表回插非致命锁）（R73 起 +7 trash 锁；R146 起 +3 画笔权重（核内/带沿/多笔 max 合成）；R149 起 +4（列表投影载荷/旧库缺列边界、启动清扫派发后台线程的非阻塞与真清理各 1）；回收站管理 +4 列表/清除/清空 + 保留名守卫/缺文件拒绝 +3、批量恢复/清除 +2；2026-09-28~10-01 起 +analyze_image 统计 5 例、edit_bake_db 短锁 1 例、降噪内核 2 例、拉直旋转 4 例、镜头几何 2 例、undo 三态 1 例、CLI 3 例、EXIF 接线 1 例、空 root 导入回归 1 例；R82 审查起 +trash 歧义名撤销 3 例（原图名 raw__/thumb__ 开头精确匹配回位）+ 导入无 size 输入落盘副本兜底 1 例；R85 审查起镜头几何用例补出界 alpha=255 口径断言；R88 起 +6 批量导出选项解析边界与转换落盘（None/非法回退或报错、质量夹取、长边过滤、fit-inside、重名避让、NEF 仍配对）；R99 起 +2 相册导出统一锁（finish_album_export_with options 接线：convert 转格式且配对 NEF 原样复制、None 历史原样复制；共享出口 finish_export_with 同语义 + 非法选项错误 JSON 不落盘）；R85 前端 +3（镜头重采样管线序 GLSL 源串顺序锁、相册创建 reject 解锁 AlbumsView/ImageGrid 双锁）；R88 起 +批量导出选项与预设 18 例（exportPresets 合法化 7、BatchExportDialog 7、批量导出两段式 +2、桥接缝 options 透传 +1、契约表第二行 +1）；R89 审计起 +2 批量导出对话框回归锁（预设下拉占位项只清选中不误套第一条、预设落盘失败必 toast 不静默）；R91 起 +编辑面板交互精查回归锁（拖废<8px 裁剪等同清除裁剪并入历史、蒙版滑杆键盘走 onKeyCommit 700ms 收敛窗、sat=0 拖分级色相不入历史、blur/pointercancel 结算与 dragRef 清空后键盘恢复等）；R92 起 +滑杆快捷键 matchSliderNavKey 回归锁（shortcuts 单元锁：Shift 粗调 step×10 钳域 / Ctrl+Home·Del·Backspace 映射 reset；主滑杆/蒙版/HSL/分级/拉直粗调与回默认接线锁、拉直带符号显示、曲线 16 点锚点上限、含几何预设 title 提示）；R99 起 +相册右键导出统一走 BatchExportDialog 4 例（AlbumsView 两段式：对话框默认原样复制/取消不导出/确认 null 传参/转换 options 归一透传；对话框 title 覆盖锁、桥 exportAlbumImages options 透传 + null 省略键、契约表 convert 行）；R104 审计起 +3 UI 组件域回归锁（ImageGrid createAndAdd 的 addToAlbum reject 接住转 toast 不逸出 unhandled rejection、ImportDialog 空目录重扫勾选集清零不残留假数字、InfoPanel getExif reject 落定「无 EXIF 信息」不永挂加载中）；R105 审计起 +2 Rust 导入编排对抗锁（move_file_safe EXDEV 回退失败摘除目标的跨卷锁：源句柄不共享删除注入、缩略图列回写失败不致命锁：VIRTUAL 生成列注入 UPDATE 必败）；R159 起 +3（resolve_thumbs_dir 设置优先/空值与坏目录回退默认、迁移缩略图目录搬移文件并改写三列且目标已有同名跳过、孤儿缩略图只认数字命名/活 id 不删/清理三重复核）；覆盖率：`npm run test:coverage`，门槛配置在 `vitest.config.js`（statements/lines 75、branches 70、functions 50）。
 - Lint：`npm run lint`（ESLint flat config，`eslint.config.mjs`）；0 error 为准，warning 不阻塞。
 - 类型检查：`npm run typecheck`（tsc --noEmit，覆盖 src 下 TS/TSX）。
 - 格式检查：`npm run format:check`（Prettier 基线已于 R40 全仓落库，改动后的文件须保持 prettier 合规；历史 `*.md` 与 `src-tauri/gen/` 在 `.prettierignore` 豁免）。
@@ -432,7 +435,7 @@ tests/            vitest（node 环境 + per-file happy-dom pragma）
 - `npm run dev`（vite dev）可用：shared/ 转 ESM 后 vite dev 原生模块图直出（历史上 .cjs 被 dev 原样直出、
   无 rollup interop 导致首屏模块图报错 #root 空，该病根已随转换根治）。生产链 `frontendDist=../dist` 不变。
 - 真机浏览器 QA 口径：`npx vite build` 出包后用 `npx vite preview` 起静态服务，假数据经 `window.pixyang`
-  注入（`api.js` 的 `px()` 每次调用现读桥，故可先注入再挂载）；不要指望 dev server。
+  注入（`api.ts` 的 `px()` 每次调用现读桥，故可先注入再挂载）；不要指望 dev server。
 - `npm run tauri:dev` 可用且与 `npm run dev` 无关：`tauri.conf.json` 的 `build` 只有 `frontendDist: "../dist"`
   （无 `devUrl`/`beforeDevCommand`），dev 窗口加载磁盘上的 `../dist`。因此改前端后必须先 `npx vite build`
   再重载窗口（`Page.reload` 或 Ctrl+R），否则验的是旧包；Rust 改动才需要 cargo 重编。
