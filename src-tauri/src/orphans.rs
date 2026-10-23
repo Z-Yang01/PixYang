@@ -221,6 +221,9 @@ pub fn adopt_orphan_files(
     let mut skipped = 0i64;
     let mut failed = 0i64;
     let mut errors: Vec<String> = Vec::new();
+    // 缩略图延后到批尾并行生成（R110 导入同口径）：归档循环里只收行，
+    // 24MP 单张双档 ~1.3s，串行内联在收养几十张时是分钟级 → 并行 ~4x
+    let mut pending_thumbs: Vec<(crate::images_query::ImageRow, PathBuf)> = Vec::new();
 
     for src in &chosen {
         let key = norm(&src.to_string_lossy());
@@ -367,23 +370,38 @@ pub fn adopt_orphan_files(
             continue;
         }
 
-        // 隐藏记录（NEF-only）不生成缩略图，与导入路径同口径
+        // 隐藏记录（NEF-only）不生成缩略图，与导入路径同口径；生成延后到批尾并行
         if !is_target_raw {
             if let Ok(row) = conn.query_row(
                 "SELECT * FROM images WHERE filepath = ?1",
                 [&dest.to_string_lossy()],
                 crate::images_query::row_from,
             ) {
-                if let Ok((small, medium, w, h)) = crate::thumbs::generate_tiers(&dest) {
-                    if let Err(e) = crate::file_ops::write_thumbs_and_update(
-                        conn, &row, thumbs_dir, &small, &medium, w, h,
-                    ) {
-                        eprintln!("[孤儿归档] 缩略图生成失败（列保持空）: {e}");
-                    }
-                }
+                pending_thumbs.push((row, dest.clone()));
             }
         }
         adopted += 1;
+    }
+
+    // 批尾「并行生成 → 按收集顺序串行回写」（write_back_thumbs_chunked 同分块口径，
+    // 峰值内存有界）：单个失败不扩散，该行列保持空，其余照常回写
+    for chunk in pending_thumbs.chunks(crate::thumbs::PARALLEL_CHUNK) {
+        let sources: Vec<&PathBuf> = chunk.iter().map(|(_, p)| p).collect();
+        let results = crate::thumbs::generate_tiers_parallel(&sources);
+        for ((row, src_path), result) in chunk.iter().zip(results) {
+            let Ok((small, medium, w, h)) = result else {
+                eprintln!(
+                    "[孤儿归档] 缩略图生成失败（列保持空）: {}",
+                    src_path.display()
+                );
+                continue;
+            };
+            if let Err(e) = crate::file_ops::write_thumbs_and_update(
+                conn, row, thumbs_dir, &small, &medium, w, h,
+            ) {
+                eprintln!("[孤儿归档] 缩略图回写失败（列保持空）: {e}");
+            }
+        }
     }
 
     Ok(json!({

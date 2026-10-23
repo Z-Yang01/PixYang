@@ -12,6 +12,7 @@ use crate::naming;
 use crate::thumbs;
 use rusqlite::{Connection, OptionalExtension};
 use serde_json::{json, Value};
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 // 镜像 extractExifBatch 的 BATCH=8：EXIF/导入进度每批处理完发射一次
@@ -494,6 +495,22 @@ pub fn check_duplicate_serials(
     conn: &Connection,
     filepaths: &[String],
 ) -> Result<Vec<Value>, PixError> {
+    // 单次拉全量可见序列号建表后 O(1) 命中判定：逐候选 `WHERE lower(filename) = ?1`
+    // 是表达式条件，无法命中 idx_images_filename（列上的普通索引），万级候选 × 万级行
+    // 即平方级纯扫描——导入查重在 R156 后每次导入前置，这里是导入链的真实热点（速度轮）
+    let mut known: HashMap<String, String> = HashMap::new();
+    {
+        let mut stmt =
+            conn.prepare("SELECT lower(filename), filepath FROM images WHERE hidden = 0")?;
+        let rows = stmt.query_map([], |r| {
+            Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
+        })?;
+        for row in rows {
+            let (lower_name, filepath) = row?;
+            // 首见保留：与旧逐候选 LIMIT 1（无 ORDER BY）的取行口径等价
+            known.entry(lower_name).or_insert(filepath);
+        }
+    }
     let mut out = Vec::with_capacity(filepaths.len());
     for fp in filepaths {
         let path = Path::new(fp);
@@ -504,19 +521,11 @@ pub fn check_duplicate_serials(
         if fname.is_empty() {
             continue;
         }
-        let existing: Option<String> = conn
-            .query_row(
-                "SELECT filepath FROM images WHERE lower(filename) = ?1 AND hidden = 0 LIMIT 1",
-                rusqlite::params![fname],
-                |r| r.get::<_, String>(0),
-            )
-            .optional()
-            .unwrap_or(None);
-        if let Some(ex) = existing {
+        if let Some(existing) = known.get(&fname) {
             out.push(json!({
                 "filepath": fp,
                 "filename": path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default(),
-                "existing": ex,
+                "existing": existing,
             }));
         }
     }

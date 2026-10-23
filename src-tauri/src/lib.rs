@@ -90,10 +90,17 @@ pub fn run() {
             let _ = std::fs::create_dir_all(&thumbs_dir);
             let trash_dir = data_dir.join("trash");
             let _ = std::fs::create_dir_all(&trash_dir);
-            // 缩略图路径归一：迁移/换数据目录后，把 DB 里的旧绝对路径复制并改写到当前 thumbs
+            // 缩略图路径归一：迁移/换数据目录后，把 DB 里的旧绝对路径复制并改写到当前 thumbs。
+            // 迁移函数（migrate_from_sources / migrate_to_standard_dir / migrate_thumbs_root）
+            // 内部已同步归一，本调用只是稳态复核——稳态下全表 × 3 列的 fs stat 是可感知的
+            // 启动开销且全程持写锁，派后台执行（sweep_trash 同款非阻塞口径），不挡首帧
             {
-                let conn = database.write_lock();
-                db::normalize_thumbnail_paths(&conn, &thumbs_dir);
+                let bg_db = database.clone();
+                let bg_thumbs = thumbs_dir.clone();
+                std::thread::spawn(move || {
+                    let conn = bg_db.write_lock();
+                    db::normalize_thumbnail_paths(&conn, &bg_thumbs);
+                });
             }
 
             // 图片根：设置优先；未设置但旧默认目录（%APPDATA%/pixyang/images）有照片时
