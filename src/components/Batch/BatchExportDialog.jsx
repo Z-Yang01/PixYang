@@ -9,7 +9,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import useGalleryStore from '@/store/galleryStore';
-import api from '@/lib/api';
+import api from '@/lib/api.ts';
 import { errText } from '@/lib/errorText.ts';
 import {
   EXPORT_FORMATS,

@@ -15,7 +15,7 @@ import {
 } from '@/lib/gallery.ts';
 import useGalleryStore, { anyModalOpen } from '@/store/galleryStore';
 import { matchGridShortcut, GRID_ACTIONS } from '@/lib/shortcuts.ts';
-import api from '@/lib/api';
+import api from '@/lib/api.ts';
 import ImageCard from './ImageCard';
 import PaginationBar from './PaginationBar';
 import { AddToAlbumDialog, RenameDialog } from './GridDialogs';

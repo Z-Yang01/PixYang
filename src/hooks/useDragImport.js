@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
-import api from '../lib/api';
-import { onNativeDragDrop } from '../lib/tauriBridgeMedia';
+import api from '../lib/api.ts';
+import { onNativeDragDrop } from '../lib/tauriBridgeMedia.ts';
 
 // 窗口级拖拽导入：拖入文件/文件夹时展示遮罩，松手后收集路径交给导入对话框
 export default function useDragImport({ enabled, onCollect }) {

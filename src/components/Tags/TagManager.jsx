@@ -6,7 +6,7 @@ import { Search, Trash2, Tag } from 'lucide-react';
 import ConfirmDialog from '../Layout/ConfirmDialog';
 import { isEnterSubmit } from '@/lib/shortcuts.ts';
 import { friendlyError, errText } from '@/lib/errorText.ts';
-import api from '@/lib/api';
+import api from '@/lib/api.ts';
 
 const TAG_COLORS = [
   '#818cf8',

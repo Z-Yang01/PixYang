@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef } from 'react';
 import maskGeometry from '../../../shared/maskGeometry.ts';
 
 const { displayToImage } = maskGeometry;
-import { CROP_RATIOS } from '@/lib/editParams';
+import { CROP_RATIOS } from '@/lib/editParams.ts';
 
 // 裁剪交互 hook（ImageViewer 拆分 R144）：鼠标→底图坐标换算、按 mode（new/move/边/角手柄）
 // 更新裁剪框（比例锁定/边界钳制）、window 级拖动追踪（含 blur 兜底结算与 <8px 拖废=清除

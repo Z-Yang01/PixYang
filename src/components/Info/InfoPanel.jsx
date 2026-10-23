@@ -9,7 +9,7 @@ import { formatSizeDisplay as formatSize } from '@/lib/format.ts';
 import { removeIdsFromSet } from '@/lib/gallery.ts';
 import useGalleryStore from '@/store/galleryStore';
 import { isEnterSubmit } from '@/lib/shortcuts.ts';
-import api from '@/lib/api';
+import api from '@/lib/api.ts';
 import { errText, friendlyError } from '@/lib/errorText.ts';
 import { offerDeleteUndo } from '@/lib/trashUndo.ts';
 

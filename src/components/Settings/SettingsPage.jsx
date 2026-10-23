@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import ConfirmDialog from '../Layout/ConfirmDialog';
 import useGalleryStore from '@/store/galleryStore';
-import api from '@/lib/api';
+import api from '@/lib/api.ts';
 import OrphanFilesPanel from './OrphanFilesPanel';
 import { THEMES, normalizeTheme } from '@/lib/themes.ts';
 import { errText, friendlyError } from '@/lib/errorText.ts';

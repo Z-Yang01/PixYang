@@ -7,13 +7,57 @@ import curvesLib from '../../shared/curves.ts';
 import gradingLib from '../../shared/colorGrading.ts';
 import masksLib from '../../shared/masks.ts';
 import hslLib from '../../shared/hsl.ts';
+import type { EditParams } from '../../shared/editSchema.ts';
 
 const { normalizePoints, buildCurveTables, hasCurveData } = curvesLib;
 const { normalizeGrading, hasColorGradingData, buildGradingTables } = gradingLib;
 const { normalizeMasks, hasMaskData } = masksLib;
 const { normalizeHsl, hasHslData } = hslLib;
 
-export const EDIT_DEFAULTS = {
+export type Mask = ReturnType<typeof normalizeMasks>[number];
+
+/** 裁剪框（UI 平铺模型，基于规范化底图像素坐标） */
+export type CropRect = {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+  ratio?: string;
+  angle?: number;
+};
+
+/** UI 平铺 ops 模型（EDIT_DEFAULTS 的形状） */
+export type EditOps = {
+  rotation: number; // 90 的倍数
+  flipH: boolean;
+  flipV: boolean;
+  crop: CropRect | null;
+  exposure: number; // -2..2 EV
+  contrast: number; // -50..50
+  saturation: number; // -100..100（0 为原色，-100 黑白）
+  vibrance: number; // -100..100 鲜艳度
+  clarity: number; // -100..100 清晰度
+  dehaze: number; // -100..100 去朦胧
+  temperature: number; // -100..100（暖+ 冷-）
+  highlights: number; // -100..100（亮度掩蔽域，LR 惯例）
+  shadows: number; // -100..100
+  whites: number; // -100..100
+  blacks: number; // -100..100
+  tint: number; // -100..100（绿- 品红+）
+  curves: { rgb: number[]; r: number[]; g: number[]; b: number[] }; // 平铺点对数组
+  colorGrading: ReturnType<typeof normalizeGrading>;
+  hsl: ReturnType<typeof normalizeHsl>;
+  detail: { sharpness: number; texture: number; noise: number; grain: number };
+  vignette: number; // -100..100，pre-crop 语义
+  distortion: number; // -100..100
+  chromatic: number; // -100..100
+  masks: Mask[];
+};
+
+/** sanitize 的宽容入参：UI 状态/历史快照/预设可能缺字段或带越界值 */
+export type EditOpsInput = Partial<EditOps> | null | undefined;
+
+export const EDIT_DEFAULTS: EditOps = {
   rotation: 0, // 90 的倍数
   flipH: false,
   flipV: false,
@@ -48,7 +92,7 @@ export const EDIT_DEFAULTS = {
 // 八带中文名（与 shared/hsl.ts HSL_BANDS 顺序一致），供编辑面板渲染滑杆行
 export const HSL_BAND_LABELS = ['红', '橙', '黄', '绿', '青', '蓝', '紫', '洋红'];
 
-export const CROP_RATIOS = [
+export const CROP_RATIOS: { key: string; label: string; value: number | null }[] = [
   { key: 'free', label: '自由', value: null },
   { key: '1:1', label: '1:1', value: 1 },
   { key: '4:3', label: '4:3', value: 4 / 3 },
@@ -56,26 +100,28 @@ export const CROP_RATIOS = [
   { key: '16:9', label: '16:9', value: 16 / 9 },
 ];
 
-const clamp = (v, min, max) => Math.min(max, Math.max(min, v));
+const clamp = (v: number, min: number, max: number): number => Math.min(max, Math.max(min, v));
 
 // 曲线通道归一化为平铺点对数组（排序/钳制/去重后），保证 sanitize 输出键序与值稳定可比较
-const flatPoints = (arr) => normalizePoints(arr).flat();
+const flatPoints = (arr: unknown): number[] => normalizePoints(arr).flat();
 
-export function sanitizeEditOps(input = {}) {
-  const ops = { ...EDIT_DEFAULTS, ...input };
+export function sanitizeEditOps(input: EditOpsInput = {}): EditOps {
+  const ops = { ...EDIT_DEFAULTS, ...input } as EditOps;
+  const crop = ops.crop as CropRect | null | undefined;
+  const detail = ops.detail as Partial<EditOps['detail']> | undefined;
   return {
     rotation: [0, 90, 180, 270].includes(ops.rotation) ? ops.rotation : 0,
     flipH: !!ops.flipH,
     flipV: !!ops.flipV,
     crop:
-      ops.crop && ops.crop.width > 0 && ops.crop.height > 0
+      crop && crop.width > 0 && crop.height > 0
         ? {
-            left: Math.max(0, Math.round(ops.crop.left)),
-            top: Math.max(0, Math.round(ops.crop.top)),
-            width: Math.round(ops.crop.width),
-            height: Math.round(ops.crop.height),
-            ratio: ops.crop.ratio || 'free',
-            angle: clamp(Math.round((Number(ops.crop.angle) || 0) * 2) / 2, -45, 45),
+            left: Math.max(0, Math.round(crop.left)),
+            top: Math.max(0, Math.round(crop.top)),
+            width: Math.round(crop.width),
+            height: Math.round(crop.height),
+            ratio: crop.ratio || 'free',
+            angle: clamp(Math.round((Number(crop.angle) || 0) * 2) / 2, -45, 45),
           }
         : null,
     exposure: clamp(Number(ops.exposure) || 0, -2, 2),
@@ -99,10 +145,10 @@ export function sanitizeEditOps(input = {}) {
     colorGrading: normalizeGrading(ops.colorGrading),
     hsl: normalizeHsl(ops.hsl),
     detail: {
-      sharpness: clamp(Math.round(Number(ops.detail?.sharpness)) || 0, 0, 100),
-      texture: clamp(Math.round(Number(ops.detail?.texture)) || 0, -100, 100),
-      noise: clamp(Math.round(Number(ops.detail?.noise)) || 0, 0, 100),
-      grain: clamp(Math.round(Number(ops.detail?.grain)) || 0, 0, 100),
+      sharpness: clamp(Math.round(Number(detail?.sharpness)) || 0, 0, 100),
+      texture: clamp(Math.round(Number(detail?.texture)) || 0, -100, 100),
+      noise: clamp(Math.round(Number(detail?.noise)) || 0, 0, 100),
+      grain: clamp(Math.round(Number(detail?.grain)) || 0, 0, 100),
     },
     vignette: clamp(Number(ops.vignette) || 0, -100, 100),
     distortion: clamp(Number(ops.distortion) || 0, -100, 100),
@@ -111,7 +157,7 @@ export function sanitizeEditOps(input = {}) {
   };
 }
 
-export function hasEdits(ops) {
+export function hasEdits(ops: EditOpsInput): boolean {
   const s = sanitizeEditOps(ops);
   return !!(
     s.rotation !== 0 ||
@@ -147,7 +193,7 @@ export function hasEdits(ops) {
 // ── UI 平铺模型 ↔ EditParams v1（持久化结构）双向转换 ──
 
 // UI 平铺 ops → EditParams v1（经 zod 归一化，可入 edits 表）
-export function toEditParams(ops) {
+export function toEditParams(ops: EditOpsInput): EditParams {
   const s = sanitizeEditOps(ops);
   return editSchema.normalizeEdits({
     orientation: { rotate: s.rotation, flipH: s.flipH, flipV: s.flipV },
@@ -195,7 +241,7 @@ export function toEditParams(ops) {
 }
 
 // EditParams v1 → UI 平铺 ops（打开会话时读回）
-export function fromEditParams(params) {
+export function fromEditParams(params: unknown): EditOps {
   const p = editSchema.normalizeEdits(params);
   return {
     rotation: p.orientation.rotate,
@@ -245,7 +291,7 @@ export function fromEditParams(params) {
 }
 
 // 是否有未保存的参数变更（与基线快照比较）
-export function opsChanged(a, b) {
+export function opsChanged(a: EditOpsInput, b: EditOpsInput): boolean {
   return JSON.stringify(sanitizeEditOps(a)) !== JSON.stringify(sanitizeEditOps(b));
 }
 
@@ -253,7 +299,14 @@ export function opsChanged(a, b) {
 // 执行器语义：先按 angle 旋转位图（画布扩至外接矩形，出界填黑），再取 rotated 空间矩形。
 // 本函数给出该空间的画布尺寸与居中自动适配框（去掉黑角的最小裁剪），UI 拖滑杆时直接套用。
 // 内接矩形推导：角点约束 w·cosθ+h·|sinθ| ≤ W 且 w·|sinθ|+h·cosθ ≤ H，取 w=aspect·h 解最小 h。
-export function straightenGeometry(width, height, angleDeg) {
+export function straightenGeometry(
+  width: number,
+  height: number,
+  angleDeg: number
+): {
+  canvas: { w: number; h: number };
+  fit: { left: number; top: number; width: number; height: number } | null;
+} {
   const W = Number(width) || 0;
   const H = Number(height) || 0;
   const theta = ((Number(angleDeg) || 0) * Math.PI) / 180;
@@ -286,7 +339,16 @@ export function straightenGeometry(width, height, angleDeg) {
 // → 阴影 gamma(±镜像域) → 高光线性] → saturation(saturate 矩阵)。
 // 全线性段合并为一个 feColorMatrix；阴影 gamma 与饱和度单独原语，顺序严格对应。
 
-export function previewFilterChain(ops) {
+export type PreviewFilterChain = {
+  matrix: number[];
+  shadows: { exponent: number; invert: boolean } | null;
+  highlightsSlope: number | null;
+  curves: ReturnType<typeof buildCurveTables>;
+  grading: ReturnType<typeof buildGradingTables>;
+  saturate: number | null;
+} | null;
+
+export function previewFilterChain(ops: EditOpsInput): PreviewFilterChain {
   const s = sanitizeEditOps(ops);
   if (!hasEdits(s)) return null;
 
@@ -300,7 +362,7 @@ export function previewFilterChain(ops) {
   const cf = 1 + s.contrast / 50;
   const offset255 = cf * blacksOff + 127.5 * (1 - cf);
   const slope = wb.map((w) => w * gain * whitesF * cf);
-  const n = (v) => Number(v.toFixed(5));
+  const n = (v: number) => Number(v.toFixed(5));
   // feColorMatrix 工作在 0..1 空间：slope 为无量纲增益原值，仅 offset 需 /255
   const matrix = [
     n(slope[0]),
@@ -326,7 +388,7 @@ export function previewFilterChain(ops) {
   ];
 
   // 阴影 gamma：+用正域指数 e<1；-用镜像域（negate 矩阵 → gamma(e) → negate 矩阵）
-  let shadows = null;
+  let shadows: { exponent: number; invert: boolean } | null = null;
   if (s.shadows > 0) {
     shadows = { exponent: clamp(1 - s.shadows / 220, 0.55, 1), invert: false };
   } else if (s.shadows < 0) {
@@ -352,19 +414,23 @@ export function previewFilterChain(ops) {
 // temperature ≈ 500·(G_r − G_b)，tint ≈ (1 − G_g)·100/0.06。返回绝对值（对已调参数幂等），
 // 采样点任一通道过暗（<0.5/255）不可作中性锚时返回 null。近似误差 ±1~2（例：temp+30 渲染的
 // 纯灰重采样反解得 −31/−7 而非 −30/0，源于亮度归一的固有偏移）。
-export function whiteBalanceFromSample(r, g, b) {
+export function whiteBalanceFromSample(
+  r: number,
+  g: number,
+  b: number
+): { temperature: number; tint: number } | null {
   const tiny = 0.5; // 8bit 域半级：更暗的通道无细节，不可作中性锚
   if (![r, g, b].every((v) => Number.isFinite(v) && v > tiny)) return null;
   const L = 0.2126 * r + 0.7152 * g + 0.0722 * b;
   if (L <= tiny) return null;
-  const gain = (c) => Math.min(L / c, 8); // 增益上限防极暗通道爆表
+  const gain = (c: number) => Math.min(L / c, 8); // 增益上限防极暗通道爆表
   const temperature = clamp(Math.round(500 * (gain(r) - gain(b))), -100, 100);
   const tint = clamp(Math.round((1 - gain(g)) * (100 / 0.06)), -100, 100);
   return { temperature, tint };
 }
 
 // 线性段（白场/黑场/对比度/曝光/色温/色调）是否需要主矩阵原语
-export function needsMatrix(ops) {
+export function needsMatrix(ops: EditOpsInput): boolean {
   const s = sanitizeEditOps(ops);
   return !!(s.exposure || s.contrast || s.whites || s.blacks || s.temperature || s.tint);
 }
@@ -373,7 +439,7 @@ export function needsMatrix(ops) {
 // 就地钳回——内存态/历史/撤销链不再出现幽灵值（显示层 sanitize 本就钳，差异在中间层）。
 // 值域表与 shared/editSchema BasicSchema/DetailSchema 对齐；detail 域键用 'detail.xxx' 或裸
 // 'texture' 形态。未知键按 ±100。
-export const STRENGTH_RANGES = {
+export const STRENGTH_RANGES: Record<string, [number, number]> = {
   exposure: [-2, 2],
   contrast: [-50, 50],
   'detail.sharpness': [0, 100],
@@ -382,7 +448,7 @@ export const STRENGTH_RANGES = {
   'detail.texture': [-100, 100],
 };
 
-export function clampStrengthValue(key, v) {
+export function clampStrengthValue(key: string, v: number): number {
   const [lo, hi] = STRENGTH_RANGES[key] || [-100, 100];
   return Math.min(hi, Math.max(lo, v));
 }

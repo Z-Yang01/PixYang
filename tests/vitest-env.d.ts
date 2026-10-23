@@ -11,7 +11,21 @@ declare global {
   interface PixYangBridge {
     [command: string]: ((...args: unknown[]) => unknown) | undefined;
   }
+  /** Tauri withGlobalTauri 注入的全局（app.withGlobalTauri: true），按所用面最小声明 */
+  interface TauriGlobal {
+    core?: { invoke?: (cmd: string, args?: Record<string, unknown>) => Promise<unknown> };
+    dialog?: { open?: (opts?: Record<string, unknown>) => Promise<unknown> };
+    event?: {
+      listen?: (event: string, cb: (e: { payload?: unknown }) => void) => Promise<() => void>;
+    };
+    webview?: {
+      getCurrentWebview?: () => {
+        onDragDropEvent?: (cb: (e: unknown) => void) => Promise<() => void>;
+      };
+    };
+  }
   interface Window {
     pixyang?: PixYangBridge;
+    __TAURI__?: TauriGlobal;
   }
 }

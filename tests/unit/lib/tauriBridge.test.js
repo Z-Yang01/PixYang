@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { isTauriAvailable, tauriInvoke } from '@/lib/tauriBridge';
-import api from '@/lib/api';
+import { isTauriAvailable, tauriInvoke } from '@/lib/tauriBridge.ts';
+import api from '@/lib/api.ts';
 import editSchema from '../../../shared/editSchema.ts';
 
 const { upgradeEdits } = editSchema;

@@ -10,7 +10,7 @@ vi.mock('@/lib/api', () => ({
   },
 }));
 
-import api from '@/lib/api';
+import api from '@/lib/api.ts';
 import useBackgroundImport from '@/hooks/useBackgroundImport';
 import { useImportStore } from '@/store/importStore';
 import useGalleryStore from '@/store/galleryStore';

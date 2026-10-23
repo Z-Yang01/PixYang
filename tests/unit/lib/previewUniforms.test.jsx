@@ -1,8 +1,8 @@
 // @vitest-environment happy-dom
 import { describe, it, expect } from 'vitest';
 import { createRequire } from 'module';
-import { specToShaderUniforms, simulateShaderPixel } from '@/lib/previewUniforms';
-import { previewFilterChain, fromEditParams } from '@/lib/editParams';
+import { specToShaderUniforms, simulateShaderPixel } from '@/lib/previewUniforms.ts';
+import { previewFilterChain, fromEditParams } from '@/lib/editParams.ts';
 
 const require_ = createRequire(import.meta.url);
 import renderSpec from '../../../shared/renderSpec.ts';
@@ -414,7 +414,7 @@ describe('masks uniforms（蒙版打包 + shader 模拟）', () => {
     const fs = require_('fs');
     const path_ = require_('path');
     const src = fs.readFileSync(
-      path_.resolve(__dirname, '../../../src/lib/webglPreview.js'),
+      path_.resolve(__dirname, '../../../src/lib/webglPreview.ts'),
       'utf8'
     );
     const linearMark = src.indexOf('vec2 dir = g.zw - g.xy;');
@@ -452,7 +452,7 @@ describe('masks uniforms（蒙版打包 + shader 模拟）', () => {
     const fs = require_('fs');
     const path_ = require_('path');
     const glsl = fs.readFileSync(
-      path_.resolve(__dirname, '../../../src/lib/webglPreview.js'),
+      path_.resolve(__dirname, '../../../src/lib/webglPreview.ts'),
       'utf8'
     );
     const start = glsl.indexOf('void applyMaskedAdjust');

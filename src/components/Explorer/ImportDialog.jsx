@@ -11,7 +11,7 @@ import {
 import { Loader2, FileImage, Check, FolderOpen } from 'lucide-react';
 import { formatFileSize, todayStr } from '@/lib/format.ts';
 import { errText } from '@/lib/errorText.ts';
-import api from '@/lib/api';
+import api from '@/lib/api.ts';
 import { useImportStore } from '@/store/importStore';
 
 const PREVIEWABLE = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp'];

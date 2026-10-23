@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import api from '../lib/api';
+import api from '../lib/api.ts';
 import { applyLightLocalUpdate } from '../lib/gallery';
 import useGalleryStore from '../store/galleryStore';
 

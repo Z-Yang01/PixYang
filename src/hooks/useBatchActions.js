@@ -1,8 +1,8 @@
 import { useCallback, useRef, useState } from 'react';
 import { toast } from 'sonner';
-import api from '../lib/api';
+import api from '../lib/api.ts';
 import useGalleryStore from '../store/galleryStore';
-import { toEditParams } from '../lib/editParams';
+import { toEditParams } from '../lib/editParams.ts';
 import { applyPresetToOps } from '../lib/presetApply';
 import autoGradeModule from '../../shared/autoGrade.ts';
 const { suggestGrade } = autoGradeModule;

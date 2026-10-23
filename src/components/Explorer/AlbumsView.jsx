@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { toast } from 'sonner';
-import api from '@/lib/api';
+import api from '@/lib/api.ts';
 import { isEnterSubmit } from '@/lib/shortcuts.ts';
 import { errText, friendlyError } from '@/lib/errorText.ts';
 import ConfirmDialog from '../Layout/ConfirmDialog';

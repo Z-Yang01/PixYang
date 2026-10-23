@@ -8,7 +8,7 @@ import {
   releaseWebGLPreview,
   previewDrawSize,
   onWebGLPreviewRestored,
-} from '@/lib/webglPreview';
+} from '@/lib/webglPreview.ts';
 
 function makeGL() {
   const calls = [];
@@ -577,7 +577,7 @@ describe('isWebGL2Available（R107：探针回收 + 失败不永久缓存）', (
       },
     }));
     try {
-      const mod = await import('@/lib/webglPreview');
+      const mod = await import('@/lib/webglPreview.ts');
       expect(mod.isWebGL2Available()).toBe(true);
       expect(mod.isWebGL2Available()).toBe(true); // 缓存命中：不重复创建探针
       expect(created).toBe(1);
@@ -594,7 +594,7 @@ describe('isWebGL2Available（R107：探针回收 + 失败不永久缓存）', (
       getContext: () => (ok ? makeGL() : null),
     }));
     try {
-      const mod = await import('@/lib/webglPreview');
+      const mod = await import('@/lib/webglPreview.ts');
       expect(mod.isWebGL2Available()).toBe(false);
       ok = true;
       expect(mod.isWebGL2Available()).toBe(true);
@@ -635,7 +635,7 @@ describe('ImageViewer 预览生命周期契约（R107，源码级防回退）', 
 // 画笔蒙版 GLSL 接线源串锁（P2）：纹理采样分支与共享公式栅格声明必须在场——
 // 删分支/改名 sampler 时此处先红（happy-dom 无 WebGL2，运行时行为由实机对拍承载）
 describe('画笔蒙版 GLSL 接线（P2 源串锁）', () => {
-  const src = readFileSync(resolve(process.cwd(), 'src/lib/webglPreview.js'), 'utf8');
+  const src = readFileSync(resolve(process.cwd(), 'src/lib/webglPreview.ts'), 'utf8');
   it('maskWeight 含 brush 纹理采样分支与 sampler 声明', () => {
     expect(src).toContain('uniform sampler2D uMaskBrushTex[8]');
     expect(src).toContain('texture(uMaskBrushTex[i], px / uImageSize).r');
@@ -647,7 +647,7 @@ describe('画笔蒙版 GLSL 接线（P2 源串锁）', () => {
 // 曾用 this.__brushTex 缓存画笔纹理 → 每次预览抛 TypeError 被 catch 吞掉 → 恒返回 false、
 // 静默降级 CSS 回退。单测经 SSR 转译非严格（this 退化为 globalThis）不会红，故用源扫描锁死。
 describe('严格模式 this 使用锁（P0）', () => {
-  const src = readFileSync(resolve(process.cwd(), 'src/lib/webglPreview.js'), 'utf8');
+  const src = readFileSync(resolve(process.cwd(), 'src/lib/webglPreview.ts'), 'utf8');
   it('webglPreview.js 内不得出现 this.（ESM 严格模式下为 undefined）', () => {
     expect(src.match(/\bthis\b/g) || []).toHaveLength(0);
   });

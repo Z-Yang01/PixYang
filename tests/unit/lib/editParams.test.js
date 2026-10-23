@@ -9,7 +9,7 @@ import {
   whiteBalanceFromSample,
   straightenGeometry,
   clampStrengthValue,
-} from '@/lib/editParams';
+} from '@/lib/editParams.ts';
 
 describe('sanitizeEditOps', () => {
   it('默认值与非法值回退', () => {
@@ -168,12 +168,12 @@ describe('CROP_RATIOS', () => {
 
 describe('previewFilterChain（M5 预览滤镜链）', () => {
   it('默认参数返回 null（无滤镜）', async () => {
-    const { previewFilterChain } = await import('@/lib/editParams');
+    const { previewFilterChain } = await import('@/lib/editParams.ts');
     expect(previewFilterChain(EDIT_DEFAULTS)).toBeNull();
   });
 
   it('线性段合并为单一矩阵，斜率与偏移与 sharp 管线一致', async () => {
-    const { previewFilterChain } = await import('@/lib/editParams');
+    const { previewFilterChain } = await import('@/lib/editParams.ts');
     const chain = previewFilterChain({ exposure: 1, contrast: 30 });
     // slope = 2^(1) * 1 * (1+30/50) = 3.2；offset = 127.5*(1-1.6) = -76.5
     expect(chain.matrix[0]).toBeCloseTo(3.2, 4);
@@ -184,7 +184,7 @@ describe('previewFilterChain（M5 预览滤镜链）', () => {
   });
 
   it('正/负阴影产生 gamma 原语，负值带镜像域标记且指数为 1/e（压暗，与导出端 libvips 语义一致）', async () => {
-    const { previewFilterChain } = await import('@/lib/editParams');
+    const { previewFilterChain } = await import('@/lib/editParams.ts');
     const lift = previewFilterChain({ shadows: 80 });
     expect(lift.shadows.invert).toBe(false);
     expect(lift.shadows.exponent).toBeLessThan(1);
@@ -195,7 +195,7 @@ describe('previewFilterChain（M5 预览滤镜链）', () => {
   });
 
   it('高光与饱和度独立原语（高光方向 LR 惯例：−压暗/＋提亮；SVG 链无掩蔽属设计内降级近似）', async () => {
-    const { previewFilterChain } = await import('@/lib/editParams');
+    const { previewFilterChain } = await import('@/lib/editParams.ts');
     const chain = previewFilterChain({ highlights: -60, saturation: -50 });
     expect(chain.highlightsSlope).toBeCloseTo(0.85, 3);
     expect(chain.saturate).toBeCloseTo(0.5, 3);
@@ -217,7 +217,7 @@ describe('curves（平铺模型 + 预览链）', () => {
   });
 
   it('toEditParams / fromEditParams 曲线往返不丢数据', async () => {
-    const { toEditParams, fromEditParams } = await import('@/lib/editParams');
+    const { toEditParams, fromEditParams } = await import('@/lib/editParams.ts');
     const ops = { ...EDIT_DEFAULTS, curves: { rgb: [0, 0.04, 1, 0.96], b: [0, 0.06, 1, 0.94] } };
     const params = toEditParams(ops);
     expect(params.curves.rgb).toEqual([0, 0.04, 1, 0.96]);
@@ -226,7 +226,7 @@ describe('curves（平铺模型 + 预览链）', () => {
   });
 
   it('previewFilterChain 输出曲线表（tone 后 saturate 前语义，均匀采样）', async () => {
-    const { previewFilterChain } = await import('@/lib/editParams');
+    const { previewFilterChain } = await import('@/lib/editParams.ts');
     const chain = previewFilterChain({ ...EDIT_DEFAULTS, curves: { rgb: [0, 0.04, 1, 0.96] } });
     expect(chain.curves).toBeTruthy();
     expect(chain.curves.r).toHaveLength(33);
@@ -237,7 +237,7 @@ describe('curves（平铺模型 + 预览链）', () => {
   });
 
   it('仅曲线编辑也产出预览链（identity 矩阵 + 曲线原语）', async () => {
-    const { previewFilterChain, needsMatrix } = await import('@/lib/editParams');
+    const { previewFilterChain, needsMatrix } = await import('@/lib/editParams.ts');
     const ops = { ...EDIT_DEFAULTS, curves: { rgb: [0, 0.2, 1, 0.8] } };
     const chain = previewFilterChain(ops);
     expect(chain).toBeTruthy();
@@ -264,7 +264,7 @@ describe('colorGrading（平铺模型 + 预览链）', () => {
   });
 
   it('toEditParams / fromEditParams 分级往返不丢', async () => {
-    const { toEditParams, fromEditParams } = await import('@/lib/editParams');
+    const { toEditParams, fromEditParams } = await import('@/lib/editParams.ts');
     const ops = {
       ...EDIT_DEFAULTS,
       colorGrading: { shadows: [210, 45], midtones: [], highlights: [45, 30] },
@@ -276,7 +276,7 @@ describe('colorGrading（平铺模型 + 预览链）', () => {
   });
 
   it('previewFilterChain 输出 grading 表（curves 后 saturate 前），无数据为 null', async () => {
-    const { previewFilterChain } = await import('@/lib/editParams');
+    const { previewFilterChain } = await import('@/lib/editParams.ts');
     const chain = previewFilterChain({ ...EDIT_DEFAULTS, colorGrading: { shadows: [220, 40] } });
     expect(chain.grading).toBeTruthy();
     expect(chain.grading.r).toHaveLength(33);
@@ -293,7 +293,7 @@ describe('vignette（平铺模型）', () => {
 
   it('非零 vignette 即已编辑；往返经 lens.vignette 不丢', async () => {
     expect(hasEdits({ ...EDIT_DEFAULTS, vignette: -20 })).toBe(true);
-    const { toEditParams, fromEditParams } = await import('@/lib/editParams');
+    const { toEditParams, fromEditParams } = await import('@/lib/editParams.ts');
     const params = toEditParams({ ...EDIT_DEFAULTS, vignette: -55 });
     expect(params.lens.vignette).toBe(-55);
     expect(fromEditParams(params).vignette).toBe(-55);
@@ -327,7 +327,7 @@ describe('masks（平铺模型）', () => {
         masks: [{ type: 'linear', x0: 0, y0: 0, x1: 10, y1: 0, adjustments: { exposure: 0.5 } }],
       })
     ).toBe(true);
-    const { toEditParams, fromEditParams } = await import('@/lib/editParams');
+    const { toEditParams, fromEditParams } = await import('@/lib/editParams.ts');
     const ops = {
       ...EDIT_DEFAULTS,
       masks: [

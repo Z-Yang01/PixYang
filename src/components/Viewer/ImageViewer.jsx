@@ -44,7 +44,7 @@ import {
   ratingFromViewerAction,
   matchSliderNavKey,
 } from '@/lib/shortcuts.ts';
-import api from '@/lib/api';
+import api from '@/lib/api.ts';
 import { errRaw, errText, friendlyError, rawErrorText } from '@/lib/errorText.ts';
 import {
   EDIT_DEFAULTS,
@@ -55,7 +55,7 @@ import {
   toEditParams,
   fromEditParams,
   opsChanged,
-} from '@/lib/editParams';
+} from '@/lib/editParams.ts';
 import { applyPresetToOps } from '@/lib/presetApply.ts';
 import useGalleryStore from '@/store/galleryStore';
 import useSlideshowTimer, {
@@ -68,7 +68,7 @@ import {
   whiteBalanceFromSample,
   straightenGeometry,
   clampStrengthValue,
-} from '@/lib/editParams';
+} from '@/lib/editParams.ts';
 import { AI_DEFAULT_BASE_URL, pickExifSummary, suggestByVision } from '@/lib/aiGrade.ts';
 const { suggestGrade } = autoGradeModule;
 import curvesLib from '../../../shared/curves.ts';
@@ -84,7 +84,7 @@ import {
   renderWebGLPreview,
   releaseWebGLPreview,
   onWebGLPreviewRestored,
-} from '@/lib/webglPreview';
+} from '@/lib/webglPreview.ts';
 import { extractHistogram } from '@/lib/histogram.ts';
 import HistogramView from './HistogramView';
 import EditorHistoryPanel from './EditorHistoryPanel';
@@ -93,7 +93,7 @@ import EditorPresetSection from './EditorPresetSection';
 import EditorSnapshotSection from './EditorSnapshotSection';
 import SliderRow from './SliderRow';
 import useCropInteraction from './useCropInteraction';
-import { specToShaderUniforms } from '@/lib/previewUniforms';
+import { specToShaderUniforms } from '@/lib/previewUniforms.ts';
 import CompareView from './CompareView';
 import CurveEditor from './CurveEditor';
 import MaskOverlay from './MaskOverlay';

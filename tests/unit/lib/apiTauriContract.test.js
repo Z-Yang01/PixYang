@@ -5,7 +5,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import api from '@/lib/api';
+import api from '@/lib/api.ts';
 import editSchema from '../../../shared/editSchema.ts';
 
 const { upgradeEdits } = editSchema;
@@ -430,8 +430,8 @@ describe('api → tauriBridge 生产路径契约', () => {
 // 路径从 cwd 解析（happy-dom 下 import.meta.url 非 file scheme，不能走 themes.test.js 的 URL 法）。
 const readRepo = (rel) => readFileSync(resolve(process.cwd(), rel), 'utf8');
 const rustSource = readRepo('src-tauri/src/lib.rs');
-const bridgeSource = readRepo('src/lib/tauriBridge.js');
-const mediaSource = readRepo('src/lib/tauriBridgeMedia.js');
+const bridgeSource = readRepo('src/lib/tauriBridge.ts');
+const mediaSource = readRepo('src/lib/tauriBridgeMedia.ts');
 const progressSource = readRepo('src-tauri/src/progress.rs');
 const rustEvents = new Set(
   [...progressSource.matchAll(/^pub const [A-Z_]+: &str = "([a-z-]+)";/gm)].map((m) => m[1])

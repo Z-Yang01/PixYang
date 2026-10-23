@@ -2,6 +2,8 @@
 // 与 Rust 执行器共享 shared/ 数学（曲线 LUT/HSL/分级/暗角逐像素同公式）。
 // 无 WebGL2 环境由调用方回退 CSS/SVG 滤镜链。几何/裁剪不在此渲染（CSS transform 承担）。
 
+import type { ShaderUniforms } from './previewUniforms.ts';
+
 const VERTEX_SRC = `#version 300 es
 in vec2 aPos;
 out vec2 vUv;
@@ -365,7 +367,7 @@ void main() {
 // 永久缓存会把整个会话锁死在 CSS 回退。调用方为组件挂载级（非每帧），重探代价可忽略
 let cachedAvailability = false;
 
-export function isWebGL2Available() {
+export function isWebGL2Available(): boolean {
   if (cachedAvailability) return cachedAvailability;
   try {
     const probe = document.createElement('canvas');
@@ -386,7 +388,11 @@ export function isWebGL2Available() {
 const FULL_EDGE = 2048;
 const DRAFT_EDGE = 896;
 
-export function previewDrawSize(naturalWidth, naturalHeight, maxEdge) {
+export function previewDrawSize(
+  naturalWidth: number,
+  naturalHeight: number,
+  maxEdge: number
+): { w: number; h: number } {
   const longEdge = Math.max(naturalWidth, naturalHeight);
   const scale = longEdge > maxEdge ? maxEdge / longEdge : 1;
   return {
@@ -396,32 +402,51 @@ export function previewDrawSize(naturalWidth, naturalHeight, maxEdge) {
 }
 
 // 每画布状态（gl 上下文/程序/纹理缓存）
-const stateByCanvas = new WeakMap();
+type CanvasState = {
+  gl: WebGL2RenderingContext;
+  program: WebGLProgram;
+  locs: Record<string, WebGLUniformLocation | null>;
+  texture: WebGLTexture;
+  lutTexture: WebGLTexture;
+  lastSrc: string | null;
+  lastTexEdge: number;
+  drawSeq: number;
+  maxTexSize: number;
+  onLost: ((e: Event) => void) | null;
+  brushTex?: (WebGLTexture | undefined)[];
+};
+
+type LifecycleEntry = { onLost: (e: Event) => void; onRestored: () => void };
+
+const stateByCanvas = new WeakMap<HTMLCanvasElement, CanvasState>();
 // 画布 lost/restored 监听器登记：丢失→恢复→重 init 时先摘旧监听防重复触发
-const lifecycleByCanvas = new WeakMap();
+const lifecycleByCanvas = new WeakMap<HTMLCanvasElement, LifecycleEntry>();
 // 调用方注册的恢复回调（WeakMap 挂 canvas 自身，与元素同被 GC）
-const restoreHandlers = new WeakMap();
+const restoreHandlers = new WeakMap<HTMLCanvasElement, () => void>();
 
 // 上下文恢复回调注册：调用方在画布挂载时注册（恢复后解除失败闩锁并触发重绘），handler 传 null 解除
-export function onWebGLPreviewRestored(canvas, handler) {
+export function onWebGLPreviewRestored(
+  canvas: HTMLCanvasElement,
+  handler?: (() => void) | null
+): void {
   if (handler) restoreHandlers.set(canvas, handler);
   else restoreHandlers.delete(canvas);
 }
 
-function attachLifecycle(canvas, st) {
+function attachLifecycle(canvas: HTMLCanvasElement, st: CanvasState): void {
   const prev = lifecycleByCanvas.get(canvas);
   if (prev) {
     canvas.removeEventListener('webglcontextlost', prev.onLost);
     canvas.removeEventListener('webglcontextrestored', prev.onRestored);
   }
-  const onLost = (e) => {
+  const onLost = (e: Event): void => {
     // WebGL 规范：lost 事件不 preventDefault 则上下文永远不会被浏览器恢复——GPU 驱动重置/
     // 远程桌面切换/多显示器热插拔后只能永久 CSS 回退。preventDefault 声明可恢复，
     // GL 对象（program/纹理/uniform 位置）随丢失全部失效，缓存作废由 onRestored 统一负责
     e.preventDefault();
     st.drawSeq = (st.drawSeq || 0) + 1; // 作废在途异步上传（半死上下文上的 bitmap/texImage2D）
   };
-  const onRestored = () => {
+  const onRestored = (): void => {
     // 恢复后浏览器已清空全部 GL 对象：JS 侧 program/locs/纹理缓存（lastSrc/lastTexEdge）
     // 必须随状态整体作废，下次渲染走 initCanvas 全量重建并重传纹理
     stateByCanvas.delete(canvas);
@@ -434,7 +459,10 @@ function attachLifecycle(canvas, st) {
   st.onLost = onLost; // release 时摘除（onRestored 保留：失败闩锁卸载画布后真实恢复仍须可达）
 }
 
-function getUniformLocations(gl, program) {
+function getUniformLocations(
+  gl: WebGL2RenderingContext,
+  program: WebGLProgram
+): Record<string, WebGLUniformLocation | null> {
   const names = [
     'uImage',
     'uCurveLut',
@@ -487,12 +515,12 @@ function getUniformLocations(gl, program) {
     'uMaskAdjClarity',
     'uMaskAdjVibrance',
   ];
-  const locs = {};
+  const locs: Record<string, WebGLUniformLocation | null> = {};
   for (const n of names) locs[n] = gl.getUniformLocation(program, n);
   return locs;
 }
 
-function initCanvas(canvas) {
+function initCanvas(canvas: HTMLCanvasElement): CanvasState | null {
   const gl = canvas.getContext('webgl2', {
     premultipliedAlpha: false,
     preserveDrawingBuffer: true,
@@ -501,8 +529,9 @@ function initCanvas(canvas) {
   // 死上下文上 getContext 返回同一具尸体且查询恒 false：照常编译会打出「shader 编译失败」
   // 假错误掩盖真因（GPU 重置/远程桌面切换）。静默早退，等 webglcontextrestored 后重建
   if (gl.isContextLost && gl.isContextLost()) return null;
-  const compile = (type, src) => {
+  const compile = (type: number, src: string): WebGLShader => {
     const sh = gl.createShader(type);
+    if (!sh) throw new Error('[webgl] shader 对象创建失败');
     gl.shaderSource(sh, src);
     gl.compileShader(sh);
     if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) {
@@ -510,9 +539,11 @@ function initCanvas(canvas) {
     }
     return sh;
   };
-  let program;
+  let program: WebGLProgram;
   try {
-    program = gl.createProgram();
+    const p = gl.createProgram();
+    if (!p) throw new Error('[webgl] program 对象创建失败');
+    program = p;
     gl.attachShader(program, compile(gl.VERTEX_SHADER, VERTEX_SRC));
     gl.attachShader(program, compile(gl.FRAGMENT_SHADER, FRAGMENT_SRC));
     gl.linkProgram(program);
@@ -520,7 +551,7 @@ function initCanvas(canvas) {
       throw new Error(`[webgl] 程序链接失败: ${gl.getProgramInfoLog(program)}`);
     }
   } catch (e) {
-    console.error(e.message);
+    console.error(e instanceof Error ? e.message : String(e));
     return null;
   }
   const quad = gl.createBuffer();
@@ -534,12 +565,12 @@ function initCanvas(canvas) {
   // MAX_TEXTURE_SIZE 下限取 2048（WebGL2 规范最小保证，FULL_EDGE 同值）：
   // mock/异常实现 getParameter 缺失时退化为规范下限而非 0（0 会误拒一切上传）
   const maxTexSize = gl.getParameter(gl.MAX_TEXTURE_SIZE) || 2048;
-  const st = {
+  const st: CanvasState = {
     gl,
     program,
     locs: getUniformLocations(gl, program),
-    texture,
-    lutTexture,
+    texture: texture as WebGLTexture,
+    lutTexture: lutTexture as WebGLTexture,
     lastSrc: null,
     lastTexEdge: 0,
     drawSeq: 0,
@@ -554,9 +585,14 @@ function initCanvas(canvas) {
 // 失败返回 false，调用方回退 CSS/SVG。异步（纹理上传走 createImageBitmap 跳过浏览器
 // 色彩转换——导出在原生编码值上编辑，预览纹理也必须取原生值，宽色域 tagged 图才一致）。
 // opts.draft：滑杆拖动中的草稿帧，画布按 1024 长边出帧，settled 后由调用方补全分辨率帧。
-export async function renderWebGLPreview(canvas, image, uniforms, opts = {}) {
+export async function renderWebGLPreview(
+  canvas: HTMLCanvasElement,
+  image: HTMLImageElement,
+  uniforms: ShaderUniforms,
+  opts: { draft?: boolean } = {}
+): Promise<boolean> {
   const draft = !!opts.draft;
-  let st = stateByCanvas.get(canvas);
+  let st: CanvasState | null | undefined = stateByCanvas.get(canvas);
   if (st && st.gl && st.gl.isContextLost()) stateByCanvas.delete(canvas);
   if (!st || !st.gl || st.gl.isContextLost()) {
     st = initCanvas(canvas);
@@ -592,7 +628,7 @@ export async function renderWebGLPreview(canvas, image, uniforms, opts = {}) {
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-      let source = image;
+      let source: HTMLImageElement | ImageBitmap = image;
       if (typeof createImageBitmap === 'function') {
         try {
           const scaled = w !== image.naturalWidth || h !== image.naturalHeight;
@@ -628,7 +664,7 @@ export async function renderWebGLPreview(canvas, image, uniforms, opts = {}) {
         gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, source);
       } finally {
         // 上传抛错（上下文丢失/跨源污染）时也不能泄漏 createImageBitmap 句柄
-        if (source !== image) source.close();
+        if (source !== image) (source as ImageBitmap).close();
       }
       st.lastSrc = image.src;
       st.lastTexEdge = w;
@@ -734,10 +770,10 @@ export async function renderWebGLPreview(canvas, image, uniforms, opts = {}) {
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-        st.brushTex[bi] = t;
+        st.brushTex[bi] = t as WebGLTexture;
       }
       gl.activeTexture(gl.TEXTURE2 + bi);
-      gl.bindTexture(gl.TEXTURE_2D, st.brushTex[bi]);
+      gl.bindTexture(gl.TEXTURE_2D, st.brushTex[bi] as WebGLTexture);
       if (grid) {
         gl.texImage2D(
           gl.TEXTURE_2D,
@@ -763,7 +799,7 @@ export async function renderWebGLPreview(canvas, image, uniforms, opts = {}) {
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
     return true;
   } catch (e) {
-    console.error('[webgl] 预览渲染失败:', e.message);
+    console.error('[webgl] 预览渲染失败:', e instanceof Error ? e.message : String(e));
     return false;
   }
 }
@@ -771,7 +807,7 @@ export async function renderWebGLPreview(canvas, image, uniforms, opts = {}) {
 // 主动释放画布的 GL 资源与上下文：canvas 卸载（切换 showBefore/对比模式、退出编辑、
 // 卸载查看器）不会自动回收 WebGL 上下文，浏览器对每页活动上下文数有上限（约 16），
 // 反复进出编辑重挂画布会耗尽配额导致 initCanvas 拿不到上下文（审查批 8 P-1）
-export function releaseWebGLPreview(canvas) {
+export function releaseWebGLPreview(canvas: HTMLCanvasElement): void {
   const st = stateByCanvas.get(canvas);
   if (!st) return;
   stateByCanvas.delete(canvas);
@@ -792,6 +828,6 @@ export function releaseWebGLPreview(canvas) {
     const lose = gl.getExtension('WEBGL_lose_context');
     if (lose) lose.loseContext();
   } catch (e) {
-    console.error('[webgl] 资源释放失败:', e.message);
+    console.error('[webgl] 资源释放失败:', e instanceof Error ? e.message : String(e));
   }
 }

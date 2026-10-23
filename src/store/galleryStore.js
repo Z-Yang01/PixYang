@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import api from '../lib/api';
+import api from '../lib/api.ts';
 import { buildImageQuery, createLoadSequencer } from '../lib/gallery';
 
 const SORT_KEYS = ['import_date', 'created_at', 'filename', 'size', 'rating'];

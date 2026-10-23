@@ -13,7 +13,7 @@ import {
   viewerIndexAfterDelete,
   viewerQueryParams,
 } from './lib/gallery';
-import api from './lib/api';
+import api from './lib/api.ts';
 import { normalizeTheme } from './lib/themes';
 import useGalleryStore, { anyModalOpen } from './store/galleryStore';
 import useGalleryData from './hooks/useGalleryData';
