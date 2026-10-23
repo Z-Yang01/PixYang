@@ -303,13 +303,16 @@ fn migrate_images_columns(conn: &Connection) {
         ("hash", "ALTER TABLE images ADD COLUMN hash TEXT DEFAULT ''"),
     ];
     for (name, ddl) in cols {
+        // 存在性查询失败不能当「已存在」跳过（R153 审计④：unwrap_or(1) 会把异常
+        // 当列已存在 → 迁移静默漏做）。回退 0 = 尝试 DDL：列真存在时 DDL 报重复列
+        // （下方已按失败容错继续），异常时至少落到日志而非无声跳过
         let exists: i64 = conn
             .query_row(
                 "SELECT COUNT(*) FROM pragma_table_info('images') WHERE name = ?1",
                 [name],
                 |r| r.get(0),
             )
-            .unwrap_or(1);
+            .unwrap_or(0);
         if exists > 0 {
             continue;
         }

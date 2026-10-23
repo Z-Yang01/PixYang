@@ -216,6 +216,48 @@ describe('App 组合根冒烟', () => {
     expect(container.querySelector('.info-panel')).toBeNull();
   });
 
+  it('收藏页取消收藏：查看器自动前进到下一张，列表删空关闭查看器（R153 审计⑦ 残留锁）', async () => {
+    const dawnImage = {
+      ...testImage,
+      id: 2,
+      filename: 'dawn.jpg',
+      filepath: 'C:/pics/dawn.jpg',
+      thumbnail_path: 'C:/thumbs/dawn.jpg',
+      favorite: 1,
+    };
+    window.pixyang.getImages = vi.fn().mockResolvedValue({
+      images: [{ ...testImage, favorite: 1 }, dawnImage],
+      total: 2,
+    });
+    window.pixyang.toFileUrl = vi
+      .fn()
+      .mockImplementation((p) => Promise.resolve(p ? `file:///${p}` : null));
+    const { container } = renderApp('/favorites');
+    await screen.findByText('sunset');
+    fireEvent.click(container.querySelector('.image-card'));
+    await waitFor(() => expect(container.querySelector('.viewer-filename')).toBeTruthy());
+    expect(container.querySelector('.viewer-filename').textContent).toBe('sunset');
+    // 取消收藏当前图：行离开收藏列表，查看器应停在原全局索引自动前进到 dawn，
+    // 而不是残留一张已出列表的图
+    fireEvent.click(screen.getByTitle('收藏 (F)'));
+    await waitFor(() => {
+      expect(container.querySelector('.viewer-filename')?.textContent).toBe('dawn');
+    });
+    // 等查看器把本地收藏态同步到 dawn（实心 Heart 图标）再点第二次：
+    // 否则可能读到 sunset 遗留的未收藏态，点击变成「收藏」而非「取消收藏」
+    await waitFor(() => {
+      expect(
+        container.querySelector('.viewer-actions svg.lucide-heart:not(.lucide-heart-off)')
+      ).toBeTruthy();
+    });
+    // 再取消收藏最后一张：列表删空，查看器关闭
+    fireEvent.click(screen.getByTitle('收藏 (F)'));
+    await waitFor(() => {
+      expect(screen.queryByTitle('收藏 (F)')).toBeNull();
+    });
+    expect(container.querySelector('.viewer-filename')).toBeNull();
+  });
+
   it('非图库路由：Ctrl+A/Ctrl+E/Delete 被路由门禁全部拦截（审查批 6 K2）', async () => {
     renderApp('/settings');
     await screen.findByRole('heading', { name: '设置' });

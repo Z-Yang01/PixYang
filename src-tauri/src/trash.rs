@@ -673,30 +673,41 @@ pub fn restore_image_from_trash_core(
         rollback_moves(&moved_back);
         return Err(PixError::from(e));
     }
-    // 关联表还原：标签/相册/编辑快照逐条回插（OR IGNORE：期间标签/相册可能已被单独删除）
+    // 关联表还原：标签/相册/编辑快照逐条回插。OR IGNORE 吸收的是预期约束冲突
+    // （期间标签/相册可能已被单独删除，静默跳过是设计语义）；其余错误（IO/损坏/
+    // 表缺失）不再 `let _` 静默吞掉——此时记录已回库、文件已回位，中止整单只会让
+    // 用户看到失败却图已还原，故落日志并继续（R153 审计③）
     for tag_id in &manifest.tag_ids {
-        let _ = conn.execute(
+        if let Err(e) = conn.execute(
             "INSERT OR IGNORE INTO image_tags (image_id, tag_id) VALUES (?1, ?2)",
             params![id, tag_id],
-        );
+        ) {
+            eprintln!("[trash restore] 回插标签失败(图 {id}, 标签 {tag_id}): {e}");
+        }
     }
     for album_id in &manifest.album_ids {
-        let _ = conn.execute(
+        if let Err(e) = conn.execute(
             "INSERT OR IGNORE INTO album_images (album_id, image_id, sort_order) VALUES (?1, ?2, 0)",
             params![album_id, id],
-        );
+        ) {
+            eprintln!("[trash restore] 回插相册失败(图 {id}, 相册 {album_id}): {e}");
+        }
     }
     if let Some(edit) = &manifest.edit {
-        let _ = conn.execute(
+        if let Err(e) = conn.execute(
             "INSERT OR REPLACE INTO edits (image_id, version, params_json) VALUES (?1, ?2, ?3)",
             params![id, edit.version, edit.params_json],
-        );
+        ) {
+            eprintln!("[trash restore] 回插编辑参数失败(图 {id}): {e}");
+        }
     }
     for h in &manifest.edit_history {
-        let _ = conn.execute(
+        if let Err(e) = conn.execute(
             "INSERT OR REPLACE INTO edit_history (image_id, step, command_json) VALUES (?1, ?2, ?3)",
             params![id, h.step, h.command_json],
-        );
+        ) {
+            eprintln!("[trash restore] 回插编辑历史失败(图 {id}, 步 {step}): {e}", step = h.step);
+        }
     }
     let _ = std::fs::remove_file(trash.join(format!("{id}__record.json")));
     Ok(())
@@ -1079,6 +1090,28 @@ mod tests {
         assert_eq!(full.0, "h1");
         assert_eq!(full.1, "C:/edit/x.png");
         assert_eq!(full.2, 1);
+        let _ = std::fs::remove_dir_all(pics.parent().unwrap());
+    }
+
+    #[test]
+    fn 撤销还原_关联表回插失败不致命_记录与文件仍回库() {
+        let (conn, pics, thumbs, trash) = setup("restore_assoc_err");
+        insert_image(&conn, &pics, false);
+        write_thumbs(&thumbs);
+        delete_image_to_trash_core(&conn, 1, &thumbs, &trash).unwrap();
+        // 模拟关联表异常（表缺失/损坏）：回插失败只落日志，不得让整个还原失败——
+        // 此时主记录已回库、文件已回位，中止整单只会让用户看到失败却图已还原
+        // （R153 审计③：原 `let _` 无声吞掉，现在落 stderr 日志，语义同为不致命）
+        conn.execute_batch("DROP TABLE image_tags;").unwrap();
+        restore_image_from_trash_core(&conn, 1, &thumbs, &trash).unwrap();
+        assert!(crate::images_query::get_image_by_id(&conn, 1)
+            .unwrap()
+            .is_some());
+        // 相册关联不受标签表异常影响，仍正常回插
+        let albums: i64 = conn
+            .query_row("SELECT COUNT(*) FROM album_images WHERE image_id = 1", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(albums, 1);
         let _ = std::fs::remove_dir_all(pics.parent().unwrap());
     }
 

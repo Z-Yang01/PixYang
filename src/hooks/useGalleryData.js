@@ -50,15 +50,26 @@ export default function useGalleryData({ onThumbnailsReady } = {}) {
     loadImages,
   ]);
 
-  // 后台缩略图生成完成后： bump 版本刷新缩略图 URL 并轻量刷新列表
+  // 后台缩略图生成完成后：bump 版本刷新缩略图 URL 并轻量刷新列表。
+  // 事件合并节流：重建/后台导入期间 thumbnails-ready 可能连发（R153 审计⑧），
+  // 每发一次就整页重查会让列表反复重载——300ms 尾沿合并为一次 bump + 一次重查，
+  // 版本号只需变化一次即可让全部新缩略图 URL 失效
   useEffect(() => {
     if (!api.isBridgeAvailable()) return;
+    let timer = null;
     const off = api.onThumbnailsReady(() => {
-      useGalleryStore.setState((s) => ({ thumbVersion: s.thumbVersion + 1 }));
-      loadImages();
-      onThumbnailsReady?.();
+      if (timer) return; // 已有待执行刷新：后续事件被该次刷新覆盖
+      timer = setTimeout(() => {
+        timer = null;
+        useGalleryStore.setState((s) => ({ thumbVersion: s.thumbVersion + 1 }));
+        loadImages();
+        onThumbnailsReady?.();
+      }, 300);
     });
-    return off;
+    return () => {
+      if (timer) clearTimeout(timer);
+      off();
+    };
   }, [loadImages, onThumbnailsReady]);
 
   // 编辑预览缩略图生成完成（参数保存后异步渲染）：bump 版本刷新该图 URL，

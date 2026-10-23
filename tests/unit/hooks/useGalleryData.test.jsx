@@ -55,19 +55,41 @@ describe('useGalleryData wiring', () => {
     }
   });
 
-  it('onThumbnailsReady 回调 bump thumbVersion 并刷新列表', async () => {
-    let readyCb;
-    window.pixyang.onThumbnailsReady = vi.fn((cb) => {
-      readyCb = cb;
-      return () => {};
-    });
-    render(<HookHarness hook={useGalleryData} hookProps={{}} />);
-    await waitFor(() => expect(readyCb).toBeDefined());
-    const before = useGalleryStore.getState().thumbVersion;
-    await act(async () => {
-      readyCb();
-    });
-    expect(useGalleryStore.getState().thumbVersion).toBe(before + 1);
+  it('onThumbnailsReady 合并节流：300ms 尾沿一次 bump + 一次重查，连发事件不逐次整页刷新（R153 审计⑧）', async () => {
+    vi.useFakeTimers();
+    try {
+      let readyCb;
+      window.pixyang.onThumbnailsReady = vi.fn((cb) => {
+        readyCb = cb;
+        return () => {};
+      });
+      render(<HookHarness hook={useGalleryData} hookProps={{}} />);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(readyCb).toBeDefined();
+      const before = useGalleryStore.getState().thumbVersion;
+      const callsBefore = window.pixyang.getImages.mock.calls.length;
+      // 300ms 窗口内连发 3 次：窗口内不重查、尾沿合并为一次 bump + 一次重查
+      await act(async () => {
+        readyCb();
+        readyCb();
+        readyCb();
+      });
+      await vi.advanceTimersByTimeAsync(299);
+      expect(useGalleryStore.getState().thumbVersion).toBe(before);
+      expect(window.pixyang.getImages.mock.calls.length).toBe(callsBefore);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(useGalleryStore.getState().thumbVersion).toBe(before + 1);
+      expect(window.pixyang.getImages.mock.calls.length).toBe(callsBefore + 1);
+      // 下一轮事件重新开窗，同样只刷一次
+      await act(async () => {
+        readyCb();
+      });
+      await vi.advanceTimersByTimeAsync(300);
+      expect(useGalleryStore.getState().thumbVersion).toBe(before + 2);
+      expect(window.pixyang.getImages.mock.calls.length).toBe(callsBefore + 2);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('onEditPreviewReady 携带 {id,path} 时把新缩略图路径就地写回当前页记录', async () => {

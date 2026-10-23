@@ -74,6 +74,9 @@ export default function App() {
   viewerImageRef.current = viewerImage;
   const viewerIndexRef = useRef(-1);
   viewerIndexRef.current = viewerIndex;
+  // 收藏页取消收藏的「前进/关闭」待办标记：由 handleImageUpdated 收藏分支设置，
+  // viewerImage 列表同步 effect 消费（同步前进会与该 effect 的关闭路径竞态）
+  const viewerAdvancePendingRef = useRef(false);
   const viewerNavBusyRef = useRef(false);
   const infoFromViewerRef = useRef(false);
 
@@ -165,31 +168,6 @@ export default function App() {
   useEffect(() => {
     useGalleryStore.getState().clearSelection();
   }, [filterKey, location.pathname]);
-
-  // 同步 viewerImage：当 images 刷新后，更新本页内正在查看的图片保持一致；
-  // 仅当图片应在当前页却找不到（已被删除）时关闭查看器，跨页浏览不受刷新影响
-  useEffect(() => {
-    const current = viewerImageRef.current;
-    if (!current) return;
-    // 筛选/删除后当前列表已空：查看器停在不存在的上是幽灵态，直接关闭
-    //（loadImages 在途不清 images，空数组即真实空结果，无瞬断误关）
-    if (images.length === 0) {
-      setViewerImage(null);
-      setViewerIndex(-1);
-      return;
-    }
-    const updated = images.find((img) => img.id === current.id);
-    if (updated) {
-      setViewerImage(updated);
-      return;
-    }
-    const pageSize = pageSizeOf(gridSettings);
-    const pageStart = (page - 1) * pageSize;
-    if (viewerIndexRef.current >= pageStart && viewerIndexRef.current < pageStart + images.length) {
-      setViewerImage(null);
-      setViewerIndex(-1);
-    }
-  }, [images, gridSettings, page]);
 
   // 同步 infoImage：images 刷新后把面板对齐到最新记录（重命名/改日期/评分等不回退旧值）；
   // 从网格打开的面板其图片必在当前页，刷新后找不到（已删除/被筛掉）即关闭，防幽灵面板写空
@@ -310,6 +288,59 @@ export default function App() {
     }
   }, []);
 
+  // 同步 viewerImage：当 images 刷新后，更新本页内正在查看的图片保持一致；
+  // 仅当图片应在当前页却找不到（已被删除）时关闭查看器，跨页浏览不受刷新影响。
+  // 定义必须晚于 navigateViewer（deps 数组渲染期即求值，先引用会 TDZ）
+  useEffect(() => {
+    const current = viewerImageRef.current;
+    if (!current) {
+      viewerAdvancePendingRef.current = false;
+      return;
+    }
+    // 筛选/删除后当前列表已空：查看器停在不存在的上是幽灵态，直接关闭
+    //（loadImages 在途不清 images，空数组即真实空结果，无瞬断误关）
+    if (images.length === 0) {
+      viewerAdvancePendingRef.current = false;
+      setViewerImage(null);
+      setViewerIndex(-1);
+      return;
+    }
+    const updated = images.find((img) => img.id === current.id);
+    if (updated) {
+      viewerAdvancePendingRef.current = false;
+      setViewerImage(updated);
+      return;
+    }
+    // 收藏页取消收藏的行离开列表（标记由 handleImageUpdated 收藏分支设置）：
+    // 与查看器内删除同口径——非末张停在原全局索引自动前进，删空关闭。
+    // 此处看到的是移除后已提交的列表与 totalImages，前进不会被本 effect 覆盖
+    if (viewerAdvancePendingRef.current) {
+      viewerAdvancePendingRef.current = false;
+      const st = useGalleryStore.getState();
+      const next = viewerIndexAfterDelete(viewerIndexRef.current, st.totalImages);
+      if (next < 0) {
+        setViewerImage(null);
+        setViewerIndex(-1);
+        return;
+      }
+      setViewerIndex(next);
+      const pageSize = pageSizeOf(st.gridSettings);
+      const pageStart = (st.page - 1) * pageSize;
+      if (next >= pageStart && next < pageStart + st.images.length) {
+        setViewerImage(st.images[next - pageStart]);
+      } else {
+        navigateViewer(next); // 跨页前进：按同一筛选查询单张
+      }
+      return;
+    }
+    const pageSize = pageSizeOf(gridSettings);
+    const pageStart = (page - 1) * pageSize;
+    if (viewerIndexRef.current >= pageStart && viewerIndexRef.current < pageStart + images.length) {
+      setViewerImage(null);
+      setViewerIndex(-1);
+    }
+  }, [images, gridSettings, page, navigateViewer]);
+
   const viewerPrev = useCallback(() => {
     const idx = viewerIndexRef.current;
     if (idx > 0) navigateViewer(idx - 1);
@@ -398,6 +429,15 @@ export default function App() {
         // 行已离开收藏列表：勾选集同步剪枝，否则批量操作打向不可见图片
         store.setSelectedIds(removeIdsFromSet(store.selectedIds, [id]));
         store.loadStats();
+        // 查看器驻留在被取消收藏的图上时（收藏页取消收藏主要发生在查看器/详情面板），
+        // 行已离开列表，与查看器内删除同口径：非末张停在原全局索引自动前进，列表删空
+        // 关闭查看器——否则查看器残留一张已出列表的图，翻页索引也与列表脱钩（R153 审计⑦）。
+        // 前进/关闭交给下方 viewerImage 列表同步 effect：它看到的是移除后已提交的列表，
+        // 在此同步 setViewerImage 会与该 effect 的关闭路径竞态（外部 store 更新走同步
+        // 冲刷先落地， effect 的 null 会后写覆盖本处的前进目标）
+        if (viewerImageRef.current?.id === id) {
+          viewerAdvancePendingRef.current = true;
+        }
         return;
       }
       store.setImages((prev) => applyLightLocalUpdate(prev, id, updates));
