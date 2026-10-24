@@ -423,9 +423,13 @@ pub fn import_images(
     // 不能是进程 CWD——CWD 下导入的文件在托管树与 asset scope 之外且存相对路径
     let root = crate::db::images_root(conn, default_root)?;
     let total = groups.len();
-    let mut done = 0usize;
-    let mut prepared: Vec<(Option<Value>, Option<Value>)> = Vec::with_capacity(total);
-    for (_, group) in &groups {
+    // EXIF 富化（速度轮 2026-10-24）：默认日期模式=拍摄日期（R156）下，apply_date_override
+    // 每组最多两次 exif_fields 文件读（exif_fields 是 std::fs::read 整文件入内存再解析，
+    // JPEG+NEF 一组 ~35MB），万级导入该阶段串行即数百 GB 读盘、分钟到小时级。逐组构建是
+    // 纯函数（只读源文件、不碰 DB/共享状态），与缩略图生成同款「分块并行 → 按原序拼接」；
+    // 进度事件随块完成粒度发射（done 计数不变，仍是逐组累计值）
+    const EXIF_PARALLEL_CHUNK: usize = EXIF_BATCH * 8; // 64 组/块：块内满载并行，进度 ≤ 数秒一跳
+    let enrich = |group: &image_group::PairGroup| -> (Option<Value>, Option<Value>) {
         let jpg = group.jpg.as_ref().map(|j| {
             let mut v = import_file_to_value(j);
             apply_date_override(&mut v, date_override);
@@ -436,17 +440,75 @@ pub fn import_images(
             apply_date_override(&mut v, date_override);
             v
         });
-        prepared.push((jpg, nef));
-        done += 1;
-        if let Some(app) = app {
-            if done.is_multiple_of(EXIF_BATCH) || done == total {
-                crate::progress::emit_progress(
-                    app,
-                    crate::progress::IMPORT_PROGRESS,
-                    json!({ "done": done, "total": total, "task": "import" }),
-                );
+        (jpg, nef)
+    };
+    let mut done = 0usize;
+    let mut prepared: Vec<(Option<Value>, Option<Value>)> = Vec::with_capacity(total);
+    let workers = if total >= 2 {
+        std::thread::available_parallelism()
+            .map(|n| n.get())
+            .unwrap_or(1)
+            .min(8)
+    } else {
+        1
+    };
+    if workers <= 1 {
+        for (_, group) in &groups {
+            prepared.push(enrich(group));
+            done += 1;
+            if let Some(app) = app {
+                if done.is_multiple_of(EXIF_BATCH) || done == total {
+                    crate::progress::emit_progress(
+                        app,
+                        crate::progress::IMPORT_PROGRESS,
+                        json!({ "done": done, "total": total, "task": "import" }),
+                    );
+                }
             }
         }
+    } else {
+        let chunk_count = total.div_ceil(EXIF_PARALLEL_CHUNK);
+        let next = &std::sync::atomic::AtomicUsize::new(0);
+        let (tx, rx) = std::sync::mpsc::channel::<(usize, Vec<(Option<Value>, Option<Value>)>)>();
+        let groups_ref: &[(String, image_group::PairGroup)] = &groups;
+        let enrich_ref = &enrich;
+        std::thread::scope(|s| {
+            for _ in 0..workers {
+                let tx = tx.clone();
+                s.spawn(move || loop {
+                    let ci = next.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                    if ci >= chunk_count {
+                        break;
+                    }
+                    let start = ci * EXIF_PARALLEL_CHUNK;
+                    let end = (start + EXIF_PARALLEL_CHUNK).min(total);
+                    let mut out = Vec::with_capacity(end - start);
+                    for gi in start..end {
+                        out.push(enrich_ref(&groups_ref[gi].1));
+                    }
+                    let _ = tx.send((ci, out));
+                });
+            }
+            drop(tx);
+            let mut chunks: Vec<(usize, Vec<(Option<Value>, Option<Value>)>)> =
+                rx.into_iter().collect();
+            for (_, out) in &chunks {
+                done += out.len();
+                if let Some(app) = app {
+                    if done.is_multiple_of(EXIF_BATCH) || done == total {
+                        crate::progress::emit_progress(
+                            app,
+                            crate::progress::IMPORT_PROGRESS,
+                            json!({ "done": done, "total": total, "task": "import" }),
+                        );
+                    }
+                }
+            }
+            chunks.sort_by_key(|(ci, _)| *ci);
+            for (_, out) in chunks {
+                prepared.extend(out);
+            }
+        });
     }
     // R110：落库（复制+INSERT，串行语义不变）与缩略图生成分离——24MP 单张双档
     // 生成 ~1.3s（实测），万级首导串行即小时级。全批落库后并行生成、按原序串行回写：

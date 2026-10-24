@@ -9,6 +9,10 @@ use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
+/// mmap I/O 上限（256MB）：读取免内核缓冲区到用户态的逐页拷贝；仅地址空间预留，
+/// 按实际库大小映射，不预占内存
+const MMAP_SIZE: i64 = 268_435_456;
+
 #[derive(Clone)]
 pub struct Db {
     write: std::sync::Arc<Mutex<Connection>>,
@@ -31,6 +35,8 @@ impl Db {
         }
         let conn = Connection::open(&self.path)?;
         conn.busy_timeout(std::time::Duration::from_secs(5))?;
+        // 读连接同开 mmap：大查询（列表投影/扫描）免内核缓冲区到用户态的逐页拷贝
+        conn.pragma_update(None, "mmap_size", MMAP_SIZE)?;
         Ok(conn)
     }
 }
@@ -51,6 +57,14 @@ impl Db {
         conn.busy_timeout(std::time::Duration::from_secs(5))?;
         if path != Path::new(":memory:") {
             conn.pragma_update(None, "journal_mode", "WAL")?;
+            // 速度轮（2026-10-24）：WAL 下默认 synchronous=FULL 每次提交都 fsync WAL，
+            // NORMAL 只在 checkpoint 落盘——应用崩溃不丢数据（WAL 完整），断电可能回滚
+            // 最近提交（照片文件本体在盘、可经孤儿文件工具找回，编辑参数重存即可，
+            // 均为可重做操作）。SQLite 官方文档对 WAL 模式的推荐搭配，小事务写入吞吐
+            // 典型 2-5x（导入逐行 INSERT + 缩略图列回写正是小事务密集型负载）
+            conn.pragma_update(None, "synchronous", "NORMAL")?;
+            // 读取走 mmap（免逐页 read 拷贝）；仅地址空间预留，按需映射
+            conn.pragma_update(None, "mmap_size", MMAP_SIZE)?;
         }
         ensure_settings_table(&conn)?;
         ensure_business_schema(&conn)?;
