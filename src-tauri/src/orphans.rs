@@ -98,22 +98,29 @@ pub fn scan_orphan_files(conn: &Connection, images_root: &Path) -> Result<Value,
     // （早期导入未回写 raw_path），应挂到已有记录而不是新建隐藏行
     let mut partners: HashMap<(String, String), (i64, String)> = HashMap::new();
     {
-        let mut stmt = conn.prepare("SELECT id, filepath, raw_path FROM images WHERE hidden = 0")?;
+        // known 必须含全部行（含 hidden=1 的 NEF-only 记录）：隐藏记录的文件同样
+        // 「已入库」，漏掉会让它被误报为孤儿——按日期归档收养时文件被搬移而
+        // INSERT OR IGNORE 因 filepath UNIQUE 静默忽略，产生坏记录 + 新孤儿
+        //（逻辑错误清扫 2026-10-24）。RAW 挂接目标仍只对可见记录（R156 口径）
+        let mut stmt = conn.prepare("SELECT id, filepath, raw_path, hidden FROM images")?;
         let rows = stmt.query_map([], |r| {
             Ok((
                 r.get::<_, i64>(0)?,
                 r.get::<_, String>(1)?,
                 r.get::<_, Option<String>>(2)?.unwrap_or_default(),
+                r.get::<_, i64>(3)?,
             ))
         })?;
         for row in rows {
-            let (id, filepath, raw_path) = row?;
+            let (id, filepath, raw_path, hidden) = row?;
             known.insert(norm(&filepath));
             if !raw_path.is_empty() {
                 known.insert(norm(&raw_path));
             }
-            let key = partner_key(&filepath);
-            partners.insert(key, (id, filepath));
+            if hidden == 0 {
+                let key = partner_key(&filepath);
+                partners.insert(key, (id, filepath));
+            }
         }
     }
 
@@ -167,21 +174,27 @@ pub fn adopt_orphan_files(
     let mut known: HashSet<String> = HashSet::new();
     let mut partners: HashMap<(String, String), (i64, String)> = HashMap::new();
     {
-        let mut stmt = conn.prepare("SELECT id, filepath, raw_path FROM images WHERE hidden = 0")?;
+        // known 含全部行（含 hidden=1，与扫描同口径）：隐藏 NEF-only 记录的文件同样
+        // 「已入库」，漏掉会让按日期归档收养时文件被搬移而 INSERT OR IGNORE 静默
+        // 忽略 → 坏记录 + 新孤儿（逻辑错误清扫 2026-10-24）
+        let mut stmt = conn.prepare("SELECT id, filepath, raw_path, hidden FROM images")?;
         let rows = stmt.query_map([], |r| {
             Ok((
                 r.get::<_, i64>(0)?,
                 r.get::<_, String>(1)?,
                 r.get::<_, Option<String>>(2)?.unwrap_or_default(),
+                r.get::<_, i64>(3)?,
             ))
         })?;
         for row in rows {
-            let (id, filepath, raw_path) = row?;
+            let (id, filepath, raw_path, hidden) = row?;
             known.insert(norm(&filepath));
             if !raw_path.is_empty() {
                 known.insert(norm(&raw_path));
             }
-            partners.insert(partner_key(&filepath), (id, filepath));
+            if hidden == 0 {
+                partners.insert(partner_key(&filepath), (id, filepath));
+            }
         }
     }
 
@@ -238,13 +251,22 @@ pub fn adopt_orphan_files(
         // （早期导入未回写 raw_path 的历史数据，以及重复导入留下的冗余 RAW 都走这里）
         if is_raw_ext(&ext_of(&filename)) {
             if let Some((pid, pfile)) = partners.get(&partner_key(&src.to_string_lossy())) {
-                let occupied: String = conn
-                    .query_row(
-                        "SELECT COALESCE(raw_path, '') FROM images WHERE id = ?1",
-                        rusqlite::params![pid],
-                        |r| r.get(0),
-                    )
-                    .unwrap_or_default();
+                // 占用查询失败必须 fail-safe：误判「未占用」会让下面的 UPDATE 覆盖
+                // 记录已有的 raw_path（配对链接丢失，数据丢失方向）——保守跳过，
+                // 用户重跑收养工具即可
+                let occupied: String = match conn.query_row(
+                    "SELECT COALESCE(raw_path, '') FROM images WHERE id = ?1",
+                    rusqlite::params![pid],
+                    |r| r.get(0),
+                ) {
+                    Ok(v) => v,
+                    Err(e) => {
+                        failed += 1;
+                        errors.push(format!("{filename}: 占用查询失败，已跳过"));
+                        eprintln!("[孤儿归档] raw_path 占用查询失败(记录 {pid}): {e}");
+                        continue;
+                    }
+                };
                 if !occupied.is_empty() {
                     skipped += 1;
                     continue;
@@ -671,6 +693,41 @@ mod tests {
         .unwrap();
         assert_eq!(res["adopted"], 0);
         assert_eq!(count(&conn), 1, "不得因重复处理产生第二行");
+    }
+
+    #[test]
+    fn 扫描与收养_隐藏记录的文件不误报不搬移() {
+        // 逻辑错误清扫（2026-10-24）：known 集漏掉 hidden=1 行会让 NEF-only 记录的
+        // 文件被误报孤儿——按日期归档收养时文件被搬移而 INSERT OR IGNORE 静默忽略，
+        // 产生坏记录（旧路径失效）+ 新孤儿
+        let conn = mem_db();
+        let root = temp_dir("orphan_hidden");
+        let dir = root.join("2026").join("10").join("19");
+        std::fs::create_dir_all(&dir).unwrap();
+        // NEF 文件直接写字节（image crate 不支持 NEF 编码）；本用例不走解码路径
+        let f = dir.join("DSC_0100.NEF");
+        std::fs::write(&f, b"fake-nef-bytes").unwrap();
+        conn.execute(
+            "INSERT INTO images (filename, filepath, hidden, import_date, format) VALUES ('DSC_0100.NEF', ?1, 1, '2026-10-19', 'nef')",
+            [f.to_string_lossy()],
+        )
+        .unwrap();
+
+        let arr = scan_orphan_files(&conn, &root).unwrap().as_array().unwrap().clone();
+        assert!(arr.is_empty(), "隐藏记录的文件不得误报孤儿: {arr:?}");
+
+        let res = adopt_orphan_files(
+            &conn,
+            &[f.to_string_lossy().to_string()],
+            true,
+            &root,
+            &root.join("thumbs"),
+            "2026-10-19",
+        )
+        .unwrap();
+        assert_eq!(res["adopted"], 0);
+        assert_eq!(count(&conn), 1, "不得产生第二行");
+        assert!(f.exists(), "原地文件不得被搬移");
     }
 
     #[test]

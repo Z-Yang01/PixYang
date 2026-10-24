@@ -262,8 +262,9 @@ fn import_one_impl(
                     rusqlite::params![target.to_string_lossy(), target.to_string_lossy()],
                     |r| Ok((r.get(0)?, r.get(1)?)),
                 )
-                .optional()
-                .unwrap_or(None);
+                // 查询错误按导入失败传播（fail-closed）：误判「无主」会让两条记录
+                // 共享同一 filepath/raw_path（软损坏）
+                .optional()?;
             match owner {
                 Some((owner_id, hidden_flag)) => {
                     if hidden_flag == 1 {

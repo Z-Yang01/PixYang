@@ -63,8 +63,7 @@ const asSession = (v: unknown): EditSessionInfo | null =>
 
 const asRows = (v: unknown): PresetRow[] => (Array.isArray(v) ? (v as PresetRow[]) : []);
 
-const asResult = (v: unknown): CmdResult =>
-  v && typeof v === 'object' ? (v as CmdResult) : (v as CmdResult);
+const asResult = (v: unknown): CmdResult => v as CmdResult;
 
 export const tauriApi = {
   getSettings: () => tauriInvoke('get_settings'),

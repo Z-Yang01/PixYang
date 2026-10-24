@@ -335,9 +335,12 @@ fn migrate_images_columns(conn: &Connection) {
             continue;
         }
         if name == "updated_at" {
-            let _ = conn.execute_batch(
+            // 回填失败不致命（列语义是元数据），但落日志——静默会让 NULL 行为无从取证
+            if let Err(e) = conn.execute_batch(
                 "UPDATE images SET updated_at = COALESCE(created_at, '1970-01-01 00:00:00') WHERE updated_at IS NULL",
-            );
+            ) {
+                eprintln!("[db migrate] updated_at 回填失败: {e}");
+            }
         }
     }
     let has_flag: i64 = conn
@@ -569,10 +572,14 @@ pub fn normalize_thumbnail_paths(conn: &Connection, thumbs_dir: &Path) {
         }
     }
     for (id, a, b, c) in updates {
-        let _ = conn.execute(
+        // 改写失败不中止（下次启动归一会重试），但必须落日志：静默丢更新会让
+        // 「缩略图在旧目录但列已指新目录」的半迁移态无从排查
+        if let Err(e) = conn.execute(
             "UPDATE images SET thumbnail_path=?, thumbnail_small_path=?, thumbnail_edit_path=? WHERE id=?",
             rusqlite::params![a, b, c, id],
-        );
+        ) {
+            eprintln!("[db] 缩略图路径改写失败(图 {id}): {e}");
+        }
     }
 }
 
