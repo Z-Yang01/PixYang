@@ -439,12 +439,12 @@ pub fn import_images(
             apply_date_override(&mut v, date_override);
             v
         });
-        let nef = group.nef.as_ref().map(|n| {
+        let raw = group.raw.as_ref().map(|n| {
             let mut v = import_file_to_value(n);
             apply_date_override(&mut v, date_override);
             v
         });
-        (jpg, nef)
+        (jpg, raw)
     };
     let mut done = 0usize;
     let mut prepared: Vec<(Option<Value>, Option<Value>)> = Vec::with_capacity(total);
@@ -519,13 +519,13 @@ pub fn import_images(
     // 行序/行值/列语义不变（回写失败仍不致命，列保持空）；旧实现逐张在落库后内联
     // 生成，此阶段本就无逐文件进度事件（导入进度只发 EXIF 批次），事件面同样不变。
     let mut pending: Vec<(usize, PathBuf)> = Vec::new(); // imported 下标 → 缩略图源文件
-    for (jpg, nef) in &prepared {
+    for (jpg, raw) in &prepared {
         if let Some(jpg) = jpg {
             if let Some(row) = import_one_impl(
                 conn,
                 &root,
                 jpg,
-                nef.as_ref(),
+                raw.as_ref(),
                 ImportMode::VisibleDeferred,
                 today,
                 thumbs_dir,
@@ -533,17 +533,17 @@ pub fn import_images(
                 pending.push((imported.len(), PathBuf::from(row.filepath.clone())));
                 imported.push(row);
             }
-        } else if let Some(nef) = nef {
+        } else if let Some(raw) = raw {
             if let Some(row) = import_one_impl(
                 conn,
                 &root,
-                nef,
+                raw,
                 None,
                 ImportMode::Hidden,
                 today,
                 thumbs_dir,
             )? {
-                // 隐藏记录（NEF-only）不生成缩略图（与旧内联分支的 hidden 门一致），不进队列
+                // 隐藏记录（RAW-only）不生成缩略图（与旧内联分支的 hidden 门一致），不进队列
                 imported.push(row);
             }
         }
@@ -881,7 +881,8 @@ fn stale_bake_temp_base(name: &str) -> Option<String> {
     }
     if let Some(head) = lower.strip_suffix(".bake-tmp") {
         for ext in [
-            ".jpeg", ".jpg", ".png", ".webp", ".gif", ".bmp", ".tiff", ".nef",
+            ".jpeg", ".jpg", ".png", ".webp", ".gif", ".bmp", ".tiff", ".nef", ".cr2", ".cr3",
+            ".arw", ".dng",
         ] {
             if let Some(base) = head.strip_suffix(ext) {
                 if !base.is_empty() {
@@ -2279,6 +2280,78 @@ mod tests {
             .query_row("SELECT COUNT(*) FROM images", [], |r| r.get(0))
             .unwrap();
         assert_eq!(n, 1);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn 手动导入_jpg与cr2同目录配对绑定与nef同待遇() {
+        let conn = Connection::open(":memory:").unwrap();
+        conn.execute_batch(
+            "CREATE TABLE images (id INTEGER PRIMARY KEY AUTOINCREMENT, filename TEXT NOT NULL,
+             filepath TEXT NOT NULL UNIQUE, original_path TEXT DEFAULT '', raw_path TEXT DEFAULT '',
+             original_raw_path TEXT DEFAULT '', hidden INTEGER DEFAULT 0, orientation INTEGER DEFAULT 1,
+             rotation INTEGER DEFAULT 0, flip_h INTEGER DEFAULT 0, flip_v INTEGER DEFAULT 0,
+             import_date TEXT, taken_at TEXT, size INTEGER DEFAULT 0, width INTEGER, height INTEGER,
+             format TEXT DEFAULT '', thumbnail TEXT, thumbnail_path TEXT, thumbnail_small_path TEXT,
+             thumbnail_edit_path TEXT, rating INTEGER DEFAULT 0, favorite INTEGER DEFAULT 0,
+             notes TEXT DEFAULT '', created_at DATETIME, updated_at DATETIME, duration INTEGER);
+             CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT);",
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO settings (key, value) VALUES ('images_root', '')",
+            [],
+        )
+        .unwrap();
+        let dir = std::env::temp_dir().join(format!("pixyang_cr2_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let src_dir = dir.join("src");
+        std::fs::create_dir_all(&src_dir).unwrap();
+        let img = image::DynamicImage::from(image::RgbaImage::from_fn(8, 8, |_, _| {
+            image::Rgba([90, 90, 90, 255])
+        }));
+        let src = src_dir.join("c1.jpg");
+        img.save(&src).unwrap();
+        std::fs::write(src_dir.join("c1.CR2"), b"pair-cr2").unwrap();
+
+        let default_root = dir.join("managed_root");
+        std::fs::create_dir_all(&default_root).unwrap();
+        let files = serde_json::json!([
+            {
+                "filename": "c1.jpg",
+                "filepath": src.to_string_lossy(),
+                "raw_source": src_dir.join("c1.CR2").to_string_lossy(),
+                "raw_filename": "c1.CR2",
+            }
+        ]);
+        let today = crate::file_ops::today_ymd();
+        let rows = super::import_images(
+            &conn,
+            &files,
+            None,
+            &today,
+            &dir.join("thumbs"),
+            None,
+            &default_root,
+        )
+        .unwrap();
+        assert_eq!(rows.len(), 1, "CR2 配对不新增行，只挂 raw_path");
+        let row = &rows[0];
+        assert!(!row.raw_path.as_deref().unwrap_or("").is_empty());
+        assert!(
+            Path::new(row.raw_path.as_deref().unwrap_or("")).exists(),
+            "CR2 应复制到托管目录: {}",
+            row.raw_path.as_deref().unwrap_or("")
+        );
+        assert!(row
+            .raw_path
+            .as_deref()
+            .unwrap_or("")
+            .ends_with(".CR2"));
+        assert_eq!(
+            row.original_raw_path.as_deref(),
+            Some(src_dir.join("c1.CR2").to_string_lossy().as_ref())
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

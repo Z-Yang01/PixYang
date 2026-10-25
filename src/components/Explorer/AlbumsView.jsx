@@ -158,7 +158,7 @@ export default function AlbumsView({ onSelectAlbum, onRefresh }) {
         toast.error(friendlyError(result?.error) || '导出失败');
         return;
       }
-      const nefText = result.nefCopied > 0 ? `，含配对 NEF ${result.nefCopied} 个` : '';
+      const nefText = result.nefCopied > 0 ? `，含配对 RAW ${result.nefCopied} 个` : '';
       const base = `已导出 ${result.copied} / ${result.total} 张图片${nefText}`;
       if (result.failed?.length) toast.error(`${base}，${result.failed.length} 个文件失败`);
       else toast.success(base);

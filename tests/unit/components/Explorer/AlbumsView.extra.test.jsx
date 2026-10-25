@@ -62,7 +62,7 @@ describe('AlbumsView（补充：CRUD 与右键菜单）', () => {
     expect(toastSpy).not.toHaveBeenCalled();
   });
 
-  it('导出：确认（原样复制）后选目录执行，成功 toast 含配对 NEF 数量', async () => {
+  it('导出：确认（原样复制）后选目录执行，成功 toast 含配对 RAW 数量', async () => {
     window.pixyang.selectExportDirectory.mockResolvedValue('E:/out');
     window.pixyang.exportAlbumImages.mockResolvedValue({ copied: 3, total: 5, nefCopied: 2 });
     renderView();
@@ -72,7 +72,7 @@ describe('AlbumsView（补充：CRUD 与右键菜单）', () => {
     fireEvent.click(await screen.findByText('选择目录并导出'));
     await vi.waitFor(() => {
       expect(window.pixyang.exportAlbumImages).toHaveBeenCalledWith(2, 'E:/out', null);
-      expect(toastSpy).toHaveBeenCalledWith('已导出 3 / 5 张图片，含配对 NEF 2 个');
+      expect(toastSpy).toHaveBeenCalledWith('已导出 3 / 5 张图片，含配对 RAW 2 个');
     });
   });
 

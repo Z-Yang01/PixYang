@@ -19,7 +19,7 @@ PixYang 是一个本地桌面图片管理应用，技术栈：
 src-tauri/        Rust/Tauri 后端（唯一运行时桌面端）
   src/lib.rs      模块声明 + run()（Builder + dialog/opener 插件，generate_handler! 注册 60 命令（R150 校正：文档自 R49 起欠两笔））
   src/main.rs     桌面入口（release 隐控制台）
-  src/naming.rs   唯一命名/配对主名（移植 electron/database.js 语义）
+  src/naming.rs   唯一命名/配对主名 + RAW_EXTS 五格式清单（nef/cr2/cr3/arw/dng，配对唯一口径，R173）
   src/image_group.rs 导入分组/日期围栏/安全文件名
   src/images_query.rs 图片列表动态查询/getStats/getImportDates（JS 对拍向量锁定；
                   R74 起搜索额外含 original_path——README:67 承诺口径优先，系对 JS 镜像的已记录分歧，
@@ -289,27 +289,29 @@ tests/            vitest（node 环境 + per-file happy-dom pragma）
   顶部 `.settings-anchor-nav` 锚点条（sticky）点击先展开再 scrollIntoView。新增低频设置区块沿用该
   形态并加入锚点数组；高频区块（外观/显示/存储）保持常开。
 
-## 相机同步（NEF）约定
+## 相机同步（RAW）约定（R173 起五格式统一）
 
-相机文件夹中同目录同主名的 `*.jpg` 与 `*.nef`（尼康原图）视为一对：
+相机文件夹中同目录同主名的 `*.jpg` 与相机 RAW（`naming::RAW_EXTS`：nef/cr2/cr3/arw/dng，R173 前
+仅 `.nef` 硬编码、非尼康 RAW 只有孤儿扫描认识）视为一对，五种 RAW 在配对绑定/无配对隐藏入库/收养/
+改名跟随/删除随迁/日期移动/导出原样复制全链与 NEF 完全同待遇：
 
-- 导入时 JPG 作为可见记录，配对 NEF 复制到 JPG 同目录，管理路径存 `raw_path`、源路径存 `original_raw_path`。
-- 无 JPG 配对的 NEF 作为隐藏记录（`hidden = 1`）导入，不生成缩略图、不可预览。
+- 导入时 JPG 作为可见记录，配对 RAW 复制到 JPG 同目录，管理路径存 `raw_path`、源路径存 `original_raw_path`。
+- 无 JPG 配对的 RAW 作为隐藏记录（`hidden = 1`）导入，不生成缩略图、不可预览；后到的配对 JPG 在导入配对段内部收养（隐藏行删除、RAW 顶入 raw_path），不走 planner attach 通道故 `attached` 计数不增。
 - 所有面向图库的查询（`getImages`/`getStats`/`getImportDates`）必须过滤 `hidden = 0`。
-- 删除：删除 JPG 时一并删除其 `raw_path` 文件；隐藏 NEF 记录删除自身文件。
-- 移动/重命名：JPG 移动或改名时，配对 NEF 跟随到同目录并保持一致主名，同步更新 `raw_path`。
+- 删除：删除 JPG 时一并删除其 `raw_path` 文件；隐藏 RAW 记录删除自身文件。
+- 移动/重命名：JPG 移动或改名时，配对 RAW 跟随到同目录并保持一致主名，同步更新 `raw_path`。
 - 相机同步（`syncCameraFolder`）只导入图库中不存在的图片，按 `original_path`/`original_raw_path` 去重。
-- 普通导入对话框仅扫描可见格式（不含 `.nef`），但会检测同目录同名 NEF 并随 JPG 一起导入绑定；按 `original_path` 去重，已导入的 JPG 会自动补充缺失的配对 NEF。
-- 修改导入日期（`updateImage`）会移动 JPG 与配对 NEF 到新日期目录。
+- 普通导入对话框仅扫描可见格式（不含 RAW），但会检测同目录同名 RAW（annotate_raw_pairs）并随 JPG 一起导入绑定；按 `original_path` 去重，已导入的 JPG 会自动补充缺失的配对 RAW。
+- 修改导入日期（`updateImage`）会移动 JPG 与配对 RAW 到新日期目录。
 - `taken_at`（拍摄时间，`YYYY-MM-DD HH:MM`，精确到分钟）由 EXIF `DateTimeOriginal` 提取，仅对新导入图片生效，无 EXIF 时间为空；日期排序优先按 `taken_at`，空值回退 `import_date`。
 
 ## 删除暂存区（trash）约定（round 73）
 
 - 仅**用户手动删除**走暂存区：网格/详情面板单删（`deleteImageToTrash`）与勾选批量删（`batchDeleteImagesToTrash`）——
   库记录先删、磁盘文件移入 `<数据目录>/trash/`，Toast 6s「撤销」窗口内 `restoreImageFromTrash(id)` 按
-  manifest（`{id}__record.json`，全 28 列 + 标签/相册/编辑/历史关联快照）整链还原；配对 NEF 与派生缩略图随迁随还。
+  manifest（`{id}__record.json`，全 28 列 + 标签/相册/编辑/历史关联快照）整链还原；配对 RAW 与派生缩略图随迁随还。
 - **直删通道保持现状**：「损坏记录清理」（`delete_broken_records`）、「重复删除」（设置页走 `batchDeleteImages`）、
-  NEF 收养等内部 `delete_image_record` 调用点不进 trash；`db::delete_image`/`batch_delete_images` 仍是物理删除原语。
+  RAW 收养等内部 `delete_image_record` 调用点不进 trash；`db::delete_image`/`batch_delete_images` 仍是物理删除原语。
 - trash 文件名 `{id}__原名` / `{id}__raw__原名` / `{id}__thumb__派生名`；**移入时 mtime 归一到当下**（rename/copy
   保留原图 mtime，老照片会被按 mtime 判期的清扫立即误删）；清扫在启动 + 每 24h 各一轮，物理删除超期 24h 文件。
 - **保留名守卫**：`{id}__record.json`（manifest 落点）参与撞名判重（Windows 大小写不敏感）——原图名恰为

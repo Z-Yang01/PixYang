@@ -49,7 +49,7 @@ describe('errorText：引擎英文原文 → 中文上屏（与 Rust err_cn 共�
 
   it('纯中文文案原样上屏，且不打取证日志', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    expect(friendlyError('隐藏的 NEF 记录不支持编辑')).toBe('隐藏的 NEF 记录不支持编辑');
+    expect(friendlyError('隐藏的 RAW 记录不支持编辑')).toBe('隐藏的 RAW 记录不支持编辑');
     expect(friendlyError('未设置相机文件夹')).toBe('未设置相机文件夹');
     expect(warn).not.toHaveBeenCalled();
     warn.mockRestore();

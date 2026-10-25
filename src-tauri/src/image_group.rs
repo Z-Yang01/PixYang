@@ -17,7 +17,7 @@ pub struct ImportFile {
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct PairGroup {
     pub jpg: Option<ImportFile>,
-    pub nef: Option<ImportFile>,
+    pub raw: Option<ImportFile>,
 }
 
 fn ext_lower(filename: &str) -> String {
@@ -91,9 +91,9 @@ pub fn date_dir(date_str: &str) -> Option<PathBuf> {
     Some(parts.iter().collect())
 }
 
-/// jpg/nef 分组：同目录同主名（pair_base 小写归并）一组；.nef（小写判定）入 nef 槽，
-/// 其余入 jpg 槽；jpg 自带 raw_source 且组内无 nef 时合成配对项（size 0 占位，同 JS）。
-/// 返回按首次出现顺序排列的 (组键, 组)。
+/// jpg/RAW 分组：同目录同主名（pair_base 小写归并）一组；相机 RAW（naming::RAW_EXTS 五种，
+/// 小写判定）入 raw 槽，其余入 jpg 槽；jpg 自带 raw_source 且组内无 raw 时合成配对项
+/// （size 0 占位，同 JS）。返回按首次出现顺序排列的 (组键, 组)。
 pub fn group_import_files(files: &[ImportFile]) -> Vec<(String, PairGroup)> {
     let mut order: Vec<(String, PairGroup)> = Vec::new();
     let mut index: HashMap<String, usize> = HashMap::new();
@@ -112,12 +112,12 @@ pub fn group_import_files(files: &[ImportFile]) -> Vec<(String, PairGroup)> {
                 &mut order[i].1
             }
         };
-        if ext_lower(&img.filename) == ".nef" {
-            slot.nef = Some(img.clone());
+        if crate::naming::is_raw_filename(&img.filename) {
+            slot.raw = Some(img.clone());
         } else {
-            let has_nef = slot.nef.is_some();
+            let has_raw = slot.raw.is_some();
             let raw_pair = match (&img.raw_source, &img.raw_filename) {
-                (Some(src), Some(name)) if !has_nef => Some(ImportFile {
+                (Some(src), Some(name)) if !has_raw => Some(ImportFile {
                     filename: name.clone(),
                     filepath: src.clone(),
                     raw_source: None,
@@ -127,7 +127,7 @@ pub fn group_import_files(files: &[ImportFile]) -> Vec<(String, PairGroup)> {
             };
             slot.jpg = Some(img.clone());
             if let Some(pair) = raw_pair {
-                slot.nef = Some(pair);
+                slot.raw = Some(pair);
             }
         }
     }
@@ -156,7 +156,7 @@ mod tests {
         assert_eq!(groups.len(), 1);
         assert!(groups[0].0.ends_with(r"E:\cam::dsc_1"));
         assert!(groups[0].1.jpg.is_some());
-        assert!(groups[0].1.nef.is_some());
+        assert!(groups[0].1.raw.is_some());
     }
 
     #[test]
@@ -174,7 +174,7 @@ mod tests {
         img.raw_source = Some(r"E:\cam\a.nef".into());
         img.raw_filename = Some("a.nef".into());
         let groups = group_import_files(&[img]);
-        let nef = groups[0].1.nef.as_ref().unwrap();
+        let nef = groups[0].1.raw.as_ref().unwrap();
         assert_eq!(nef.filepath, r"E:\cam\a.nef");
         assert_eq!(nef.filename, "a.nef");
     }
@@ -185,7 +185,7 @@ mod tests {
         img.raw_source = Some(r"E:\cam\b.nef".into());
         img.raw_filename = Some("b.nef".into());
         let groups = group_import_files(&[f("a.NEF", r"E:\cam\a.NEF"), img]);
-        assert_eq!(groups[0].1.nef.as_ref().unwrap().filepath, r"E:\cam\a.NEF");
+        assert_eq!(groups[0].1.raw.as_ref().unwrap().filepath, r"E:\cam\a.NEF");
     }
 
     #[test]
@@ -203,7 +203,26 @@ mod tests {
     fn 仅nef无jpg成组() {
         let groups = group_import_files(&[f("lone.NEF", r"E:\cam\lone.NEF")]);
         assert!(groups[0].1.jpg.is_none());
-        assert!(groups[0].1.nef.is_some());
+        assert!(groups[0].1.raw.is_some());
+    }
+
+    #[test]
+    fn 其他品牌raw与jpg同主名归并且无配对raw独立成组() {
+        // R173：cr2/cr3/arw/dng 与 nef 同等待遇——同主名归并进 raw 槽，lone RAW 无 jpg 成组
+        let groups = group_import_files(&[
+            f("DSC_1.jpg", r"E:\cam\DSC_1.jpg"),
+            f("DSC_1.CR2", r"E:\cam\DSC_1.CR2"),
+        ]);
+        assert_eq!(groups.len(), 1);
+        assert!(groups[0].1.jpg.is_some());
+        assert!(groups[0].1.raw.is_some());
+
+        let groups = group_import_files(&[
+            f("DSC_2.ARW", r"E:\cam\DSC_2.ARW"),
+            f("DSC_3.DNG", r"E:\cam\DSC_3.dng"),
+        ]);
+        assert_eq!(groups.len(), 2);
+        assert!(groups.iter().all(|(_, g)| g.raw.is_some() && g.jpg.is_none()));
     }
 
     #[test]

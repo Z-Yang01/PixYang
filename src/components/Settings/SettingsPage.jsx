@@ -393,9 +393,9 @@ export default function SettingsPage({ onSettingsChanged, onImagesChanged }) {
     const parts = [];
     if (result.imported > 0)
       parts.push(
-        `新导入 ${result.imported} 张（JPG ${result.jpgImported}、NEF ${result.nefImported}）`
+        `新导入 ${result.imported} 张（JPG ${result.jpgImported}、RAW ${result.nefImported}）`
       );
-    if (result.attached > 0) parts.push(`补充 NEF ${result.attached} 张`);
+    if (result.attached > 0) parts.push(`补充 RAW ${result.attached} 张`);
     if (result.skipped > 0) parts.push(`已存在跳过 ${result.skipped} 张`);
     onImagesChanged?.();
     showSaved(parts.length > 0 ? parts.join('，') : `扫描 ${result.scanned} 个文件，无新增`);
@@ -1092,7 +1092,7 @@ export default function SettingsPage({ onSettingsChanged, onImagesChanged }) {
             <div className="dialog-header">发现 {dupGroups.length} 组重复图片</div>
             <div className="dialog-body">
               <p className="settings-help" style={{ marginBottom: 12 }}>
-                每组内容完全相同，点击选择要保留的一张，其余将被删除（含配对 NEF）。
+                每组内容完全相同，点击选择要保留的一张，其余将被删除（含配对 RAW）。
               </p>
               {dupGroups.map((group, gi) => (
                 <div key={group.key} className="dupe-group">

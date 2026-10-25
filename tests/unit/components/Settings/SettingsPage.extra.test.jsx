@@ -185,8 +185,8 @@ describe('SettingsPage（补充：存储/相机/维护/备份/重复图片等交
     renderPage({ onImagesChanged });
     await screen.findByText('D:/DCIM');
     fireEvent.click(screen.getByText('立即同步'));
-    expect(await screen.findByText(/新导入 2 张（JPG 1、NEF 1）/)).toBeInTheDocument();
-    expect(screen.getByText(/补充 NEF 3 张/)).toBeInTheDocument();
+    expect(await screen.findByText(/新导入 2 张（JPG 1、RAW 1）/)).toBeInTheDocument();
+    expect(screen.getByText(/补充 RAW 3 张/)).toBeInTheDocument();
     expect(screen.getByText(/已存在跳过 4 张/)).toBeInTheDocument();
     expect(onImagesChanged).toHaveBeenCalled();
   });

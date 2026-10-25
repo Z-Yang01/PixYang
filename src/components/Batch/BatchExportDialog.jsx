@@ -209,12 +209,12 @@ export default function BatchExportDialog({ onConfirm, onCancel, title }) {
                 </Button>
               </div>
               <p className="editor-hint">
-                转换生成新格式文件（重名自动加序号），原图与配对 NEF（原样复制）不受影响。
+                转换生成新格式文件（重名自动加序号），原图与配对 RAW（原样复制）不受影响。
               </p>
             </>
           )}
           {mode === 'copy' && (
-            <p className="editor-hint">按原文件原样复制到目标目录（含配对 NEF），不做任何转换。</p>
+            <p className="editor-hint">按原文件原样复制到目标目录（含配对 RAW），不做任何转换。</p>
           )}
         </div>
         <DialogFooter>

@@ -371,7 +371,7 @@ export default function TrashView({ onRefresh }) {
                             color: 'var(--text-muted)',
                             fontWeight: 400,
                           }}
-                          title="含配对 NEF 原图"
+                          title="含配对 RAW 原图"
                         >
                           RAW
                         </span>

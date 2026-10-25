@@ -129,8 +129,8 @@ fn read_exif_info(path: &Path) -> ExifInfo {
 
 struct AttachPair {
     jpg_id: i64,
-    nef_source: String,
-    nef_filename: String,
+    raw_source: String,
+    raw_filename: String,
 }
 
 fn prepare_camera_sync(
@@ -153,7 +153,7 @@ fn prepare_camera_sync(
                 order.last_mut().unwrap()
             }
         };
-        if f.format == ".nef" {
+        if crate::naming::is_raw_ext(&f.format) {
             slot.1 = Some(i);
         } else {
             slot.0 = Some(i);
@@ -180,8 +180,8 @@ fn prepare_camera_sync(
                         if let Some(nef) = nef {
                             attach_pairs.push(AttachPair {
                                 jpg_id: row.id,
-                                nef_source: nef.filepath.clone(),
-                                nef_filename: nef.filename.clone(),
+                                raw_source: nef.filepath.clone(),
+                                raw_filename: nef.filename.clone(),
                             });
                         }
                     }
@@ -224,8 +224,8 @@ fn prepare_camera_sync(
 fn attach_raw_to_image(
     conn: &Connection,
     image_id: i64,
-    nef_source: &str,
-    nef_filename: &str,
+    raw_source: &str,
+    raw_filename: &str,
 ) -> Result<bool, PixError> {
     let img = match crate::images_query::get_image_by_id(conn, image_id)? {
         Some(img) => img,
@@ -234,7 +234,7 @@ fn attach_raw_to_image(
     if img.raw_path.as_deref().is_some_and(|s| !s.is_empty()) {
         return Ok(false);
     }
-    let raw_ext = naming::extname(nef_filename);
+    let raw_ext = naming::extname(raw_filename);
     let raw_name = format!("{}{}", naming::basename_no_ext(&img.filename), raw_ext);
     let raw_dest = PathBuf::from(image_group::dirname(&img.filepath)).join(raw_name);
     if let Some(parent) = raw_dest.parent() {
@@ -273,14 +273,14 @@ fn attach_raw_to_image(
             return Ok(false);
         }
     }
-    if let Err(e) = std::fs::copy(nef_source, &raw_dest) {
+    if let Err(e) = std::fs::copy(raw_source, &raw_dest) {
         let _ = std::fs::remove_file(&raw_dest);
-        eprintln!("[相机同步] NEF 复制失败: {nef_source} {e}");
+        eprintln!("[相机同步] NEF 复制失败: {raw_source} {e}");
         return Ok(false);
     }
     conn.execute(
         "UPDATE images SET raw_path = ?1, original_raw_path = ?2 WHERE id = ?3",
-        rusqlite::params![raw_dest.to_string_lossy(), nef_source, image_id],
+        rusqlite::params![raw_dest.to_string_lossy(), raw_source, image_id],
     )?;
     Ok(true)
 }
@@ -331,7 +331,7 @@ fn import_camera_files(
                 continue;
             };
             let nef_value = group
-                .nef
+                .raw
                 .as_ref()
                 .and_then(|n| by_path.get(n.filepath.as_str()).copied());
             let existing: Option<ImageRow> = conn
@@ -367,21 +367,21 @@ fn import_camera_files(
                 pending.push((imported.len(), PathBuf::from(row.filepath.clone())));
                 imported.push(row);
             }
-        } else if let Some(nef) = &group.nef {
-            let Some(nef_value) = by_path.get(nef.filepath.as_str()).copied() else {
+        } else if let Some(raw) = &group.raw {
+            let Some(nef_value) = by_path.get(raw.filepath.as_str()).copied() else {
                 continue;
             };
             let as_hidden: Option<i64> = conn
                 .query_row(
                     "SELECT id FROM images WHERE original_path = ?1 COLLATE NOCASE",
-                    [nef.filepath.as_str()],
+                    [raw.filepath.as_str()],
                     |r| r.get(0),
                 )
                 .optional()?;
             let as_pair: Option<i64> = conn
                 .query_row(
                     "SELECT id FROM images WHERE original_raw_path = ?1 COLLATE NOCASE",
-                    [nef.filepath.as_str()],
+                    [raw.filepath.as_str()],
                     |r| r.get(0),
                 )
                 .optional()?;
@@ -446,7 +446,7 @@ pub fn camera_sync(
 
     let mut attached = 0i64;
     for pair in &attach_pairs {
-        if attach_raw_to_image(conn, pair.jpg_id, &pair.nef_source, &pair.nef_filename)? {
+        if attach_raw_to_image(conn, pair.jpg_id, &pair.raw_source, &pair.raw_filename)? {
             attached += 1;
         }
     }
@@ -858,6 +858,75 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    #[test]
+    fn 相机同步首次导入_cr2配对arw隐藏与nef同待遇() {
+        let dir = temp_dir("first_cr2");
+        let cam = dir.join("cam");
+        let thumbs = dir.join("thumbs");
+        let default_images = dir.join("managed");
+        std::fs::create_dir_all(&cam).unwrap();
+        make_jpeg(&cam, "DSC_2.jpg", 40, 30);
+        std::fs::write(cam.join("DSC_2.CR2"), b"pair-raw-cr2").unwrap();
+        std::fs::write(cam.join("lone.arw"), b"lone-arw").unwrap();
+
+        let conn = mem_db();
+        let result = camera_sync(&conn, &cam, &default_images, &thumbs, None).unwrap();
+        assert_eq!(result["scanned"], 3);
+        assert_eq!(result["imported"], 2);
+        assert_eq!(result["jpgImported"], 1);
+        assert_eq!(result["nefImported"], 1);
+
+        let visible: ImageRow = conn
+            .query_row("SELECT * FROM images WHERE hidden = 0", [], row_from)
+            .unwrap();
+        assert!(visible.raw_path.as_deref().unwrap_or("").ends_with(".CR2"));
+        assert!(Path::new(visible.raw_path.as_deref().unwrap_or("")).exists());
+        assert_eq!(
+            visible.original_raw_path.as_deref(),
+            Some(cam.join("DSC_2.CR2").to_string_lossy().as_ref())
+        );
+
+        let hidden: ImageRow = conn
+            .query_row("SELECT * FROM images WHERE hidden = 1", [], row_from)
+            .unwrap();
+        assert_eq!(
+            hidden.original_path.as_deref(),
+            Some(cam.join("lone.arw").to_string_lossy().as_ref())
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn 相机同步_cr2收养_后到jpg挂上先到的隐藏raw() {
+        let dir = temp_dir("adopt_cr2");
+        let cam = dir.join("cam");
+        let thumbs = dir.join("thumbs");
+        let default_images = dir.join("managed");
+        std::fs::create_dir_all(&cam).unwrap();
+        std::fs::write(cam.join("solo.DNG"), b"lone-dng").unwrap();
+
+        let conn = mem_db();
+        let first = camera_sync(&conn, &cam, &default_images, &thumbs, None).unwrap();
+        assert_eq!(first["nefImported"], 1);
+
+        make_jpeg(&cam, "solo.jpg", 40, 30);
+        let second = camera_sync(&conn, &cam, &default_images, &thumbs, None).unwrap();
+        assert_eq!(second["jpgImported"], 1);
+        // 新导入 JPG 的收养发生在 import_one_impl 配对段（隐藏行删除+RAW 顶入），
+        // 不走 planner 的 attach 通道，故 attached 保持 0
+        assert_eq!(second["attached"], 0);
+
+        let visible: ImageRow = conn
+            .query_row("SELECT * FROM images WHERE hidden = 0", [], row_from)
+            .unwrap();
+        assert!(visible.raw_path.as_deref().unwrap_or("").ends_with(".DNG"));
+        let n: i64 = conn
+            .query_row("SELECT COUNT(*) FROM images", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(n, 1, "隐藏行被收养后删除，仅剩可见记录");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     /// 递归收集目录下全部文件「相对路径 → 字节」（哈希对照用）
     fn dir_bytes(root: &Path) -> HashMap<String, Vec<u8>> {
         fn walk(dir: &Path, base: &Path, out: &mut HashMap<String, Vec<u8>>) {
@@ -957,7 +1026,7 @@ mod tests {
                     continue;
                 };
                 let nef_value = group
-                    .nef
+                    .raw
                     .as_ref()
                     .and_then(|n| by_path.get(n.filepath.as_str()).copied());
                 let existing: Option<ImageRow> = conn
@@ -996,7 +1065,7 @@ mod tests {
                 {
                     imported.push(row);
                 }
-            } else if let Some(nef) = &group.nef {
+            } else if let Some(nef) = &group.raw {
                 let Some(nef_value) = by_path.get(nef.filepath.as_str()).copied() else {
                     continue;
                 };

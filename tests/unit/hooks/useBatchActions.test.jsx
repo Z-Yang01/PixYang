@@ -441,7 +441,7 @@ describe('useBatchActions 批量导出（13a 两段式：入口开弹层，确�
       await out.current.handleExportConfirmed(null);
     });
     expect(window.pixyang.exportImages).toHaveBeenCalledTimes(2);
-    expect(showToast).toHaveBeenCalledWith('已导出 2 / 2 张图片，含配对 NEF 1 个', 'success');
+    expect(showToast).toHaveBeenCalledWith('已导出 2 / 2 张图片，含配对 RAW 1 个', 'success');
   });
 });
 

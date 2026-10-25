@@ -778,7 +778,7 @@ pub(crate) fn analyze_image_kernel(db: &Db, id: i64) -> Result<Value, crate::err
         let conn = db.write_lock();
         match images_query::get_image_by_id(&conn, id)? {
             Some(row) if row.hidden.unwrap_or(0) == 0 => row.filepath,
-            Some(_) => return Ok(json!({ "error": "隐藏的 NEF 记录不支持分析" })),
+            Some(_) => return Ok(json!({ "error": "隐藏的 RAW 记录不支持分析" })),
             None => return Ok(json!({ "error": "图片不存在" })),
         }
     };
@@ -1183,7 +1183,7 @@ pub(crate) fn edit_session_snapshot(db: &Db, thumbs_dir: &Path, id: i64) -> Resu
             .map_err(|e| err_cn::text(&e))?
             .ok_or_else(|| "图片不存在".to_string())?;
         if img.hidden.unwrap_or(0) != 0 {
-            return Ok(serde_json::json!({ "error": "隐藏的 NEF 记录不支持编辑" }));
+            return Ok(serde_json::json!({ "error": "隐藏的 RAW 记录不支持编辑" }));
         }
         let edits = edit_session::get_edits(&conn, id).map_err(|e| err_cn::text(&e))?;
         let raw = img.raw_path.clone().filter(|s| !s.is_empty());
@@ -1268,7 +1268,7 @@ pub(crate) fn render_edit_preview_kernel(
             .map_err(|e| err_cn::text(&e))?
             .ok_or_else(|| "图片不存在".to_string())?;
         if img.hidden.unwrap_or(0) != 0 {
-            return Ok(serde_json::json!({ "error": "隐藏的 NEF 记录不支持编辑预览" }));
+            return Ok(serde_json::json!({ "error": "隐藏的 RAW 记录不支持编辑预览" }));
         }
         let version_before = edit_session::get_edits(&conn, id)
             .map_err(|e| err_cn::text(&e))?
@@ -1866,7 +1866,7 @@ mod edit_cmd_tests {
                 .unwrap();
         }
         let hidden = analyze_image_kernel(&db, id).unwrap();
-        assert_eq!(hidden["error"], "隐藏的 NEF 记录不支持分析");
+        assert_eq!(hidden["error"], "隐藏的 RAW 记录不支持分析");
         let missing = analyze_image_kernel(&db, id + 99999).unwrap();
         assert_eq!(missing["error"], "图片不存在");
         let _ = std::fs::remove_dir_all(&dir);

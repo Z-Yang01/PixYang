@@ -36,6 +36,21 @@ pub fn pair_base(filename: &str) -> String {
     basename_no_ext(filename).to_lowercase()
 }
 
+/// 相机 RAW 源文件扩展名（小写含点）：nef=尼康、cr2/cr3=佳能、arw=索尼、dng=通用。
+/// 「配对绑定 / 无配对隐藏入库 / 收养 / 孤儿挂接 / 扫描收集」的相机源文件口径
+/// 唯一由此出发（R173 前各处 .nef 硬编码、仅孤儿扫描认全五种）
+pub const RAW_EXTS: [&str; 5] = [".nef", ".cr2", ".cr3", ".arw", ".dng"];
+
+/// 小写含点扩展名（如 scan 产出的 format 字段）是否相机 RAW
+pub fn is_raw_ext(ext_lower: &str) -> bool {
+    RAW_EXTS.contains(&ext_lower)
+}
+
+/// 文件名是否相机 RAW 源文件（扩展名大小写不敏感）
+pub fn is_raw_filename(filename: &str) -> bool {
+    is_raw_ext(&extname(filename).to_lowercase())
+}
+
 /// 生成目标目录内不占用的文件名：原名可用即原名，否则派生 `主名_N 扩展名`（N 从 1 起）。
 /// `taken` 为小写全路径合并集（盘∪库）；`disk_exists` 由宿主注入以保持内核纯函数可测。
 pub fn generate_unique_filename(

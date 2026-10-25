@@ -50,7 +50,7 @@ pub fn scan_directory(dir: &Path) -> Result<Vec<CollectedFile>, PixError> {
     Ok(files)
 }
 
-/// include_raw = true 时 NEF 作为独立条目收集（相机同步口径，无配对注记）
+/// include_raw = true 时相机 RAW（nef/cr2/cr3/arw/dng）作为独立条目收集（相机同步口径，无配对注记）
 pub fn scan_directory_include_raw(dir: &Path) -> Vec<CollectedFile> {
     scan_visible_files(dir, true)
 }
@@ -95,7 +95,7 @@ fn scan_into(files: &mut Vec<CollectedFile>, dir: &Path, depth: usize, include_r
             let name = entry.file_name().to_string_lossy().to_string();
             let ext = naming::extname(&name).to_lowercase();
             let supported =
-                VISIBLE_FORMATS.contains(&ext.as_str()) || (include_raw && ext == ".nef");
+                VISIBLE_FORMATS.contains(&ext.as_str()) || (include_raw && crate::naming::is_raw_ext(&ext));
             if supported {
                 let size = entry.metadata().map(|m| m.len()).unwrap_or(0);
                 files.push(collected(
@@ -110,7 +110,7 @@ fn scan_into(files: &mut Vec<CollectedFile>, dir: &Path, depth: usize, include_r
 }
 
 /// 镜像 annotateRawPairs：为 jpg/jpeg 条目按 pair_base（大小写不敏感）在同目录
-/// 查找 NEF，命中补 raw_source/raw_filename。目录清单按目录缓存，避免每个 jpg 重读一次
+/// 查找相机 RAW（nef/cr2/cr3/arw/dng），命中补 raw_source/raw_filename。目录清单按目录缓存，避免每个 jpg 重读一次
 fn annotate_raw_pairs(files: &mut [CollectedFile]) {
     let mut dir_cache: HashMap<String, Vec<String>> = HashMap::new();
     for f in files.iter_mut() {
@@ -126,14 +126,14 @@ fn annotate_raw_pairs(files: &mut [CollectedFile]) {
                         .map(|e| e.file_name().to_string_lossy().to_string())
                         .collect::<Vec<String>>(),
                     Err(e) => {
-                        eprintln!("[扫描] 检测 NEF 失败: {dir} {e}");
+                        eprintln!("[扫描] 检测 RAW 配对失败: {dir} {e}");
                         Vec::new()
                     }
                 }
             });
             let base = naming::pair_base(&f.filename);
             names.iter().find(|n| {
-                naming::extname(n).to_lowercase() == ".nef" && naming::pair_base(n) == base
+                crate::naming::is_raw_filename(n) && naming::pair_base(n) == base
             })
         };
         if let Some(nef_name) = matched {

@@ -12,7 +12,6 @@ use crate::error::PixError;
 const IMAGE_EXTS: [&str; 9] = [
     "jpg", "jpeg", "png", "gif", "webp", "bmp", "tiff", "tif", "heic",
 ];
-const RAW_EXTS: [&str; 5] = ["nef", "cr2", "cr3", "arw", "dng"];
 // 数据/回收站/缩略图缓存目录不参与扫描（它们不在图片托管语义内）
 const SKIP_DIRS: [&str; 4] = ["trash", "thumbnails", "data", "edits"];
 
@@ -28,10 +27,6 @@ fn ext_of(name: &str) -> String {
 
 fn is_image_ext(ext: &str) -> bool {
     IMAGE_EXTS.contains(&ext)
-}
-
-fn is_raw_ext(ext: &str) -> bool {
-    RAW_EXTS.contains(&ext)
 }
 
 fn walk(dir: &Path, out: &mut Vec<PathBuf>) -> Result<(), PixError> {
@@ -57,7 +52,7 @@ fn walk(dir: &Path, out: &mut Vec<PathBuf>) -> Result<(), PixError> {
             continue;
         }
         let ext = ext_of(&name);
-        if is_image_ext(&ext) || is_raw_ext(&ext) {
+        if is_image_ext(&ext) || crate::naming::is_raw_ext(&format!(".{ext}")) {
             out.push(path);
         }
     }
@@ -142,7 +137,7 @@ pub fn scan_orphan_files(conn: &Connection, images_root: &Path) -> Result<Value,
         let size = std::fs::metadata(&path)
             .map(|m| m.len() as i64)
             .unwrap_or(0);
-        let is_raw = is_raw_ext(&ext);
+        let is_raw = crate::naming::is_raw_ext(&format!(".{ext}"));
         out.push(json!({
             "filepath": lossy,
             "filename": filename,
@@ -211,7 +206,7 @@ pub fn adopt_orphan_files(
             .file_name()
             .map(|n| n.to_string_lossy().to_string())
             .unwrap_or_default();
-        if !is_raw_ext(&ext_of(&filename)) {
+        if !crate::naming::is_raw_filename(&filename) {
             continue;
         }
         let base = crate::naming::pair_base(&filename);
@@ -249,7 +244,7 @@ pub fn adopt_orphan_files(
             .unwrap_or_default();
         // 孤儿 RAW 命中「同目录同主名的已登记图片」：挂为该记录的 raw_path，不新建隐藏行
         // （早期导入未回写 raw_path 的历史数据，以及重复导入留下的冗余 RAW 都走这里）
-        if is_raw_ext(&ext_of(&filename)) {
+        if crate::naming::is_raw_filename(&filename) {
             if let Some((pid, pfile)) = partners.get(&partner_key(&src.to_string_lossy())) {
                 // 占用查询失败必须 fail-safe：误判「未占用」会让下面的 UPDATE 覆盖
                 // 记录已有的 raw_path（配对链接丢失，数据丢失方向）——保守跳过，
@@ -337,7 +332,7 @@ pub fn adopt_orphan_files(
         let original_raw = raw_src.clone();
         let moved_from = src.clone();
 
-        let is_target_raw = is_raw_ext(&ext_of(&filename));
+        let is_target_raw = crate::naming::is_raw_filename(&filename);
         if let Err(e) = move_file(src, &dest) {
             failed += 1;
             errors.push(format!("{filename}: 归档失败"));
@@ -479,7 +474,7 @@ pub fn remove_orphan_files(paths: &[String], target_dir: &Path) -> Result<Value,
                         .map(|x| x.to_string_lossy().to_string())
                         .unwrap_or_default();
                     let ext = ext_of(&n);
-                    if !is_image_ext(&ext) && !is_raw_ext(&ext) {
+                    if !is_image_ext(&ext) && !crate::naming::is_raw_ext(&format!(".{ext}")) {
                         continue;
                     }
                     if norm(&p.to_string_lossy()) == norm(&src.to_string_lossy()) {

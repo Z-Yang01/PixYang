@@ -3311,7 +3311,7 @@ export default function ImageViewer({
       {deleteConfirm && (
         <ConfirmDialog
           title="删除当前图片？"
-          message={`「${image.filename}」将移入回收站，24 小时内可在回收站恢复；配对 NEF 与编辑一并随迁。`}
+          message={`「${image.filename}」将移入回收站，24 小时内可在回收站恢复；配对 RAW 与编辑一并随迁。`}
           confirmLabel="删除"
           danger
           onConfirm={() => {
