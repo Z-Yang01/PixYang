@@ -278,6 +278,16 @@ tests/            vitest（node 环境 + per-file happy-dom pragma）
   该规则盖掉，属于误导性死代码；实心填充图标的 `strokeWidth={0}` 语义同理由 fill 保证）。尺寸走
   `size-*` 类与 Button 档位对齐：sm/default 按钮内 `size-4`、`icon-xs` 方钮内 `size-4`、xs 按钮/行内
   小图标 `size-3.5`、勾选标记/徽标 `size-3`；同排同档按钮的图标尺寸必须一致。
+- **侧栏筛选折叠组（R172 简约化）**：相册/日期/标签三个筛选段收进一个「筛选」折叠组（`.nav-section-toggle`
+  条件渲染，与日期子区折叠同口径）——默认收起、任一筛选激活时自动展开并显示激活计数徽标
+  （`.nav-filter-count`）；折叠侧栏（collapsed）模式恒展开（仅图标）。「管理标签」入口并入「其他」组
+  （原「标签」独立段退场）。新增筛选段必须放进该折叠组内，不得回到顶层平铺。测试契约见
+  Sidebar.test.jsx（默认收起断言 + 激活自动展开 + 激活计数）。
+- **设置页区块手风琴（R172）**：统计信息/相机同步/AI 调色/维护/关于五个低频区块默认收起
+  （`collapsedSections` Set + `.settings-section.is-collapsed > :not(h2) { display: none }`——**CSS 隐藏
+  而非条件渲染，内容保 DOM**，getByText 类断言零改动），h2 即切换头（`.settings-section-toggle`）；
+  顶部 `.settings-anchor-nav` 锚点条（sticky）点击先展开再 scrollIntoView。新增低频设置区块沿用该
+  形态并加入锚点数组；高频区块（外观/显示/存储）保持常开。
 
 ## 相机同步（NEF）约定
 

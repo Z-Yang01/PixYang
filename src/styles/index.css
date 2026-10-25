@@ -343,6 +343,33 @@ body {
   padding: 8px 8px 4px;
 }
 
+/* 筛选折叠组头（R172）：可点击展开/收起，激活计数徽标 */
+.nav-section-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  border-radius: 6px;
+  user-select: none;
+}
+.nav-section-toggle:hover {
+  color: var(--text-primary);
+}
+.nav-filter-count {
+  font-style: normal;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--accent-color);
+  background: color-mix(in srgb, var(--accent-color) 15%, transparent);
+  border-radius: 999px;
+  padding: 0 5px;
+  margin-left: 5px;
+}
+.nav-section-sub .nav-section-title {
+  padding-top: 6px;
+  padding-bottom: 2px;
+}
+
 .nav-item {
   display: flex;
   align-items: center;
@@ -1966,6 +1993,44 @@ body:has(.info-panel) .viewer-filmstrip {
   border-radius: 10px;
   padding: 18px;
   margin-bottom: 14px;
+}
+
+/* 区块手风琴（R172）：h2 即切换头，收起态 CSS 隐藏其余子节点（内容保 DOM） */
+.settings-section-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  user-select: none;
+  border-radius: 6px;
+}
+.settings-section.is-collapsed > :not(h2) {
+  display: none;
+}
+.settings-anchor-nav {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 8px 0;
+  margin-bottom: 12px;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border);
+}
+.settings-anchor-nav button {
+  font-size: 12px;
+  color: var(--text-muted);
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  padding: 4px 10px;
+  cursor: pointer;
+}
+.settings-anchor-nav button:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
 }
 
 .settings-actions {

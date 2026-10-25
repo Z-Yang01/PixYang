@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { ChevronDown, ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import ConfirmDialog from '../Layout/ConfirmDialog';
 import useGalleryStore from '@/store/galleryStore';
@@ -70,6 +71,41 @@ export default function SettingsPage({ onSettingsChanged, onImagesChanged }) {
   }, [rebuilding, rebuildProgress]);
 
   const hasChanges = JSON.stringify(draft) !== JSON.stringify(savedRef.current);
+
+  // 低频区块手风琴（R172）：默认收起统计/相机同步/AI/维护/关于，外观/显示/存储常开；
+  // 收起走 CSS 隐藏（内容保 DOM），锚点导航点击先展开再滚动
+  const [collapsedSections, setCollapsedSections] = useState(
+    () => new Set(['stats', 'camera', 'ai', 'maintenance', 'about'])
+  );
+  const toggleSection = (id) =>
+    setCollapsedSections((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  const jumpToSection = (id) => {
+    setCollapsedSections((prev) => {
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
+    requestAnimationFrame(() => {
+      document
+        .querySelector(`[data-sec="${id}"]`)
+        ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  };
+  const SETTINGS_SECTIONS = [
+    { id: 'appearance', label: '外观' },
+    { id: 'display', label: '显示' },
+    { id: 'storage', label: '存储' },
+    { id: 'stats', label: '统计信息' },
+    { id: 'camera', label: '相机同步' },
+    { id: 'ai', label: 'AI 调色' },
+    { id: 'maintenance', label: '维护' },
+    { id: 'about', label: '关于' },
+  ];
   const aiHasChanges = JSON.stringify(aiDraft) !== JSON.stringify(aiSavedRef.current);
 
   // 提示定时器必须随组件卸载清理：卸载后 2500ms 回调仍会 setState，
@@ -612,6 +648,14 @@ export default function SettingsPage({ onSettingsChanged, onImagesChanged }) {
       <div className="settings-page">
         <h1 className="settings-title">设置</h1>
 
+        <nav className="settings-anchor-nav">
+          {SETTINGS_SECTIONS.map((s) => (
+            <button key={s.id} type="button" onClick={() => jumpToSection(s.id)}>
+              {s.label}
+            </button>
+          ))}
+        </nav>
+
         {hasChanges && (
           <div className="settings-actions">
             <span className="settings-actions-hint">有未保存的修改</span>
@@ -706,8 +750,18 @@ export default function SettingsPage({ onSettingsChanged, onImagesChanged }) {
           </p>
         </section>
 
-        <section className="settings-section">
-          <h2>统计信息</h2>
+        <section
+          className={`settings-section${collapsedSections.has('stats') ? ' is-collapsed' : ''}`}
+          data-sec="stats"
+        >
+          <h2 className="settings-section-toggle" onClick={() => toggleSection('stats')}>
+            统计信息
+            {collapsedSections.has('stats') ? (
+              <ChevronRight className="size-4" />
+            ) : (
+              <ChevronDown className="size-4" />
+            )}
+          </h2>
           <div className="info-row">
             <span className="info-label">图片总数</span>
             <span className="info-value">{Number(stats.totalImages || 0).toLocaleString()} 张</span>
@@ -774,8 +828,18 @@ export default function SettingsPage({ onSettingsChanged, onImagesChanged }) {
           </p>
         </section>
 
-        <section className="settings-section">
-          <h2>相机同步</h2>
+        <section
+          className={`settings-section${collapsedSections.has('camera') ? ' is-collapsed' : ''}`}
+          data-sec="camera"
+        >
+          <h2 className="settings-section-toggle" onClick={() => toggleSection('camera')}>
+            相机同步
+            {collapsedSections.has('camera') ? (
+              <ChevronRight className="size-4" />
+            ) : (
+              <ChevronDown className="size-4" />
+            )}
+          </h2>
           <div className="storage-path">{cameraFolder || '未设置相机文件夹'}</div>
           <div className="button-row">
             <Button variant="secondary" size="sm" onClick={handleChooseCamera}>
@@ -791,8 +855,18 @@ export default function SettingsPage({ onSettingsChanged, onImagesChanged }) {
           </p>
         </section>
 
-        <section className="settings-section">
-          <h2>AI 调色（视觉模型）</h2>
+        <section
+          className={`settings-section${collapsedSections.has('ai') ? ' is-collapsed' : ''}`}
+          data-sec="ai"
+        >
+          <h2 className="settings-section-toggle" onClick={() => toggleSection('ai')}>
+            AI 调色（视觉模型）
+            {collapsedSections.has('ai') ? (
+              <ChevronRight className="size-4" />
+            ) : (
+              <ChevronDown className="size-4" />
+            )}
+          </h2>
           <div className="settings-grid-controls">
             <label>
               API 地址
@@ -843,8 +917,18 @@ export default function SettingsPage({ onSettingsChanged, onImagesChanged }) {
           </p>
         </section>
 
-        <section className="settings-section">
-          <h2>维护</h2>
+        <section
+          className={`settings-section${collapsedSections.has('maintenance') ? ' is-collapsed' : ''}`}
+          data-sec="maintenance"
+        >
+          <h2 className="settings-section-toggle" onClick={() => toggleSection('maintenance')}>
+            维护
+            {collapsedSections.has('maintenance') ? (
+              <ChevronRight className="size-4" />
+            ) : (
+              <ChevronDown className="size-4" />
+            )}
+          </h2>
           <div className="info-row">
             <span className="info-label">重建缩略图</span>
             <Button
@@ -937,8 +1021,18 @@ export default function SettingsPage({ onSettingsChanged, onImagesChanged }) {
           </p>
         </section>
 
-        <section className="settings-section">
-          <h2>关于</h2>
+        <section
+          className={`settings-section${collapsedSections.has('about') ? ' is-collapsed' : ''}`}
+          data-sec="about"
+        >
+          <h2 className="settings-section-toggle" onClick={() => toggleSection('about')}>
+            关于
+            {collapsedSections.has('about') ? (
+              <ChevronRight className="size-4" />
+            ) : (
+              <ChevronDown className="size-4" />
+            )}
+          </h2>
           <div className="info-row">
             <span className="info-label">应用名称</span>
             <span className="info-value">PixYang</span>

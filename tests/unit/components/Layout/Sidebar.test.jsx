@@ -45,32 +45,48 @@ describe('Sidebar', () => {
     cleanup();
   });
 
-  it('展开态渲染导航、徽标计数与相册/标签/日期筛选区', () => {
+  it('展开态渲染导航与徽标；筛选组默认收起，点开后三段可见（R172）', () => {
     renderSidebar();
     expect(screen.getByText('PixYang')).toBeInTheDocument();
     expect(screen.getByText('全部图片')).toBeInTheDocument();
     expect(screen.getByText('收藏夹')).toBeInTheDocument();
     expect(screen.getByText('12')).toBeInTheDocument(); // 全部图片徽标
     expect(screen.getByText('4')).toBeInTheDocument(); // 收藏徽标
-    // 相册筛选
-    expect(screen.getByText('按相册筛选')).toBeInTheDocument();
-    expect(screen.getByTitle('旅行')).toBeInTheDocument();
-    expect(screen.getByText('旅行')).toBeInTheDocument();
-    // 标签筛选
-    expect(screen.getByText('按标签筛选')).toBeInTheDocument();
-    expect(screen.getByTitle('风景')).toBeInTheDocument();
-    // 日期默认折叠
-    expect(screen.getByText('按日期筛选')).toBeInTheDocument();
-    expect(screen.queryByText('2026-01-02')).not.toBeInTheDocument();
+    // 筛选组默认收起：三段标题与条目均不可见
+    expect(screen.getByText('筛选')).toBeInTheDocument();
+    expect(screen.queryByText('按相册筛选')).not.toBeInTheDocument();
+    expect(screen.queryByText('按标签筛选')).not.toBeInTheDocument();
+    expect(screen.queryByText('按日期筛选')).not.toBeInTheDocument();
+    expect(screen.queryByTitle('旅行')).not.toBeInTheDocument();
+    // 管理标签并入「其他」组
+    expect(screen.getByText('管理标签')).toBeInTheDocument();
     // 底部按钮
     expect(screen.getByText('导入图片')).toBeInTheDocument();
     // 界面简化：快捷键/使用说明按钮退场（? 键开唯一帮助弹窗）
     expect(screen.queryByText('快捷键')).toBeNull();
     expect(screen.queryByText('使用说明')).toBeNull();
+    // 点开筛选组：三段与条目可见
+    fireEvent.click(screen.getByText('筛选'));
+    expect(screen.getByText('按相册筛选')).toBeInTheDocument();
+    expect(screen.getByTitle('旅行')).toBeInTheDocument();
+    expect(screen.getByText('旅行')).toBeInTheDocument();
+    expect(screen.getByText('按标签筛选')).toBeInTheDocument();
+    expect(screen.getByTitle('风景')).toBeInTheDocument();
+    expect(screen.getByText('按日期筛选')).toBeInTheDocument();
+    expect(screen.queryByText('2026-01-02')).not.toBeInTheDocument(); // 日期子区默认再折叠
+  });
+
+  it('筛选激活时筛选组自动展开并显示激活计数（R172）', () => {
+    seedStore({ filterTag: 5 });
+    renderSidebar();
+    expect(screen.getByText('按标签筛选')).toBeInTheDocument();
+    expect(screen.getByText('风景')).toBeInTheDocument();
+    expect(screen.getByText('1')).toBeInTheDocument(); // 激活计数徽标
   });
 
   it('日期区点击展开后显示日期条目并可再次筛选', () => {
     renderSidebar();
+    fireEvent.click(screen.getByText('筛选'));
     fireEvent.click(screen.getByText('按日期筛选'));
     expect(screen.getByText('2026-01-02')).toBeInTheDocument();
     expect(screen.getByText('5')).toBeInTheDocument();
@@ -78,6 +94,7 @@ describe('Sidebar', () => {
 
   it('点击相册条目写入 store 的 filterAlbum（选中 id）', () => {
     renderSidebar();
+    fireEvent.click(screen.getByText('筛选'));
     fireEvent.click(screen.getByTitle('旅行'));
     expect(useGalleryStore.getState().filterAlbum).toBe(2);
   });
