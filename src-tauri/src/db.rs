@@ -372,6 +372,10 @@ CREATE INDEX IF NOT EXISTS idx_images_original_raw_path_nc ON images(original_ra
 CREATE INDEX IF NOT EXISTS idx_images_hidden_import_date ON images(hidden, import_date);
 CREATE INDEX IF NOT EXISTS idx_images_hidden_taken_at ON images(hidden, taken_at);
 CREATE INDEX IF NOT EXISTS idx_images_hidden_favorite ON images(hidden, favorite);
+CREATE INDEX IF NOT EXISTS idx_images_hidden_rating ON images(hidden, rating);
+CREATE INDEX IF NOT EXISTS idx_images_hidden_filename ON images(hidden, filename);
+CREATE INDEX IF NOT EXISTS idx_images_hidden_size ON images(hidden, size);
+CREATE INDEX IF NOT EXISTS idx_images_hidden_created_at ON images(hidden, created_at);
 CREATE INDEX IF NOT EXISTS idx_image_tags_tag_id ON image_tags(tag_id);
 CREATE INDEX IF NOT EXISTS idx_album_images_image_id ON album_images(image_id);
 CREATE INDEX IF NOT EXISTS idx_images_visible_sort_date ON images(hidden, CASE WHEN taken_at != '' THEN taken_at ELSE import_date END, id);
@@ -869,12 +873,12 @@ pub fn managed_file_exists(
 // ── 删除通道（迁移接缝 4b）：镜像 deleteImageRecord/deleteImageFiles/deleteImage/batchDeleteImages ──
 
 fn delete_image_record_statements(conn: &Connection, id: i64) -> rusqlite::Result<usize> {
-    let mut n = conn.execute("DELETE FROM image_tags WHERE image_id = ?1", [id])?;
-    n += conn.execute("DELETE FROM album_images WHERE image_id = ?1", [id])?;
-    n += conn.execute("DELETE FROM edits WHERE image_id = ?1", [id])?;
-    n += conn.execute("DELETE FROM edit_history WHERE image_id = ?1", [id])?;
-    n += conn.execute("DELETE FROM snapshots WHERE image_id = ?1", [id])?;
-    n += conn.execute("DELETE FROM images WHERE id = ?1", [id])?;
+    let mut n = conn.prepare_cached("DELETE FROM image_tags WHERE image_id = ?1")?.execute([id])?;
+    n += conn.prepare_cached("DELETE FROM album_images WHERE image_id = ?1")?.execute([id])?;
+    n += conn.prepare_cached("DELETE FROM edits WHERE image_id = ?1")?.execute([id])?;
+    n += conn.prepare_cached("DELETE FROM edit_history WHERE image_id = ?1")?.execute([id])?;
+    n += conn.prepare_cached("DELETE FROM snapshots WHERE image_id = ?1")?.execute([id])?;
+    n += conn.prepare_cached("DELETE FROM images WHERE id = ?1")?.execute([id])?;
     Ok(n)
 }
 
@@ -1523,6 +1527,28 @@ mod path_tests {
             plan.contains("idx_images_visible_sort_date"),
             "日期翻页未命中表达式索引: {plan}"
         );
+        // 排序白名单五键的 (hidden, X) 组合索引覆盖（R162 rating / R168 filename·size·created_at）：
+        // 评分/文件名排序翻页不得退化为全索引扫描
+        for (sort, idx) in [
+            ("rating", "idx_images_hidden_rating"),
+            ("filename", "idx_images_hidden_filename"),
+            ("size", "idx_images_hidden_size"),
+            ("created_at", "idx_images_hidden_created_at"),
+        ] {
+            let plan: String = conn
+                .query_row(
+                    &format!(
+                        "EXPLAIN QUERY PLAN SELECT id FROM images WHERE hidden = 0 ORDER BY {sort} DESC, id DESC LIMIT 15 OFFSET 0"
+                    ),
+                    [],
+                    |r| r.get(3),
+                )
+                .unwrap();
+            assert!(
+                plan.contains(idx),
+                "{sort} 排序未命中组合索引 {idx}: {plan}"
+            );
+        }
         drop(conn);
         drop(db);
         let _ = std::fs::remove_dir_all(&dir);

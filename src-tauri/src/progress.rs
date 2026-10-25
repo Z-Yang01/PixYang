@@ -16,6 +16,12 @@ pub fn rebuild_payload(done: i64, total: i64, failed: i64) -> Value {
     json!({ "done": done, "total": total, "failed": failed })
 }
 
+// R163：ready 载荷带本批实际写回成功的图片 id——前端与当前页做交集门控，
+// 批量重建/烘焙后台重建不再让无关页面整页刷新；旧消费方（无 ids 解析）不受影响
+pub fn thumbnails_ready_payload(ids: &[i64]) -> Value {
+    json!({ "ids": ids })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -34,5 +40,13 @@ mod tests {
         assert_eq!(payload["done"], 3);
         assert_eq!(payload["total"], 10);
         assert_eq!(payload["failed"], 1);
+    }
+
+    #[test]
+    fn 缩略图就绪载荷携带本批写回成功的id() {
+        let payload = thumbnails_ready_payload(&[7, 12, 30]);
+        assert_eq!(payload["ids"].as_array().unwrap().len(), 3);
+        assert_eq!(payload["ids"][0], 7);
+        assert_eq!(payload["ids"][2], 30);
     }
 }

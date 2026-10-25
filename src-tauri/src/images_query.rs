@@ -182,7 +182,11 @@ pub fn get_images(conn: &Connection, q: &ImageQuery) -> rusqlite::Result<(Vec<Im
         joins.join(" "),
         conditions.join(" AND ")
     );
-    let count_sql = format!("SELECT COUNT(DISTINCT i.id) as total{from_where}");
+    let count_sql = if joins.is_empty() {
+        format!("SELECT COUNT(*) as total{from_where}")
+    } else {
+        format!("SELECT COUNT(DISTINCT i.id) as total{from_where}")
+    };
     let total: i64 = conn
         .query_row(
             &count_sql,
@@ -213,7 +217,13 @@ pub fn get_images(conn: &Connection, q: &ImageQuery) -> rusqlite::Result<(Vec<Im
         format!(" ORDER BY i.{safe_sort} {safe_order}, i.id {safe_order}")
     };
 
-    let sql = format!("SELECT DISTINCT {LIST_COLUMNS}{from_where}{order_clause} LIMIT ? OFFSET ?");
+    // 无 JOIN 时无行膨胀，DISTINCT 的临时去重是纯开销（与计数同口径，R168）；
+    // 标签/相册筛选 JOIN 一图可多行命中，保留 DISTINCT
+    let sql = if joins.is_empty() {
+        format!("SELECT {LIST_COLUMNS}{from_where}{order_clause} LIMIT ? OFFSET ?")
+    } else {
+        format!("SELECT DISTINCT {LIST_COLUMNS}{from_where}{order_clause} LIMIT ? OFFSET ?")
+    };
     params.push(Box::new(safe_limit));
     params.push(Box::new(safe_offset));
     let mut stmt = conn.prepare(&sql)?;

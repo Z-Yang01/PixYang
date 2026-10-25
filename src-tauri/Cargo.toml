@@ -17,3 +17,17 @@ tauri-plugin-dialog = "2"
 tauri-plugin-opener = "2"
 tauri-plugin-single-instance = "2"
 tauri-plugin-window-state = "2"
+
+# dev 构建对依赖开 O2：image-rs 解码/缩放 debug 下慢 10-50 倍，tauri:dev 窗口
+# 响应（缩略图/导入）与 cargo test（golden_audit/thumbs 逐字节对拍）直接受益；
+# 本 crate 自身保持 0 优化（增量编译快、断点调试保真）
+[profile.dev.package."*"]
+opt-level = 2
+
+# 发布档：LTO 换运行时与体积；单 codegen 单元利于跨 crate 内联；
+# panic=abort 省去 unwind 表（Tauri 官方推荐）；strip 去符号
+[profile.release]
+lto = "thin"
+codegen-units = 1
+panic = "abort"
+strip = true

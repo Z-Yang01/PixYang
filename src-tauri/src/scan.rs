@@ -97,7 +97,7 @@ fn scan_into(files: &mut Vec<CollectedFile>, dir: &Path, depth: usize, include_r
             let supported =
                 VISIBLE_FORMATS.contains(&ext.as_str()) || (include_raw && ext == ".nef");
             if supported {
-                let size = std::fs::metadata(&full_path).map(|m| m.len()).unwrap_or(0);
+                let size = entry.metadata().map(|m| m.len()).unwrap_or(0);
                 files.push(collected(
                     name,
                     full_path.to_string_lossy().to_string(),

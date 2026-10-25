@@ -7,7 +7,7 @@ use crate::progress;
 use crate::thumbs;
 use rusqlite::{params, params_from_iter, Connection};
 use serde_json::{json, Value};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 type SqlValue = rusqlite::types::Value;
@@ -83,18 +83,6 @@ fn err_message(e: &PixError) -> String {
         PixError::Db(e) => err_cn::text(e),
         PixError::Io(msg) => err_cn::line(msg),
     }
-}
-
-fn taken_filepaths(conn: &Connection, exclude_id: i64) -> HashSet<String> {
-    let mut taken = HashSet::new();
-    if let Ok(mut stmt) = conn.prepare("SELECT filepath FROM images WHERE id != ?1") {
-        if let Ok(rows) = stmt.query_map([exclude_id], |r| r.get::<_, String>(0)) {
-            for p in rows.flatten() {
-                taken.insert(p.to_lowercase());
-            }
-        }
-    }
-    taken
 }
 
 fn date_sub_dir(root: &Path, date: &str) -> PathBuf {
@@ -177,11 +165,20 @@ fn plan_update_image(
                     std::fs::create_dir_all(&sub_dir)
                         .map_err(|e| PixError::Io(format!("建目录失败: {e}")))?;
                     let orig_name = image_group::basename(&img.filename);
-                    let taken = taken_filepaths(conn, id);
-                    let new_name =
-                        naming::generate_unique_filename(&sub_dir, &orig_name, &taken, |p| {
+                    let new_name = naming::generate_unique_filename(
+                        &sub_dir,
+                        &orig_name,
+                        &std::collections::HashSet::new(),
+                        |p| {
                             p.exists()
-                        });
+                                || crate::file_ops::db_path_taken(
+                                    conn,
+                                    &p.to_string_lossy(),
+                                    Some(id),
+                                )
+                                .unwrap_or(false)
+                        },
+                    );
                     let new_path = sub_dir.join(&new_name);
                     if !Path::new(&img.filepath).exists() {
                         return Ok((
@@ -485,6 +482,7 @@ pub fn rebuild_thumbnails(
     let total = rows.len() as i64;
     let mut rebuilt = 0i64;
     let mut failed = 0i64;
+    let mut ready_ids: Vec<i64> = Vec::new();
     std::fs::create_dir_all(thumbs_dir)
         .map_err(|e| PixError::Io(format!("建缩略图目录失败: {e}")))?;
     for (index, (id, filepath)) in rows.iter().enumerate() {
@@ -509,6 +507,7 @@ pub fn rebuild_thumbnails(
                                 h as i64,
                             )?;
                             rebuilt += 1;
+                            ready_ids.push(*id);
                         }
                         Err(e) => {
                             failed += 1;
@@ -531,7 +530,11 @@ pub fn rebuild_thumbnails(
         }
     }
     if let Some(app) = app {
-        progress::emit_progress(app, progress::THUMBNAILS_READY, Value::Null);
+        progress::emit_progress(
+            app,
+            progress::THUMBNAILS_READY,
+            progress::thumbnails_ready_payload(&ready_ids),
+        );
     }
     Ok(json!({ "total": total, "rebuilt": rebuilt, "failed": failed }))
 }
@@ -560,6 +563,7 @@ pub fn rebuild_thumbnails_unlocked(
     let total = rows.len() as i64;
     let mut rebuilt = 0i64;
     let mut failed = 0i64;
+    let mut ready_ids: Vec<i64> = Vec::new();
     std::fs::create_dir_all(thumbs_dir)
         .map_err(|e| PixError::Io(format!("建缩略图目录失败: {e}")))?;
     // R110：生成并行（纯 CPU+读盘），回写/核验/进度按原序串行——进度 payload 与
@@ -608,6 +612,7 @@ pub fn rebuild_thumbnails_unlocked(
                     })()?;
                     if applied {
                         rebuilt += 1;
+                        ready_ids.push(*id);
                     }
                 }
                 Err(e) => {
@@ -626,7 +631,11 @@ pub fn rebuild_thumbnails_unlocked(
         done_base += chunk.len();
     }
     if let Some(app) = app {
-        progress::emit_progress(app, progress::THUMBNAILS_READY, Value::Null);
+        progress::emit_progress(
+            app,
+            progress::THUMBNAILS_READY,
+            progress::thumbnails_ready_payload(&ready_ids),
+        );
     }
     Ok(json!({ "total": total, "rebuilt": rebuilt, "failed": failed }))
 }

@@ -67,22 +67,20 @@ pub fn move_file_safe(from: &Path, to: &Path) -> Result<(), PixError> {
     }
 }
 
-fn db_path_taken(conn: &Connection, full_path: &str, exclude_id: Option<i64>) -> Option<bool> {
+pub(crate) fn db_path_taken(
+    conn: &Connection,
+    full_path: &str,
+    exclude_id: Option<i64>,
+) -> Option<bool> {
     let row: rusqlite::Result<Option<()>> = match exclude_id {
         Some(id) => conn
-            .query_row(
-                "SELECT 1 FROM images WHERE filepath = ?1 COLLATE NOCASE AND id != ?2",
-                rusqlite::params![full_path, id],
-                |_| Ok(()),
-            )
-            .optional(),
+            .prepare_cached("SELECT 1 FROM images WHERE filepath = ?1 COLLATE NOCASE AND id != ?2")
+            .and_then(|mut stmt| {
+                stmt.query_row(rusqlite::params![full_path, id], |_| Ok(())).optional()
+            }),
         None => conn
-            .query_row(
-                "SELECT 1 FROM images WHERE filepath = ?1 COLLATE NOCASE",
-                [full_path],
-                |_| Ok(()),
-            )
-            .optional(),
+            .prepare_cached("SELECT 1 FROM images WHERE filepath = ?1 COLLATE NOCASE")
+            .and_then(|mut stmt| stmt.query_row([full_path], |_| Ok(())).optional()),
     };
     match row {
         Ok(hit) => Some(hit.is_some()),
@@ -257,8 +255,10 @@ fn import_one_impl(
         loop {
             let target = sub_dir.join(&candidate);
             let owner: Option<(i64, i64)> = conn
-                .query_row(
+                .prepare_cached(
                     "SELECT id, hidden FROM images WHERE filepath = ?1 COLLATE NOCASE OR raw_path = ?2 COLLATE NOCASE",
+                )?
+                .query_row(
                     rusqlite::params![target.to_string_lossy(), target.to_string_lossy()],
                     |r| Ok((r.get(0)?, r.get(1)?)),
                 )
@@ -314,34 +314,31 @@ fn import_one_impl(
     } else {
         str_or_empty(img.get("thumbnail"))
     };
-    conn.execute(
+    conn.prepare_cached(
         "INSERT OR IGNORE INTO images (filename, filepath, original_path, raw_path, original_raw_path, hidden, orientation, rotation, flip_h, flip_v, import_date, taken_at, size, width, height, format, thumbnail)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 0, 0, 0, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
-        rusqlite::params![
-            unique_name,
-            dest_path.to_string_lossy(),
-            src_path,
-            raw_dest_path,
-            raw_source_path,
-            if hidden { 1 } else { 0 },
-            num_i64(img.get("orientation")).max(1),
-            date_str,
-            str_or_empty(img.get("takenAt")),
-            size_value,
-            num_i64(img.get("width")),
-            num_i64(img.get("height")),
-            format_value,
-            thumbnail_value,
-        ],
-    )
+    )?
+    .execute(rusqlite::params![
+        unique_name,
+        dest_path.to_string_lossy(),
+        src_path,
+        raw_dest_path,
+        raw_source_path,
+        if hidden { 1 } else { 0 },
+        num_i64(img.get("orientation")).max(1),
+        date_str,
+        str_or_empty(img.get("takenAt")),
+        size_value,
+        num_i64(img.get("width")),
+        num_i64(img.get("height")),
+        format_value,
+        thumbnail_value,
+    ])
     .map_err(PixError::Db)?;
 
     let row = conn
-        .query_row(
-            "SELECT * FROM images WHERE filepath = ?1",
-            [&dest_path.to_string_lossy()],
-            crate::images_query::row_from,
-        )
+        .prepare_cached("SELECT * FROM images WHERE filepath = ?1")?
+        .query_row([&dest_path.to_string_lossy()], crate::images_query::row_from)
         .optional()
         .map_err(PixError::Db)?;
 
@@ -385,16 +382,22 @@ pub(crate) fn write_thumbs_and_update(
     // 「失败不致命，列保持空」相反。记录与文件此时已落库落盘，UPDATE 失败
     // 若中断：批内后续文件不再导入，且命令层报错后用户重试会因唯一名避让
     // 给同一来源派生 _1 重复记录。改为留日志、按已导入返回（列保持空）
-    match conn.execute(
-        "UPDATE images SET thumbnail_path = ?1, thumbnail_small_path = ?2, width = ?3, height = ?4 WHERE id = ?5",
-        rusqlite::params![big_path.to_string_lossy(), small_path.to_string_lossy(), w, h, row.id],
-    ) {
+    let update = (|| -> rusqlite::Result<usize> {
+        conn.prepare_cached(
+            "UPDATE images SET thumbnail_path = ?1, thumbnail_small_path = ?2, width = ?3, height = ?4 WHERE id = ?5",
+        )?
+        .execute(rusqlite::params![
+            big_path.to_string_lossy(),
+            small_path.to_string_lossy(),
+            w,
+            h,
+            row.id
+        ])
+    })();
+    match update {
         Ok(_) => conn
-            .query_row(
-                "SELECT * FROM images WHERE filepath = ?1",
-                [row.filepath.as_str()],
-                crate::images_query::row_from,
-            )
+            .prepare_cached("SELECT * FROM images WHERE filepath = ?1")?
+            .query_row([row.filepath.as_str()], crate::images_query::row_from)
             .optional()
             .map_err(PixError::Db),
         Err(e) => {
