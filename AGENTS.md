@@ -415,7 +415,10 @@ tests/            vitest（node 环境 + per-file happy-dom pragma）
   golden_audit 15.4s→3.8s（-46%/-75%），tauri:dev 窗口缩略图/导入同步受益。改 profile 会触发依赖
   全量重编（一次性，CARGO_BUILD_JOBS=1 下十几分钟）。`[profile.release]` lto=thin + codegen-units=1
   + panic=abort（Tauri 推荐）+ strip，发布档运行时/体积优化；O2 不改变 Rust 整数/浮点确定性，
-  golden_audit 逐字节通过实证。
+  golden_audit 逐字节通过实证。R171 发布产物验证：`npm run tauri:build` 在该档位下 NSIS 出包成功
+  （PixYang_1.0.0_x64-setup.exe 3.22 MiB），release exe 17.3MB→9.67MB（-44%）。导入批内 fs::copy
+  并行化以实测关闭：本机 NVMe 串行拷贝 488 MB/s，20 张/批（260MB）仅 0.53s，远小于同批缩略图段
+  （并行 ÷8，~3-4s）——收益 <0.4s/批不值两阶段重构的完整性风险，该项永久关闭。
 - 前端经 `src/lib/tauriBridge.js` 探测 `window.__TAURI__`（withGlobalTauri 注入）调用命令；
   非 Tauri 环境（浏览器/单测）由 `api.ts` 回落 `window.pixyang` 注入面。不引入 `@tauri-apps/api` npm 依赖。
 - CI：`.github/workflows/ci.yml` 的 `rust` job（windows）先 `vite build` 再 `cargo test`。
