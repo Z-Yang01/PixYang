@@ -304,6 +304,9 @@ tests/            vitest（node 环境 + per-file happy-dom pragma）
 - 普通导入对话框仅扫描可见格式（不含 RAW），但会检测同目录同名 RAW（annotate_raw_pairs）并随 JPG 一起导入绑定；按 `original_path` 去重，已导入的 JPG 会自动补充缺失的配对 RAW。
 - 修改导入日期（`updateImage`）会移动 JPG 与配对 RAW 到新日期目录。
 - `taken_at`（拍摄时间，`YYYY-MM-DD HH:MM`，精确到分钟）由 EXIF `DateTimeOriginal` 提取，仅对新导入图片生效，无 EXIF 时间为空；日期排序优先按 `taken_at`，空值回退 `import_date`。
+- **R173 实机取证**（CDP 直 invoke 命令层，真实 App + 真库，用后即清）：临时 JPG+CR2 对走 collect
+  配对注记 → import 绑定（`raw_path` 落托管树、缩略图正常）→ rename CR2 同步改主名 → trash 删除随迁
+  → purge 无残留，全链 PASS。
 
 ## 删除暂存区（trash）约定（round 73）
 
