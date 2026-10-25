@@ -92,6 +92,59 @@ describe('useGalleryData wiring', () => {
     }
   });
 
+  it('thumbnails-ready 载荷 ids 与本页不相交：不 bump 不重查（R163 交集门控）', async () => {
+    vi.useFakeTimers();
+    try {
+      let readyCb;
+      window.pixyang.onThumbnailsReady = vi.fn((cb) => {
+        readyCb = cb;
+        return () => {};
+      });
+      render(<HookHarness hook={useGalleryData} hookProps={{}} />);
+      await vi.advanceTimersByTimeAsync(0);
+      act(() => {
+        useGalleryStore.setState({ images: [{ id: 7, filename: 'a.jpg' }] });
+      });
+      const before = useGalleryStore.getState().thumbVersion;
+      const callsBefore = window.pixyang.getImages.mock.calls.length;
+      await act(async () => {
+        readyCb({ ids: [99, 100] });
+        readyCb({ ids: [101] });
+      });
+      await vi.advanceTimersByTimeAsync(500);
+      expect(useGalleryStore.getState().thumbVersion).toBe(before);
+      expect(window.pixyang.getImages.mock.calls.length).toBe(callsBefore);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('thumbnails-ready 载荷 ids 与本页相交：尾沿一次 bump + 一次重查（R163）', async () => {
+    vi.useFakeTimers();
+    try {
+      let readyCb;
+      window.pixyang.onThumbnailsReady = vi.fn((cb) => {
+        readyCb = cb;
+        return () => {};
+      });
+      render(<HookHarness hook={useGalleryData} hookProps={{}} />);
+      await vi.advanceTimersByTimeAsync(0);
+      act(() => {
+        useGalleryStore.setState({ images: [{ id: 7, filename: 'a.jpg' }] });
+      });
+      const before = useGalleryStore.getState().thumbVersion;
+      const callsBefore = window.pixyang.getImages.mock.calls.length;
+      await act(async () => {
+        readyCb({ ids: [7, 99] });
+      });
+      await vi.advanceTimersByTimeAsync(300);
+      expect(useGalleryStore.getState().thumbVersion).toBe(before + 1);
+      expect(window.pixyang.getImages.mock.calls.length).toBe(callsBefore + 1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('onEditPreviewReady 携带 {id,path} 时写回路径并按路径 bump 版本（不全局失效整页 URL）', async () => {
     let previewCb;
     window.pixyang.getImages = vi.fn().mockResolvedValue({

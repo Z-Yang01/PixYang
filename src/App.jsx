@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { lazy, Suspense, useState, useEffect, useCallback, useRef } from 'react';
 import { Routes, Route, useLocation, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { Upload } from 'lucide-react';
@@ -26,20 +26,23 @@ import { errText, friendlyError } from './lib/errorText.ts';
 import Sidebar from './components/Layout/Sidebar';
 import TopBar from './components/Layout/TopBar';
 import ImageGrid from './components/Gallery/ImageGrid';
-import ImageViewer from './components/Viewer/ImageViewer';
 import InfoPanel from './components/Info/InfoPanel';
 import ImportDialog from './components/Explorer/ImportDialog';
-import TagManager from './components/Tags/TagManager';
-import AlbumsView from './components/Explorer/AlbumsView';
-import TrashView from './components/Explorer/TrashView';
 import BatchBar from './components/Batch/BatchBar';
 import ImportStatusBar from './components/Layout/ImportStatusBar';
-import SettingsPage from './components/Settings/SettingsPage';
 import ConfirmDialog from './components/Layout/ConfirmDialog';
 import BatchExportDialog from './components/Batch/BatchExportDialog';
 import ShortcutsHelp from './components/Layout/ShortcutsHelp';
 import { Toaster } from '@/components/ui/sonner';
 import { TooltipProvider } from '@/components/ui/tooltip';
+
+// 次级路由与查看器懒加载（R162）：查看器+编辑器链（ImageViewer/webglPreview/shared 渲染模块）
+// 是首屏包的最大头，移出主 chunk 缩短启动解析；本地盘动态导入 <50ms，Suspense fallback=null
+const ImageViewer = lazy(() => import('./components/Viewer/ImageViewer'));
+const TagManager = lazy(() => import('./components/Tags/TagManager'));
+const AlbumsView = lazy(() => import('./components/Explorer/AlbumsView'));
+const TrashView = lazy(() => import('./components/Explorer/TrashView'));
+const SettingsPage = lazy(() => import('./components/Settings/SettingsPage'));
 
 export default function App() {
   // 共享状态来自 galleryStore（筛选/勾选/网格/图片/共享数据）
@@ -486,6 +489,10 @@ export default function App() {
     setShowImport(true);
   }, []);
 
+  const handleToggleCollapse = useCallback(() => {
+    setSidebarCollapsed((c) => !c);
+  }, []);
+
   // 对话框交棒后立即关闭：导入在后台进行，不清筛选、不跳转路由（不影响用户当前操作）；
   // 清拖入暂存同 handleImportDone 旧逻辑——否则下次拖拽与旧列表合并，重勾上次的文件（审查批 8 Q-05）
   const handleImportSubmitted = useCallback(() => {
@@ -613,7 +620,7 @@ export default function App() {
       <div className={`app-layout${sidebarCollapsed ? ' sidebar-collapsed' : ''}`}>
         <Sidebar
           collapsed={sidebarCollapsed}
-          onToggleCollapse={() => setSidebarCollapsed((c) => !c)}
+          onToggleCollapse={handleToggleCollapse}
           onImport={openImport}
         />
         <div className="main-content">
@@ -639,80 +646,90 @@ export default function App() {
             <Route
               path="/albums"
               element={
-                <AlbumsView
-                  onSelectAlbum={(id) => {
-                    navigate('/', { state: { albumId: id } });
-                  }}
-                  onRefresh={() => {
-                    useGalleryStore.getState().refreshAppData();
-                  }}
-                />
+                <Suspense fallback={null}>
+                  <AlbumsView
+                    onSelectAlbum={(id) => {
+                      navigate('/', { state: { albumId: id } });
+                    }}
+                    onRefresh={() => {
+                      useGalleryStore.getState().refreshAppData();
+                    }}
+                  />
+                </Suspense>
               }
             />
             <Route
               path="/tags"
               element={
-                <TagManager
-                  onSelectTag={(id) => {
-                    navigate('/', { state: { tagId: id } });
-                  }}
-                  onRefresh={() => {
-                    useGalleryStore.getState().refreshAppData();
-                  }}
-                />
+                <Suspense fallback={null}>
+                  <TagManager
+                    onSelectTag={(id) => {
+                      navigate('/', { state: { tagId: id } });
+                    }}
+                    onRefresh={() => {
+                      useGalleryStore.getState().refreshAppData();
+                    }}
+                  />
+                </Suspense>
               }
             />
             <Route
               path="/trash"
               element={
-                <TrashView
-                  onRefresh={() => {
-                    useGalleryStore.getState().refreshAppData();
-                  }}
-                />
+                <Suspense fallback={null}>
+                  <TrashView
+                    onRefresh={() => {
+                      useGalleryStore.getState().refreshAppData();
+                    }}
+                  />
+                </Suspense>
               }
             />
             <Route
               path="/settings"
               element={
-                <SettingsPage
-                  onSettingsChanged={() => {
-                    loadPersistedSettings(false);
-                  }}
-                  onImagesChanged={handleImageUpdated}
-                />
+                <Suspense fallback={null}>
+                  <SettingsPage
+                    onSettingsChanged={() => {
+                      loadPersistedSettings(false);
+                    }}
+                    onImagesChanged={handleImageUpdated}
+                  />
+                </Suspense>
               }
             />
           </Routes>
         </div>
 
         {viewerImage && (
-          <ImageViewer
-            image={viewerImage}
-            imageIndex={viewerIndex}
-            totalCount={totalImages}
-            onClose={closeViewer}
-            closeGuardRef={viewerCloseGuardRef}
-            onPrev={viewerPrev}
-            onNext={viewerNext}
-            hasPrev={viewerIndex > 0}
-            hasNext={viewerIndex < totalImages - 1}
-            onJumpTo={navigateViewer}
-            nextImage={viewerNextImage}
-            onImageUpdated={handleImageUpdated}
-            onDeleteInViewer={handleViewerDelete}
-            onOpenInfo={(img) => {
-              if (!img) return;
-              if (infoImageRef.current?.id === img.id) {
-                infoFromViewerRef.current = false;
-                setInfoImage(null);
-              } else {
-                infoFromViewerRef.current = true;
-                setInfoImage(img);
-              }
-            }}
-            onEnterEdit={handleEnterEdit}
-          />
+          <Suspense fallback={null}>
+            <ImageViewer
+              image={viewerImage}
+              imageIndex={viewerIndex}
+              totalCount={totalImages}
+              onClose={closeViewer}
+              closeGuardRef={viewerCloseGuardRef}
+              onPrev={viewerPrev}
+              onNext={viewerNext}
+              hasPrev={viewerIndex > 0}
+              hasNext={viewerIndex < totalImages - 1}
+              onJumpTo={navigateViewer}
+              nextImage={viewerNextImage}
+              onImageUpdated={handleImageUpdated}
+              onDeleteInViewer={handleViewerDelete}
+              onOpenInfo={(img) => {
+                if (!img) return;
+                if (infoImageRef.current?.id === img.id) {
+                  infoFromViewerRef.current = false;
+                  setInfoImage(null);
+                } else {
+                  infoFromViewerRef.current = true;
+                  setInfoImage(img);
+                }
+              }}
+              onEnterEdit={handleEnterEdit}
+            />
+          </Suspense>
         )}
 
         {infoImage && (

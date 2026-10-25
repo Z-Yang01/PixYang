@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { memo, useState } from 'react';
 import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import {
@@ -18,7 +18,7 @@ import {
 } from 'lucide-react';
 import useGalleryStore from '@/store/galleryStore';
 
-export default function Sidebar({ collapsed, onToggleCollapse, onImport }) {
+function Sidebar({ collapsed, onToggleCollapse, onImport }) {
   const stats = useGalleryStore((s) => s.stats);
   const tags = useGalleryStore((s) => s.tags);
   const albums = useGalleryStore((s) => s.albums);
@@ -270,3 +270,5 @@ export default function Sidebar({ collapsed, onToggleCollapse, onImport }) {
     </aside>
   );
 }
+
+export default memo(Sidebar);

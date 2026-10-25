@@ -15,6 +15,14 @@ export default defineConfig(async () => {
     build: {
       outDir: 'dist',
       assetsDir: 'assets',
+      rollupOptions: {
+        output: {
+          // 稳定框架单独分包（R162）：业务代码迭代时 vendor 命中缓存，主包也压回 500kB 警告线内
+          manualChunks: {
+            'vendor-react': ['react', 'react-dom', 'react-router-dom'],
+          },
+        },
+      },
     },
     server: {
       port: 5173,

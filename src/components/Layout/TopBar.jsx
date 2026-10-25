@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Search, X, Upload, ArrowUp, ArrowDown } from 'lucide-react';
@@ -28,7 +29,7 @@ function SortButton({ active, title, onClick, children }) {
   );
 }
 
-export default function TopBar({ showFilters = true, onImport, searchInputRef }) {
+function TopBar({ showFilters = true, onImport, searchInputRef }) {
   const navigate = useNavigate();
   const search = useGalleryStore((s) => s.search);
   const sortBy = useGalleryStore((s) => s.sortBy);
@@ -208,3 +209,5 @@ export default function TopBar({ showFilters = true, onImport, searchInputRef })
     </div>
   );
 }
+
+export default memo(TopBar);

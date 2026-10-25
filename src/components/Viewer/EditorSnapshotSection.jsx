@@ -34,7 +34,7 @@ export default function EditorSnapshotSection({
               {sn.name}
             </button>
             <Button variant="ghost" size="icon-xs" onClick={() => onRemove(sn.id)} title="删除快照">
-              <X className="size-3" />
+              <X className="size-4" />
             </Button>
           </div>
         ))

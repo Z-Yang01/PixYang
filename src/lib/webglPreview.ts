@@ -68,6 +68,21 @@ uniform vec2 uMaskBrushDim[8];       // 栅格尺寸（px→uv 归一用）
 uniform float uMaskAdjClarity[8];
 uniform float uMaskAdjVibrance[8];
 
+// 画笔权重采样：sampler 数组只允许常量索引（GLSL ES 3.0，实机 ANGLE 严格拒绝动态
+// 索引并使整个 shader 编译失败——webglFailed 闩锁静默降级 SVG，实机冒烟 R165 实锤），
+// 故 8 路字面分支展开
+float brushWeight(int i, vec2 px) {
+  vec2 uv = px / uImageSize;
+  if (i == 0) return texture(uMaskBrushTex[0], uv).r;
+  if (i == 1) return texture(uMaskBrushTex[1], uv).r;
+  if (i == 2) return texture(uMaskBrushTex[2], uv).r;
+  if (i == 3) return texture(uMaskBrushTex[3], uv).r;
+  if (i == 4) return texture(uMaskBrushTex[4], uv).r;
+  if (i == 5) return texture(uMaskBrushTex[5], uv).r;
+  if (i == 6) return texture(uMaskBrushTex[6], uv).r;
+  return texture(uMaskBrushTex[7], uv).r;
+}
+
 float maskWeight(int i, vec2 px, vec3 c) {
   vec4 g = uMaskGeo[i];
   float w;
@@ -88,7 +103,7 @@ float maskWeight(int i, vec2 px, vec3 c) {
     w = uMaskFeather[i] > 0.0 ? clamp((g.y + uMaskFeather[i] - dd) / uMaskFeather[i], 0.0, 1.0) : (dd <= g.y ? 1.0 : 0.0);
   } else {
     // 画笔：shared 公式 CPU 低清栅格纹理双线性采样（同公式声明近似口径，不入逐位对拍）
-    w = texture(uMaskBrushTex[i], px / uImageSize).r;
+    w = brushWeight(i, px);
   }
   if (uMaskInvert[i] > 0.5) w = 1.0 - w;
   return w;
@@ -745,13 +760,17 @@ export async function renderWebGLPreview(
     gl.uniform1fv(locs.uMaskAdjTemp, uniforms.maskAdjTemp);
     gl.uniform1fv(locs.uMaskAdjTint, uniforms.maskAdjTint);
     // 画笔栅格纹理（shared 公式 CPU 低清 R8）：brush 槽上传、其余 1×1 黑占位；
-    // 纹理单元 2..9 专属（0 为 uImage、1 为 uCurveLut）
+    // 纹理单元 2..9 专属（0 为 uImage、1 为 uCurveLut）。
+    // activeTexture 必须先于创建段：首次渲染时 st.brushTex 尚空，若在 LUT 段遗留的
+    // TEXTURE1 上 bindTexture 占位纹理，会顶掉曲线 LUT 绑定（texelFetch 越界读 1×1
+    // 返回黑，曲线激活即整帧变黑——R146 引入、被同期 shader 编译失败掩盖，实机对拍 R166 实锤）
     for (let bi = 0; bi < 8; bi++) {
       const grid = uniforms.brushGrids?.[bi];
       // 纹理缓存在画布状态上：不得挂在函数接收者上——生产包是 ESM 严格模式，
       // 该值为 undefined 会抛 TypeError 被 catch 吞掉 → 预览恒失败并静默降级 CSS；
       // 测试环境非严格时又退化成全局单例，纹理跨画布串用
       if (!st.brushTex) st.brushTex = [];
+      gl.activeTexture(gl.TEXTURE2 + bi);
       if (!st.brushTex[bi]) {
         const t = gl.createTexture();
         gl.bindTexture(gl.TEXTURE_2D, t);
@@ -772,7 +791,6 @@ export async function renderWebGLPreview(
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
         st.brushTex[bi] = t as WebGLTexture;
       }
-      gl.activeTexture(gl.TEXTURE2 + bi);
       gl.bindTexture(gl.TEXTURE_2D, st.brushTex[bi] as WebGLTexture);
       if (grid) {
         gl.texImage2D(

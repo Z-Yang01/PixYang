@@ -160,7 +160,11 @@ export default function ViewerFilmstrip({ imageIndex, totalCount, currentImage, 
                 onJumpTo?.(t.index);
               }}
             >
-              {t.src ? <img src={t.src} alt="" /> : <span className="viewer-filmstrip-blank" />}
+              {t.src ? (
+                <img src={t.src} alt="" loading="lazy" decoding="async" />
+              ) : (
+                <span className="viewer-filmstrip-blank" />
+              )}
               <em>{t.index + 1}</em>
             </button>
           ))}

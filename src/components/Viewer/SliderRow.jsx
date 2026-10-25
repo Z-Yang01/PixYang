@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import { matchSliderNavKey } from '@/lib/shortcuts.ts';
 
 // 编辑面板通用滑杆行（用户裁决 2026-10-13 立项）：封装手势五件套共性——
@@ -5,7 +6,7 @@ import { matchSliderNavKey } from '@/lib/shortcuts.ts';
 // onKeyAdjust（键盘路径收敛，父级守卫 !dragRef）/ onReset（双击或 Ctrl+Del/Home 回默认入史）/
 // Shift+←→ 粗调（matchSliderNavKey 唯一实现，R92 口径；粗调走 onChange+onKeyAdjust）。
 // 语义回调由调用方闭包提供；本组件零自有状态、纯受控。defaultValue 为重置目标（缺省 0）。
-export default function SliderRow({
+function SliderRow({
   label,
   min = -100,
   max = 100,
@@ -58,3 +59,5 @@ export default function SliderRow({
     </label>
   );
 }
+
+export default memo(SliderRow);

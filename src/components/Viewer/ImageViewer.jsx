@@ -108,6 +108,130 @@ const EDIT_SETTLE_MS = 120;
 // 键间隔（约 30-200ms），又足够短使历史面板在停手后近乎即时更新
 const KEY_GESTURE_MS = 700;
 
+const BASIC_FIELDS = [
+  {
+    key: 'exposure',
+    label: '曝光',
+    min: -2,
+    max: 2,
+    step: 0.05,
+    fmt: (v) => `${v > 0 ? '+' : ''}${v.toFixed(2)}`,
+  },
+  {
+    key: 'contrast',
+    label: '对比度',
+    min: -50,
+    max: 50,
+    step: 1,
+    fmt: (v) => `${v > 0 ? '+' : ''}${v}`,
+  },
+  {
+    key: 'highlights',
+    label: '高光',
+    min: -100,
+    max: 100,
+    step: 1,
+    fmt: (v) => `${v > 0 ? '+' : ''}${v}`,
+  },
+  {
+    key: 'shadows',
+    label: '阴影',
+    min: -100,
+    max: 100,
+    step: 1,
+    fmt: (v) => `${v > 0 ? '+' : ''}${v}`,
+  },
+  {
+    key: 'whites',
+    label: '白色色阶',
+    min: -100,
+    max: 100,
+    step: 1,
+    fmt: (v) => `${v > 0 ? '+' : ''}${v}`,
+  },
+  {
+    key: 'clarity',
+    label: '清晰度',
+    min: -100,
+    max: 100,
+    step: 1,
+    fmt: (v) => `${v > 0 ? '+' : ''}${v}`,
+  },
+  {
+    key: 'dehaze',
+    label: '去朦胧',
+    min: -100,
+    max: 100,
+    step: 1,
+    fmt: (v) => `${v > 0 ? '+' : ''}${v}`,
+  },
+  {
+    key: 'blacks',
+    label: '黑色色阶',
+    min: -100,
+    max: 100,
+    step: 1,
+    fmt: (v) => `${v > 0 ? '+' : ''}${v}`,
+  },
+  {
+    key: 'saturation',
+    label: '饱和度',
+    min: -100,
+    max: 100,
+    step: 1,
+    fmt: (v) => `${v > 0 ? '+' : ''}${v}`,
+  },
+  {
+    key: 'vibrance',
+    label: '鲜艳度',
+    min: -100,
+    max: 100,
+    step: 1,
+    fmt: (v) => `${v > 0 ? '+' : ''}${v}`,
+  },
+  {
+    key: 'temperature',
+    label: '色温',
+    min: -100,
+    max: 100,
+    step: 1,
+    fmt: (v) => `${v > 0 ? '+' : ''}${v}`,
+  },
+  {
+    key: 'tint',
+    label: '色调',
+    min: -100,
+    max: 100,
+    step: 1,
+    fmt: (v) => `${v > 0 ? '+' : ''}${v}`,
+  },
+  {
+    key: 'vignette',
+    label: '暗角',
+    min: -100,
+    max: 100,
+    step: 1,
+    fmt: (v) => `${v > 0 ? '+' : ''}${v}`,
+  },
+];
+
+const DETAIL_FIELDS = [
+  { key: 'sharpness', label: '锐化', min: 0 },
+  { key: 'texture', label: '纹理', title: '纹理：中频质感增强，负值柔化；双击重置' },
+  { key: 'noise', label: '降噪', min: 0 },
+  {
+    key: 'grain',
+    label: '颗粒',
+    min: 0,
+    title: '胶片颗粒：三端同式精确预览；双击重置',
+  },
+];
+
+const LENS_FIELDS = [
+  { key: 'distortion', label: '畸变', hint: '正=桶形校正，负=枕形校正' },
+  { key: 'chromatic', label: '色散', hint: '去除边缘蓝/红边（横向色差）' },
+];
+
 export default function ImageViewer({
   image,
   imageIndex = 0,
@@ -486,6 +610,19 @@ export default function ImageViewer({
     [settleKeyGesture, pushEntry]
   );
 
+  // 滑杆 handler 缓存：行级回调只捕获 ref 与稳定回调（pushHistory/recordKeyAdjust
+  // 全链 [] 依赖），按 rowKey 缓存使 SliderRow(memo) 的 props 在拖动中保持稳定，
+  // 未在拖的行不再随父渲染重渲染。build 仅在首次取用时执行
+  const sliderHandlerCacheRef = useRef(new Map());
+  const getSliderHandlers = useCallback((rowKey, build) => {
+    let h = sliderHandlerCacheRef.current.get(rowKey);
+    if (!h) {
+      h = build();
+      sliderHandlerCacheRef.current.set(rowKey, h);
+    }
+    return h;
+  }, []);
+
   const jumpToHistory = useCallback(
     (index) => {
       settleKeyGesture(); // 跳转前面板尚未含在途键盘调整：先结算，索引与面板所见一致
@@ -528,7 +665,13 @@ export default function ImageViewer({
     []
   );
 
-  const editDirty = editing && opsChanged(composeOps(), savedBaselineRef.current);
+  // 不 memo：savedBaselineRef 换新而 editOps 不变时依赖面不完整（保存后 dirty 卡 true，R67 锁）
+  const editOpsDirty = opsChanged(composeOps(), savedBaselineRef.current);
+  const editDirty = editing && editOpsDirty;
+  const previewChainRaw = useMemo(
+    () => (editing ? previewFilterChain(editOps) : null),
+    [editing, editOps]
+  );
 
   // 保存：只写 EditParams JSON 到数据库（像素不动）
   const saveParamsRef = useRef(null);
@@ -1751,6 +1894,10 @@ export default function ImageViewer({
       drawnOpsRef.current = null;
       return;
     }
+    // toggle 模式按住 Before 期间画布常驻隐藏（R164）：After 帧内容未变，跳过冗余的
+    // 全分辨率重绘 + readPixels；松开后本 effect 因 showBefore 变化再触发补绘
+    // （期间若 editOps 有变，drawnOpsRef 已陈旧 → 走 draft→settled 补帧链）
+    if (showBefore && compareMode === 'toggle') return;
     const canvas = webglCanvasRef.current;
     const img = editImgRef.current;
     if (!canvas || !img) return;
@@ -1787,8 +1934,8 @@ export default function ImageViewer({
     draw(true);
     const settleTimer = setTimeout(() => draw(false), EDIT_SETTLE_MS);
     return () => clearTimeout(settleTimer);
-    // showBefore/compareMode：画布随 Before/对比视图切换而卸载重挂，新画布必须重绘，
-    // 否则 After 侧是一块空白画布盖住原图（预览 ≡ Before）；
+    // showBefore/compareMode：画布常驻（R164）后切换不再卸载重挂，此依赖退化为保底重绘
+    // （纹理/program 命中缓存，开销为 fragment 重跑；保留以覆盖切回 After 的边界场景）；
     // webglEpoch：webglcontextrestored 后强制重绘（GL 对象已全量重建）；
     // displaySrc：无编辑底图回退到查看态 src 时（编辑会话建立窗口），src 异步就绪
     // （thumb→full）也要触发重绘，否则画布停在旧源
@@ -1817,7 +1964,7 @@ export default function ImageViewer({
           ? 'baking'
           : busyKind === 'opening'
             ? 'opening'
-            : editing && opsChanged(composeOps(), savedBaselineRef.current)
+            : editing && editOpsDirty
               ? 'dirty'
               : 'clean';
   const PHASE_LABELS = {
@@ -1835,8 +1982,8 @@ export default function ImageViewer({
     exportOpts.format === 'png' || (exportOpts.format === 'auto' && exportSourceIsPng);
 
   // 影调预览滤镜链（与分段渲染管线同序同数学）；needsMatrix 决定主矩阵原语是否渲染。
-  // 注意：链只被 After 层消费——对比模式下也必须计算，否则 SVG 回退的 After ≡ Before
-  const previewChainRaw = editing ? previewFilterChain(editOps) : null;
+  // 注意：链只被 After 层消费——对比模式下也必须计算，否则 SVG 回退的 After ≡ Before；
+  // previewChainRaw 已提前 memo（每次渲染重复 sanitize + 建 LUT 的开销在拖动中放大）
   const previewChain = previewChainRaw
     ? { ...previewChainRaw, needsMatrix: needsMatrix(editOps) }
     : null;
@@ -1887,9 +2034,15 @@ export default function ImageViewer({
             transition: dragging.current ? 'none' : undefined,
           }}
         />
-        {/* M7 WebGL2 预览层：覆盖底图，shader 内完成影调/曲线/HSL/分级/饱和度/暗角 */}
-        {useWebgl && (
-          <canvas ref={setWebglCanvas} className="editor-webgl-canvas" aria-hidden="true" />
+        {/* M7 WebGL2 预览层：覆盖底图，shader 内完成影调/曲线/HSL/分级/饱和度/暗角。
+            canvas 在编辑会话内常驻（R164）：Before/对比切换只显隐不卸载，避免重编译
+            shader + 重传纹理；退出编辑卸载时经 setWebglCanvas 释放上下文（P-1 配额） */}
+        {webglActive && shaderUniforms && (
+          <canvas
+            ref={setWebglCanvas}
+            className={`editor-webgl-canvas${edited ? '' : ' is-idle'}`}
+            aria-hidden="true"
+          />
         )}
         {/* 暗角 overlay：CSS 渐变与渲染端 raw pass 同数学（multiply/screen 精确等价；WebGL 时由 shader 内渲染） */}
         {vignetteStyle && (
@@ -2288,6 +2441,7 @@ export default function ImageViewer({
             className="viewer-image"
             src={displaySrc}
             crossOrigin="anonymous"
+            decoding="async"
             alt={image.filename?.replace(/\.\w+$/, '') || image.filename}
             draggable={false}
             style={{
@@ -2476,112 +2630,7 @@ export default function ImageViewer({
             </Button>
           </div>
 
-          {[
-            {
-              key: 'exposure',
-              label: '曝光',
-              min: -2,
-              max: 2,
-              step: 0.05,
-              fmt: (v) => `${v > 0 ? '+' : ''}${v.toFixed(2)}`,
-            },
-            {
-              key: 'contrast',
-              label: '对比度',
-              min: -50,
-              max: 50,
-              step: 1,
-              fmt: (v) => `${v > 0 ? '+' : ''}${v}`,
-            },
-            {
-              key: 'highlights',
-              label: '高光',
-              min: -100,
-              max: 100,
-              step: 1,
-              fmt: (v) => `${v > 0 ? '+' : ''}${v}`,
-            },
-            {
-              key: 'shadows',
-              label: '阴影',
-              min: -100,
-              max: 100,
-              step: 1,
-              fmt: (v) => `${v > 0 ? '+' : ''}${v}`,
-            },
-            {
-              key: 'whites',
-              label: '白色色阶',
-              min: -100,
-              max: 100,
-              step: 1,
-              fmt: (v) => `${v > 0 ? '+' : ''}${v}`,
-            },
-            {
-              key: 'clarity',
-              label: '清晰度',
-              min: -100,
-              max: 100,
-              step: 1,
-              fmt: (v) => `${v > 0 ? '+' : ''}${v}`,
-            },
-            {
-              key: 'dehaze',
-              label: '去朦胧',
-              min: -100,
-              max: 100,
-              step: 1,
-              fmt: (v) => `${v > 0 ? '+' : ''}${v}`,
-            },
-            {
-              key: 'blacks',
-              label: '黑色色阶',
-              min: -100,
-              max: 100,
-              step: 1,
-              fmt: (v) => `${v > 0 ? '+' : ''}${v}`,
-            },
-            {
-              key: 'saturation',
-              label: '饱和度',
-              min: -100,
-              max: 100,
-              step: 1,
-              fmt: (v) => `${v > 0 ? '+' : ''}${v}`,
-            },
-            {
-              key: 'vibrance',
-              label: '鲜艳度',
-              min: -100,
-              max: 100,
-              step: 1,
-              fmt: (v) => `${v > 0 ? '+' : ''}${v}`,
-            },
-            {
-              key: 'temperature',
-              label: '色温',
-              min: -100,
-              max: 100,
-              step: 1,
-              fmt: (v) => `${v > 0 ? '+' : ''}${v}`,
-            },
-            {
-              key: 'tint',
-              label: '色调',
-              min: -100,
-              max: 100,
-              step: 1,
-              fmt: (v) => `${v > 0 ? '+' : ''}${v}`,
-            },
-            {
-              key: 'vignette',
-              label: '暗角',
-              min: -100,
-              max: 100,
-              step: 1,
-              fmt: (v) => `${v > 0 ? '+' : ''}${v}`,
-            },
-          ].map(({ key, label, min, max, step, fmt }) => (
+          {BASIC_FIELDS.map(({ key, label, min, max, step, fmt }) => (
             <SliderRow
               key={key}
               label={label}
@@ -2591,29 +2640,31 @@ export default function ImageViewer({
               fmt={fmt}
               value={editOps[key]}
               defaultValue={EDIT_DEFAULTS[key]}
-              onDragStart={() => {
-                sliderDragRef.current = key;
-              }}
-              onCommit={() => {
-                if (sliderDragRef.current === key) {
-                  sliderDragRef.current = null;
-                  pushHistory(editOpsRef.current, label);
-                }
-              }}
-              onBlur={settleKeyGesture}
-              onChange={(v) => {
-                setEditOps({ ...editOpsRef.current, [key]: v });
-              }}
-              onKeyAdjust={(v) => {
-                const next = { ...editOpsRef.current, [key]: v };
-                setEditOps(next);
-                if (!sliderDragRef.current) recordKeyAdjust(next, label);
-              }}
-              onReset={() => {
-                const next = { ...editOpsRef.current, [key]: EDIT_DEFAULTS[key] };
-                pushHistory(next, `重置${label}`);
-                setEditOps(next);
-              }}
+              {...getSliderHandlers(key, () => ({
+                onDragStart: () => {
+                  sliderDragRef.current = key;
+                },
+                onCommit: () => {
+                  if (sliderDragRef.current === key) {
+                    sliderDragRef.current = null;
+                    pushHistory(editOpsRef.current, label);
+                  }
+                },
+                onBlur: settleKeyGesture,
+                onChange: (v) => {
+                  setEditOps({ ...editOpsRef.current, [key]: v });
+                },
+                onKeyAdjust: (v) => {
+                  const next = { ...editOpsRef.current, [key]: v };
+                  setEditOps(next);
+                  if (!sliderDragRef.current) recordKeyAdjust(next, label);
+                },
+                onReset: () => {
+                  const next = { ...editOpsRef.current, [key]: EDIT_DEFAULTS[key] };
+                  pushHistory(next, `重置${label}`);
+                  setEditOps(next);
+                },
+              }))}
             />
           ))}
 
@@ -2823,29 +2874,31 @@ export default function ImageViewer({
                       key={rowKey}
                       label={bandLabel}
                       value={value}
-                      onDragStart={() => {
-                        sliderDragRef.current = rowKey;
-                      }}
-                      onCommit={() => {
-                        if (sliderDragRef.current === rowKey) {
-                          sliderDragRef.current = null;
-                          pushHistory(editOpsRef.current, rowLabel);
-                        }
-                      }}
-                      onBlur={settleKeyGesture}
-                      onChange={(v) => {
-                        setEditOps(setBand(v));
-                      }}
-                      onKeyAdjust={(v) => {
-                        const next = setBand(v);
-                        setEditOps(next);
-                        if (!sliderDragRef.current) recordKeyAdjust(next, rowLabel);
-                      }}
-                      onReset={() => {
-                        const next = setBand(0);
-                        pushHistory(next, `重置${rowLabel}`);
-                        setEditOps(next);
-                      }}
+                      {...getSliderHandlers(rowKey, () => ({
+                        onDragStart: () => {
+                          sliderDragRef.current = rowKey;
+                        },
+                        onCommit: () => {
+                          if (sliderDragRef.current === rowKey) {
+                            sliderDragRef.current = null;
+                            pushHistory(editOpsRef.current, rowLabel);
+                          }
+                        },
+                        onBlur: settleKeyGesture,
+                        onChange: (v) => {
+                          setEditOps(setBand(v));
+                        },
+                        onKeyAdjust: (v) => {
+                          const next = setBand(v);
+                          setEditOps(next);
+                          if (!sliderDragRef.current) recordKeyAdjust(next, rowLabel);
+                        },
+                        onReset: () => {
+                          const next = setBand(0);
+                          pushHistory(next, `重置${rowLabel}`);
+                          setEditOps(next);
+                        },
+                      }))}
                     />
                   );
                 })}
@@ -2864,17 +2917,7 @@ export default function ImageViewer({
             <div className="editor-crop-header">
               <span>细节</span>
             </div>
-            {[
-              { key: 'sharpness', label: '锐化', min: 0 },
-              { key: 'texture', label: '纹理', title: '纹理：中频质感增强，负值柔化；双击重置' },
-              { key: 'noise', label: '降噪', min: 0 },
-              {
-                key: 'grain',
-                label: '颗粒',
-                min: 0,
-                title: '胶片颗粒：三端同式精确预览；双击重置',
-              },
-            ].map(({ key, label, min = -100, title }) => (
+            {DETAIL_FIELDS.map(({ key, label, min = -100, title }) => (
               <SliderRow
                 key={key}
                 label={label}
@@ -2883,38 +2926,40 @@ export default function ImageViewer({
                 step={1}
                 title={title}
                 value={editOps.detail?.[key] ?? 0}
-                onDragStart={() => {
-                  sliderDragRef.current = `detail.${key}`;
-                }}
-                onCommit={() => {
-                  if (sliderDragRef.current === `detail.${key}`) {
-                    sliderDragRef.current = null;
-                    pushHistory(editOpsRef.current, label);
-                  }
-                }}
-                onBlur={settleKeyGesture}
-                onChange={(v) => {
-                  setEditOps({
-                    ...editOpsRef.current,
-                    detail: { ...editOpsRef.current.detail, [key]: v },
-                  });
-                }}
-                onKeyAdjust={(v) => {
-                  const next = {
-                    ...editOpsRef.current,
-                    detail: { ...editOpsRef.current.detail, [key]: v },
-                  };
-                  setEditOps(next);
-                  if (!sliderDragRef.current) recordKeyAdjust(next, label);
-                }}
-                onReset={() => {
-                  const next = {
-                    ...editOpsRef.current,
-                    detail: { ...editOpsRef.current.detail, [key]: 0 },
-                  };
-                  pushHistory(next, `重置${label}`);
-                  setEditOps(next);
-                }}
+                {...getSliderHandlers(`detail.${key}`, () => ({
+                  onDragStart: () => {
+                    sliderDragRef.current = `detail.${key}`;
+                  },
+                  onCommit: () => {
+                    if (sliderDragRef.current === `detail.${key}`) {
+                      sliderDragRef.current = null;
+                      pushHistory(editOpsRef.current, label);
+                    }
+                  },
+                  onBlur: settleKeyGesture,
+                  onChange: (v) => {
+                    setEditOps({
+                      ...editOpsRef.current,
+                      detail: { ...editOpsRef.current.detail, [key]: v },
+                    });
+                  },
+                  onKeyAdjust: (v) => {
+                    const next = {
+                      ...editOpsRef.current,
+                      detail: { ...editOpsRef.current.detail, [key]: v },
+                    };
+                    setEditOps(next);
+                    if (!sliderDragRef.current) recordKeyAdjust(next, label);
+                  },
+                  onReset: () => {
+                    const next = {
+                      ...editOpsRef.current,
+                      detail: { ...editOpsRef.current.detail, [key]: 0 },
+                    };
+                    pushHistory(next, `重置${label}`);
+                    setEditOps(next);
+                  },
+                }))}
               />
             ))}
             <p className="editor-crop-hint">
@@ -2929,38 +2974,37 @@ export default function ImageViewer({
             <div className="editor-crop-header">
               <span>镜头</span>
             </div>
-            {[
-              { key: 'distortion', label: '畸变', hint: '正=桶形校正，负=枕形校正' },
-              { key: 'chromatic', label: '色散', hint: '去除边缘蓝/红边（横向色差）' },
-            ].map(({ key, label, hint }) => (
+            {LENS_FIELDS.map(({ key, label, hint }) => (
               <SliderRow
                 key={key}
                 label={label}
                 title={`${hint}；双击重置`}
                 value={editOps[key] ?? 0}
-                onDragStart={() => {
-                  sliderDragRef.current = key;
-                }}
-                onCommit={() => {
-                  if (sliderDragRef.current === key) {
-                    sliderDragRef.current = null;
-                    pushHistory(editOpsRef.current, label);
-                  }
-                }}
-                onBlur={settleKeyGesture}
-                onChange={(v) => {
-                  setEditOps({ ...editOpsRef.current, [key]: v });
-                }}
-                onKeyAdjust={(v) => {
-                  const next = { ...editOpsRef.current, [key]: v };
-                  setEditOps(next);
-                  if (!sliderDragRef.current) recordKeyAdjust(next, label);
-                }}
-                onReset={() => {
-                  const next = { ...editOpsRef.current, [key]: 0 };
-                  pushHistory(next, `重置${label}`);
-                  setEditOps(next);
-                }}
+                {...getSliderHandlers(`lens.${key}`, () => ({
+                  onDragStart: () => {
+                    sliderDragRef.current = key;
+                  },
+                  onCommit: () => {
+                    if (sliderDragRef.current === key) {
+                      sliderDragRef.current = null;
+                      pushHistory(editOpsRef.current, label);
+                    }
+                  },
+                  onBlur: settleKeyGesture,
+                  onChange: (v) => {
+                    setEditOps({ ...editOpsRef.current, [key]: v });
+                  },
+                  onKeyAdjust: (v) => {
+                    const next = { ...editOpsRef.current, [key]: v };
+                    setEditOps(next);
+                    if (!sliderDragRef.current) recordKeyAdjust(next, label);
+                  },
+                  onReset: () => {
+                    const next = { ...editOpsRef.current, [key]: 0 };
+                    pushHistory(next, `重置${label}`);
+                    setEditOps(next);
+                  },
+                }))}
               />
             ))}
             <p className="editor-crop-hint">

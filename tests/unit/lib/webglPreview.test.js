@@ -638,8 +638,24 @@ describe('画笔蒙版 GLSL 接线（P2 源串锁）', () => {
   const src = readFileSync(resolve(process.cwd(), 'src/lib/webglPreview.ts'), 'utf8');
   it('maskWeight 含 brush 纹理采样分支与 sampler 声明', () => {
     expect(src).toContain('uniform sampler2D uMaskBrushTex[8]');
-    expect(src).toContain('texture(uMaskBrushTex[i], px / uImageSize).r');
+    expect(src).toContain('float brushWeight(int i, vec2 px)');
     expect(src).toContain('uMaskBrushTex[');
+  });
+  it('brush 采样须常量索引（R165 实机修：动态索引 sampler 数组被 ANGLE 拒绝编译，webglFailed 闩锁静默降级）', () => {
+    // 8 路字面分支展开在场，且不得再出现以变量 i 动态索引 sampler 的旧写法
+    for (let k = 0; k < 8; k++) {
+      expect(src).toContain(`texture(uMaskBrushTex[${k}], uv).r`);
+    }
+    expect(src).not.toContain('texture(uMaskBrushTex[i],');
+    expect(src).toContain('w = brushWeight(i, px);');
+  });
+  it('brush 纹理 activeTexture 须先于创建段（R166 实机修：占位 bindTexture 落在 LUT 遗留的 TEXTURE1 上会顶掉曲线 LUT，曲线激活即整帧黑）', () => {
+    const loopHead = src.indexOf('for (let bi = 0; bi < 8; bi++) {');
+    const createBranch = src.indexOf('if (!st.brushTex[bi]) {', loopHead);
+    const activeCall = src.indexOf('gl.activeTexture(gl.TEXTURE2 + bi);', loopHead);
+    expect(loopHead).toBeGreaterThan(-1);
+    expect(activeCall).toBeGreaterThan(-1);
+    expect(activeCall).toBeLessThan(createBranch);
   });
 });
 

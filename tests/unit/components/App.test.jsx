@@ -137,8 +137,9 @@ describe('App 组合根冒烟', () => {
 
   it('设置路由：渲染 SettingsPage 并显示统计与存储路径', async () => {
     renderApp('/settings');
-    // 「设置」同时出现在侧栏导航与页面标题，用标题语义查询
-    expect(screen.getByRole('heading', { name: '设置' })).toBeInTheDocument();
+    // 「设置」同时出现在侧栏导航与页面标题，用标题语义查询；
+    // SettingsPage 为懒加载路由（R162），标题须异步等待 chunk 落地
+    expect(await screen.findByRole('heading', { name: '设置' })).toBeInTheDocument();
     expect(screen.getByText('图片总数')).toBeInTheDocument();
     expect(await screen.findByText('C:/PixData')).toBeInTheDocument();
     expect(screen.getByText('1.0.0')).toBeInTheDocument();
@@ -149,8 +150,8 @@ describe('App 组合根冒烟', () => {
       { id: 5, name: '风景', color: '#818cf8', image_count: 6 },
     ]);
     renderApp('/tags');
-    // 「管理标签」同时出现在侧栏导航与页面标题，用标题语义查询
-    expect(screen.getByRole('heading', { name: '管理标签' })).toBeInTheDocument();
+    // 「管理标签」同时出现在侧栏导航与页面标题，用标题语义查询；懒加载路由须异步等待（R162）
+    expect(await screen.findByRole('heading', { name: '管理标签' })).toBeInTheDocument();
     expect(await screen.findAllByText('风景')).not.toHaveLength(0);
   });
 

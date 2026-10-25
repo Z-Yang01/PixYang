@@ -226,6 +226,13 @@ body {
   scrollbar-color: var(--border-light) transparent;
 }
 
+/* ── 图标（lucide）：全局统一线宽 1.75，与侧栏/星级既有语言对齐；
+   组件级 strokeWidth 属性（presentation attribute）让位于此规则，实心星/心
+   fill=currentColor 时描边同色不可见，不受影响 ── */
+.lucide {
+  stroke-width: 1.75;
+}
+
 /* ── App Layout ── */
 .app-layout {
   display: grid;
@@ -3315,6 +3322,10 @@ body {
   height: 100%;
   pointer-events: none;
   border-radius: 4px;
+}
+/* Before 态隐藏常驻画布（R164）：visibility 保合成层与绘制缓冲，切换回来即时显示旧帧 */
+.editor-webgl-canvas.is-idle {
+  visibility: hidden;
 }
 .editor-grade-row {
   display: flex;

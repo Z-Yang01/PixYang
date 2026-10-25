@@ -322,7 +322,15 @@ export default function InfoPanel({ image, onClose, onImageUpdated, onCountsChan
       </div>
 
       <div className="info-panel-body">
-        {thumbUrl && <img src={thumbUrl} alt={image.filename} className="info-thumb" />}
+        {thumbUrl && (
+          <img
+            src={thumbUrl}
+            alt={image.filename}
+            className="info-thumb"
+            loading="lazy"
+            decoding="async"
+          />
+        )}
 
         {/* 基本信息 */}
         <details open className="info-section">

@@ -53,11 +53,19 @@ export default function useGalleryData({ onThumbnailsReady } = {}) {
   // 后台缩略图生成完成后：bump 版本刷新缩略图 URL 并轻量刷新列表。
   // 事件合并节流：重建/后台导入期间 thumbnails-ready 可能连发（R153 审计⑧），
   // 每发一次就整页重查会让列表反复重载——300ms 尾沿合并为一次 bump + 一次重查，
-  // 版本号只需变化一次即可让全部新缩略图 URL 失效
+  // 版本号只需变化一次即可让全部新缩略图 URL 失效。
+  // R163 交集门控：载荷带本批写回成功 ids 时，与本页不相交即跳过（后台重建
+  // 不再打扰用户正在浏览的页面）；旧格式载荷（无 ids 数组）保持全量刷新兼容
   useEffect(() => {
     if (!api.isBridgeAvailable()) return;
     let timer = null;
-    const off = api.onThumbnailsReady(() => {
+    const off = api.onThumbnailsReady((payload) => {
+      const ids = Array.isArray(payload?.ids) ? payload.ids : null;
+      if (ids) {
+        const st = useGalleryStore.getState();
+        const pageIds = new Set(st.images.map((img) => img.id));
+        if (!ids.some((id) => pageIds.has(id))) return;
+      }
       if (timer) return; // 已有待执行刷新：后续事件被该次刷新覆盖
       timer = setTimeout(() => {
         timer = null;

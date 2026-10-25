@@ -161,7 +161,7 @@ export default function EditorPresetSection({
             onClick={() => onRemovePreset(pr.id)}
             title="删除预设"
           >
-            <X className="size-3" />
+            <X className="size-4" />
           </Button>
         </div>
       ))}

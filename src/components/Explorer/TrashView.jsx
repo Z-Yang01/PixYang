@@ -282,7 +282,7 @@ export default function TrashView({ onRefresh }) {
                   <>
                     <span>已选 {selectedIds.size} 项</span>
                     <Button size="sm" onClick={handleBatchRestore}>
-                      <RotateCcw className="size-3.5" /> 批量恢复
+                      <RotateCcw className="size-4" /> 批量恢复
                     </Button>
                     <Button variant="outline" size="sm" onClick={() => setBatchPurgeConfirm(true)}>
                       批量删除
@@ -293,7 +293,7 @@ export default function TrashView({ onRefresh }) {
                       onClick={() => setSelectedIds(new Set())}
                       title="取消选择"
                     >
-                      <X className="size-3.5" />
+                      <X className="size-4" />
                     </Button>
                   </>
                 )}
@@ -401,7 +401,7 @@ export default function TrashView({ onRefresh }) {
                   </div>
                   <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
                     <Button size="sm" onClick={() => handleRestore(entry)}>
-                      <RotateCcw className="size-3.5" /> 恢复
+                      <RotateCcw className="size-4" /> 恢复
                     </Button>
                     <Button variant="outline" size="sm" onClick={() => setPurgeTarget(entry)}>
                       立即删除

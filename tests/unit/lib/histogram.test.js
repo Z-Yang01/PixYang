@@ -60,4 +60,40 @@ describe('extractHistogram（直方图提取）', () => {
     expect(extractHistogram(canvas)).toBeNull();
     expect(readPixels).not.toHaveBeenCalled();
   });
+
+  it('大画布行采样（R167）：按 stride 逐行回读不超 64 行，桶计数为采样行合计', () => {
+    const calls = [];
+    const gl = {
+      RGBA: 'RGBA',
+      UNSIGNED_BYTE: 'UNSIGNED_BYTE',
+      readPixels: (x, y, rw, rh, fmt, type, buf) => {
+        calls.push({ y, rw, rh });
+        buf.fill(128); // 每采样像素中灰 → 桶 32
+      },
+    };
+    const canvas = { width: 100, height: 640, getContext: () => gl };
+    const hist = extractHistogram(canvas);
+    // stride = 640/64 = 10：采样行数 ≤ 64、每行全宽、rh 恒 1
+    expect(calls.length).toBeLessThanOrEqual(64);
+    expect(calls.every((c) => c.rw === 100 && c.rh === 1)).toBe(true);
+    const sampled = calls.reduce((n, c) => n + c.rw, 0);
+    expect(hist.r[32]).toBe(sampled);
+    expect(hist.l[32]).toBe(sampled);
+  });
+
+  it('小画布保持整幅单次回读（行采样阈值以下，R167 兼容路径）', () => {
+    const calls = [];
+    const gl = {
+      RGBA: 'RGBA',
+      UNSIGNED_BYTE: 'UNSIGNED_BYTE',
+      readPixels: (x, y, rw, rh, fmt, type, buf) => {
+        calls.push({ rw, rh });
+        buf.fill(255); // 整幅 buffer 全填：单次路径读到 w*h 像素
+      },
+    };
+    const canvas = { width: 1, height: 2, getContext: () => gl };
+    const hist = extractHistogram(canvas);
+    expect(calls).toEqual([{ rw: 1, rh: 2 }]);
+    expect(hist.r[63]).toBe(2);
+  });
 });
