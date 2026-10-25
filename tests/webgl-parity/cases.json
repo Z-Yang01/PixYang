@@ -406,5 +406,31 @@
         "midtones": [90, 0]
       }
     }
+  },
+  {
+    "name": "32-brush-mask",
+    "tolerance": {
+      "maxDelta": 90,
+      "meanDelta": 9
+    },
+    "toleranceBasis": "R167 画笔取证用例（基线冻结于画笔引入前，R165 shader 编译失败与 R166 纹理单元污染两个实机 P1 均漏网于此）。GLSL 端 brush 权重为 192 低清栅格双线性采样 + 1/255 量化（previewUniforms 注释声明的近似口径，同 detail 锐化先例不入逐位对拍），执行器为全分辨率精确 brushMask——差异集中于软边带（softness 0.5×radius 120 的 ~60px 过渡区），exposure 0.6 非线性放大。首测实测 max[87,87,87] / mean 8.4875，档位=该近似口径实测上界 {90,9}；真缺陷量级（栅格未上传/采样失效 → 权重全 0 或全 1，exposure 整圈错）max 达 255 级、mean 数十，两界均可拦下。",
+    "params": {
+      "masks": [
+        {
+          "type": "brush",
+          "strokes": [
+            {
+              "points": [250, 300, 400, 500, 550, 700],
+              "radius": 120,
+              "softness": 0.5
+            }
+          ],
+          "invert": false,
+          "adjustments": {
+            "exposure": 0.6
+          }
+        }
+      ]
+    }
   }
 ]

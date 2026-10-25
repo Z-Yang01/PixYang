@@ -528,8 +528,9 @@ async function main() {
   }
 
   // 前端同源模块一次加载：genSpecs 用其 spec 转换，拉直镜像用其 straightenGeometry
+  // （editParams 第七批已迁 .ts，Node ≥22.18 类型剥离可直载）
   const editParamsMod = await import(
-    pathToFileURL(path.join(REPO, 'src', 'lib', 'editParams.js')).href
+    pathToFileURL(path.join(REPO, 'src', 'lib', 'editParams.ts')).href
   );
 
   log('Rust: 生成底图 …');
